@@ -20,6 +20,10 @@ let bin = '';
 let shim = '';
 let ghLog = '';
 let xtLog = '';
+let sbLog = '';
+
+const CREATE_STDOUT = 'https://github.com/xtrm-dev/core/pull/912\n';
+const CREATE_STDERR = 'Warning: 1 uncommitted change\n';
 
 function stub(name: string, logPath: string, body: string): string {
     const script = `#!/usr/bin/env node
@@ -52,9 +56,9 @@ function mergeRecords(): string[][] {
     return workCalls().filter((argv) => argv[1] === 'merge-record');
 }
 
-function runShim(args: string[], env: Record<string, string> = {}): { status: number | null; stdout: string; stderr: string } {
+function runShim(args: string[], env: Record<string, string> = {}, cwd?: string): { status: number | null; stdout: string; stderr: string } {
     const inherited = { ...process.env };
-    for (const key of ['XTRM_MERGE_GUARD', 'XTRM_MERGE_GUARD_OVERRIDE', 'XTRM_ROLE', 'SUBSTRATE_HOLDER', 'STUB_ROLE', 'STUB_CHECK']) {
+    for (const key of ['XTRM_MERGE_GUARD', 'XTRM_MERGE_GUARD_OVERRIDE', 'XTRM_ROLE', 'SUBSTRATE_HOLDER', 'STUB_ROLE', 'STUB_CHECK', 'STUB_SB', 'STUB_GH_EXIT', 'STUB_GH_TWO_URLS']) {
         delete inherited[key];
     }
     const result = spawnSync(process.execPath, [shim, ...args], {
@@ -65,6 +69,7 @@ function runShim(args: string[], env: Record<string, string> = {}): { status: nu
             SUBSTRATE_HOLDER: 'core-xt-pi-0fln',
             ...env,
         },
+        ...(cwd ? { cwd } : {}),
         // A hung child must never block a run again (2026-11-09 incident).
         timeout: 15000,
         killSignal: 'SIGKILL',
@@ -72,11 +77,51 @@ function runShim(args: string[], env: Record<string, string> = {}): { status: nu
     return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
 }
 
+/** A git call in a scratch repository, with any inherited GIT_* routing removed. */
+function git(cwd: string, args: string[]): string {
+    const env = { ...process.env };
+    for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[key];
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', env });
+    if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${String(result.stderr ?? '')}`);
+    return String(result.stdout ?? '').trim();
+}
+
+/**
+ * A scratch repository the pr-link step can read: one base commit and one head
+ * commit, an `origin/main` that points at the base unless the case needs the
+ * `--commit` fallback, and a branch name the fallback test can rely on.
+ */
+function scratchRepo(options: { withOriginMain?: boolean; branch?: string } = {}): { dir: string; head: string; base: string } {
+    const dir = join(root, 'repo');
+    const fs = require('node:fs') as typeof import('node:fs');
+    fs.mkdirSync(dir, { recursive: true });
+    git(dir, ['init', '-q']);
+    git(dir, ['config', 'user.email', 'worker@example.test']);
+    git(dir, ['config', 'user.name', 'worker']);
+    git(dir, ['config', 'commit.gpgsign', 'false']);
+    git(dir, ['checkout', '-q', '-b', options.branch ?? 'core-2607-gh-shim']);
+    writeFileSync(join(dir, 'a.txt'), 'one\n');
+    git(dir, ['add', 'a.txt']);
+    git(dir, ['commit', '-qm', 'first']);
+    const base = git(dir, ['rev-parse', 'HEAD']);
+    writeFileSync(join(dir, 'a.txt'), 'two\n');
+    git(dir, ['add', 'a.txt']);
+    git(dir, ['commit', '-qm', 'second']);
+    const head = git(dir, ['rev-parse', 'HEAD']);
+    if (options.withOriginMain !== false) git(dir, ['update-ref', 'refs/remotes/origin/main', base]);
+    return { dir, head, base };
+}
+
+function sbCalls(): string[][] {
+    return readLog(sbLog);
+}
+
 beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'xtrm-shim-proc-'));
     bin = join(root, 'bin');
     ghLog = join(root, 'gh.log');
     xtLog = join(root, 'xt.log');
+    sbLog = join(root, 'sb.log');
     const fs = require('node:fs') as typeof import('node:fs');
     fs.mkdirSync(bin, { recursive: true });
     // The real gh answers `pr view` for the fallback case; everything else is logged.
@@ -98,7 +143,50 @@ if (process.argv.slice(2).join(' ') === 'pr view --json number,url,headRefOid') 
   process.stdout.write(JSON.stringify({ number: 99, url: 'https://github.com/xtrm-dev/specialists/pull/99', headRefOid: 'a'.repeat(40) }));
   process.exit(0);
 }
+if (argv[0] === 'pr' && argv[1] === 'create') {
+  // CORE-2607: the create the shim must tee, and link, without changing a byte.
+  if (process.env.STUB_GH_TWO_URLS === '1') {
+    process.stdout.write('Warning: a pull request already exists: https://github.com/xtrm-dev/core/pull/111\\n');
+  }
+  process.stdout.write('https://github.com/xtrm-dev/core/pull/912\\n');
+  process.stderr.write('Warning: 1 uncommitted change\\n');
+  process.exit(Number(process.env.STUB_GH_EXIT || '0'));
+}
 `);
+    // The sb stub logs FIRST, then answers, so every call is visible.
+    const sbScript = `#!/usr/bin/env node
+const fs = require('node:fs');
+const argv = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(sbLog)}, JSON.stringify(argv) + '\\n');
+const envelope = (body) => JSON.stringify({ schema: 'substrate-cli/v1', ...body }) + '\\n';
+if (argv[0] === 'project' && argv[1] === 'list') {
+  if (process.env.STUB_SB === 'project-fail') {
+    process.stdout.write(envelope({ command: 'project.list', ok: false, error: 'substrate.remote=ssh:server: no store' }));
+    process.exit(1);
+  }
+  process.stdout.write(envelope({ command: 'project.list', ok: true, data: [
+    { id: 'prj_core', prefix: 'CORE', name: 'core' },
+    { id: 'prj_xtrm', prefix: 'XTRM', name: 'xtrm' },
+  ] }));
+  process.exit(0);
+}
+if (process.env.STUB_SB === 'missing-verb') {
+  process.stdout.write(envelope({ command: 'provenance.attach', ok: false, error: 'unknown provenance verb: attach (want dispatch|allocate|bind|trace|commit|receipt|pr|session|activation|bundle)' }));
+  process.exit(1);
+}
+if (process.env.STUB_SB === 'verb-error') {
+  process.stdout.write(envelope({ command: 'provenance.attach', ok: false, error: "unexpected argument 'attach' found" }));
+  process.exit(1);
+}
+if (process.env.STUB_SB === 'link-fail' && argv[0] === 'issue') {
+  process.stdout.write(envelope({ command: 'issue.link', ok: false, error: 'unknown flag --commits-range for issue.link' }));
+  process.exit(1);
+}
+process.stdout.write(envelope({ command: 'provenance.attach', ok: true, data: {} }));
+process.exit(0);
+`;
+    writeFileSync(join(bin, 'sb'), sbScript);
+    chmodSync(join(bin, 'sb'), 0o755);
     stub('xt', xtLog, `
 const { spawnSync } = require('node:child_process');
 const DIST = ${JSON.stringify(path.join(process.cwd(), 'dist', 'index.cjs'))};
@@ -120,6 +208,13 @@ if (argv[0] === 'identity' && argv[1] === 'role') {
 if (argv[0] === 'identity' && argv[1] === 'resolve-gh') {
   // The REAL resolver runs, with the stub gh pretending to be GitHub.
   const result = runDist(['identity', 'resolve-gh', ...argv.slice(2)]);
+  process.stdout.write(result.stdout || '');
+  process.stderr.write(result.stderr || '');
+  process.exit(result.status === null ? 1 : result.status);
+}
+if (argv[0] === 'identity' && argv[1] === 'pr-link') {
+  // CORE-2607: the REAL link resolution runs; the stubbed sb records the argv.
+  const result = runDist(['identity', 'pr-link', ...argv.slice(2)]);
   process.stdout.write(result.stdout || '');
   process.stderr.write(result.stderr || '');
   process.exit(result.status === null ? 1 : result.status);
@@ -570,5 +665,176 @@ describe('merge value flags keep the next argument (batch 4, item 5)', () => {
             const record = mergeRecords().pop();
             expect(record?.[record.indexOf('--pr') + 1], args.join(' ')).toBe('123');
         }
+    });
+});
+// CORE-2607: the link a create writes. The create's own bytes and status are the
+// real gh's; the link is one best-effort step that is allowed one warning line.
+describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
+    const MARKER_BODY = '<!-- xtrm issue=CORE-2607 holder=shim-attach run=run1 -->';
+
+    /** The warning lines the shim wrote after the create's own stderr. */
+    function warnings(stderr: string): string[] {
+        expect(stderr.startsWith(CREATE_STDERR)).toBe(true);
+        return stderr.slice(CREATE_STDERR.length).split('\n').filter(Boolean);
+    }
+
+    function attachCalls(): string[][] {
+        return sbCalls().filter((argv) => argv[0] === 'provenance' || argv[0] === 'issue');
+    }
+
+    function t1(): string[] {
+        return [
+            'provenance', 'attach', 'CORE-2607', 'pr', 'xtrm-dev/core#912', '--project', 'prj_core',
+        ];
+    }
+
+    function t2(rangeFlag: string[]): string[] {
+        return [
+            'issue', 'link', 'pr', 'CORE-2607',
+            '--repo', 'xtrm-dev/core',
+            '--number', '912',
+            ...rangeFlag,
+            '--project', 'prj_core',
+        ];
+    }
+
+    it('tees the create output byte for byte and attaches with the exact argv', () => {
+        const repo = scratchRepo();
+        const result = runShim(
+            ['pr', 'create', '--title', 'wire the shim', '--body', MARKER_BODY, '--base', 'main'],
+            { HOME: root },
+            repo.dir,
+        );
+        expect(result.status).toBe(0);
+        // Byte-identical: the real gh's stdout and stderr, no prefix and no suffix.
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(result.stderr).toBe(CREATE_STDERR);
+        expect(sbCalls()).toEqual([
+            ['project', 'list', '--json'],
+            t1(),
+            t2(['--commits-range', `${repo.base}..${repo.head}`]),
+        ]);
+    });
+
+    it('takes the repository and number from the URL, never from --repo', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--repo', 'other/repo', '--body', MARKER_BODY], { HOME: root }, repo.dir);
+        expect(result.status).toBe(0);
+        const attach = attachCalls()[0];
+        expect(attach[4]).toBe('xtrm-dev/core#912');
+        expect(attach).not.toContain('other/repo');
+    });
+
+    it('takes the last URL gh printed', () => {
+        const repo = scratchRepo();
+        runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_GH_TWO_URLS: '1' }, repo.dir);
+        expect(attachCalls()[0]?.[4]).toBe('xtrm-dev/core#912');
+    });
+
+    it('warns once and returns the create status when the verb is missing', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_SB: 'missing-verb' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toContain('gh (xtrm):');
+        expect(said[0]).toMatch(/unknown provenance verb: attach/);
+    });
+
+    it('warns once and returns the create status when the verb rejects the arguments', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_SB: 'verb-error' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/unexpected argument 'attach'/);
+    });
+
+    it('keeps the link and warns once when only the commit evidence fails', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_SB: 'link-fail' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(attachCalls()).toEqual([t1(), t2(['--commits-range', `${repo.base}..${repo.head}`])]);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/commit evidence failed: .*unknown flag --commits-range/);
+    });
+
+    it('warns once and skips when no Issue ref resolves', () => {
+        const repo = scratchRepo({ branch: 'feature/x' });
+        const result = runShim(['pr', 'create', '--title', 'wire the shim', '--body', 'no marker here'], { HOME: root }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(attachCalls()).toHaveLength(0);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/not linked to a Substrate Issue/);
+    });
+
+    it('warns once and skips when two markers name different Issues', () => {
+        const repo = scratchRepo();
+        const body = `${MARKER_BODY}\n<!-- xtrm issue=CORE-2608 holder=shim-attach run=run1 -->`;
+        const result = runShim(['pr', 'create', '--body', body], { HOME: root }, repo.dir);
+        expect(attachCalls()).toHaveLength(0);
+        expect(warnings(result.stderr)[0]).toMatch(/more than one Issue/);
+    });
+
+    it('warns once and skips when the project cannot be resolved', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_SB: 'project-fail' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(attachCalls()).toHaveLength(0);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/cannot resolve the Substrate project for CORE-2607/);
+    });
+
+    it('does not link anything when the create itself failed', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_GH_EXIT: '3' }, repo.dir);
+        expect(result.status).toBe(3);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(result.stderr).toBe(CREATE_STDERR);
+        expect(sbCalls()).toHaveLength(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'pr-link')).toHaveLength(0);
+    });
+
+    it('leaves an operator process completely alone', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, SUBSTRATE_HOLDER: '' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(result.stderr).toBe(CREATE_STDERR);
+        expect(sbCalls()).toHaveLength(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'pr-link')).toHaveLength(0);
+    });
+
+    it('does not link another pr verb or a --help', () => {
+        const repo = scratchRepo();
+        const view = runShim(['pr', 'view', '5'], { HOME: root }, repo.dir);
+        expect(view.status).toBe(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'pr-link')).toHaveLength(0);
+        expect(sbCalls()).toHaveLength(0);
+        const help = runShim(['pr', 'create', '--help'], { HOME: root }, repo.dir);
+        expect(help.status).toBe(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'pr-link')).toHaveLength(0);
+        expect(sbCalls()).toHaveLength(0);
+    });
+
+    it('falls back to the branch name when neither the body nor the title names a ref', () => {
+        const repo = scratchRepo({ branch: 'core-2607-gh-shim' });
+        const result = runShim(['pr', 'create', '--title', 'wire the shim', '--body', 'no marker'], { HOME: root }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(attachCalls()).toEqual([t1(), t2(['--commits-range', `${repo.base}..${repo.head}`])]);
+    });
+
+    it('falls back to --commit HEAD when no base resolves', () => {
+        const repo = scratchRepo({ withOriginMain: false });
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(attachCalls()).toEqual([t1(), t2(['--commit', repo.head])]);
     });
 });

@@ -5,13 +5,18 @@
 // already owns — the Issue ref prefix, else the PR repository name — and never
 // from a hard-coded id.
 
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
     issueRefPrefix,
+    listProjects,
     parseProjectList,
     pickReceiptProject,
     resolveReceiptProject,
+    runReceipt,
     withReceiptProject,
     type SbProject,
 } from '../core/sb-receipt.js';
@@ -102,6 +107,24 @@ describe('resolveReceiptProject', () => {
         expect(calls).toEqual([['project', 'list', '--json']]);
     });
 
+    it('accepts an already-read project list, so a caller that needs the prefixes pays one call', () => {
+        const calls: string[][] = [];
+        const project = resolveReceiptProject({ issueRef: 'XTRM-728' }, {
+            projects: PROJECTS,
+            runSb: (args) => {
+                calls.push(args);
+                return { status: 0, stdout: projectList(), stderr: '' };
+            },
+        });
+        expect(project).toBe('prj_xtrm');
+        expect(calls).toEqual([]);
+    });
+
+    it('reads no projects when sb cannot answer', () => {
+        expect(listProjects({ runSb: () => ({ status: 1, stdout: '', stderr: 'sb: no store' }) })).toEqual([]);
+        expect(listProjects({ runSb: () => ({ status: 0, stdout: projectList(), stderr: '' }) })).toEqual(PROJECTS);
+    });
+
     it('degrades to the previous behaviour when sb cannot answer', () => {
         const failing = resolveReceiptProject({ issueRef: 'XTRM-728' }, {
             runSb: () => ({ status: 1, stdout: '', stderr: 'sb: database is locked' }),
@@ -123,5 +146,36 @@ describe('withReceiptProject', () => {
         expect(withReceiptProject(args, null)).toEqual(args);
         expect(withReceiptProject(args, '')).toEqual(args);
         expect(args).toHaveLength(6);
+    });
+});
+
+describe('a receipt has a hard budget (CORE-2607)', () => {
+    it('abandons an sb that has not answered in time and names the budget', () => {
+        const bin = mkdtempSync(path.join(os.tmpdir(), 'xtrm-sb-slow-'));
+        try {
+            const file = path.join(bin, 'sb');
+            writeFileSync(file, '#!/bin/sh\n/bin/sleep 1\nexit 0\n');
+            chmodSync(file, 0o755);
+            const started = Date.now();
+            const result = runReceipt(['provenance', 'attach', 'CORE-2607'], { PATH: bin }, { timeoutMs: 200 });
+            expect(result.ok).toBe(false);
+            expect(result.error).toContain('no answer in 200 ms');
+            // The budget is real: the shim must not wait out a slow sb.
+            expect(Date.now() - started).toBeLessThan(900);
+        } finally {
+            rmSync(bin, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves a fast receipt alone', () => {
+        const bin = mkdtempSync(path.join(os.tmpdir(), 'xtrm-sb-fast-'));
+        try {
+            const file = path.join(bin, 'sb');
+            writeFileSync(file, '#!/bin/sh\nexit 0\n');
+            chmodSync(file, 0o755);
+            expect(runReceipt(['provenance', 'attach', 'CORE-2607'], { PATH: bin }, { timeoutMs: 200 })).toEqual({ ok: true });
+        } finally {
+            rmSync(bin, { recursive: true, force: true });
+        }
     });
 });

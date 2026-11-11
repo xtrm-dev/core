@@ -128,6 +128,32 @@ export interface ReceiptProjectDeps {
     env?: NodeJS.ProcessEnv;
     /** Runs `sb`; tests inject a fake so no real store is touched. */
     runSb?: RunSbJson;
+    /**
+     * An already-read project list. The caller that also needs the prefixes (the
+     * created-PR link) reads it once and passes it, so one receipt costs one
+     * read-only `sb` call, not two.
+     */
+    projects?: SbProject[];
+}
+
+function sbRunner(deps: ReceiptProjectDeps): RunSbJson {
+    return deps.runSb ?? ((args, runEnv) => {
+        const binary = resolveSbBinary(runEnv);
+        const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: runEnv });
+        return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    });
+}
+
+/** The projects `sb project list --json` reports; no projects when `sb` cannot answer. */
+export function listProjects(deps: ReceiptProjectDeps = {}): SbProject[] {
+    const env = deps.env ?? process.env;
+    try {
+        const result = sbRunner(deps)(['project', 'list', '--json'], env);
+        if (result.status !== 0) return [];
+        return parseProjectList(result.stdout);
+    } catch {
+        return [];
+    }
 }
 
 /**
@@ -139,16 +165,8 @@ export function resolveReceiptProject(
     target: { issueRef?: string | null; repo?: string | null },
     deps: ReceiptProjectDeps = {},
 ): string | null {
-    const env = deps.env ?? process.env;
-    const run: RunSbJson = deps.runSb ?? ((args, runEnv) => {
-        const binary = resolveSbBinary(runEnv);
-        const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: runEnv });
-        return { status: result.status, stdout: result.stdout, stderr: result.stderr };
-    });
     try {
-        const result = run(['project', 'list', '--json'], env);
-        if (result.status !== 0) return null;
-        return pickReceiptProject(parseProjectList(result.stdout), target);
+        return pickReceiptProject(deps.projects ?? listProjects(deps), target);
     } catch {
         return null;
     }
@@ -159,11 +177,27 @@ export function withReceiptProject(args: string[], projectId: string | null | un
     return projectId ? [...args, '--project', projectId] : args;
 }
 
+export interface ReceiptRunOptions {
+    /** A hard budget: a receipt that has not answered by then is abandoned. */
+    timeoutMs?: number;
+}
+
 /** Run one `sb` receipt; never throws, and names the binary and its reason. */
-export function runReceipt(args: string[], env: NodeJS.ProcessEnv = process.env): { ok: boolean; error?: string } {
+export function runReceipt(
+    args: string[],
+    env: NodeJS.ProcessEnv = process.env,
+    options: ReceiptRunOptions = {},
+): { ok: boolean; error?: string } {
     const binary = resolveSbBinary(env);
-    const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env });
+    const result = spawnSync(binary, args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env,
+        timeout: options.timeoutMs,
+        killSignal: 'SIGKILL',
+    });
     if (result.status === 0) return { ok: true };
+    const timedOut = (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
     return {
         ok: false,
         error: describeSbFailure({
@@ -171,7 +205,7 @@ export function runReceipt(args: string[], env: NodeJS.ProcessEnv = process.env)
             status: result.status,
             stdout: result.stdout,
             stderr: result.stderr,
-            spawnError: result.error?.message ?? null,
+            spawnError: timedOut ? `no answer in ${options.timeoutMs} ms` : (result.error?.message ?? null),
         }),
     };
 }

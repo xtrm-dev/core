@@ -5519,7 +5519,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile2 = universalify.fromPromise(_readFile);
-    function readFileSync22(file2, options = {}) {
+    function readFileSync23(file2, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -5551,7 +5551,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile: readFile2,
-      readFileSync: readFileSync22,
+      readFileSync: readFileSync23,
       writeFile: writeFile2,
       writeFileSync: writeFileSync14
     };
@@ -39288,7 +39288,7 @@ __export(reconcile_exports, {
 async function reconcile(specPath, state, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process35.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process36.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) {
     return { ok: false, error: `sp result failed: ${r.stderr || r.stdout}` };
   }
@@ -39328,7 +39328,7 @@ function extractPlannerResult(parsed) {
 async function validateIdsExist(ids, bdBin) {
   const orphans = [];
   for (const id of ids) {
-    const r = (0, import_node_child_process35.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
+    const r = (0, import_node_child_process36.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
     if (r.status !== 0) orphans.push(id);
   }
   return orphans;
@@ -39353,11 +39353,11 @@ async function writeLinksInPlace(specPath, links) {
 function sidecarPathFromSpec(specPath) {
   return import_node_path66.default.join(import_node_path66.default.dirname(specPath), ".apply-state.json");
 }
-var import_node_child_process35, import_fs_extra59, import_node_path66, import_yaml4;
+var import_node_child_process36, import_fs_extra59, import_node_path66, import_yaml4;
 var init_reconcile = __esm({
   "src/spec/reconcile.ts"() {
     "use strict";
-    import_node_child_process35 = require("child_process");
+    import_node_child_process36 = require("child_process");
     import_fs_extra59 = __toESM(require_lib(), 1);
     import_node_path66 = __toESM(require("path"), 1);
     import_yaml4 = __toESM(require_dist3(), 1);
@@ -39387,7 +39387,7 @@ var init_handoff = __esm({
 });
 
 // src/index.ts
-var import_node_fs38 = require("fs");
+var import_node_fs39 = require("fs");
 var import_node_path80 = require("path");
 
 // ../node_modules/commander/esm.mjs
@@ -57825,15 +57825,67 @@ function xtPassthrough(args) {
   return result.status === null ? 1 : result.status;
 }
 
-function xtJson(args) {
-  const answer = xtQuiet(args);
+function xtJson(args, timeoutMs) {
+  const answer = xtQuiet(args, timeoutMs);
   let data = null;
   try { data = JSON.parse(answer.stdout || 'null'); } catch (error) { data = null; }
   return { status: answer.status, data, stderr: (answer.stderr || '').trim() };
 }
 
-function xtQuiet(args) {
-  return spawnSync('xt', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
+function xtQuiet(args, timeoutMs) {
+  const options = { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' };
+  if (timeoutMs) { options.timeout = timeoutMs; options.killSignal = 'SIGKILL'; }
+  return spawnSync('xt', args, options);
+}
+
+
+// CORE-2607: the Issue-to-PR link after a create. The budget bounds the whole
+// post-create step, so a slow or absent sb can never hold gh pr create open.
+const LINK_TIMEOUT_MS = 6000;
+
+/**
+ * Ask xt to attach the created PR to its Issue. At most one warning line on
+ * stderr, and never a change to the create's own output or exit code: an
+ * attached link with a caveat (its commits could not be linked) still prints
+ * that caveat.
+ */
+function linkCreatedPr(stdout, args) {
+  const linked = xtJson(
+    ['identity', 'pr-link', '--argv', JSON.stringify(args), '--stdout', stdout, '--cwd', process.cwd()],
+    LINK_TIMEOUT_MS,
+  );
+  const warning = linked.data && typeof linked.data.warning === 'string' ? linked.data.warning : '';
+  if (linked.status === 0 && linked.data && linked.data.attached === true) {
+    if (warning) process.stderr.write('gh (xtrm): ' + warning + '\\n');
+    return;
+  }
+  process.stderr.write('gh (xtrm): ' + (warning || 'the new pull request was not linked to its Substrate Issue') + '\\n');
+}
+
+/**
+ * gh pr create, teed. The real gh owns stdout, stderr and the exit code; the link
+ * runs only after exit 0 and its failure is one warning line. The help verb
+ * creates nothing and prints no URL, so it takes the plain pass-through.
+ */
+function createAndLink(real, args) {
+  if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
+  const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
+  if (run.error) die('cannot run ' + real + ': ' + run.error.message);
+  const out = typeof run.stdout === 'string' ? run.stdout : '';
+  const err = typeof run.stderr === 'string' ? run.stderr : '';
+  // Byte-identical: each stream goes out unchanged, before any warning of ours.
+  if (out) process.stdout.write(out);
+  if (err) process.stderr.write(err);
+  const status = run.status === null ? 1 : run.status;
+  if (status === 0) {
+    try {
+      linkCreatedPr(out, args);
+    } catch (error) {
+      process.stderr.write('gh (xtrm): the new pull request was not linked to its Substrate Issue: '
+        + ((error && error.message) || String(error)) + '\\n');
+    }
+  }
+  process.exit(status);
 }
 
 
@@ -57976,6 +58028,9 @@ function main() {
     if (roleCache === undefined) roleCache = resolvedRole();
     return roleCache;
   };
+
+  // CORE-2607: a create happens for any agent role; the link is not a permission.
+  if (verb === 'create') createAndLink(real, args);
 
   if (verb === 'review') {
     // One parser for the target (CORE-2530 review): the CLI resolves the same gh
@@ -71940,10 +71995,10 @@ function createJiraCommand() {
 
 // src/commands/identity.ts
 init_kleur();
-var import_node_fs23 = require("fs");
+var import_node_fs24 = require("fs");
 var import_node_os26 = __toESM(require("os"), 1);
 var import_node_path47 = __toESM(require("path"), 1);
-var import_node_child_process23 = require("child_process");
+var import_node_child_process24 = require("child_process");
 
 // src/core/sb-receipt.ts
 var import_node_child_process22 = require("child_process");
@@ -72012,17 +72067,26 @@ function pickReceiptProject(projects, target) {
   const byName = projects.filter((project) => project.name.trim().toLowerCase() === segment);
   return byName.length === 1 ? byName[0].id : null;
 }
-function resolveReceiptProject(target, deps = {}) {
-  const env3 = deps.env ?? process.env;
-  const run5 = deps.runSb ?? ((args, runEnv) => {
+function sbRunner(deps) {
+  return deps.runSb ?? ((args, runEnv) => {
     const binary = resolveSbBinary(runEnv);
     const result = (0, import_node_child_process22.spawnSync)(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: runEnv });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   });
+}
+function listProjects(deps = {}) {
+  const env3 = deps.env ?? process.env;
   try {
-    const result = run5(["project", "list", "--json"], env3);
-    if (result.status !== 0) return null;
-    return pickReceiptProject(parseProjectList(result.stdout), target);
+    const result = sbRunner(deps)(["project", "list", "--json"], env3);
+    if (result.status !== 0) return [];
+    return parseProjectList(result.stdout);
+  } catch {
+    return [];
+  }
+}
+function resolveReceiptProject(target, deps = {}) {
+  try {
+    return pickReceiptProject(deps.projects ?? listProjects(deps), target);
   } catch {
     return null;
   }
@@ -72030,10 +72094,17 @@ function resolveReceiptProject(target, deps = {}) {
 function withReceiptProject(args, projectId) {
   return projectId ? [...args, "--project", projectId] : args;
 }
-function runReceipt(args, env3 = process.env) {
+function runReceipt(args, env3 = process.env, options = {}) {
   const binary = resolveSbBinary(env3);
-  const result = (0, import_node_child_process22.spawnSync)(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: env3 });
+  const result = (0, import_node_child_process22.spawnSync)(binary, args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: env3,
+    timeout: options.timeoutMs,
+    killSignal: "SIGKILL"
+  });
   if (result.status === 0) return { ok: true };
+  const timedOut = result.error?.code === "ETIMEDOUT";
   return {
     ok: false,
     error: describeSbFailure({
@@ -72041,37 +72112,9 @@ function runReceipt(args, env3 = process.env) {
       status: result.status,
       stdout: result.stdout,
       stderr: result.stderr,
-      spawnError: result.error?.message ?? null
+      spawnError: timedOut ? `no answer in ${options.timeoutMs} ms` : result.error?.message ?? null
     })
   };
-}
-
-// src/core/agent-run-id.ts
-var import_node_crypto17 = require("crypto");
-var import_node_fs20 = require("fs");
-function clockTicks(pid, read) {
-  try {
-    const stat3 = read(`/proc/${pid}/stat`);
-    const fields = stat3.slice(stat3.lastIndexOf(")") + 2).split(" ");
-    return fields[19] ?? "";
-  } catch {
-    return "";
-  }
-}
-function resolveAgentRunId(deps = {}) {
-  const env3 = deps.env ?? process.env;
-  const explicit = (env3.SUBSTRATE_RUN_ID ?? "").trim();
-  if (explicit) return explicit;
-  const read = deps.read ?? ((file2) => (0, import_node_fs20.readFileSync)(file2, "utf8"));
-  let boot = "";
-  try {
-    boot = read("/proc/sys/kernel/random/boot_id").trim();
-  } catch {
-  }
-  const sid = deps.sid ?? 0;
-  const pid = deps.pid ?? process.pid;
-  const start = deps.startTime !== void 0 ? deps.startTime ?? "" : clockTicks(pid, read);
-  return (0, import_node_crypto17.createHash)("sha1").update(`${boot}:${sid}:${start}`).digest("hex").slice(0, 6);
 }
 
 // src/core/review-posting.ts
@@ -72361,8 +72404,261 @@ function reviewReceiptArgs(receipt, input, issueRef, slug, deps = {}) {
   return reviewJournalArgs(receipt, input, issueRef, slug, project);
 }
 
-// src/core/merge-guard.ts
+// src/core/gh-pr-link.ts
+var import_node_child_process23 = require("child_process");
+var import_node_fs20 = require("fs");
+var ATTACH_TIMEOUT_MS = 5e3;
+var ISSUE_REF = /^[A-Z][A-Z0-9]*-\d+(?:\.\d+)*$/;
+var REF_SHAPED = /(?<![A-Za-z0-9_])([A-Z][A-Z0-9]*)-(?:\d+(?:\.\d+)*)(?![A-Za-z0-9])/gi;
+function parseCreatedPrUrl(stdout) {
+  const text = typeof stdout === "string" ? stdout : "";
+  let found = null;
+  const pattern = /https?:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)/g;
+  for (const match of text.matchAll(pattern)) {
+    const number4 = Number(match[3]);
+    if (!Number.isInteger(number4) || number4 <= 0) continue;
+    const slug = `${match[1]}/${match[2]}`;
+    found = { owner: match[1], repo: match[2], number: number4, slug, canonical: `${slug}#${number4}`, url: match[0] };
+  }
+  return found;
+}
+function lastFlagValue(argv, long, short) {
+  let value = null;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!arg) continue;
+    if (arg === long || short && arg === short) {
+      if (index + 1 < argv.length) value = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith(`${long}=`)) {
+      value = arg.slice(long.length + 1);
+    }
+  }
+  return typeof value === "string" ? value : null;
+}
+function readCreateBody(argv, readFile2 = (file2) => (0, import_node_fs20.readFileSync)(file2, "utf8")) {
+  const body = lastFlagValue(argv, "--body", "-b");
+  const file2 = lastFlagValue(argv, "--body-file", "-F");
+  const bodyAt = lastIndexOfFlag(argv, "--body", "-b");
+  const fileAt = lastIndexOfFlag(argv, "--body-file", "-F");
+  if (file2 !== null && fileAt > bodyAt) {
+    if (file2 === "-") return { text: "", source: "body-file", file: file2 };
+    try {
+      return { text: readFile2(file2), source: "body-file", file: file2 };
+    } catch {
+      return { text: "", source: "body-file", file: file2 };
+    }
+  }
+  if (body !== null) return { text: body, source: "body" };
+  return { text: "", source: "none" };
+}
+function lastIndexOfFlag(argv, long, short) {
+  let at = -1;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!arg) continue;
+    if (arg === long || short && arg === short || arg.startsWith(`${long}=`)) at = index;
+  }
+  return at;
+}
+function readCreateTitle(argv) {
+  return lastFlagValue(argv, "--title", "-t") ?? "";
+}
+function issueRefsInText(text, projectPrefixes) {
+  const source = typeof text === "string" ? text : "";
+  const prefixes = /* @__PURE__ */ new Set();
+  for (const raw of projectPrefixes) {
+    const prefix = (raw ?? "").trim().toUpperCase();
+    if (prefix) prefixes.add(prefix);
+  }
+  if (prefixes.size === 0) return [];
+  const out = [];
+  for (const match of source.matchAll(REF_SHAPED)) {
+    const ref = match[0].toUpperCase();
+    if (!prefixes.has(match[1].toUpperCase())) continue;
+    if (!out.includes(ref)) out.push(ref);
+  }
+  return out;
+}
+function chooseIssueRef(input) {
+  const markers = [];
+  for (const marker of parseIssueMarkers(input.bodyText ?? "")) {
+    const ref = (marker.issue ?? "").trim().toUpperCase();
+    if (ref && !markers.includes(ref)) markers.push(ref);
+  }
+  if (markers.length > 1) {
+    return { ref: null, source: null, reason: `the PR body names more than one Issue (${markers.join(", ")}); keep exactly one xtrm marker` };
+  }
+  if (markers.length === 1) {
+    const ref = markers[0];
+    if (!ISSUE_REF.test(ref)) {
+      return { ref: null, source: null, reason: `the PR body's xtrm marker names '${ref}', which is not a Substrate Issue ref` };
+    }
+    return { ref, source: "marker", reason: null };
+  }
+  const prefixes = input.projects.map((project) => project.prefix);
+  const fromTitle = issueRefsInText(input.title, prefixes);
+  const fromBranch = issueRefsInText(input.branch, prefixes);
+  const all = [];
+  for (const ref of [...fromTitle, ...fromBranch]) {
+    if (!all.includes(ref)) all.push(ref);
+  }
+  if (all.length === 1) {
+    const source = fromTitle.length && fromBranch.length ? "title and branch" : fromTitle.length ? "title" : "branch";
+    return { ref: all[0], source, reason: null };
+  }
+  if (all.length === 0) {
+    return {
+      ref: null,
+      source: null,
+      reason: "the PR has no xtrm Issue marker in its body, and neither --title nor the current branch names a known project ref"
+    };
+  }
+  return {
+    ref: null,
+    source: null,
+    reason: `--title and the current branch name different Issues (${all.join(", ")}); keep one xtrm marker in the PR body`
+  };
+}
+function defaultRunGit() {
+  return (args, cwd) => {
+    const result = (0, import_node_child_process23.spawnSync)("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd, timeout: ATTACH_TIMEOUT_MS });
+    return { status: result.status, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
+  };
+}
+var FULL_SHA = /^[0-9a-f]{40}$/;
+function resolveLinkRange(runGit2, cwd) {
+  const headResult = runGit2(["rev-parse", "HEAD"], cwd);
+  const head = headResult.status === 0 ? headResult.stdout.trim() : "";
+  if (!FULL_SHA.test(head)) return null;
+  for (const upstream of ["origin/HEAD", "origin/main", "@{upstream}"]) {
+    const merged = runGit2(["merge-base", "HEAD", upstream], cwd);
+    const base = merged.status === 0 ? (merged.stdout.trim().split("\n")[0] ?? "").trim() : "";
+    if (FULL_SHA.test(base)) return { head, base };
+  }
+  return { head, base: null };
+}
+function oneLine(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+function defaultAttach(args, env3, timeoutMs = ATTACH_TIMEOUT_MS) {
+  return runReceipt(args, env3, { timeoutMs });
+}
+function linkCreatedPr(stdout, argv, deps = {}) {
+  try {
+    return linkOrWarn(stdout, argv, deps);
+  } catch (error51) {
+    return { attached: false, warning: `the new pull request was not linked to its Substrate Issue: ${oneLine(error51.message)}` };
+  }
+}
+function linkOrWarn(stdout, argv, deps) {
+  const env3 = deps.env ?? process.env;
+  const cwd = deps.cwd ?? process.cwd();
+  const pr = parseCreatedPrUrl(stdout);
+  if (!pr) {
+    return { attached: false, warning: "gh pr create printed no pull request URL, so the new PR is not linked to a Substrate Issue" };
+  }
+  const body = readCreateBody(argv, deps.readFile);
+  const git7 = deps.runGit ?? defaultRunGit();
+  const branchResult = git7(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+  const branch = branchResult.status === 0 ? branchResult.stdout.trim() : "";
+  const projects = deps.projects ?? listProjects(deps);
+  const choice = chooseIssueRef({
+    bodyText: body.text,
+    title: readCreateTitle(argv),
+    // A detached head reports the literal "HEAD", which names no branch.
+    branch: branch === "HEAD" ? "" : branch,
+    projects
+  });
+  if (!choice.ref) {
+    return { attached: false, canonical: pr.canonical, warning: `${choice.reason}, so ${pr.canonical} is not linked to a Substrate Issue` };
+  }
+  const ref = choice.ref;
+  const project = resolveReceiptProject({ issueRef: ref, repo: pr.slug }, { ...deps, projects });
+  if (!project) {
+    return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
+  }
+  const run5 = deps.runAttach ?? defaultAttach;
+  const deadline = Date.now() + ATTACH_TIMEOUT_MS;
+  const budget = () => Math.max(250, deadline - Date.now());
+  const attachArgv = withReceiptProject(["provenance", "attach", ref, "pr", pr.canonical], project);
+  const t1 = run5(attachArgv, env3, budget());
+  if (!t1.ok) {
+    return {
+      attached: false,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? "sb gave no reason")}`
+    };
+  }
+  const range = resolveLinkRange(git7, cwd);
+  if (!range) {
+    return {
+      attached: true,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      warning: `linked ${pr.canonical} to ${ref}, but HEAD cannot be read in ${cwd}, so its commits are not linked`
+    };
+  }
+  const commitsArgv = withReceiptProject([
+    "issue",
+    "link",
+    "pr",
+    ref,
+    "--repo",
+    pr.slug,
+    "--number",
+    String(pr.number),
+    ...range.base ? ["--commits-range", `${range.base}..${range.head}`] : ["--commit", range.head]
+  ], project);
+  const t2 = run5(commitsArgv, env3, budget());
+  if (!t2.ok) {
+    return {
+      attached: true,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      commitsArgv,
+      warning: `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${oneLine(t2.error ?? "sb gave no reason")}`
+    };
+  }
+  return { attached: true, ref, canonical: pr.canonical, argv: attachArgv, commitsArgv };
+}
+
+// src/core/agent-run-id.ts
+var import_node_crypto17 = require("crypto");
 var import_node_fs21 = require("fs");
+function clockTicks(pid, read) {
+  try {
+    const stat3 = read(`/proc/${pid}/stat`);
+    const fields = stat3.slice(stat3.lastIndexOf(")") + 2).split(" ");
+    return fields[19] ?? "";
+  } catch {
+    return "";
+  }
+}
+function resolveAgentRunId(deps = {}) {
+  const env3 = deps.env ?? process.env;
+  const explicit = (env3.SUBSTRATE_RUN_ID ?? "").trim();
+  if (explicit) return explicit;
+  const read = deps.read ?? ((file2) => (0, import_node_fs21.readFileSync)(file2, "utf8"));
+  let boot = "";
+  try {
+    boot = read("/proc/sys/kernel/random/boot_id").trim();
+  } catch {
+  }
+  const sid = deps.sid ?? 0;
+  const pid = deps.pid ?? process.pid;
+  const start = deps.startTime !== void 0 ? deps.startTime ?? "" : clockTicks(pid, read);
+  return (0, import_node_crypto17.createHash)("sha1").update(`${boot}:${sid}:${start}`).digest("hex").slice(0, 6);
+}
+
+// src/core/merge-guard.ts
+var import_node_fs22 = require("fs");
 var import_node_os24 = __toESM(require("os"), 1);
 var import_node_path45 = __toESM(require("path"), 1);
 var OVERRIDE_ENV_VAR = "XTRM_MERGE_GUARD_OVERRIDE";
@@ -72399,9 +72695,9 @@ function markerGuidance(ref) {
   ];
 }
 function defaultRunSb() {
-  const { spawnSync: spawnSync44 } = require("child_process");
+  const { spawnSync: spawnSync45 } = require("child_process");
   return (cmd, args, opts) => {
-    const result = spawnSync44(cmd, args, {
+    const result = spawnSync45(cmd, args, {
       encoding: "utf8",
       input: opts.input ?? void 0,
       cwd: opts.cwd,
@@ -72485,10 +72781,10 @@ function checkStateDir(dir) {
   let probe2 = dir;
   for (let depth = 0; depth < 40; depth += 1) {
     try {
-      const stat3 = (0, import_node_fs21.statSync)(probe2);
+      const stat3 = (0, import_node_fs22.statSync)(probe2);
       if (!stat3.isDirectory()) return `'${probe2}' exists and is not a directory`;
       try {
-        (0, import_node_fs21.accessSync)(probe2, import_node_fs21.constants.W_OK);
+        (0, import_node_fs22.accessSync)(probe2, import_node_fs22.constants.W_OK);
       } catch {
         return `'${probe2}' is not writable`;
       }
@@ -72506,8 +72802,8 @@ function appendOverrideLog(deps, line) {
     const file2 = overrideLogPath(deps);
     const problem = checkStateDir(import_node_path45.default.dirname(file2));
     if (problem) return { ok: false, error: `state directory '${import_node_path45.default.dirname(file2)}': ${problem}` };
-    (0, import_node_fs21.mkdirSync)(import_node_path45.default.dirname(file2), { recursive: true });
-    (0, import_node_fs21.appendFileSync)(file2, `${JSON.stringify({ at: new Date((deps.now ?? Date.now)()).toISOString(), ...line })}
+    (0, import_node_fs22.mkdirSync)(import_node_path45.default.dirname(file2), { recursive: true });
+    (0, import_node_fs22.appendFileSync)(file2, `${JSON.stringify({ at: new Date((deps.now ?? Date.now)()).toISOString(), ...line })}
 `, { mode: 384 });
     return { ok: true };
   } catch (error51) {
@@ -72771,7 +73067,7 @@ function recordMerge(input, deps) {
 }
 
 // src/core/reviewer-routing.ts
-var import_node_fs22 = require("fs");
+var import_node_fs23 = require("fs");
 var import_node_os25 = __toESM(require("os"), 1);
 var import_node_path46 = __toESM(require("path"), 1);
 var REVIEWER_ROUTING_FILE = "reviewer-routing.md";
@@ -72796,11 +73092,11 @@ A PR merges only with a review by the reviewer App at its current head.
 function installRoutingReminder(home = import_node_os25.default.homedir()) {
   const file2 = routingReminderPath(home);
   try {
-    (0, import_node_fs22.readFileSync)(file2);
+    (0, import_node_fs23.readFileSync)(file2);
     return { path: file2, written: false };
   } catch {
-    (0, import_node_fs22.mkdirSync)(import_node_path46.default.dirname(file2), { recursive: true });
-    (0, import_node_fs22.writeFileSync)(file2, DEFAULT_REVIEWER_ROUTING);
+    (0, import_node_fs23.mkdirSync)(import_node_path46.default.dirname(file2), { recursive: true });
+    (0, import_node_fs23.writeFileSync)(file2, DEFAULT_REVIEWER_ROUTING);
     return { path: file2, written: true };
   }
 }
@@ -73017,7 +73313,7 @@ function realGh() {
   return (process.env.XTRM_REAL_GH ?? "").trim() || "gh";
 }
 function ghView(args, cwd) {
-  const result = (0, import_node_child_process23.spawnSync)(realGh(), args, {
+  const result = (0, import_node_child_process24.spawnSync)(realGh(), args, {
     encoding: "utf8",
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
@@ -73105,7 +73401,7 @@ function createIdentityCommand() {
     const role = processAgentRole(process.env, map2);
     const report = {
       path: file2,
-      present: (0, import_node_fs23.existsSync)(file2),
+      present: (0, import_node_fs24.existsSync)(file2),
       valid: map2 !== null,
       version: map2?.version ?? null,
       default: map2?.default ?? null,
@@ -73192,7 +73488,7 @@ function createIdentityCommand() {
     }
     let text = "";
     try {
-      text = (0, import_node_fs23.readFileSync)(0, "utf8");
+      text = (0, import_node_fs24.readFileSync)(0, "utf8");
     } catch {
       return;
     }
@@ -73218,7 +73514,7 @@ function createIdentityCommand() {
     let body = opts.body ?? "";
     if (opts.bodyFile) {
       try {
-        body = (0, import_node_fs23.readFileSync)(opts.bodyFile, "utf8");
+        body = (0, import_node_fs24.readFileSync)(opts.bodyFile, "utf8");
       } catch (error51) {
         fail2(`cannot read --body-file: ${error51.message}`);
       }
@@ -73280,6 +73576,24 @@ function createIdentityCommand() {
     const resolved = resolveGhTarget(opts.argv, opts.cwd);
     console.log(JSON.stringify(resolved));
     if (resolved.error || !resolved.pr || !resolved.repo) process.exit(1);
+  });
+  identity.command("pr-link").description("Link a PR that `gh pr create` just opened to its Substrate Issue (called by the gh shim)").requiredOption("--argv <json>", "The gh argv the shim received, as a JSON array").option("--stdout <text>", "The captured `gh pr create` stdout", "").option("--cwd <dir>", "Directory for git and sb", process.cwd()).option("--json", "Emit JSON", false).action((opts) => {
+    const emit = (result) => {
+      console.log(JSON.stringify(result, null, opts.json ? 2 : 0));
+      process.exit(result.attached ? 0 : 1);
+    };
+    let argv;
+    try {
+      const parsed = JSON.parse(opts.argv);
+      if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+        throw new Error("the argv must be a JSON array of strings");
+      }
+      argv = parsed;
+    } catch (error51) {
+      emit({ attached: false, warning: `cannot read the gh argv: ${error51.message}` });
+      return;
+    }
+    emit(linkCreatedPr(opts.stdout, argv, { cwd: opts.cwd }));
   });
   identity.command("merge-check").description("Allow or refuse a merge: the reviewer App's latest review must be at the current head").option("--repo <owner/name>", "Repository (with --pr)").option("--pr <number>", "Pull request number (with --repo)").option("--gh-args <json>", "A gh argv as a JSON array; the target is resolved the way gh resolves it").option("--cwd <dir>", "Directory for the cwd-PR fallback", process.cwd()).option("--json", "Emit JSON", false).action(async (opts) => {
     let repo = (opts.repo ?? "").trim();
@@ -73369,13 +73683,13 @@ function createIdentityCommand() {
     const home = import_node_os26.default.homedir();
     const file2 = roleMapPath(home);
     let roleMapWritten = false;
-    if (!(0, import_node_fs23.existsSync)(file2)) {
-      (0, import_node_fs23.mkdirSync)(import_node_path47.default.dirname(file2), { recursive: true });
-      (0, import_node_fs23.writeFileSync)(file2, `${JSON.stringify(DEFAULT_ROLE_MAP, null, 4)}
+    if (!(0, import_node_fs24.existsSync)(file2)) {
+      (0, import_node_fs24.mkdirSync)(import_node_path47.default.dirname(file2), { recursive: true });
+      (0, import_node_fs24.writeFileSync)(file2, `${JSON.stringify(DEFAULT_ROLE_MAP, null, 4)}
 `);
       roleMapWritten = true;
     }
-    (0, import_node_fs23.mkdirSync)(githubAppPaths(home).identitiesDir, { recursive: true });
+    (0, import_node_fs24.mkdirSync)(githubAppPaths(home).identitiesDir, { recursive: true });
     const routing = installRoutingReminder(home);
     const shim = installGhShim({ home, binDir: opts.binDir });
     const report = {
@@ -73615,16 +73929,16 @@ function isCacheValid(cache, entries, ttlMs = DEFAULT_TTL_MS) {
 
 // src/commands/docs-cross-check-gh.ts
 init_kleur();
-var import_node_child_process24 = require("child_process");
+var import_node_child_process25 = require("child_process");
 function isGhAvailable() {
-  return (0, import_node_child_process24.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
+  return (0, import_node_child_process25.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
 }
 function fetchRecentPrs(repoRoot, days) {
   if (!isGhAvailable()) {
     console.log(kleur_default.yellow("  \u26A0 gh CLI not found \u2014 skipping PR data (install gh to enable cross-check)"));
     return [];
   }
-  const r = (0, import_node_child_process24.spawnSync)("gh", [
+  const r = (0, import_node_child_process25.spawnSync)("gh", [
     "pr",
     "list",
     "--state",
@@ -73654,12 +73968,12 @@ function fetchRecentPrs(repoRoot, days) {
 }
 
 // src/commands/docs-cross-check-bd.ts
-var import_node_child_process25 = require("child_process");
+var import_node_child_process26 = require("child_process");
 init_kleur();
 var _bdAvailable = null;
 function isBdAvailable() {
   if (_bdAvailable !== null) return _bdAvailable;
-  const r = (0, import_node_child_process25.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
+  const r = (0, import_node_child_process26.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
   _bdAvailable = r.status === 0;
   return _bdAvailable;
 }
@@ -73671,7 +73985,7 @@ function fetchClosedBdIssues(days) {
     logBdWarning("fetchClosedBdIssues: bd CLI not available, skipping issue fetch");
     return [];
   }
-  const r = (0, import_node_child_process25.spawnSync)("bd", [
+  const r = (0, import_node_child_process26.spawnSync)("bd", [
     "query",
     `status=closed AND updated>${days}d`,
     "--json"
@@ -74199,8 +74513,8 @@ ${content}`;
 
 // src/commands/debug.ts
 init_kleur();
-var import_node_child_process26 = require("child_process");
-var import_node_fs24 = require("fs");
+var import_node_child_process27 = require("child_process");
+var import_node_fs25 = require("fs");
 var import_node_path48 = require("path");
 var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
 var committedColor = (s) => s === "ACMT-" ? kleur_default.red(s) : kleur_default.cyan(s);
@@ -74320,7 +74634,7 @@ function formatLine(event, colorMap) {
 function findDbPath(cwd) {
   let dir = cwd;
   for (let i = 0; i < 10; i++) {
-    if ((0, import_node_fs24.existsSync)((0, import_node_path48.join)(dir, ".beads"))) return (0, import_node_path48.join)(dir, ".xtrm", "debug.db");
+    if ((0, import_node_fs25.existsSync)((0, import_node_path48.join)(dir, ".beads"))) return (0, import_node_path48.join)(dir, ".xtrm", "debug.db");
     const parent = (0, import_node_path48.join)(dir, "..");
     if (parent === dir) break;
     dir = parent;
@@ -74342,7 +74656,7 @@ function buildWhere(opts, base) {
 }
 function queryEvents(dbPath, where, limit) {
   const sql = `SELECT id,ts,session_id,runtime,worktree,kind,tool_name,outcome,issue_id,duration_ms,data FROM events${where ? ` WHERE ${where}` : ""} ORDER BY id ASC LIMIT ${limit}`;
-  const result = (0, import_node_child_process26.spawnSync)("sqlite3", [dbPath, "-json", sql], {
+  const result = (0, import_node_child_process27.spawnSync)("sqlite3", [dbPath, "-json", sql], {
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf8",
     timeout: 5e3
@@ -74382,7 +74696,7 @@ function createDebugCommand() {
   return new Command("debug").description("Watch xtrm events: tool calls, gate decisions, issue lifecycle").option("-f, --follow", "Follow new events (default)", false).option("--all", "Show full history and exit", false).option("--session <id>", "Filter by session ID (prefix match)").option("--type <domain>", "Filter by domain: tool | gate | bd | session (bd reads legacy Beads event history)").option("--json", "Output raw JSON lines", false).action((opts) => {
     const cwd = process.cwd();
     const dbPath = findDbPath(cwd);
-    if (!dbPath || !(0, import_node_fs24.existsSync)(dbPath)) return;
+    if (!dbPath || !(0, import_node_fs25.existsSync)(dbPath)) return;
     if (opts.all) {
       const events = queryEvents(dbPath, buildWhere(opts, ""), 1e3);
       const colorMap = buildColorMap(events);
@@ -74399,9 +74713,9 @@ function createDebugCommand() {
 init_kleur();
 var import_fs_extra44 = __toESM(require_lib(), 1);
 var import_path25 = __toESM(require("path"), 1);
-var import_node_child_process27 = require("child_process");
+var import_node_child_process28 = require("child_process");
 function run3(cmd, args, cwd) {
-  const r = (0, import_node_child_process27.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process28.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function detectDefaultBranch(cwd) {
@@ -75279,7 +75593,7 @@ function createSkillsCommand() {
 // src/commands/claude-sync.ts
 var import_fs_extra46 = __toESM(require_lib(), 1);
 var import_node_path50 = __toESM(require("path"), 1);
-var import_node_child_process28 = require("child_process");
+var import_node_child_process29 = require("child_process");
 init_kleur();
 var SENTINEL_RE = /<!-- XTRM-MANAGED:(\S+) start v=(\S+) -->\n([\s\S]*?)\n<!-- XTRM-MANAGED:\1 end -->/g;
 function parseFrontmatter2(text) {
@@ -75370,7 +75684,7 @@ function renderFragmentBody(frag, ctx) {
 function detectRepoContext(cwd) {
   let repoName = import_node_path50.default.basename(cwd);
   try {
-    const top = (0, import_node_child_process28.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const top = (0, import_node_child_process29.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (top) repoName = import_node_path50.default.basename(top);
   } catch {
   }
@@ -75572,7 +75886,7 @@ Run: xt claude-sync --apply --accept-overwrite`));
 // src/commands/doctor.ts
 var import_fs_extra49 = __toESM(require_lib(), 1);
 var import_node_path55 = __toESM(require("path"), 1);
-var import_node_child_process30 = require("child_process");
+var import_node_child_process31 = require("child_process");
 init_kleur();
 var import_cli_table3 = __toESM(require_cli_table3(), 1);
 
@@ -75941,7 +76255,7 @@ async function auditSettings(opts) {
 }
 
 // src/core/claude-channel-status.ts
-var import_node_fs25 = require("fs");
+var import_node_fs26 = require("fs");
 var import_node_os29 = require("os");
 var import_node_path53 = __toESM(require("path"), 1);
 function defaultManagedSettingsPath(platform = process.platform) {
@@ -75975,7 +76289,7 @@ function getClaudeChannelStatus(paths) {
   }
   let raw;
   try {
-    raw = (0, import_node_fs25.readFileSync)(paths.managedSettingsPath, "utf8");
+    raw = (0, import_node_fs26.readFileSync)(paths.managedSettingsPath, "utf8");
   } catch (err) {
     if (err?.code === "ENOENT") {
       return status(
@@ -76033,8 +76347,8 @@ function getClaudeChannelStatus(paths) {
 }
 
 // src/utils/npm-latest.ts
-var import_node_fs26 = require("fs");
-var import_node_child_process29 = require("child_process");
+var import_node_fs27 = require("fs");
+var import_node_child_process30 = require("child_process");
 var import_node_path54 = __toESM(require("path"), 1);
 var import_node_os30 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
@@ -76050,7 +76364,7 @@ function defaultCacheFile() {
 }
 function readCache2(file2) {
   try {
-    const raw = (0, import_node_fs26.readFileSync)(file2, "utf8");
+    const raw = (0, import_node_fs27.readFileSync)(file2, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
     return {};
@@ -76060,13 +76374,13 @@ function readCache2(file2) {
 }
 function writeCache2(file2, data) {
   try {
-    (0, import_node_fs26.mkdirSync)(import_node_path54.default.dirname(file2), { recursive: true });
-    (0, import_node_fs26.writeFileSync)(file2, JSON.stringify(data, null, 2));
+    (0, import_node_fs27.mkdirSync)(import_node_path54.default.dirname(file2), { recursive: true });
+    (0, import_node_fs27.writeFileSync)(file2, JSON.stringify(data, null, 2));
   } catch {
   }
 }
 function defaultNpmView(pkg) {
-  const result = (0, import_node_child_process29.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
+  const result = (0, import_node_child_process30.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -76076,7 +76390,7 @@ function defaultNpmView(pkg) {
   return v.length > 0 ? v : null;
 }
 function defaultInstalledResolver(pkg) {
-  const rootResult = (0, import_node_child_process29.spawnSync)("npm", ["root", "-g"], {
+  const rootResult = (0, import_node_child_process30.spawnSync)("npm", ["root", "-g"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -76086,12 +76400,12 @@ function defaultInstalledResolver(pkg) {
   if (!globalRoot) return null;
   const packageJsonPath = import_node_path54.default.join(globalRoot, pkg, "package.json");
   try {
-    (0, import_node_fs26.statSync)(packageJsonPath);
+    (0, import_node_fs27.statSync)(packageJsonPath);
   } catch {
     return null;
   }
   try {
-    const parsed = JSON.parse((0, import_node_fs26.readFileSync)(packageJsonPath, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs27.readFileSync)(packageJsonPath, "utf8"));
     return typeof parsed.version === "string" ? parsed.version : null;
   } catch {
     return null;
@@ -76181,7 +76495,7 @@ ${kleur_default.bold(`\u2500\u2500 ${label} ${line}`)}`);
 function runSelfCheck(cwd) {
   const cliEntry = process.argv[1];
   if (!cliEntry) return null;
-  const result = (0, import_node_child_process30.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
+  const result = (0, import_node_child_process31.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -76691,9 +77005,9 @@ function createDoctorCommand() {
 ${kleur_default.bold("xt doctor")}
 `);
     section2("Runtime availability");
-    const claudeAvailable = (0, import_node_child_process30.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
-    const piAvailable = (0, import_node_child_process30.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
-    const pnpmAvailable = (0, import_node_child_process30.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
+    const claudeAvailable = (0, import_node_child_process31.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
+    const piAvailable = (0, import_node_child_process31.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
+    const pnpmAvailable = (0, import_node_child_process31.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
     claudeAvailable ? ok("claude CLI available") : warn(CLAUDE_CLI_MISSING_MESSAGE);
     if (satisfiesNodeFloor()) {
       ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
@@ -76778,7 +77092,7 @@ function createBootstrapCommand() {
 
 // src/commands/update.ts
 init_kleur();
-var import_node_child_process31 = require("child_process");
+var import_node_child_process32 = require("child_process");
 var import_node_path59 = __toESM(require("path"), 1);
 var import_fs_extra54 = __toESM(require_lib(), 1);
 
@@ -77272,7 +77586,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process31.spawnSync)("git", args, {
+  return (0, import_node_child_process32.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -77381,24 +77695,24 @@ function createUpdateCommand() {
 
 // src/commands/release.ts
 init_kleur();
-var import_node_fs28 = require("fs");
-var import_node_child_process33 = require("child_process");
+var import_node_fs29 = require("fs");
+var import_node_child_process34 = require("child_process");
 var import_node_path61 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
-var import_node_fs27 = require("fs");
-var import_node_child_process32 = require("child_process");
+var import_node_fs28 = require("fs");
+var import_node_child_process33 = require("child_process");
 var import_node_path60 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process32.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process33.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
 }
 function listReportFiles(rootDir) {
-  return (0, import_node_fs27.readdirSync)(import_node_path60.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path60.default.join(REPORT_DIR, entry));
+  return (0, import_node_fs28.readdirSync)(import_node_path60.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path60.default.join(REPORT_DIR, entry));
 }
 function isDateInRange(date5, since, to) {
   return date5 >= since && date5 <= to;
@@ -77412,7 +77726,7 @@ function listXtReports(options) {
     const date5 = file2.slice(0, 10);
     return { file: relativePath, date: date5, bytes: 0, content: "" };
   }).filter((report) => isDateInRange(report.date, sinceDate, toDate)).map((report) => {
-    const content = (0, import_node_fs27.readFileSync)(import_node_path60.default.join(rootDir, report.file), "utf8");
+    const content = (0, import_node_fs28.readFileSync)(import_node_path60.default.join(rootDir, report.file), "utf8");
     return {
       ...report,
       bytes: Buffer.byteLength(content, "utf8"),
@@ -77461,7 +77775,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process33.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process34.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -77474,7 +77788,7 @@ function getLatestTag(cwd) {
   return "HEAD~1";
 }
 function getPackageVersion(cwd) {
-  return JSON.parse((0, import_node_fs28.readFileSync)(import_node_path61.default.join(cwd, "cli", "package.json"), "utf8")).version;
+  return JSON.parse((0, import_node_fs29.readFileSync)(import_node_path61.default.join(cwd, "cli", "package.json"), "utf8")).version;
 }
 function getReleaseTag(cwd) {
   return `v${getPackageVersion(cwd)}`;
@@ -78314,7 +78628,7 @@ function renderHuman2(report) {
 init_kleur();
 var import_fs_extra60 = __toESM(require_lib(), 1);
 var import_node_path67 = __toESM(require("path"), 1);
-var import_node_child_process36 = require("child_process");
+var import_node_child_process37 = require("child_process");
 var import_yaml5 = __toESM(require_dist3(), 1);
 
 // src/spec/xml.ts
@@ -78385,10 +78699,10 @@ function toChangeContractNode({ spec, effectiveScrutiny }) {
 }
 
 // src/spec/dispatch.ts
-var import_node_child_process34 = require("child_process");
+var import_node_child_process35 = require("child_process");
 function dispatchPlanner(plannerBeadId, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
-  const r = (0, import_node_child_process34.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
+  const r = (0, import_node_child_process35.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
     encoding: "utf8"
   });
   if (r.status !== 0) {
@@ -78569,7 +78883,7 @@ function createSpecApplyCommand() {
 }
 function bdCreatePlannerBead(args) {
   const bd2 = process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process36.spawnSync)(
+  const r = (0, import_node_child_process37.spawnSync)(
     bd2,
     ["create", "--type", "task", "--priority", "1", "--title", args.title, "--description", args.description, "--json"],
     { encoding: "utf8" }
@@ -78592,7 +78906,7 @@ var import_node_path68 = __toESM(require("path"), 1);
 var import_yaml6 = __toESM(require_dist3(), 1);
 
 // src/spec/drift.ts
-var import_node_child_process37 = require("child_process");
+var import_node_child_process38 = require("child_process");
 async function computeStatus(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const epic = spec.links.epic ?? null;
@@ -78642,7 +78956,7 @@ async function computeStatus(spec, opts = {}) {
   };
 }
 function bdShow(bd2, id) {
-  const r = (0, import_node_child_process37.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process38.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout);
@@ -78651,7 +78965,7 @@ function bdShow(bd2, id) {
   }
 }
 function bdChildrenDiff(bd2, epic, knownChildren) {
-  const r = (0, import_node_child_process37.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process38.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -78662,7 +78976,7 @@ function bdChildrenDiff(bd2, epic, knownChildren) {
   }
 }
 function bdCycles(bd2, epic) {
-  const r = (0, import_node_child_process37.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process38.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -78729,7 +79043,7 @@ var import_node_path69 = __toESM(require("path"), 1);
 var import_yaml7 = __toESM(require_dist3(), 1);
 
 // src/spec/archive-gate.ts
-var import_node_child_process38 = require("child_process");
+var import_node_child_process39 = require("child_process");
 async function checkArchiveGate(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const failures = [];
@@ -78774,7 +79088,7 @@ async function checkArchiveGate(spec, opts = {}) {
   return { ok: failures.length === 0, failures };
 }
 function bdStatus(bd2, id) {
-  const r = (0, import_node_child_process38.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process39.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout).status ?? null;
@@ -78783,7 +79097,7 @@ function bdStatus(bd2, id) {
   }
 }
 function bdKv(bd2, key) {
-  const r = (0, import_node_child_process38.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
+  const r = (0, import_node_child_process39.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
   if (r.status !== 0) return null;
   const value = r.stdout.trim();
   return value.length > 0 ? value : null;
@@ -79775,9 +80089,9 @@ function createMigrateCommand() {
 }
 
 // src/commands/version.ts
-var import_node_fs29 = require("fs");
+var import_node_fs30 = require("fs");
 var import_node_path71 = require("path");
-var import_node_child_process39 = require("child_process");
+var import_node_child_process40 = require("child_process");
 init_kleur();
 function readInstallPackageJson() {
   const candidates = [
@@ -79786,7 +80100,7 @@ function readInstallPackageJson() {
   ];
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse((0, import_node_fs29.readFileSync)(candidate, "utf8"));
+      const parsed = JSON.parse((0, import_node_fs30.readFileSync)(candidate, "utf8"));
       if (parsed?.name && parsed?.version) {
         return { name: parsed.name, version: parsed.version, root: (0, import_node_path71.dirname)(candidate) };
       }
@@ -79799,8 +80113,8 @@ function detectSource(installRoot) {
   return installRoot.split(import_node_path71.sep).includes("node_modules") ? "npm" : "local";
 }
 function readGitCommit(installRoot) {
-  if (!(0, import_node_fs29.existsSync)((0, import_node_path71.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process39.spawnSync)("git", ["rev-parse", "HEAD"], {
+  if (!(0, import_node_fs30.existsSync)((0, import_node_path71.resolve)(installRoot, ".git"))) return null;
+  const result = (0, import_node_child_process40.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -79809,8 +80123,8 @@ function readGitCommit(installRoot) {
   return result.stdout.trim() || null;
 }
 function readGitDirty(installRoot) {
-  if (!(0, import_node_fs29.existsSync)((0, import_node_path71.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process39.spawnSync)("git", ["status", "--porcelain"], {
+  if (!(0, import_node_fs30.existsSync)((0, import_node_path71.resolve)(installRoot, ".git"))) return null;
+  const result = (0, import_node_child_process40.spawnSync)("git", ["status", "--porcelain"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -79820,7 +80134,7 @@ function readGitDirty(installRoot) {
 }
 function readBuiltAt(installRoot) {
   const distPath = (0, import_node_path71.resolve)(installRoot, "cli", "dist", "index.cjs");
-  if (!(0, import_node_fs29.existsSync)(distPath)) return null;
+  if (!(0, import_node_fs30.existsSync)(distPath)) return null;
   try {
     const stats = require("fs").statSync(distPath);
     return new Date(stats.mtime).toISOString();
@@ -79888,11 +80202,11 @@ function createVersionCommand() {
 init_kleur();
 
 // src/core/topology-projection.ts
-var import_node_child_process40 = require("child_process");
+var import_node_child_process41 = require("child_process");
 var import_node_os33 = require("os");
 var import_node_path72 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
-var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process40.execFile);
+var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process41.execFile);
 var SEP2 = "	";
 var PANE_FIELDS = [
   "pane_id",
@@ -80623,7 +80937,7 @@ init_kleur();
 
 // src/core/agent-host-auth.ts
 var import_node_crypto19 = require("crypto");
-var import_node_fs30 = require("fs");
+var import_node_fs31 = require("fs");
 var import_node_net = __toESM(require("net"), 1);
 var import_node_os34 = __toESM(require("os"), 1);
 var import_node_path73 = __toESM(require("path"), 1);
@@ -83134,12 +83448,12 @@ var DeviceAuthority = class {
   load() {
     let text;
     try {
-      text = (0, import_node_fs30.readFileSync)(this.storePath, "utf8");
+      text = (0, import_node_fs31.readFileSync)(this.storePath, "utf8");
     } catch (error51) {
       if (error51.code === "ENOENT") return [];
       throw error51;
     }
-    if (((0, import_node_fs30.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs30.chmodSync)(this.storePath, 384);
+    if (((0, import_node_fs31.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs31.chmodSync)(this.storePath, 384);
     const parsed = JSON.parse(text);
     if (parsed.schema !== STORE_SCHEMA || !Array.isArray(parsed.devices)) {
       throw new Error(`unrecognized device store ${this.storePath}`);
@@ -83149,12 +83463,12 @@ var DeviceAuthority = class {
     );
   }
   save() {
-    (0, import_node_fs30.mkdirSync)(import_node_path73.default.dirname(this.storePath), { recursive: true, mode: 448 });
+    (0, import_node_fs31.mkdirSync)(import_node_path73.default.dirname(this.storePath), { recursive: true, mode: 448 });
     const tmp = `${this.storePath}.${process.pid}.tmp`;
-    (0, import_node_fs30.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
+    (0, import_node_fs31.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
 `, { mode: 384 });
-    (0, import_node_fs30.chmodSync)(tmp, 384);
-    (0, import_node_fs30.renameSync)(tmp, this.storePath);
+    (0, import_node_fs31.chmodSync)(tmp, 384);
+    (0, import_node_fs31.renameSync)(tmp, this.storePath);
   }
 };
 function summary(device) {
@@ -83179,14 +83493,14 @@ function parsePairRequest(text) {
 }
 
 // src/core/agent-host.ts
-var import_node_fs36 = require("fs");
+var import_node_fs37 = require("fs");
 var import_node_http = __toESM(require("http"), 1);
 var import_node_net2 = __toESM(require("net"), 1);
 var import_node_os36 = __toESM(require("os"), 1);
 var import_node_path78 = __toESM(require("path"), 1);
 
 // src/core/agent-host-history.ts
-var import_node_fs31 = require("fs");
+var import_node_fs32 = require("fs");
 var import_node_readline = __toESM(require("readline"), 1);
 var HISTORY_STRING_MAX = 64 * 1024;
 var HISTORY_TYPES = /* @__PURE__ */ new Set(["message", "compaction"]);
@@ -83222,7 +83536,7 @@ function bound(value, cut) {
 async function readPiHistory(file2, sessionId) {
   const entries = [];
   let header = false;
-  const stream = (0, import_node_fs31.createReadStream)(file2, { encoding: "utf8", flags: "r" });
+  const stream = (0, import_node_fs32.createReadStream)(file2, { encoding: "utf8", flags: "r" });
   const lines = import_node_readline.default.createInterface({ input: stream, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
@@ -83278,8 +83592,8 @@ function activeBranch(entries) {
 
 // src/core/agent-host-launch.ts
 var import_node_crypto20 = require("crypto");
-var import_node_child_process41 = require("child_process");
-var import_node_fs32 = require("fs");
+var import_node_child_process42 = require("child_process");
+var import_node_fs33 = require("fs");
 var import_node_path74 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
 var PANE_SESSION_OPTION = "@xtrm_agent_session_id";
@@ -83307,7 +83621,7 @@ var LaunchRejection = class extends Error {
   code;
 };
 var runProcess = (file2, args, options) => new Promise((resolve6) => {
-  (0, import_node_child_process41.execFile)(
+  (0, import_node_child_process42.execFile)(
     file2,
     [...args],
     { cwd: options.cwd, env: options.env, timeout: options.timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8" },
@@ -83343,8 +83657,8 @@ function validateLaunchRequest(request) {
   if (!import_node_path74.default.isAbsolute(request.cwd)) throw new LaunchRejection("invalid_cwd", "cwd must be an absolute path");
   let cwd;
   try {
-    cwd = (0, import_node_fs32.realpathSync)(request.cwd);
-    if (!(0, import_node_fs32.statSync)(cwd).isDirectory()) throw new Error("not a directory");
+    cwd = (0, import_node_fs33.realpathSync)(request.cwd);
+    if (!(0, import_node_fs33.statSync)(cwd).isDirectory()) throw new Error("not a directory");
   } catch {
     throw new LaunchRejection("invalid_cwd", `cwd ${request.cwd} is not an existing directory`);
   }
@@ -83508,9 +83822,9 @@ function firstLine2(text) {
 }
 
 // src/core/agent-host-references.ts
-var import_node_child_process42 = require("child_process");
+var import_node_child_process43 = require("child_process");
 var import_node_crypto21 = require("crypto");
-var import_node_fs33 = require("fs");
+var import_node_fs34 = require("fs");
 var import_promises = require("fs/promises");
 var import_node_path75 = __toESM(require("path"), 1);
 var KB = 1024;
@@ -83622,7 +83936,7 @@ async function resolveFile(ref, cwd) {
   if (!isInside5(root, real)) throw new Unresolved("path_outside_cwd");
   let handle;
   try {
-    handle = await (0, import_promises.open)(real, import_node_fs33.constants.O_RDONLY | import_node_fs33.constants.O_NOFOLLOW | import_node_fs33.constants.O_NONBLOCK);
+    handle = await (0, import_promises.open)(real, import_node_fs34.constants.O_RDONLY | import_node_fs34.constants.O_NOFOLLOW | import_node_fs34.constants.O_NONBLOCK);
   } catch {
     throw new Unresolved("file_unreadable");
   }
@@ -83739,7 +84053,7 @@ ${statText}
 }
 function git5(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process42.execFile)(
+    (0, import_node_child_process43.execFile)(
       "git",
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
       {
@@ -83882,7 +84196,7 @@ function bounded(value) {
 }
 
 // src/core/agent-host-origin.ts
-var import_node_fs34 = require("fs");
+var import_node_fs35 = require("fs");
 var import_node_path76 = __toESM(require("path"), 1);
 var COORDINATION_TOOLS = [
   // First-party coordination tools (CORE-2443 M1: pi-intercom and
@@ -83906,7 +84220,7 @@ var UNKNOWN = "unknown";
 var CLAUDE_SUBAGENT_TOOLS = /* @__PURE__ */ new Set(["Agent", "Task"]);
 function readManifest(baseDir) {
   try {
-    const parsed = JSON.parse((0, import_node_fs34.readFileSync)(import_node_path76.default.join(baseDir, "package.json"), "utf8"));
+    const parsed = JSON.parse((0, import_node_fs35.readFileSync)(import_node_path76.default.join(baseDir, "package.json"), "utf8"));
     return {
       ...typeof parsed.name === "string" && parsed.name ? { name: parsed.name } : {},
       ...typeof parsed.version === "string" && parsed.version ? { version: parsed.version } : {}
@@ -84929,8 +85243,8 @@ function boundText(text) {
 }
 
 // src/core/agent-host-session-index.ts
-var import_node_child_process43 = require("child_process");
-var import_node_fs35 = require("fs");
+var import_node_child_process44 = require("child_process");
+var import_node_fs36 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os35 = __toESM(require("os"), 1);
 var import_node_path77 = __toESM(require("path"), 1);
@@ -85061,7 +85375,7 @@ var SessionIndex = class {
     this.scheduleCacheWrite();
   }
   watchRoot(root) {
-    if ((0, import_node_fs35.existsSync)(root.dir)) {
+    if ((0, import_node_fs36.existsSync)(root.dir)) {
       this.watchDir(root.dir, (name) => {
         if (name) void this.addProjectDir(root, import_node_path77.default.join(root.dir, name));
       });
@@ -85105,7 +85419,7 @@ var SessionIndex = class {
     for (; ; ) {
       current = import_node_path77.default.dirname(current);
       try {
-        if ((0, import_node_fs35.statSync)(current).isDirectory()) return current;
+        if ((0, import_node_fs36.statSync)(current).isDirectory()) return current;
       } catch {
       }
       if (import_node_path77.default.dirname(current) === current) return current;
@@ -85137,7 +85451,7 @@ var SessionIndex = class {
   watchDir(dir, onEvent) {
     if (this.closed || this.watchers.has(dir)) return;
     try {
-      const watcher = (0, import_node_fs35.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
+      const watcher = (0, import_node_fs36.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
       watcher.on("error", (error51) => {
         this.log(`session index: watcher for ${dir} failed: ${error51.message}`);
         watcher.close();
@@ -85411,7 +85725,7 @@ function remoteUrl(configOut) {
 }
 function git6(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process43.execFile)(
+    (0, import_node_child_process44.execFile)(
       "git",
       ["-C", cwd, ...args],
       // SIGKILL: execFile's timeout only signals; a child ignoring SIGTERM kept the callback pending.
@@ -85580,7 +85894,7 @@ function bounded2(value, max) {
 }
 
 // src/core/topology-feed.ts
-var import_node_child_process44 = require("child_process");
+var import_node_child_process45 = require("child_process");
 var import_node_crypto22 = require("crypto");
 var import_node_readline2 = require("readline");
 var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
@@ -85833,7 +86147,7 @@ var TopologyFeed = class {
     if (!target) return;
     const env3 = { ...process.env };
     delete env3.TMUX;
-    const child = (0, import_node_child_process44.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
+    const child = (0, import_node_child_process45.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
       stdio: ["pipe", "pipe", "ignore"],
       env: env3
     });
@@ -85917,7 +86231,7 @@ function agentSessionsByPane(sessions) {
 }
 function readAgentHostInfo(infoPath = defaultInfoPath()) {
   try {
-    return JSON.parse((0, import_node_fs36.readFileSync)(infoPath, "utf8"));
+    return JSON.parse((0, import_node_fs37.readFileSync)(infoPath, "utf8"));
   } catch {
     return null;
   }
@@ -86005,7 +86319,7 @@ async function startAgentHost(options = {}) {
     }
   });
   await listen(socketServer, socketPath);
-  (0, import_node_fs36.chmodSync)(socketPath, 384);
+  (0, import_node_fs37.chmodSync)(socketPath, 384);
   const httpServer = import_node_http.default.createServer((req, res) => {
     handleRequest(req, res).catch((error51) => {
       log(`request failed: ${error51.message}`);
@@ -86402,8 +86716,8 @@ data: ${JSON.stringify(message)}
 }
 async function claimSocketPath(socketPath) {
   const dir = import_node_path78.default.dirname(socketPath);
-  (0, import_node_fs36.mkdirSync)(dir, { recursive: true, mode: 448 });
-  if (!(0, import_node_fs36.existsSync)(socketPath)) return;
+  (0, import_node_fs37.mkdirSync)(dir, { recursive: true, mode: 448 });
+  if (!(0, import_node_fs37.existsSync)(socketPath)) return;
   const alive = await new Promise((resolve6) => {
     const probe2 = import_node_net2.default.connect(socketPath);
     probe2.once("connect", () => {
@@ -86413,14 +86727,14 @@ async function claimSocketPath(socketPath) {
     probe2.once("error", () => resolve6(false));
   });
   if (alive) throw new Error(`an agent host is already listening on ${socketPath}`);
-  (0, import_node_fs36.unlinkSync)(socketPath);
+  (0, import_node_fs37.unlinkSync)(socketPath);
 }
 function writeInfoFile(infoPath, info) {
-  (0, import_node_fs36.mkdirSync)(import_node_path78.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs37.mkdirSync)(import_node_path78.default.dirname(infoPath), { recursive: true, mode: 448 });
   const tmp = `${infoPath}.${process.pid}.tmp`;
-  (0, import_node_fs36.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
+  (0, import_node_fs37.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
 `, { mode: 384 });
-  (0, import_node_fs36.renameSync)(tmp, infoPath);
+  (0, import_node_fs37.renameSync)(tmp, infoPath);
 }
 function apiError(code, message) {
   return { schema: "xtrm.agent-host-api.v1", kind: "error", code, message: message.slice(0, 1024) };
@@ -86452,15 +86766,15 @@ function closeServer(server) {
 }
 function safeUnlink(file2) {
   try {
-    (0, import_node_fs36.unlinkSync)(file2);
+    (0, import_node_fs37.unlinkSync)(file2);
   } catch {
   }
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process45 = require("child_process");
+var import_node_child_process46 = require("child_process");
 var import_node_crypto23 = require("crypto");
-var import_node_fs37 = require("fs");
+var import_node_fs38 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path79 = __toESM(require("path"), 1);
 var AGENT_HOST_ENSURE_SCHEMA = "xtrm.agent-host-ensure.v1";
@@ -86563,7 +86877,7 @@ async function ensureAgentHost(options = {}) {
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const running = await liveHost(infoPath);
   if (running) return { info: running, started: false };
-  (0, import_node_fs37.mkdirSync)(import_node_path79.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs38.mkdirSync)(import_node_path79.default.dirname(infoPath), { recursive: true, mode: 448 });
   const release = await acquireLock(`${infoPath}.lock`, deadline);
   try {
     const started = await liveHost(infoPath);
@@ -86578,17 +86892,17 @@ async function ensureAgentHost(options = {}) {
 function openHostLog(logPath, maxBytes = MAX_LOG_BYTES) {
   let size = 0;
   try {
-    size = (0, import_node_fs37.statSync)(logPath).size;
+    size = (0, import_node_fs38.statSync)(logPath).size;
   } catch {
   }
   if (size > maxBytes) {
     try {
-      (0, import_node_fs37.renameSync)(logPath, `${logPath}.1`);
+      (0, import_node_fs38.renameSync)(logPath, `${logPath}.1`);
       size = 0;
     } catch {
     }
   }
-  return { fd: (0, import_node_fs37.openSync)(logPath, "a", 384), start: size };
+  return { fd: (0, import_node_fs38.openSync)(logPath, "a", 384), start: size };
 }
 async function startDetachedHost(infoPath, options, deadline, log) {
   const [command, ...entry] = options.xtCommand ?? [process.execPath, process.argv[1] ?? ""];
@@ -86596,13 +86910,13 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const { fd: logFd, start: logStart } = openHostLog(logPath);
   let child;
   try {
-    child = (0, import_node_child_process45.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process46.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? hostSpawnEnv(process.env)
     });
   } finally {
-    (0, import_node_fs37.closeSync)(logFd);
+    (0, import_node_fs38.closeSync)(logFd);
   }
   let exit = null;
   let spawnError = null;
@@ -86632,7 +86946,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
 }
 function logTail(logPath, from) {
   try {
-    const text = (0, import_node_fs37.readFileSync)(logPath).subarray(from).toString("utf8").trim();
+    const text = (0, import_node_fs38.readFileSync)(logPath).subarray(from).toString("utf8").trim();
     return text ? `: ${text.slice(-LOG_TAIL_BYTES)}` : "";
   } catch {
     return "";
@@ -86642,7 +86956,7 @@ async function acquireLock(lockPath, deadline) {
   const token = `${process.pid} ${(0, import_node_crypto23.randomUUID)()}`;
   for (; ; ) {
     try {
-      (0, import_node_fs37.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
+      (0, import_node_fs38.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
       return () => {
         if (readText(lockPath) === token) safeUnlink2(lockPath);
       };
@@ -86664,20 +86978,20 @@ function breakStaleLock(lockPath) {
     if (pidAlive(holder)) return;
   } else {
     try {
-      if (Date.now() - (0, import_node_fs37.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
+      if (Date.now() - (0, import_node_fs38.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
     } catch {
       return;
     }
   }
   const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto23.randomUUID)()}.stale`;
   try {
-    (0, import_node_fs37.renameSync)(lockPath, aside);
+    (0, import_node_fs38.renameSync)(lockPath, aside);
   } catch {
     return;
   }
   if (readText(aside) !== content) {
     try {
-      (0, import_node_fs37.linkSync)(aside, lockPath);
+      (0, import_node_fs38.linkSync)(aside, lockPath);
     } catch {
     }
   }
@@ -86685,14 +86999,14 @@ function breakStaleLock(lockPath) {
 }
 function readText(file2) {
   try {
-    return (0, import_node_fs37.readFileSync)(file2, "utf8");
+    return (0, import_node_fs38.readFileSync)(file2, "utf8");
   } catch {
     return null;
   }
 }
 function safeUnlink2(file2) {
   try {
-    (0, import_node_fs37.unlinkSync)(file2);
+    (0, import_node_fs38.unlinkSync)(file2);
   } catch {
   }
 }
@@ -87012,7 +87326,7 @@ async function printBanner(version3) {
 // src/index.ts
 var version2 = "0.0.0";
 try {
-  version2 = JSON.parse((0, import_node_fs38.readFileSync)((0, import_node_path80.resolve)(__dirname, "../package.json"), "utf8")).version;
+  version2 = JSON.parse((0, import_node_fs39.readFileSync)((0, import_node_path80.resolve)(__dirname, "../package.json"), "utf8")).version;
 } catch {
 }
 var program2 = new Command();
