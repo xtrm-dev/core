@@ -235,9 +235,15 @@ export const TMUX_SESSION_ID_PATTERN = /^\$(\d+)$/;
  * exactly how it was misdiagnosed as a quoting bug (CORE-2618, closed invalid).
  */
 export function markerRunVerdict(run: string | null | undefined): string | null {
-    const value = (run ?? '').trim();
+    // Quoted forms are what a shell writes when it does not expand `$1`:
+    // run="$1" reaches the marker with the quotes intact, and it is the same
+    // mistaken value (CORE-2622 review). Strip one matched pair for the test,
+    // but report the value as written, so the refusal reads like the marker.
+    const raw = (run ?? '').trim();
+    const quoted = /^(?:"([^"]*)"|'([^']*)')$/.exec(raw);
+    const value = (quoted ? (quoted[1] ?? quoted[2] ?? '') : raw).trim();
     if (!value || !TMUX_SESSION_ID_PATTERN.test(value)) return null;
-    return `run=${value} is a tmux session id (XTRM_SESSION_ID), which every window`
+    return `run=${raw} is a tmux session id (XTRM_SESSION_ID), which every window`
         + ' in that tmux session shares, so it cannot attribute this run; use the worker\'s own'
         + ' runtime session id — PI_SESSION_ID for Pi, the Claude session id for Claude';
 }

@@ -37,7 +37,6 @@ function fixtureGitEnv(): NodeJS.ProcessEnv {
     return env;
 }
 
-const gitEnv = fixtureGitEnv();
 function git(cwd: string, ...args: string[]): string {
     // Per call, not once at module load: a test can export an identity and this
     // helper must still produce the fixture's author.

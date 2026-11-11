@@ -222,6 +222,13 @@ if (argv[0] === 'identity' && argv[1] === 'pr-link') {
 if (argv[0] === 'identity' && argv[1] === 'marker-check') {
   // CORE-2619: the REAL marker check runs, so the refusal text and the $N rule
   // are the shipped ones; the shim test asserts what happens to the create.
+  // CORE-2622: absent and hung xt are the fail-open cases.
+  if (process.env.STUB_XT_MARKER === 'absent') process.exit(127);
+  if (process.env.STUB_XT_MARKER === 'hang') {
+    // Longer than the shim's MARKER_CHECK_TIMEOUT_MS, so the shim kills it.
+    setTimeout(() => process.exit(0), 8000);
+    return;
+  }
   const result = runDist(['identity', 'marker-check', ...argv.slice(2)]);
   process.stdout.write(result.stdout || '');
   process.stderr.write(result.stderr || '');
@@ -896,4 +903,50 @@ describe('a tmux session id in the marker run= is refused before the create (COR
         expect(result.status).toBe(0);
         expect(result.stdout).toBe(CREATE_STDOUT);
     });
+
+    it('refuses a quoted tmux id, which a shell leaves unexpanded (CORE-2622)', () => {
+        const quoted = '<!-- xtrm issue=CORE-2622 holder=pi152-core run="$1" -->';
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', quoted], { HOME: root });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('run="$1" is a tmux session id');
+    });
+
+    it('refuses the same marker set through gh pr edit (CORE-2622)', () => {
+        const result = runShim(['pr', 'edit', '5', '--body', TMUX_RUN], { HOME: root });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('refusing to edit the pull request');
+        expect(result.stderr).toContain('PI_SESSION_ID');
+        // The real gh never ran, so nothing was edited.
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'edit')).toHaveLength(0);
+    });
+
+    it('lets a gh pr edit that sets no body through untouched', () => {
+        const result = runShim(['pr', 'edit', '5', '--title', 'renamed'], { HOME: root });
+        // The real gh ran with the caller's status and no refusal on stderr.
+        expect(result.status).toBe(0);
+        expect(result.stderr).not.toContain('refusing to');
+    });
+
+    it('proceeds when xt is absent (fail-open, not fail-closed)', () => {
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', TMUX_RUN], { HOME: root, STUB_XT_MARKER: 'absent' });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(result.stderr).not.toContain('refusing to create');
+    });
+
+    it('proceeds when xt hangs past the marker budget (fail-open)', () => {
+        // The budget is 4 s in production and the stub sleeps 8 s, which would
+        // hold a CI runner for the whole budget; the clamp knob makes the same
+        // branch reachable in ~300 ms without weakening what is asserted.
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', TMUX_RUN], {
+            HOME: root,
+            STUB_XT_MARKER: 'hang',
+            XTRM_MARKER_CHECK_TIMEOUT_MS: '300',
+        });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(result.stderr).not.toContain('refusing to create');
+    }, 20_000);
 });

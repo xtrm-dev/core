@@ -43,6 +43,19 @@ describe('markerRunVerdict', () => {
         expect(markerRunVerdict('  0b7e4a  ')).toBeNull();
     });
 
+    it('refuses a quoted tmux session id (CORE-2622)', () => {
+        // A shell that does not expand $1 writes the quotes into the marker.
+        for (const value of ['"$1"', "'$1'", ' " $7 " ']) {
+            expect(markerRunVerdict(value)).toContain('tmux session id');
+        }
+        // The refusal reads like the marker, so the quote style survives into it.
+        expect(markerRunVerdict('"$1"')).toContain('run="$1" is a tmux session id');
+    });
+
+    it('accepts a quoted runtime session id', () => {
+        expect(markerRunVerdict(`"${RUN_UUID}"`)).toBeNull();
+    });
+
     it('leaves an absent run= to the other marker rules', () => {
         expect(markerRunVerdict(undefined)).toBeNull();
         expect(markerRunVerdict(null)).toBeNull();
@@ -79,6 +92,12 @@ describe('markerRunRefusal', () => {
     it('accepts a runtime session id', () => {
         expect(markerRunRefusal(['pr', 'create', '--body', `<!-- xtrm issue=CORE-2619 holder=h run=${RUN_UUID} -->`], readFile))
             .toBeNull();
+    });
+
+    it('refuses a quoted run= in the body, and in an edit (CORE-2622)', () => {
+        const body = '<!-- xtrm issue=CORE-2622 holder=h run="$1" -->';
+        expect(markerRunRefusal(['pr', 'create', '--body', body], readFile)).toContain('PI_SESSION_ID');
+        expect(markerRunRefusal(['pr', 'edit', '5', '--body', body], readFile)).toContain('PI_SESSION_ID');
     });
 
     it('is not decided by a marker inside a code fence or in a quote', () => {
@@ -150,5 +169,17 @@ describe('xt identity marker-check (what the gh shim calls)', () => {
         const result = spawnSync(process.execPath, [CLI, 'identity', 'marker-check', '--argv', 'not-json'], { encoding: 'utf8' });
         expect(result.status).toBe(2);
         expect(result.stdout).toContain('"refusal":null');
+    });
+});
+
+describe('clear surface (CORE-2622 review, rule: a verb the shim calls is in xt help)', () => {
+    it('xt help lists the marker-check verb in the IDENTITY block', () => {
+        const result = spawnSync(process.execPath, [CLI, 'help'], { encoding: 'utf8' });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('xt identity marker-check');
+        // It belongs to the identity surface, next to the other shim verbs.
+        const identityBlock = result.stdout.slice(result.stdout.indexOf('AGENT IDENTITY (GITHUB APPS)'));
+        expect(identityBlock.indexOf('xt identity marker-check')).toBeGreaterThan(-1);
+        expect(identityBlock.indexOf('xt identity marker-check')).toBeLessThan(identityBlock.indexOf('xt identity setup'));
     });
 });
