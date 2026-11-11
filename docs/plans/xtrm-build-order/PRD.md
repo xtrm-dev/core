@@ -438,6 +438,9 @@ Folded in: **XT-189** version the guard hooks in ~/.xtrm
 > - Making `xtrm` public would also remove its minute cost, but it publishes the whole history. Scan it for secrets first.
 > - mercuryintelligence is not affected: its runners are self-hosted.
 
+> **Filed · 11-11 · CI green**
+> - Actions is restored on xtrm-dev (#900), and core’s CI is fully green: #903 fixed the `check:managed-skills` and Semgrep failures that came from the default skill set, and #905 fixed the Pi extension suite on a fresh `HOME`. A PR now runs 11 checks and all 11 pass.
+
 > **Ruling · 10-31 · replaces this step**
 > - Actions on xtrm-dev stays locked: you will not pay, and no runner goes on this PC. A desktop that sleeps is a flaky CI, and a self-hosted runner on a public repo (core, specialists) can run code from any fork PR on your machine.
 > - Checks run where the work runs: each repo gets one local command (`make ci` or `npm run ci`), workers run it before a PR, and the host records the result in the Issue Journal with the head SHA (step 14). The merge guard reads that record, not GitHub checks.
@@ -729,7 +732,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 ### Step 14 — Substrate records PRs and commits
 
-(v2) [new] `XT-178 amendment · prj_xtrm · XTRM-725 · XTRM-726 … 730`
+(v2) [partly done] [new] `XT-178 amendment · prj_xtrm · XTRM-725 · XTRM-726 … 730`
 
 - **Brings** — A new `sb provenance attach <ref> pr github:org/repo#n` verb, using the existing `attachArtifact`. The host records the PR (number, URL, head SHA) in the same step that opens it, and the commit SHA at receipt. `sb issue show` and `trace` print them as clickable links.
 - **Why here** — It is the core of your ruling: an open PR means Substrate has its number and link. It ships in this release, so every PR from phase 3 on is recorded.
@@ -752,9 +755,12 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Delivery in five slices, each shippable alone: schema and read model with a dry-run check; writers; reconciler; enforcement (last, flagged, warn-only first); console.
 > - Filed 11-11: the epic is `XTRM-725`; the slices are `XTRM-726` schema, read model and `sb links check` dry run, `XTRM-727` T1 and T2 writers, `XTRM-728` reconciler, `XTRM-729` close gate and `sb links check`, `XTRM-730` console. `XTRM-734` (parseTrailers keeps only the last `XTRM-Issue` trailer) blocks `XTRM-727`.
 
+> **Filed · 11-11 · slice status**
+> - Shipped: `XTRM-726` (schema, read model and the `sb links check` dry run) and `XTRM-727` (the T1 and T2 writers) are done. `XTRM-728` (the reconciler) is in review as xtrm#345. `XTRM-729` (the close gate) carries no attestation yet, and `XTRM-730` (the console) is still a draft.
+
 ### Step 15 — Gates refuse unlinked work
 
-(v2) [new] `XT-178 amendment · XT-167 · XTRM-729`
+(v2) [partly done] [new] `XT-178 amendment · XT-167 · XTRM-729`
 
 - **Brings** — pr-review-gate fails a PR whose title or link block names no Substrate ref. `sb issue close` needs a live claim, a result entry, and a PR or commit record (or an explicit no-code reason). A claim refuses a contract that fails `sb issue validate`.
 - **Why here** — A rule nothing enforces decays, as the 1-in-400 figure shows. The gate goes live before agents open PRs by themselves. The gate template is fanned out by hand to the 16 repos.
@@ -783,6 +789,10 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > **Ruling · 11-11 · design note**
 > - The close gate reads rows, not prose: `created_from` plus its live artifact (T1), or the trailered commits merged into the default branch (T2), passes; a `mentioned`-only issue is refused with `gate_mentioned_only`; a link without its artifact fails as `gate_orphan_link`.
 > - Manual close accepts T1 or T2 while the PR is still open (stage stays merged-pending). `sb links check` is a new top-level verb owned by step 33 and consumed here.
+
+> **Filed · 11-11 · identity Apps shipped**
+> - Merged 11-11, each reviewed at its exact head: #887 (an override is refused when the head it names does not resolve), #888 (a numeric `appId` is accepted, and receipt payloads use the bounded Journal fields), #889 (the guard is on by default for launched agents, and an inherited value is forwarded explicitly, so a coordinator’s `off` reaches its workers as `off`), #892 (the agent-identities skill: three roles, the export rule, and the failures seen live), #909 (one shared receipt diagnostic, plus the CORE-2606 review lows).
+> - The receipt root cause is fixed: `review-post`, `merge-check` and `merge-record` now write a receipt the Journal accepts. Still open here: `pr-review-gate`’s link check and the template fan-out to the 16 repos; `sb issue close`’s PR-or-commit requirement behind XTRM-729, which has no attestation yet.
 
 ### Step 15b — A review is a step in the trail, not a new issue
 
@@ -858,6 +868,10 @@ From the review process page: OCR preflight (`ocr delegate preview`, `rule`) sta
 > - Merged 11-11, each reviewed at its exact head: specialists #529 (a bridged model with the route off is refused instead of silently falling back to another provider), #528 (bridge found in Pi’s package store, no env variable; relative paths ignored), #530 (dist refresh, byte-identical rebuilds). Next: a small test follow-up, docs, release, installs; core #893 adds the bridge to the installer (pinned 0.12.0).
 > - Coordination: lane B (this route, installs, the 15e test) is run by `core-xt-claude-1rmj`; lane A (identities, merge guard) by `core-85`.
 > - Once merged, the 15e arm “pr-reviewer specialist on the Claude route” can be tested on Pi and as a specialist, against the Claude subagent.
+
+> **Merged · 11-11 · role model on the Claude route**
+> - #906 (CORE-2608): a role default pinned to `claude-bridge/<id>` now launches Claude with the bare `<id>`, while the pi runtime keeps the prefixed name. `isClaudeRunnableModel` no longer accepts a provider-prefixed id merely because the model name starts with `claude-`, so `openrouter/anthropic/claude-x` is dropped with the warning instead of failing inside Claude Code.
+> - #908 (CORE-2609): the mapping runs before the runtime gate, so `claude-bridge/gpt-5` is dropped with the existing yellow warning rather than starting into a turn-1 failure.
 
 ### Step 16 — Instructions generated from the CLI
 
@@ -1098,7 +1112,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 ### Step 26 — The GitHub reconciler
 
-(v2) [new] `XT-178 amendment · XT-184 · XTRM-728`
+(v2) [partly done] [new] `XT-178 amendment · XT-184 · XTRM-728`
 
 - **Brings** — One poller in the agent host, using conditional requests a few minutes apart. It is the only writer of PR state into Substrate (review, merged with SHA, closed). It also repairs a PR the host missed when its title, branch or trailer names a ref.
 - **Why here** — One event source serves three consumers: the lifecycle (27), the Jira status map (34) and the app. Built once, it adds no load per consumer.
@@ -1111,6 +1125,9 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 > **Ruling · 11-11 · design note**
 > - The reconciler is trailer-first. A trailer receipt must belong to the issue being linked; a foreign one gives `mentioned` plus a check finding. Title and branch references only ever give `mentioned`. Each row keeps its source. Live PR state lives in a separate `pull_requests` table.
+
+> **Filed · 11-11 · slice 3 in review**
+> - `XTRM-728` implements this step and is in review as xtrm#345: `sb links sync`, a one-shot reconciler over conditional `gh api` reads (`If-None-Match`, `If-Modified-Since`; a 304 writes nothing), with trailer-first linkage, the cross-issue guard and live PR state in its own `pull_requests` table. Until it merges, nothing writes PR state into Substrate automatically.
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
