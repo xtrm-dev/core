@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import { runReceipt } from '../core/sb-receipt.js';
+
 import { SUBSTRATE_HOLDER_VAR, XTRM_AGENT_NAME_VAR } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import {
@@ -231,40 +233,11 @@ export function resolveGhTarget(argvText: string, cwd: string): GhTarget {
     return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
 
-/** The binary actually invoked, so a failure names it instead of saying "sb". */
-export function resolveSbBinary(): string {
-    const found = spawnSync('sh', ['-c', 'command -v sb'], { encoding: 'utf8' });
-    const resolved = (found.stdout || '').trim();
-    return resolved || 'sb';
-}
-
-/**
- * The `error` field of an `sb --json` refusal, or null. `sb` reports a JSON
- * failure on STDOUT and exits 1 with empty stderr, which is why the live warning
- * said only "sb exited 1" (CORE-2606 finding): the reason was always there, just
- * on the other stream.
- */
-export function sbJsonError(stdout: string | null | undefined): string | null {
-    const text = (stdout ?? '').trim();
-    if (!text.startsWith('{')) return null;
-    try {
-        const parsed = JSON.parse(text) as { error?: unknown };
-        return typeof parsed.error === 'string' && parsed.error.trim() ? parsed.error.trim() : null;
-    } catch {
-        return null;
-    }
-}
+export { resolveSbBinary, sbJsonError } from '../core/sb-receipt.js';
 
 /** Run one `sb` receipt; never throws, and names the binary and its reason. */
 export function runSb(args: string[]): { ok: boolean; error?: string } {
-    const binary = resolveSbBinary();
-    const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.error) return { ok: false, error: `${binary}: ${result.error.message}` };
-    if (result.status === 0) return { ok: true };
-    const stderr = (result.stderr || '').trim();
-    const fromStdout = sbJsonError(result.stdout);
-    const reason = stderr || (fromStdout ? `(stdout) ${fromStdout}` : 'no stderr and no JSON error on stdout');
-    return { ok: false, error: `sb (${binary}) exited ${result.status}: ${reason}` };
+    return runReceipt(args);
 }
 
 export function createIdentityCommand(): Command {

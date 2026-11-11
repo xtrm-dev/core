@@ -563,7 +563,12 @@ describe('the review receipt against the real sb', () => {
             const refused = run(sbPath, legacy);
             expect(refused.status).toBe(1);
             expect(refused.stderr).toBe('');
-            expect(refused.stdout).toContain('result.verdict is not a bounded result field');
+            // sb's prose is not ours to pin: require the stable refusal and the
+            // field it rejected, so a wording change does not break the test.
+            const refusal = JSON.parse(String(refused.stdout)) as { ok?: boolean; error?: string };
+            expect(refusal.ok).toBe(false);
+            expect(String(refusal.error)).toMatch(/invalid result payload/);
+            expect(String(refusal.error)).toMatch(/result\.verdict/);
         }, 60000);
     });
 });

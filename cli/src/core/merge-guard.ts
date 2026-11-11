@@ -28,6 +28,7 @@ import path from 'node:path';
 import { githubRequest, repoOwner, type FetchLike } from './github-apps.js';
 import { explainAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
 import { isSafeIssueRef, parseIssueMarkers, sha12, type ReviewVerdict } from './review-posting.js';
+import { describeSbFailure, resolveSbBinary } from './sb-receipt.js';
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
 
@@ -67,6 +68,8 @@ export interface MergeGuardDeps {
     apiBase?: string;
     /** `sb` runner, injected for tests. */
     runSb?: RunFn;
+    /** The `sb` path a failure should name; resolved from PATH when omitted. */
+    sbBinary?: string;
     env?: NodeJS.ProcessEnv;
     roleMap?: RoleMap | null;
     /** Reviewer App slug; its bot login is `<slug>[bot]`. */
@@ -584,6 +587,16 @@ export function recordMerge(
         }),
         '--refs', refs, '--json'], {});
     if (result.status === 0) return { ok: true };
-    return { ok: false, error: result.stderr.trim() || `sb exited ${result.status}` };
+    // CORE-2606: the same diagnostics the review receipt uses. `sb --json` puts its
+    // refusal on STDOUT, so a stderr-only message reads "sb exited 1" with no reason.
+    return {
+        ok: false,
+        error: describeSbFailure({
+            binary: deps.sbBinary ?? resolveSbBinary(env),
+            status: result.status,
+            stdout: result.stdout,
+            stderr: result.stderr,
+        }),
+    };
 }
 
