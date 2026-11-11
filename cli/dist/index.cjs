@@ -57844,16 +57844,21 @@ function xtQuiet(args, timeoutMs) {
 const LINK_TIMEOUT_MS = 6000;
 
 /**
- * Ask xt to attach the created PR to its Issue. One warning on stderr when it
- * does not; it never changes the create's own output or exit code.
+ * Ask xt to attach the created PR to its Issue. At most one warning line on
+ * stderr, and never a change to the create's own output or exit code: an
+ * attached link with a caveat (its commits could not be linked) still prints
+ * that caveat.
  */
 function linkCreatedPr(stdout, args) {
   const linked = xtJson(
     ['identity', 'pr-link', '--argv', JSON.stringify(args), '--stdout', stdout, '--cwd', process.cwd()],
     LINK_TIMEOUT_MS,
   );
-  if (linked.status === 0 && linked.data && linked.data.attached === true) return;
   const warning = linked.data && typeof linked.data.warning === 'string' ? linked.data.warning : '';
+  if (linked.status === 0 && linked.data && linked.data.attached === true) {
+    if (warning) process.stderr.write('gh (xtrm): ' + warning + '\\n');
+    return;
+  }
   process.stderr.write('gh (xtrm): ' + (warning || 'the new pull request was not linked to its Substrate Issue') + '\\n');
 }
 
@@ -72538,8 +72543,8 @@ function resolveLinkRange(runGit2, cwd) {
 function oneLine(text) {
   return text.replace(/\s+/g, " ").trim();
 }
-function defaultAttach(args, env3) {
-  return runReceipt(args, env3, { timeoutMs: ATTACH_TIMEOUT_MS });
+function defaultAttach(args, env3, timeoutMs = ATTACH_TIMEOUT_MS) {
+  return runReceipt(args, env3, { timeoutMs });
 }
 function linkCreatedPr(stdout, argv, deps = {}) {
   try {
@@ -72575,25 +72580,53 @@ function linkOrWarn(stdout, argv, deps) {
   if (!project) {
     return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
   }
-  const range = resolveLinkRange(git7, cwd);
-  if (!range) {
-    return { attached: false, ref, canonical: pr.canonical, warning: `cannot read HEAD in ${cwd}, so ${pr.canonical} is not linked to ${ref}` };
-  }
-  const base = ["provenance", "attach", ref, "pr", pr.canonical];
-  if (range.base) base.push("--commits-range", `${range.base}..${range.head}`);
-  else base.push("--commit", range.head);
-  const attachArgv = withReceiptProject(base, project);
-  const attached = (deps.runAttach ?? defaultAttach)(attachArgv, env3);
-  if (!attached.ok) {
+  const run5 = deps.runAttach ?? defaultAttach;
+  const deadline = Date.now() + ATTACH_TIMEOUT_MS;
+  const budget = () => Math.max(250, deadline - Date.now());
+  const attachArgv = withReceiptProject(["provenance", "attach", ref, "pr", pr.canonical], project);
+  const t1 = run5(attachArgv, env3, budget());
+  if (!t1.ok) {
     return {
       attached: false,
       ref,
       canonical: pr.canonical,
       argv: attachArgv,
-      warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(attached.error ?? "sb gave no reason")}`
+      warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? "sb gave no reason")}`
     };
   }
-  return { attached: true, ref, canonical: pr.canonical, argv: attachArgv };
+  const range = resolveLinkRange(git7, cwd);
+  if (!range) {
+    return {
+      attached: true,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      warning: `linked ${pr.canonical} to ${ref}, but HEAD cannot be read in ${cwd}, so its commits are not linked`
+    };
+  }
+  const commitsArgv = withReceiptProject([
+    "issue",
+    "link",
+    "pr",
+    ref,
+    "--repo",
+    pr.slug,
+    "--number",
+    String(pr.number),
+    ...range.base ? ["--commits-range", `${range.base}..${range.head}`] : ["--commit", range.head]
+  ], project);
+  const t2 = run5(commitsArgv, env3, budget());
+  if (!t2.ok) {
+    return {
+      attached: true,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      commitsArgv,
+      warning: `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${oneLine(t2.error ?? "sb gave no reason")}`
+    };
+  }
+  return { attached: true, ref, canonical: pr.canonical, argv: attachArgv, commitsArgv };
 }
 
 // src/core/agent-run-id.ts

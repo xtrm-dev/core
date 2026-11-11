@@ -174,16 +174,21 @@ function xtQuiet(args, timeoutMs) {
 const LINK_TIMEOUT_MS = 6000;
 
 /**
- * Ask xt to attach the created PR to its Issue. One warning on stderr when it
- * does not; it never changes the create's own output or exit code.
+ * Ask xt to attach the created PR to its Issue. At most one warning line on
+ * stderr, and never a change to the create's own output or exit code: an
+ * attached link with a caveat (its commits could not be linked) still prints
+ * that caveat.
  */
 function linkCreatedPr(stdout, args) {
   const linked = xtJson(
     ['identity', 'pr-link', '--argv', JSON.stringify(args), '--stdout', stdout, '--cwd', process.cwd()],
     LINK_TIMEOUT_MS,
   );
-  if (linked.status === 0 && linked.data && linked.data.attached === true) return;
   const warning = linked.data && typeof linked.data.warning === 'string' ? linked.data.warning : '';
+  if (linked.status === 0 && linked.data && linked.data.attached === true) {
+    if (warning) process.stderr.write('gh (xtrm): ' + warning + '\\n');
+    return;
+  }
   process.stderr.write('gh (xtrm): ' + (warning || 'the new pull request was not linked to its Substrate Issue') + '\\n');
 }
 

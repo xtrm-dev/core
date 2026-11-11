@@ -23,6 +23,17 @@
  * the cwd (decision 3): `--repo` may name a different repository than the one the
  * PR landed in. The project comes from `resolveReceiptProject` (`sb-receipt.ts`),
  * so a `core` worktree that opens an `xtrm` PR still attaches with `--project`.
+ *
+ * Two verbs, each with its own allowlisted flags (sb 0.3 `FLAG_ALLOWLIST`):
+ *
+ *   T1 the outcome link:  sb provenance attach <ref> pr <owner/repo#n> --project <id>
+ *   T2 the commit evidence: sb issue link pr <ref> --repo <owner/repo> --number <n>
+ *                          [--commits-range <base>..<head> | --commit <head>] --project <id>
+ *
+ * `provenance attach` accepts only `--project`, `--receipt` and `--holder`; the
+ * range belongs to `issue link pr`, which writes the T2 rows. T1 runs first and
+ * T2 only after it: a failed T1 means the link is incomplete, and one warning is
+ * the whole report.
  */
 
 import { runReceipt, listProjects, resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps, type SbProject } from './sb-receipt.js';
@@ -274,17 +285,20 @@ export interface GhPrLinkDeps extends ReceiptProjectDeps {
     cwd?: string;
     readFile?: (file: string) => string;
     runGit?: RunGit;
-    /** The attach runner; tests inject a fake so no real store is touched. */
-    runAttach?: (args: string[], env: NodeJS.ProcessEnv) => { ok: boolean; error?: string };
+    /** The receipt runner; tests inject a fake so no real store is touched. */
+    runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
 }
 
 export interface GhPrLinkResult {
+    /** T1 landed: the PR is attached to the Issue with a `created_from` row. */
     attached: boolean;
     ref?: string;
     canonical?: string;
-    /** The exact `sb provenance attach` argv, for the golden test. */
+    /** The exact `sb provenance attach` argv (T1), for the golden test. */
     argv?: string[];
-    /** One line, appended after the create's own output; absent on success. */
+    /** The exact `sb issue link pr` argv (T2); absent when it could not run. */
+    commitsArgv?: string[];
+    /** One line, appended after the create's own output; absent on a full success. */
     warning?: string;
 }
 
@@ -293,8 +307,8 @@ function oneLine(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
 }
 
-function defaultAttach(args: string[], env: NodeJS.ProcessEnv): { ok: boolean; error?: string } {
-    return runReceipt(args, env, { timeoutMs: ATTACH_TIMEOUT_MS });
+function defaultAttach(args: string[], env: NodeJS.ProcessEnv, timeoutMs = ATTACH_TIMEOUT_MS): { ok: boolean; error?: string } {
+    return runReceipt(args, env, { timeoutMs });
 }
 
 /**
@@ -337,23 +351,50 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
     if (!project) {
         return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
     }
-    const range = resolveLinkRange(git, cwd);
-    if (!range) {
-        return { attached: false, ref, canonical: pr.canonical, warning: `cannot read HEAD in ${cwd}, so ${pr.canonical} is not linked to ${ref}` };
-    }
-    const base: string[] = ['provenance', 'attach', ref, 'pr', pr.canonical];
-    if (range.base) base.push('--commits-range', `${range.base}..${range.head}`);
-    else base.push('--commit', range.head);
-    const attachArgv = withReceiptProject(base, project);
-    const attached = (deps.runAttach ?? defaultAttach)(attachArgv, env);
-    if (!attached.ok) {
+    const run = deps.runAttach ?? defaultAttach;
+    // One deadline for the pair: the whole post-create step, not each receipt,
+    // is what must stay inside the budget.
+    const deadline = Date.now() + ATTACH_TIMEOUT_MS;
+    const budget = (): number => Math.max(250, deadline - Date.now());
+
+    const attachArgv = withReceiptProject(['provenance', 'attach', ref, 'pr', pr.canonical], project);
+    const t1 = run(attachArgv, env, budget());
+    if (!t1.ok) {
         return {
             attached: false,
             ref,
             canonical: pr.canonical,
             argv: attachArgv,
-            warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(attached.error ?? 'sb gave no reason')}`,
+            warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? 'sb gave no reason')}`,
         };
     }
-    return { attached: true, ref, canonical: pr.canonical, argv: attachArgv };
+
+    const range = resolveLinkRange(git, cwd);
+    if (!range) {
+        return {
+            attached: true,
+            ref,
+            canonical: pr.canonical,
+            argv: attachArgv,
+            warning: `linked ${pr.canonical} to ${ref}, but HEAD cannot be read in ${cwd}, so its commits are not linked`,
+        };
+    }
+    const commitsArgv = withReceiptProject([
+        'issue', 'link', 'pr', ref,
+        '--repo', pr.slug,
+        '--number', String(pr.number),
+        ...(range.base ? ['--commits-range', `${range.base}..${range.head}`] : ['--commit', range.head]),
+    ], project);
+    const t2 = run(commitsArgv, env, budget());
+    if (!t2.ok) {
+        return {
+            attached: true,
+            ref,
+            canonical: pr.canonical,
+            argv: attachArgv,
+            commitsArgv,
+            warning: `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${oneLine(t2.error ?? 'sb gave no reason')}`,
+        };
+    }
+    return { attached: true, ref, canonical: pr.canonical, argv: attachArgv, commitsArgv };
 }

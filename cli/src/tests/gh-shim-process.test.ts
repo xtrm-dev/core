@@ -175,7 +175,11 @@ if (process.env.STUB_SB === 'missing-verb') {
   process.exit(1);
 }
 if (process.env.STUB_SB === 'verb-error') {
-  process.stdout.write(envelope({ command: 'provenance.attach', ok: false, error: "unexpected argument '--commits-range' found" }));
+  process.stdout.write(envelope({ command: 'provenance.attach', ok: false, error: "unexpected argument 'attach' found" }));
+  process.exit(1);
+}
+if (process.env.STUB_SB === 'link-fail' && argv[0] === 'issue') {
+  process.stdout.write(envelope({ command: 'issue.link', ok: false, error: 'unknown flag --commits-range for issue.link' }));
   process.exit(1);
 }
 process.stdout.write(envelope({ command: 'provenance.attach', ok: true, data: {} }));
@@ -675,7 +679,23 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
     }
 
     function attachCalls(): string[][] {
-        return sbCalls().filter((argv) => argv[0] === 'provenance');
+        return sbCalls().filter((argv) => argv[0] === 'provenance' || argv[0] === 'issue');
+    }
+
+    function t1(): string[] {
+        return [
+            'provenance', 'attach', 'CORE-2607', 'pr', 'xtrm-dev/core#912', '--project', 'prj_core',
+        ];
+    }
+
+    function t2(rangeFlag: string[]): string[] {
+        return [
+            'issue', 'link', 'pr', 'CORE-2607',
+            '--repo', 'xtrm-dev/core',
+            '--number', '912',
+            ...rangeFlag,
+            '--project', 'prj_core',
+        ];
     }
 
     it('tees the create output byte for byte and attaches with the exact argv', () => {
@@ -691,7 +711,8 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
         expect(result.stderr).toBe(CREATE_STDERR);
         expect(sbCalls()).toEqual([
             ['project', 'list', '--json'],
-            ['provenance', 'attach', 'CORE-2607', 'pr', 'xtrm-dev/core#912', '--commits-range', `${repo.base}..${repo.head}`, '--project', 'prj_core'],
+            t1(),
+            t2(['--commits-range', `${repo.base}..${repo.head}`]),
         ]);
     });
 
@@ -728,7 +749,18 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
         expect(result.stdout).toBe(CREATE_STDOUT);
         const said = warnings(result.stderr);
         expect(said).toHaveLength(1);
-        expect(said[0]).toMatch(/unexpected argument '--commits-range'/);
+        expect(said[0]).toMatch(/unexpected argument 'attach'/);
+    });
+
+    it('keeps the link and warns once when only the commit evidence fails', () => {
+        const repo = scratchRepo();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root, STUB_SB: 'link-fail' }, repo.dir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        expect(attachCalls()).toEqual([t1(), t2(['--commits-range', `${repo.base}..${repo.head}`])]);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/commit evidence failed: .*unknown flag --commits-range/);
     });
 
     it('warns once and skips when no Issue ref resolves', () => {
@@ -796,17 +828,13 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
         const repo = scratchRepo({ branch: 'core-2607-gh-shim' });
         const result = runShim(['pr', 'create', '--title', 'wire the shim', '--body', 'no marker'], { HOME: root }, repo.dir);
         expect(result.status).toBe(0);
-        expect(attachCalls()[0]).toEqual([
-            'provenance', 'attach', 'CORE-2607', 'pr', 'xtrm-dev/core#912', '--commits-range', `${repo.base}..${repo.head}`, '--project', 'prj_core',
-        ]);
+        expect(attachCalls()).toEqual([t1(), t2(['--commits-range', `${repo.base}..${repo.head}`])]);
     });
 
     it('falls back to --commit HEAD when no base resolves', () => {
         const repo = scratchRepo({ withOriginMain: false });
         const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root }, repo.dir);
         expect(result.status).toBe(0);
-        expect(attachCalls()[0]).toEqual([
-            'provenance', 'attach', 'CORE-2607', 'pr', 'xtrm-dev/core#912', '--commit', repo.head, '--project', 'prj_core',
-        ]);
+        expect(attachCalls()).toEqual([t1(), t2(['--commit', repo.head])]);
     });
 });
