@@ -205,7 +205,7 @@ describe('AgentHostLauncher (XTRM-566)', () => {
             if (call.args[0] === 'new-session') return { status: 0, stdout: '$5 %50\n', stderr: '' };
             return tmuxAndXt(call);
         });
-        const env = { PATH: '/bin', PI_CODING_AGENT_DIR: '/iso/agent', XTRM_AGENT_HOST_SOCKET: '/iso/host.sock' };
+        const env = { PATH: '/bin', HOME: '/home/launcher', PI_CODING_AGENT_DIR: '/iso/agent', XTRM_AGENT_HOST_SOCKET: '/iso/host.sock' };
         const launcher = new AgentHostLauncher({ piCommand: '/bin/pi', env, run });
         const { role: _r, bead: _b, ...options } = ALL_OPTIONS;
         const result = await launcher.launch(launchRequest({ cwd: dir, command: 'pi', options }));
@@ -217,9 +217,31 @@ describe('AgentHostLauncher (XTRM-566)', () => {
         expect(created.args).toEqual([
             'new-session', '-d', '-P', '-F', '#{session_id} #{pane_id}', '-s', 'gui-worker', '-c', dir,
             '-e', 'XTRM_AGENT_LAUNCH=gui', '-e', 'XTRM_INITIAL_PROMPT=1', '-e', 'XTRM_AGENT_HOST_SOCKET=/iso/host.sock', '-e', 'PI_CODING_AGENT_DIR=/iso/agent',
+            // CORE-2524.4: the pane PATH carries the gh shim directory first.
+            '-e', 'PATH=/home/launcher/.local/bin:/bin',
             '--', '/bin/pi', ...buildPiArgs(options, 'gui-worker'),
         ]);
         expect(calls.find((c) => c.args[0] === 'set-option')!.args).toEqual(['set-option', '-p', '-t', '%50', '@agent_parent_session', '$7']);
+    });
+
+    it('prepends the shim directory to the pane PATH and never duplicates it (CORE-2524.4)', async () => {
+        const shim = path.join('/home/launcher', '.local', 'bin');
+        for (const [pathValue, expected] of [
+            ['/bin', `${shim}${path.delimiter}/bin`],
+            [`${shim}${path.delimiter}/bin`, `${shim}${path.delimiter}/bin`],
+        ] as const) {
+            const { run, calls } = fakeRun((call) => {
+                if (call.args[0] === 'new-session') return { status: 0, stdout: '$5 %50\n', stderr: '' };
+                return tmuxAndXt(call);
+            });
+            const launcher = new AgentHostLauncher({ piCommand: '/bin/pi', env: { PATH: pathValue, HOME: '/home/launcher' }, run });
+            const { role: _r, bead: _b, ...options } = ALL_OPTIONS;
+            await launcher.launch(launchRequest({ cwd: dir, command: 'pi', options }));
+            const created = calls.find((c) => c.args[0] === 'new-session')!;
+            const forwarded = created.args.filter((arg) => arg.startsWith('PATH='));
+            expect(forwarded).toEqual([`PATH=${expected}`]);
+            expect(created.args[created.args.indexOf(`PATH=${expected}`) - 1]).toBe('-e');
+        }
     });
 
     it('fails a bare pi launch when tmux refuses the session', async () => {
