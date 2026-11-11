@@ -93,8 +93,15 @@ describe('resolveDispatcher', () => {
 describe('buildDispatcherEnv', () => {
     it('no ancestor, no env, no tmux: only the holder', () => {
         expect(buildDispatcherEnv('worker-a', { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux }))
-            .toEqual({ SUBSTRATE_HOLDER: 'worker-a' });
-        expect(buildDispatcherEnv('', { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux })).toEqual({});
+            .toEqual({ SUBSTRATE_HOLDER: 'worker-a', XTRM_MERGE_GUARD: 'on' });
+        // An empty holder still carries the guard default: every launched agent gets it.
+        expect(buildDispatcherEnv('', { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux })).toEqual({ XTRM_MERGE_GUARD: 'on' });
+    });
+
+    it('turns the merge guard on by default and never overrides an inherited value', () => {
+        expect(buildDispatcherEnv('w', { env: {} }).XTRM_MERGE_GUARD).toBe('on');
+        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'off' } }).XTRM_MERGE_GUARD).toBeUndefined();
+        expect(buildDispatcherEnv('w', { env: { XTRM_MERGE_GUARD: 'yes' } }).XTRM_MERGE_GUARD).toBeUndefined();
     });
 
     it('holder is the worker name, never an inherited SUBSTRATE_HOLDER', () => {
@@ -135,6 +142,7 @@ describe('buildDispatcherEnv', () => {
         });
         expect(out).toEqual({
             SUBSTRATE_HOLDER: 'worker-a',
+            XTRM_MERGE_GUARD: 'on',
             XTRM_DISPATCHER_NAME: 'coord',
             XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
             XTRM_PARENT_PANE_ID: '%5',
@@ -149,6 +157,6 @@ describe('buildDispatcherEnv', () => {
         expect(pane.XTRM_PARENT_PANE_ID).toBe('%5');
         expect('XTRM_PARENT_SESSION_ID' in pane).toBe(false);
         const none = buildDispatcherEnv('w', { ...base, env: { TMUX_PANE: '%5' }, tmux: () => ({ status: 0, stdout: '$2' }) });
-        expect(Object.keys(none)).toEqual(['SUBSTRATE_HOLDER']);
+        expect(Object.keys(none).sort()).toEqual(['SUBSTRATE_HOLDER', 'XTRM_MERGE_GUARD']);
     });
 });
