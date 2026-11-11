@@ -509,7 +509,7 @@ Folded in: **XT-106** Beads removal across machines
 > - XTRM-684: the hook resolves the Issue without a receipt (env, worktree binding, branch) and adds `XTRM-Issue`, revision, `Jira:` and `Agent:` (taken over from CORE-2525). CORE-2570: `xt` chains it into each repo’s existing hook and writes the worktree binding. XTRM-684 lands first.
 
 > **Measured · 11-11 · design note**
-> - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashes to the PR body, so T2 cannot count as delivery there until its squash setting keeps commit messages. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships.
+> - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashed to the PR body until 11-11; its squash setting now keeps commit messages, so T2 counts there too. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships.
 
 ### Step 7 — Decide how Substrate works across two machines
 
@@ -737,7 +737,11 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > **Answer to your note · 10-31**
 > - Two plans propose one tool set for both runtimes: XTRM-668 (commit `70879746`, “shared tool surface” for the Substrate Claude plugin and Pi extension) and XTRM-638 (codemode-first Pi tool architecture). This step uses that surface.
 
-> **Design note · 11-11 · proposal**
+> **Ruling · 11-11 · your answers to the design note**
+> - Yes to all seven: `github:org/repo#n` is an input form and `org/repo#n` is stored; a PR known only from its title or branch is a mention, not delivery; `sb links check` is a new top-level verb owned by step 33 and used by step 15; the relations are named `created_from` and `mentioned`; mentions are stored rows written by an explicit verb; a trailer on the PR’s commits (T2) counts as delivery where the merged message keeps it; an explicit link without a receipt or trailer can never claim `created_from`.
+> - xtrm’s squash merge now keeps the commit messages (title stays the PR title), as core already did, so T2 works in both repositories.
+
+> **Ruling · 11-11 · design note**
 > - Refined by the design note “Linking a Substrate issue to its pull request” (11-11, `soulful-karma-8zk3.here.now`, copy in `notes/issue-pr-linking.html`). A PR link has two relations: `created_from` (this PR delivered the issue; may close it) and `mentioned` (only named in prose; never closes it). Stored in a new `issue_pull_requests` table, written in one transaction with the PR artifact.
 > - Two kinds of delivery evidence: T1 a receipt (host record at PR open, or an `XTRM-Receipt` trailer of this issue); T2 a commit in the PR carrying `XTRM-Issue: <this issue>`, which survives squash because it reads the PR’s own commits.
 > - `sb provenance attach` accepts `github:org/repo#n`, `org/repo#n`, a PR URL or a bare `#N` (scoped to the issue’s repository) and stores `org/repo#n`. The opener is the `gh` shim now, the host later; not `xt end`.
@@ -771,7 +775,7 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > - Stop condition: a throwaway PR approved at head H, a new push, and the guard refusing the merge. Origin: the market-data build coordinator (errors this week were all about who reviewed or which head).
 > - The guard is client-side. An agent with the operator's gh login can still call the API; this stays documented. The release App remains deferred.
 
-> **Design note · 11-11 · proposal**
+> **Ruling · 11-11 · design note**
 > - The close gate reads rows, not prose: `created_from` plus its live artifact (T1), or the trailered commits merged into the default branch (T2), passes; a `mentioned`-only issue is refused with `gate_mentioned_only`; a link without its artifact fails as `gate_orphan_link`.
 > - Manual close accepts T1 or T2 while the PR is still open (stage stays merged-pending). `sb links check` is a new top-level verb owned by step 33 and consumed here.
 
@@ -1100,7 +1104,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 > - A commit record keeps both SHAs: the one the agent made and the one that landed on the default branch (squash or rebase), so `sb provenance commit` finds either.
 > - A merged PR with no evidence at all is listed by `sb links check`. The merge guard (15) refuses such a PR in the first place.
 
-> **Design note · 11-11 · proposal**
+> **Ruling · 11-11 · design note**
 > - The reconciler is trailer-first. A trailer receipt must belong to the issue being linked; a foreign one gives `mentioned` plus a check finding. Title and branch references only ever give `mentioned`. Each row keeps its source. Live PR state lives in a separate `pull_requests` table.
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
@@ -1120,7 +1124,7 @@ Folded in: **XT-172** executor worktree and PR integration · **XT-148** paralle
 > - A revert of a trailered commit on main creates a reopen proposal for the coordinator. It never reopens the Issue by itself.
 > - Today none of this happens: Substrate has no PR records, and only 9 of 746 receipts carry a commit SHA. Steps 14, 22 and 26 create the evidence; this step only reads it.
 
-> **Design note · 11-11 · proposal**
+> **Ruling · 11-11 · design note**
 > - Auto-close needs T1 or T2, merged into the default branch, no other open PR linked, no live claim and no deploy window. A writer PR into a coordinator branch is integration, not delivery. Unreachable GitHub fails closed; an override is a Journal decision.
 
 ### Step 28 — Launcher options and the process panel
