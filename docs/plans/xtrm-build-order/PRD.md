@@ -684,6 +684,10 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Codemode (a short program that calls several tools in a sandbox) keeps intermediate data out of context, and fits bulk reads such as board scans.
 > - Measure before claiming: the context cost of tool definitions with and without deferral (Claude Code `/context`), and whether agents find a deferred tool on the first search.
 
+> **Filed · 11-11 · aligned with pi 1.5.2**
+> - Checked in CORE-2615. Fixed in core#916 (`BeforeAgentStartEvent` union, broken since pi 1.2.0; `read-line-numbers` range), xtrm#358 (the substrate extension imported `Type` from `pi-ai`, which pi 1.5.0 no longer re-exports, so it failed to load), xtrm#361 (a guard against that import) and specialists#545 (pi range `>=1.4 <2`, `pi-tui` 1.5.2, pi-compat tests both).
+> - Every tool schema validates under pi 1.5's `pi-schema`, each repo with a test. Upgrading the operator PC from pi 1.4.0 is the operator's decision.
+
 ### Step 12b — Context-aware suggestions, also as a Claude mod
 
 [partly done] (v4) [new] `CORE-2532 · specialists Claude mod`
@@ -806,7 +810,7 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > - The receipt root cause is fixed on main (#888, #909); a host gets it once its core checkout is updated. `review-post`, `merge-check` and `merge-record` now write a receipt the Journal accepts. Still open here: `pr-review-gate`’s link check and the template fan-out to the 16 repos; `sb issue close`’s PR-or-commit requirement behind XTRM-729, which has no attestation yet.
 
 > **Delivered · 11-11 · the close gate merged**
-> - `XTRM-729` merged as xtrm#347 (`50e21f02`): the close gate reads the link rows at the done transition. `XTRM_LINK_GATE` is `warn` by default (`enforce` and `off` are opt-in), only `outcome=completed` is gated, `beads-import` and `beads-repair` are named exemptions, and `--gate-override` records why. `sb links check` shows each verdict.
+> - `XTRM-729` merged as xtrm#347 (`50e21f02`): the close gate reads the link rows at the done transition. `XTRM_LINK_GATE` is `warn` by default (`enforce` and `off` are opt-in), every move to done is gated: `sb issue close --outcome completed` and a bare `sb issue state <ref> done` (other close outcomes are not), `beads-import` and `beads-repair` are named exemptions, and `--gate-override` records why. `sb links check` shows each verdict.
 > - Still open in this step: switching the gate to `enforce`, the claim refusing a contract that fails `sb issue validate`, and the pr-review-gate fan-out. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then.
 
 ### Step 15b — A review is a step in the trail, not a new issue
@@ -1349,10 +1353,14 @@ Goal, from XT-104: "I want to stay here, not in the terminal, not another harnes
 
 ### Step 42 — Merged list, drawer and issue page
 
-[new] `XT-110 slices 2–4`
+[partly done] [new] `XT-110 slices 2–4`
 
 - **Brings** — One list across Jira and Substrate with source marks, sync dots, owner glyphs and a PR column (state, checks, merge). The issue page has the brief first, then the contract, then one timeline of comments, Journal entries, PR events and receipts.
 - **Why here** — It uses the model (40), the design (39) and the PR records (14, 26).
+
+> **Delivered · 11-11 · the PR part of the issue page**
+> - `XTRM-730` merged as xtrm#353 (`6cbf97a4`): the console issue page has a PR block, the link timeline shows PR events, and the board has a PR column. It reads the link rows from step 14.
+> - Still to build here: the merged Jira and Substrate list with source marks, sync dots and owner glyphs, and the drawer. Live PR data needs an `sb` deploy.
 
 ### Step 43 — @jira: and @pr: references
 
