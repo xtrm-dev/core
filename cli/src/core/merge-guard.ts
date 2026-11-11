@@ -9,10 +9,16 @@
  * COMMENT (PARTIAL) with a valid coordinator decision entry for that head.
  *
  * Refusals are fail-closed: no review, a review at an older head, an active
- * CHANGES_REQUESTED, an unresolvable Issue, or GitHub/the App being unreachable.
- * The single escape hatch is `XTRM_MERGE_GUARD_OVERRIDE=<reason>`, honoured only
- * for the coordinator role and the operator identity; each use writes a log line
- * and a Journal decision entry.
+ * CHANGES_REQUESTED, an unresolvable Issue (one whose marker names a ref that is
+ * malformed, ambiguous, or does not exist in Substrate), or GitHub/the App being
+ * unreachable. The single escape hatch is `XTRM_MERGE_GUARD_OVERRIDE=<reason>`,
+ * honoured only for the coordinator role and the operator identity; each use
+ * writes a log line and a Journal decision entry.
+ *
+ * The Issue existence check is the one place the guard asks Substrate a question.
+ * It is read-only, at most one `sb` call per merge-check, and it degrades to a
+ * warning when `sb` cannot answer (`XTRM_MERGE_GUARD_OFFLINE=1` forces that state):
+ * an outage must not block an approved merge (CORE-2590).
  */
 
 import { accessSync, appendFileSync, constants as fsConstants, mkdirSync, statSync } from 'node:fs';
@@ -21,9 +27,15 @@ import path from 'node:path';
 
 import { githubRequest, repoOwner, type FetchLike } from './github-apps.js';
 import { explainAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
-import { isSafeIssueRef, issueRefFromBranch, parseIssueMarker, sha12, type ReviewVerdict } from './review-posting.js';
+import { isSafeIssueRef, parseIssueMarkers, sha12, type ReviewVerdict } from './review-posting.js';
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
+
+/** `XTRM_MERGE_GUARD_OFFLINE=1` forces the Issue-existence check to `unknown`. */
+export const OFFLINE_ENV_VAR = 'XTRM_MERGE_GUARD_OFFLINE';
+
+/** One hermetic `sb issue show` may take at most this long. */
+export const ISSUE_LOOKUP_TIMEOUT_MS = 5_000;
 
 /**
  * The guard is FLAG-GATED and OFF by default (CORE-2528 rev 4 R3): the operator's
@@ -38,7 +50,15 @@ export function mergeGuardEnabled(env: NodeJS.ProcessEnv = process.env): boolean
 }
 
 export interface RunResult { status: number | null; stdout: string; stderr: string }
-export type RunFn = (cmd: string, args: string[], opts: { input?: string }) => RunResult;
+export interface RunOptions { input?: string; timeout?: number; cwd?: string }
+export type RunFn = (cmd: string, args: string[], opts: RunOptions) => RunResult;
+
+/**
+ * The Issue-existence check has three outcomes. Only an explicit not-found
+ * denies; `unknown` allows with a warning because an outage must not block work.
+ */
+export type IssueLookupState = 'verified' | 'missing' | 'unknown';
+export interface IssueLookup { state: IssueLookupState; detail?: string }
 
 export interface MergeGuardDeps {
     /** Installation token for READS (the reviewer App: pull requests read/write, contents read). */
@@ -53,6 +73,8 @@ export interface MergeGuardDeps {
     reviewerSlug?: string;
     now?: () => number;
     stateHome?: string;
+    /** Directory for the `sb` existence check, explicit so it never depends on a default. */
+    cwd?: string;
 }
 
 export interface MergeDecision {
@@ -70,6 +92,10 @@ export interface MergeDecision {
     override?: { reason: string; logged: boolean; journaled: boolean; error?: string };
     /** True when GitHub or the App could not be read (fail closed). */
     unreachable?: boolean;
+    /** Whether the marker's Issue was verified, missing, or could not be checked. */
+    issueLookup?: IssueLookupState;
+    /** Short classification when `issueLookup` is `unknown`; never the Issue body. */
+    issueLookupDetail?: string;
     /** The full text shown to the agent (refusal names the way forward). */
     message: string;
 }
@@ -98,21 +124,46 @@ const ROUTING_HINT = [
 ].join('\n');
 
 /** The universal refusal text. No repository name, and the routing follows SCRUTINY tier. */
-export function refusalMessage(input: { repo: string; pr: number; head?: string; reason: string }): string {
+export function refusalMessage(input: {
+    repo: string;
+    pr: number;
+    head?: string;
+    reason: string;
+    /** Replaces the "get a review" block when that is not the way forward. */
+    guidance?: string[];
+}): string {
     const head = input.head ? sha12(input.head) : '(unknown head)';
-    return [
-        `merge refused for ${input.repo}#${input.pr}: ${input.reason}`,
+    const guidance = input.guidance ?? [
         `a review by xtrm-reviewer[bot] is required at head ${head}`,
         'ways to get one:',
         ROUTING_HINT,
+    ];
+    return [
+        `merge refused for ${input.repo}#${input.pr}: ${input.reason}`,
+        ...guidance,
         `override (coordinator and operator only): ${OVERRIDE_ENV_VAR}=<reason>`,
     ].join('\n');
+}
+
+/** How to fix an Issue marker: the marker is the only Issue source. */
+export function markerGuidance(ref?: string | null): string[] {
+    const example = `<!-- xtrm issue=${ref ?? 'CORE-2528'} holder=<holder> run=<id> -->`;
+    return [
+        `put ONE marker in the PR body that names an existing Substrate Issue, for example ${example}`,
+        `a marker inside a fenced code block or a > quote is ignored; check the ref with: sb issue show ${ref ?? '<REF>'} --json`,
+    ];
 }
 
 function defaultRunSb(): RunFn {
     const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
     return (cmd, args, opts) => {
-        const result = spawnSync(cmd, args, { encoding: 'utf8', input: opts.input ?? undefined, stdio: ['pipe', 'pipe', 'pipe'] });
+        const result = spawnSync(cmd, args, {
+            encoding: 'utf8',
+            input: opts.input ?? undefined,
+            cwd: opts.cwd,
+            timeout: opts.timeout,
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
         return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') };
     };
 }
@@ -134,6 +185,51 @@ export function journalEntries(stdout: string): JournalEntry[] {
     const envelope = parseSbJson(stdout) as { data?: unknown } | null;
     const data = envelope?.data;
     return Array.isArray(data) ? data as JournalEntry[] : [];
+}
+
+function offlineRequested(env: NodeJS.ProcessEnv): boolean {
+    const value = (env[OFFLINE_ENV_VAR] ?? '').trim().toLowerCase();
+    return value === '1' || value === 'true' || value === 'on' || value === 'yes';
+}
+
+/**
+ * One hermetic `sb issue show <REF> --json`: 5 s timeout, explicit cwd, no stdin,
+ * and nothing but a classification leaves this function, so the Issue body and any
+ * token in its text never reach a log or the decision.
+ */
+export function lookupIssue(ref: string, deps: MergeGuardDeps): IssueLookup {
+    const env = deps.env ?? process.env;
+    if (offlineRequested(env)) return { state: 'unknown', detail: `${OFFLINE_ENV_VAR} is set` };
+    const run = deps.runSb ?? defaultRunSb();
+    let result: RunResult;
+    try {
+        result = run('sb', ['issue', 'show', ref, '--json'], {
+            input: '',
+            timeout: ISSUE_LOOKUP_TIMEOUT_MS,
+            cwd: deps.cwd ?? process.cwd(),
+        });
+    } catch (error) {
+        return { state: 'unknown', detail: `sb could not run (${(error as Error).message})` };
+    }
+    // spawnSync reports a missing binary (ENOENT) and a killed timeout as a null
+    // status: both mean Substrate could not answer, not that the Issue is absent.
+    if (result.status === null) return { state: 'unknown', detail: 'sb is absent or did not answer in 5 s' };
+    const envelope = parseSbJson(result.stdout) as
+        { ok?: unknown; data?: { humanRef?: unknown }; error?: unknown } | null;
+    if (!envelope || typeof envelope !== 'object') {
+        return { state: 'unknown', detail: 'sb returned output the guard cannot parse' };
+    }
+    if (result.status === 0) {
+        const returned = typeof envelope.data?.humanRef === 'string' ? envelope.data.humanRef.trim() : '';
+        if (envelope.ok === true && returned === ref) return { state: 'verified' };
+        return { state: 'unknown', detail: `sb exited 0 without returning ${ref}` };
+    }
+    const error = typeof envelope.error === 'string' ? envelope.error : '';
+    if (envelope.ok === false && error.includes(ref)
+        && /unresolvable ref|not[ -]?found|no such issue|unknown (issue|ref)/i.test(error)) {
+        return { state: 'missing' };
+    }
+    return { state: 'unknown', detail: `sb exited ${result.status} without an explicit not-found` };
 }
 
 /** A Journal `--kind decision` entry accepting this head and PR, by someone other than the PR's worker. */
@@ -216,12 +312,12 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
     const botLogin = `${reviewerSlug}[bot]`;
     const base = { repo: input.repo, pr: input.pr } as const;
 
-    const deny = (reason: string, extra: Partial<MergeDecision> = {}): MergeDecision => ({
+    const deny = (reason: string, extra: Partial<MergeDecision> = {}, guidance?: string[]): MergeDecision => ({
         allow: false,
         reason,
         ...base,
         ...extra,
-        message: refusalMessage({ ...base, head: extra.head, reason }),
+        message: refusalMessage({ ...base, head: extra.head, reason, guidance }),
     });
 
     const allow = (reason: string, extra: Partial<MergeDecision> = {}): MergeDecision => ({
@@ -256,12 +352,27 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
 
     const head = pull.head?.sha ?? '';
     if (!head) return deny('the PR returned no head SHA');
-    const marker = parseIssueMarker(pull.body ?? '');
-    const rawRef = marker?.issue ?? issueRefFromBranch(pull.head?.ref) ?? null;
+    const markers = parseIssueMarkers(pull.body ?? '');
+    const namedRefs = [...new Set(markers
+        .map((entry) => entry.issue)
+        .filter((value): value is string => typeof value === 'string' && value !== ''))];
+    // Two markers with different refs are not a tie to break: the body contradicts
+    // itself, and picking either one would let a fake first marker win (CORE-2590).
+    if (namedRefs.length > 1) {
+        return deny(
+            `the PR body carries ${namedRefs.length} xtrm markers naming different Issues (${namedRefs.join(', ')}); leave exactly one`,
+            { head },
+            markerGuidance(),
+        );
+    }
+    const marker = markers.length ? markers[markers.length - 1] : null;
+    // The marker is the only Issue source: a branch name such as `fix/UTF-8-parser`
+    // matched the ref format and became a fake Issue (CORE-2590).
+    const rawRef = marker?.issue ?? null;
     // A ref from the PR body is attacker-controlled text on its way to `sb`.
     const issueRef = rawRef && isSafeIssueRef(rawRef) ? rawRef : null;
     if (rawRef && !issueRef) {
-        return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha });
+        return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha }, markerGuidance());
     }
 
     // ── The latest reviewer review (DISMISSED reviews no longer count). ──────
@@ -292,11 +403,30 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         // means no record of the merge, so an approval alone cannot pass the guard.
         if (!issueRef) {
             return deny(
-                'the PR names no resolvable Substrate Issue, so the guard refuses even an approval at the current head',
+                'the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head',
                 { head, issueRef, ...reviewInfo },
+                markerGuidance(),
             );
         }
-        return allow('xtrm-reviewer[bot] approved the current head', { head, issueRef, ...reviewInfo });
+        // The review would otherwise allow: verify the marker's ref exists. One
+        // call at most, and an outage degrades to a warning (CORE-2590).
+        const lookup = lookupIssue(issueRef, deps);
+        if (lookup.state === 'missing') {
+            return deny(
+                `the marker names ${issueRef}, and Substrate has no such Issue; fix the marker before merging`,
+                { head, issueRef, issueLookup: 'missing', ...reviewInfo },
+                markerGuidance(issueRef),
+            );
+        }
+        if (lookup.state === 'unknown') {
+            return allow(
+                `xtrm-reviewer[bot] approved the current head; ${issueRef} could not be verified (${lookup.detail}), so the merge is allowed`,
+                { head, issueRef, issueLookup: 'unknown', issueLookupDetail: lookup.detail, ...reviewInfo },
+            );
+        }
+        return allow('xtrm-reviewer[bot] approved the current head', {
+            head, issueRef, issueLookup: 'verified', ...reviewInfo,
+        });
     }
     if (latest.state !== 'COMMENTED' && latest.state !== 'COMMENT') {
         return deny(`the reviewer App's latest review state ${latest.state} does not allow a merge`, { head, issueRef, ...reviewInfo });
@@ -304,7 +434,8 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
 
     // PARTIAL: a coordinator decision entry at this head, after the review.
     if (!issueRef) {
-        return deny('the PR names no Substrate Issue, so a PARTIAL review cannot be accepted', { head, issueRef, ...reviewInfo });
+        return deny('the PR names no Substrate Issue in a marker, so a PARTIAL review cannot be accepted',
+            { head, issueRef, ...reviewInfo }, markerGuidance());
     }
     const run = deps.runSb ?? defaultRunSb();
     let entries: JournalEntry[] = [];

@@ -10,10 +10,10 @@ import {
     buildMarker,
     eventForFlags,
     eventForOutcome,
-    issueRefFromBranch,
     lintModelBody,
     parseHeaderLine,
     parseIssueMarker,
+    parseIssueMarkers,
     postReview,
     reviewJournalArgs,
     sha12,
@@ -128,12 +128,17 @@ describe('reading the model body', () => {
             .toBe('<!-- agent=h run=r activation=act:1 -->');
     });
 
-    it('parses the PR marker and the branch convention', () => {
+    it('parses the PR marker and ignores fenced, quoted and earlier markers', () => {
         expect(parseIssueMarker(pullBody('CORE-2528'))).toMatchObject({ issue: 'CORE-2528', holder: 'core-2528-worker', run: 'abc123' });
         expect(parseIssueMarker('nothing here')).toBeNull();
-        expect(issueRefFromBranch('xt/worker-CORE-2528-github-apps')).toBe('CORE-2528');
-        expect(issueRefFromBranch('main')).toBeNull();
-        expect(issueRefFromBranch(null)).toBeNull();
+        // A fenced block and a > quote are pasted text, not a declaration.
+        expect(parseIssueMarkers(`\`\`\`\n<!-- xtrm issue=CORE-1 holder=w run=r -->\n\`\`\`\n`)).toEqual([]);
+        expect(parseIssueMarkers('> <!-- xtrm issue=CORE-1 holder=w run=r -->')).toEqual([]);
+        // The LAST valid marker wins; the list keeps body order.
+        expect(parseIssueMarkers('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- xtrm issue=CORE-2 holder=b run=2 -->'))
+            .toEqual([{ issue: 'CORE-1', holder: 'a', run: '1' }, { issue: 'CORE-2', holder: 'b', run: '2' }]);
+        expect(parseIssueMarker('<!-- xtrm issue=CORE-1 holder=a run=1 -->\n<!-- xtrm issue=CORE-2 holder=b run=2 -->'))
+            .toMatchObject({ issue: 'CORE-2', holder: 'b' });
     });
 });
 
@@ -232,7 +237,8 @@ describe('postReview', () => {
         await expect(postReview(input(), github.deps)).rejects.toThrow(/own-PR/);
     });
 
-    it('falls back to the branch when the marker names no Issue, and refuses a PR with no marker at all', async () => {
+    it('does not derive the Issue from the branch, and refuses a PR with no marker at all', async () => {
+        // A branch named like a ref is not an Issue source: the marker is the only one.
         const withBranch = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
@@ -242,7 +248,9 @@ describe('postReview', () => {
             'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
             'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 1, html_url: 'u' } },
         });
-        expect((await postReview(input(), withBranch.deps)).issueRef).toBe('CORE-2528');
+        const receipt = await postReview(input(), withBranch.deps);
+        expect(receipt.issueRef).toBeNull();
+        expect(receipt.warnings.join(' ')).toMatch(/no Substrate Issue ref/);
 
         // No marker, no attribution: refused, never posted with a warning.
         const orphan = fakeGitHub({

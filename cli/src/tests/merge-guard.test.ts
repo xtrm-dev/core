@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+    OFFLINE_ENV_VAR,
     OVERRIDE_ENV_VAR,
     checkStateDir,
     applyOverride,
@@ -66,6 +67,34 @@ function sbReturning(entries: unknown[]) {
     return { calls, runSb };
 }
 
+type SbCall = { cmd: string; args: string[]; opts: { input?: string; timeout?: number; cwd?: string } };
+
+/** A fake `sb` for the Issue-existence check, one state per case (CORE-2590). */
+function sbIssue(state: 'verified' | 'missing' | 'absent' | 'timeout' | 'garbage' | 'failed', ref = ISSUE) {
+    const calls: SbCall[] = [];
+    const runSb = (cmd: string, args: string[], opts: SbCall['opts']) => {
+        calls.push({ cmd, args, opts });
+        switch (state) {
+            case 'verified':
+                // The contract text stands in for the Issue body: it must not leak.
+                return { status: 0, stdout: JSON.stringify({ ok: true, data: { humanRef: ref, contract: { problem: 'the Issue body must never reach the decision' } } }), stderr: '' };
+            case 'missing':
+                return { status: 1, stdout: JSON.stringify({ ok: false, error: `unresolvable ref: ${ref}` }), stderr: '' };
+            case 'absent':
+                return { status: null, stdout: '', stderr: '' };
+            case 'timeout':
+                return { status: null, stdout: '', stderr: 'ETIMEDOUT' };
+            case 'garbage':
+                return { status: 0, stdout: 'substrate-cli/v1	not json', stderr: '' };
+            case 'failed':
+                return { status: 3, stdout: JSON.stringify({ ok: false, error: 'the substrate store is locked' }), stderr: '' };
+            default:
+                throw new Error(`unreachable ${state}`);
+        }
+    };
+    return { calls, runSb };
+}
+
 function deps(github: ReturnType<typeof fakeGitHub>, extra: Partial<MergeGuardDeps> = {}): MergeGuardDeps {
     return {
         token: 'ghs_token',
@@ -74,6 +103,8 @@ function deps(github: ReturnType<typeof fakeGitHub>, extra: Partial<MergeGuardDe
         roleMap: DEFAULT_ROLE_MAP,
         env: { SUBSTRATE_HOLDER: 'core-2528-worker', ...GUARD_ON },
         now: () => Date.parse('2026-11-08T12:00:00Z'),
+        // Every APPROVED case now asks Substrate whether the marker's ref exists.
+        runSb: sbIssue('verified').runSb,
         ...extra,
     };
 }
@@ -120,8 +151,8 @@ describe('mergeCheck', () => {
 
     it('refuses an approval at the head when the PR has no resolvable Issue (test first)', async () => {
         // CORE-2528/CORE-2530: the guard ALWAYS refuses without an Issue, even for
-        // an APPROVED review at the current head. A PR body with no marker and a
-        // branch with no Issue ref leaves nothing to record the merge against.
+        // an APPROVED review at the current head. A branch named like a ref no
+        // longer counts (CORE-2590).
         const github = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': pull(HEAD, 'a PR body with no marker'),
             'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [review('APPROVED')] },
@@ -129,6 +160,7 @@ describe('mergeCheck', () => {
         const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github));
         expect(decision.allow).toBe(false);
         expect(decision.reason).toMatch(/no [Rr]esolvable|no Substrate Issue/i);
+        expect(decision.message).toMatch(/xtrm issue=/);
     });
 
     it('allows an approval at the current head', async () => {
@@ -140,6 +172,7 @@ describe('mergeCheck', () => {
         expect(decision.allow).toBe(true);
         expect(decision.reason).toMatch(/approved the current head/);
         expect(decision.issueRef).toBe(ISSUE);
+        expect(decision.issueLookup).toBe('verified');
     });
 
     it('uses the latest review by the bot and ignores a dismissed one', async () => {
@@ -292,6 +325,161 @@ describe('mergeCheck', () => {
         });
         const sbDown = deps(partial, { runSb: () => ({ status: 3, stdout: '', stderr: 'sb exploded' }) });
         expect((await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, sbDown)).allow).toBe(false);
+    });
+});
+
+describe('Issue existence check (CORE-2590)', () => {
+    function approved(options: { body?: string; ref?: string } = {}) {
+        return fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: {
+                    head: { sha: HEAD, ref: options.ref ?? 'xt/some-branch' },
+                    body: options.body ?? `<!-- xtrm issue=${ISSUE} holder=core-2528-worker run=run1 -->`,
+                },
+            },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [review('APPROVED')] },
+        });
+    }
+
+    it('verifies the marker through one hermetic sb call and allows', async () => {
+        const sb = sbIssue('verified');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sb.runSb, cwd: '/repo/cwd' }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('verified');
+        // One call, declared argv, no stdin, explicit cwd, 5 s budget.
+        expect(sb.calls).toHaveLength(1);
+        expect(sb.calls[0].cmd).toBe('sb');
+        expect(sb.calls[0].args).toEqual(['issue', 'show', ISSUE, '--json']);
+        expect(sb.calls[0].opts).toEqual({ input: '', timeout: 5000, cwd: '/repo/cwd' });
+        // The Issue body never reaches the decision (or, by extension, a log).
+        expect(JSON.stringify(decision)).not.toContain('must never reach the decision');
+    });
+
+    it('denies an explicit not-found, names the ref and says to fix the marker', async () => {
+        const ref = 'CORE-0';
+        const sb = sbIssue('missing', ref);
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved({ body: `<!-- xtrm issue=${ref} holder=w run=r -->` }), { runSb: sb.runSb }));
+        // Removing the existence check turns this red: it would be allowed.
+        expect(decision.allow).toBe(false);
+        expect(decision.issueLookup).toBe('missing');
+        expect(decision.reason).toContain(ref);
+        expect(decision.reason).toMatch(/fix the marker/);
+        expect(decision.message).toContain(`sb issue show ${ref} --json`);
+        expect(sb.calls).toHaveLength(1);
+    });
+
+    it('allows with a warning when sb is absent (ENOENT)', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sbIssue('absent').runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('unknown');
+        expect(decision.message).toMatch(/could not be verified/);
+        expect(decision.issueLookupDetail).toMatch(/absent/);
+    });
+
+    it('allows with a warning when sb times out', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sbIssue('timeout').runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('unknown');
+    });
+
+    it('allows with a warning when sb exits non-zero for a reason other than not-found', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sbIssue('failed').runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('unknown');
+        expect(decision.issueLookupDetail).toMatch(/without an explicit not-found/);
+    });
+
+    it('allows with a warning when sb returns unparseable output', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sbIssue('garbage').runSb }));
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('unknown');
+        expect(decision.issueLookupDetail).toMatch(/cannot parse/);
+    });
+
+    it('allows with a warning and calls no sb when XTRM_MERGE_GUARD_OFFLINE=1', async () => {
+        const sb = sbIssue('missing');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(approved(), { runSb: sb.runSb, env: { SUBSTRATE_HOLDER: 'core-2528-worker', ...GUARD_ON, [OFFLINE_ENV_VAR]: '1' } }));
+        // Treating unknown as missing turns this red: offline must not block work.
+        expect(decision.allow).toBe(true);
+        expect(decision.issueLookup).toBe('unknown');
+        expect(decision.message).toMatch(/could not be verified/);
+        expect(sb.calls).toHaveLength(0);
+    });
+
+    it('does not check existence when the review does not otherwise allow', async () => {
+        const sb = sbIssue('verified');
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': pull(),
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [review('CHANGES_REQUESTED')] },
+        });
+        expect((await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { runSb: sb.runSb }))).allow).toBe(false);
+        expect(sb.calls).toHaveLength(0);
+    });
+});
+
+describe('marker selection (CORE-2590)', () => {
+    function withBody(body: string, ref = 'xt/some-branch') {
+        return fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref }, body } },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [review('APPROVED')] },
+        });
+    }
+
+    it('ignores a marker inside a fenced code block', async () => {
+        const sb = sbIssue('verified');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            `Example marker:\n\n\`\`\`\n<!-- xtrm issue=${ISSUE} holder=w run=r -->\n\`\`\`\n`,
+        ), { runSb: sb.runSb }));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/no Substrate Issue/);
+        expect(sb.calls).toHaveLength(0);
+    });
+
+    it('ignores a marker on a > quote line', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            `> <!-- xtrm issue=${ISSUE} holder=w run=r -->\n`,
+        )));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/no Substrate Issue/);
+    });
+
+    it('refuses two markers naming different Issues as ambiguous', async () => {
+        const sb = sbIssue('verified');
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            `<!-- xtrm issue=ZZZ-999999 holder=w run=r -->\n<!-- xtrm issue=${ISSUE} holder=w run=r -->\n`,
+        ), { runSb: sb.runSb }));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/different Issues/);
+        expect(decision.reason).toContain('ZZZ-999999');
+        expect(decision.reason).toContain(ISSUE);
+        expect(sb.calls).toHaveLength(0);
+    });
+
+    it('takes the LAST marker, so an appended holder-only marker names no Issue', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(withBody(
+            `<!-- xtrm issue=${ISSUE} holder=w run=r -->\n<!-- xtrm holder=other run=2 -->\n`,
+        )));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/no Substrate Issue/);
+    });
+
+    it('does not derive an Issue from a branch named like a ref', async () => {
+        for (const ref of ['fix/UTF-8-parser', 'fix/CORE-2590-parser']) {
+            const sb = sbIssue('verified');
+            const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+                deps(withBody('no marker', ref), { runSb: sb.runSb }));
+            expect(decision.allow, ref).toBe(false);
+            expect(decision.reason, ref).toMatch(/no Substrate Issue/);
+            expect(sb.calls, ref).toHaveLength(0);
+        }
     });
 });
 

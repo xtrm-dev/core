@@ -112,33 +112,60 @@ export function lintModelBody(body: string): string | null {
 
 export interface IssueMarker { issue?: string; holder?: string; run?: string }
 
-/** The hidden `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` marker. */
-export function parseIssueMarker(text: string): IssueMarker | null {
-    const match = /<!--[^>]*?xtrm\b([^>]*?)-->/.exec(text ?? '');
-    if (!match) return null;
+const XTRM_MARKER = /<!--[^>]*?xtrm\b([^>]*?)-->/g;
+
+function markerAttributes(attributes: string): IssueMarker {
     const out: IssueMarker = {};
-    for (const [key, value] of match[1].trim().split(/\s+/).map((part) => {
+    for (const part of attributes.trim().split(/\s+/)) {
         const index = part.indexOf('=');
-        return index > 0 ? [part.slice(0, index), part.slice(index + 1)] as const : null;
-    }).filter((entry): entry is readonly [string, string] => entry !== null)) {
+        if (index <= 0) continue;
+        const key = part.slice(0, index);
+        const value = part.slice(index + 1);
         if (key === 'issue') out.issue = value;
         else if (key === 'holder') out.holder = value;
         else if (key === 'run') out.run = value;
     }
-    return out.issue || out.holder || out.run ? out : null;
+    return out;
 }
 
-/** Branch names such as `issue/CORE-2309-...` or `xt/MMD-1234` carry the ref. */
+/**
+ * Every valid marker, in body order. A marker inside a fenced code block or on a
+ * `>` quote line is pasted text, not a declaration, so it is not a marker: either
+ * is a way to make a fake ref look like the real one (CORE-2590).
+ */
+export function parseIssueMarkers(text: string): IssueMarker[] {
+    const out: IssueMarker[] = [];
+    let fenced = false;
+    for (const line of (text ?? '').split('\n')) {
+        if (/^\s{0,3}(```|~~~)/.test(line)) {
+            fenced = !fenced;
+            continue;
+        }
+        if (fenced || /^\s*>/.test(line)) continue;
+        for (const match of line.matchAll(XTRM_MARKER)) {
+            const marker = markerAttributes(match[1]);
+            if (marker.issue || marker.holder || marker.run) out.push(marker);
+        }
+    }
+    return out;
+}
+
+/**
+ * The hidden `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` marker. The
+ * LAST valid marker wins: a body may be appended to, and only the final
+ * declaration speaks for the PR (CORE-2590).
+ */
+export function parseIssueMarker(text: string): IssueMarker | null {
+    const markers = parseIssueMarkers(text);
+    return markers.length ? markers[markers.length - 1] : null;
+}
+
+/** The ref format a Substrate Issue uses: an upper-case key, a dash and digits. */
 export const ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 
 /** True only for a ref safe to pass to `sb` as an argument (no leading dash). */
 export function isSafeIssueRef(ref: string | null | undefined): boolean {
     return ISSUE_REF_PATTERN.test((ref ?? '').trim());
-}
-
-export function issueRefFromBranch(ref: string | null | undefined): string | null {
-    const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? '');
-    return match ? match[1] : null;
 }
 
 export interface PostReviewInput {
@@ -270,7 +297,9 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     if (marker.holder === input.holder) {
         throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
     }
-    const candidate = input.issueRef ?? marker.issue ?? issueRefFromBranch(pull.data.head?.ref) ?? null;
+    // The marker is the only Issue source: a branch name such as `fix/UTF-8-parser`
+    // matched the ref format and became a fake Issue (CORE-2590).
+    const candidate = input.issueRef ?? marker.issue ?? null;
     // A ref from the PR body is attacker-controlled text on its way to `sb`.
     if (candidate && !isSafeIssueRef(candidate)) {
         throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);

@@ -5787,229 +5787,6 @@ var require_lib = __commonJS({
   }
 });
 
-// src/core/github-apps.ts
-function githubAppPaths(home = import_node_os10.default.homedir(), runtimeDir) {
-  const identitiesDir = import_node_path17.default.join(home, ".xtrm", "identities", "github-apps");
-  const runtime = runtimeDir ?? process.env.XDG_RUNTIME_DIR ?? import_node_path17.default.join(home, ".xtrm", "run");
-  return {
-    identitiesDir,
-    tokenCacheDir: import_node_path17.default.join(runtime, "xtrm", "gh-tokens"),
-    appFile: (slug) => import_node_path17.default.join(identitiesDir, slug, "app.json"),
-    defaultKeyPath: (slug) => import_node_path17.default.join(home, ".secrets", "github-apps", `${slug}.pem`)
-  };
-}
-function readAppConfig(slug, deps = {}) {
-  const read = deps.readFile ?? ((file3) => (0, import_node_fs4.readFileSync)(file3, "utf8"));
-  const file2 = githubAppPaths(deps.home, deps.runtimeDir).appFile(slug);
-  let raw;
-  try {
-    raw = JSON.parse(read(file2));
-  } catch {
-    return null;
-  }
-  if (!raw || typeof raw !== "object") return null;
-  const record2 = raw;
-  if (record2.slug !== slug) return null;
-  if (typeof record2.appId !== "string" || !record2.appId.trim()) return null;
-  const installations = {};
-  const rawInstallations = record2.installations;
-  if (rawInstallations && typeof rawInstallations === "object") {
-    for (const [account, value] of Object.entries(rawInstallations)) {
-      const id = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
-      if (id) installations[account] = id;
-    }
-  }
-  return {
-    slug,
-    appId: record2.appId.trim(),
-    owner: typeof record2.owner === "string" ? record2.owner : "",
-    keyPath: typeof record2.keyPath === "string" && record2.keyPath.trim() ? record2.keyPath : githubAppPaths(deps.home, deps.runtimeDir).defaultKeyPath(slug),
-    installations,
-    pollerHost: typeof record2.pollerHost === "string" ? record2.pollerHost : void 0,
-    inbound: typeof record2.inbound === "string" ? record2.inbound : void 0
-  };
-}
-function base64url3(value) {
-  return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-function buildAppJwt(appId, privateKey, nowMs = Date.now()) {
-  const now = Math.floor(nowMs / 1e3);
-  const header = base64url3(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = base64url3(JSON.stringify({ iat: now - 60, exp: now + 540, iss: appId }));
-  const signingInput = `${header}.${payload}`;
-  const signer = (0, import_node_crypto7.createSign)("RSA-SHA256");
-  signer.update(signingInput);
-  return `${signingInput}.${base64url3(signer.sign(privateKey))}`;
-}
-function repoOwner(repo) {
-  const match = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/.exec(repo.trim());
-  if (!match) return null;
-  if (match[2] === "." || match[2] === "..") return null;
-  return match[1];
-}
-function installationForRepo(config3, repo) {
-  const owner = repoOwner(repo);
-  if (!owner) return null;
-  for (const [account, id] of Object.entries(config3.installations)) {
-    if (account.toLowerCase() === owner.toLowerCase()) return { account, id };
-  }
-  return null;
-}
-function readCached(file2, deps) {
-  const read = deps.readFile ?? ((f) => (0, import_node_fs4.readFileSync)(f, "utf8"));
-  try {
-    const parsed = JSON.parse(read(file2));
-    if (typeof parsed.token === "string" && parsed.token && typeof parsed.expiresAt === "number") {
-      return { token: parsed.token, expiresAt: parsed.expiresAt };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-function ensurePrivateDir(dir) {
-  (0, import_node_fs4.mkdirSync)(dir, { recursive: true, mode: 448 });
-  let mode;
-  try {
-    mode = (0, import_node_fs4.statSync)(dir).mode & 511;
-  } catch (error51) {
-    throw new GitHubAppError(`cannot stat the token cache directory ${dir}: ${error51.message}`);
-  }
-  if ((mode & 63) !== 0) {
-    try {
-      (0, import_node_fs4.chmodSync)(dir, 448);
-      mode = (0, import_node_fs4.statSync)(dir).mode & 511;
-    } catch {
-    }
-  }
-  if ((mode & 63) !== 0) {
-    throw new GitHubAppError(`the token cache directory ${dir} is mode ${mode.toString(8)}; refusing to write a token into a directory other users can read`);
-  }
-}
-function writeCached(file2, value) {
-  ensurePrivateDir(import_node_path17.default.dirname(file2));
-  const tmp = `${file2}.${process.pid}.tmp`;
-  (0, import_node_fs4.writeFileSync)(tmp, JSON.stringify(value), { mode: 384 });
-  (0, import_node_fs4.renameSync)(tmp, file2);
-  try {
-    (0, import_node_fs4.chmodSync)(file2, 384);
-  } catch {
-  }
-}
-function requireFetch(deps) {
-  const fetchImpl = deps.fetch ?? globalThis.fetch;
-  if (!fetchImpl) throw new GitHubAppError("no fetch implementation available");
-  return fetchImpl;
-}
-async function readJson(response) {
-  try {
-    const data = await response.json();
-    return data && typeof data === "object" ? data : {};
-  } catch {
-    return {};
-  }
-}
-async function mintInstallationToken(input, deps = {}) {
-  const paths = githubAppPaths(deps.home, deps.runtimeDir);
-  const config3 = readAppConfig(input.slug, deps);
-  if (!config3) throw new GitHubAppError(`no app.json for ${input.slug}: the App is not configured on this machine`);
-  const installationId = config3.installations[input.account];
-  if (!installationId) {
-    throw new GitHubAppError(`${input.slug} has no recorded installation for account ${input.account}`);
-  }
-  const now = (deps.now ?? Date.now)();
-  const cacheFile = import_node_path17.default.join(paths.tokenCacheDir, `${config3.slug}-${input.account}.json`);
-  const cached2 = readCached(cacheFile, deps);
-  if (cached2 && cached2.expiresAt - now > TOKEN_REUSE_SKEW_MS) {
-    return { token: cached2.token, expiresAt: cached2.expiresAt, cached: true, slug: config3.slug, account: input.account, installationId };
-  }
-  try {
-    const mode = (0, import_node_fs4.statSync)(config3.keyPath).mode & 511;
-    if ((mode & 63) !== 0) {
-      throw new GitHubAppError(`${config3.slug}: the App private key ${config3.keyPath} is mode ${mode.toString(8)}; it must be 600`);
-    }
-  } catch (error51) {
-    if (error51 instanceof GitHubAppError) throw error51;
-  }
-  const read = deps.readFile ?? ((f) => (0, import_node_fs4.readFileSync)(f, "utf8"));
-  let privateKey;
-  try {
-    privateKey = read(config3.keyPath);
-  } catch {
-    throw new GitHubAppError(`${config3.slug}: cannot read the App private key at ${config3.keyPath}`);
-  }
-  const jwt2 = buildAppJwt(config3.appId, privateKey, now);
-  const apiBase = deps.apiBase ?? DEFAULT_API_BASE;
-  const response = await requireFetch(deps)(`${apiBase}/app/installations/${installationId}/access_tokens`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${jwt2}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json"
-    },
-    body: "{}"
-  });
-  const data = await readJson(response);
-  if (response.status !== 201 && response.status !== 200) {
-    throw new GitHubAppError(
-      `${config3.slug}: token mint refused (HTTP ${response.status})`,
-      typeof data.message === "string" ? data.message : void 0
-    );
-  }
-  const token = typeof data.token === "string" ? data.token : "";
-  if (!token) throw new GitHubAppError(`${config3.slug}: token mint returned no token`);
-  const expiresAt = typeof data.expires_at === "string" && data.expires_at ? Date.parse(data.expires_at) : now + TOKEN_TTL_MS;
-  const value = { token, expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TOKEN_TTL_MS };
-  writeCached(cacheFile, value);
-  return { token: value.token, expiresAt: value.expiresAt, cached: false, slug: config3.slug, account: input.account, installationId };
-}
-function appInstallationSummary(config3) {
-  return Object.entries(config3.installations).map(([account, id]) => `${account}=${id}`).join(", ");
-}
-function fileMode(file2) {
-  try {
-    return (0, import_node_fs4.statSync)(file2).mode & 511;
-  } catch {
-    return null;
-  }
-}
-async function githubRequest(input, deps) {
-  const response = await requireFetch(deps)(`${deps.apiBase ?? DEFAULT_API_BASE}${input.path}`, {
-    method: input.method,
-    headers: {
-      Authorization: `Bearer ${deps.token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...input.body === void 0 ? {} : { "Content-Type": "application/json" }
-    },
-    ...input.body === void 0 ? {} : { body: JSON.stringify(input.body) }
-  });
-  const data = await readJson(response);
-  return { status: response.status, data };
-}
-var import_node_crypto7, import_node_fs4, import_node_os10, import_node_path17, DEFAULT_API_BASE, TOKEN_REUSE_SKEW_MS, TOKEN_TTL_MS, GitHubAppError;
-var init_github_apps = __esm({
-  "src/core/github-apps.ts"() {
-    "use strict";
-    import_node_crypto7 = require("crypto");
-    import_node_fs4 = require("fs");
-    import_node_os10 = __toESM(require("os"), 1);
-    import_node_path17 = __toESM(require("path"), 1);
-    DEFAULT_API_BASE = "https://api.github.com";
-    TOKEN_REUSE_SKEW_MS = 5 * 60 * 1e3;
-    TOKEN_TTL_MS = 60 * 60 * 1e3;
-    GitHubAppError = class extends Error {
-      constructor(message, detail) {
-        super(message);
-        this.detail = detail;
-        this.name = "GitHubAppError";
-      }
-      detail;
-    };
-  }
-});
-
 // ../node_modules/prompts/node_modules/kleur/index.js
 var require_kleur = __commonJS({
   "../node_modules/prompts/node_modules/kleur/index.js"(exports2, module2) {
@@ -31064,267 +30841,6 @@ var require_cli_table3 = __commonJS({
   "../node_modules/cli-table3/index.js"(exports2, module2) {
     "use strict";
     module2.exports = require_table();
-  }
-});
-
-// src/core/review-posting.ts
-var review_posting_exports = {};
-__export(review_posting_exports, {
-  ISSUE_REF_PATTERN: () => ISSUE_REF_PATTERN,
-  OUTCOME_TO_EVENT: () => OUTCOME_TO_EVENT,
-  ReviewRefused: () => ReviewRefused,
-  bodyVerdicts: () => bodyVerdicts,
-  buildMarker: () => buildMarker,
-  eventForFlags: () => eventForFlags,
-  eventForOutcome: () => eventForOutcome,
-  isSafeIssueRef: () => isSafeIssueRef,
-  issueRefFromBranch: () => issueRefFromBranch,
-  lintModelBody: () => lintModelBody,
-  parseHeaderLine: () => parseHeaderLine,
-  parseIssueMarker: () => parseIssueMarker,
-  postReview: () => postReview,
-  reviewJournalArgs: () => reviewJournalArgs,
-  sha12: () => sha12
-});
-function eventForFlags(flags) {
-  const chosen = [
-    flags.approve ? "APPROVE" : null,
-    flags.requestChanges ? "REQUEST_CHANGES" : null,
-    flags.comment ? "COMMENT" : null
-  ].filter(Boolean);
-  return chosen.length === 1 ? chosen[0] : null;
-}
-function eventForOutcome(outcome) {
-  const key = (outcome ?? "").trim().toUpperCase();
-  return OUTCOME_TO_EVENT[key] ?? null;
-}
-function sha12(sha) {
-  return sha.trim().slice(0, 12);
-}
-function parseHeaderLine(body) {
-  const first = (body.split("\n")[0] ?? "").trim();
-  const match = LINE1.exec(first);
-  if (!match) return null;
-  return { role: match[1], model: match[2].trim(), head12: match[3].toLowerCase() };
-}
-function bodyVerdicts(body) {
-  const out = [];
-  for (const line of body.split("\n")) {
-    const match = VERDICT_LINE.exec(line);
-    if (match) out.push(OUTCOME_TO_EVENT[match[1]]);
-  }
-  return out;
-}
-function buildMarker(input) {
-  const parts = [
-    `agent=${input.holder}`,
-    `run=${input.runId}`,
-    ...input.issueRef ? [`issue=${input.issueRef}`] : [],
-    ...input.activationId ? [`activation=${input.activationId}`] : []
-  ];
-  return `<!-- ${parts.join(" ")} -->`;
-}
-function lintModelBody(body) {
-  const header = parseHeaderLine(body);
-  if (!header) return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
-  const rest = body.split("\n").slice(1).join("\n");
-  if (/<!--/.test(rest)) {
-    return "the review body must not carry a hidden marker: the tool writes it (agent, run, Issue)";
-  }
-  const verdicts = bodyVerdicts(body);
-  if (verdicts.length === 0) return 'the review body needs exactly one "- Verdict: PASS|PARTIAL|FAIL" line, found none';
-  if (verdicts.length > 1) return `the review body needs exactly one "- Verdict:" line, found ${verdicts.length}`;
-  return null;
-}
-function parseIssueMarker(text) {
-  const match = /<!--[^>]*?xtrm\b([^>]*?)-->/.exec(text ?? "");
-  if (!match) return null;
-  const out = {};
-  for (const [key, value] of match[1].trim().split(/\s+/).map((part) => {
-    const index = part.indexOf("=");
-    return index > 0 ? [part.slice(0, index), part.slice(index + 1)] : null;
-  }).filter((entry) => entry !== null)) {
-    if (key === "issue") out.issue = value;
-    else if (key === "holder") out.holder = value;
-    else if (key === "run") out.run = value;
-  }
-  return out.issue || out.holder || out.run ? out : null;
-}
-function isSafeIssueRef(ref) {
-  return ISSUE_REF_PATTERN.test((ref ?? "").trim());
-}
-function issueRefFromBranch(ref) {
-  const match = /(?:^|[^A-Za-z0-9])([A-Z][A-Z0-9]{1,9}-\d+)(?![0-9])/.exec(ref ?? "");
-  return match ? match[1] : null;
-}
-async function resolveHead(repo, pr, prefix, deps) {
-  if (prefix.length >= 40) return prefix;
-  const listed = await githubRequest({
-    method: "GET",
-    path: `/repos/${repo}/pulls/${pr}/commits?per_page=100`
-  }, deps);
-  if (listed.status === 200 && Array.isArray(listed.data)) {
-    const hit = listed.data.find((commit) => (commit.sha ?? "").toLowerCase().startsWith(prefix));
-    if (hit?.sha) return hit.sha;
-  }
-  return null;
-}
-async function postReview(input, deps) {
-  const warnings = [];
-  const lint = lintModelBody(input.body);
-  if (lint) throw new ReviewRefused(`review body refused by the lint: ${lint}`);
-  const header = parseHeaderLine(input.body);
-  const verdict = bodyVerdicts(input.body)[0];
-  if (!verdict) throw new ReviewRefused('review body has no "- Verdict:" line');
-  if (input.expectedModel && input.expectedModel !== header.model) {
-    throw new ReviewRefused(`--model says ${input.expectedModel}, line 1 says ${header.model}; line 1 is authoritative`);
-  }
-  if (input.expectedVerdict && input.expectedVerdict !== verdict) {
-    throw new ReviewRefused(`the flag requests ${input.expectedVerdict}, the body's verdict line says ${verdict}`);
-  }
-  const pull = await githubRequest({ method: "GET", path: `/repos/${input.repo}/pulls/${input.pr}` }, deps);
-  if (pull.status !== 200) {
-    throw new ReviewRefused(`cannot read PR #${input.pr} in ${input.repo} (HTTP ${pull.status})`);
-  }
-  const currentHead = (pull.data.head?.sha ?? "").toLowerCase();
-  if (!currentHead) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
-  if (input.expectedHead && !input.expectedHead.toLowerCase().startsWith(header.head12) && !currentHead.startsWith(input.expectedHead.toLowerCase())) {
-    throw new ReviewRefused(`the supplied head ${sha12(input.expectedHead)} does not match line 1 (${header.head12})`);
-  }
-  const resolved = await resolveHead(input.repo, input.pr, header.head12, deps) ?? (currentHead.startsWith(header.head12) ? currentHead : null);
-  if (!resolved) {
-    throw new ReviewRefused(`reviewed head ${header.head12} is not among the commits of PR #${input.pr}; review the current head`);
-  }
-  if (resolved !== currentHead) {
-    throw new ReviewRefused(
-      `PR head moved: reviewed ${sha12(resolved)}, current ${sha12(currentHead)} \u2014 review the current head`
-    );
-  }
-  const marker = parseIssueMarker(pull.data.body ?? "");
-  if (!marker) {
-    throw new ReviewRefused(
-      `PR #${input.pr} carries no xtrm marker in its body (<!-- xtrm issue=<REF> holder=<holder> run=<id> -->); refusing to post an unattributable review`
-    );
-  }
-  if (!marker.holder) {
-    throw new ReviewRefused(
-      `PR #${input.pr} has an xtrm marker without holder=, so an own-PR review cannot be excluded; ask the opener to add holder= to the marker`
-    );
-  }
-  if (marker.holder === input.holder) {
-    throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
-  }
-  const candidate = input.issueRef ?? marker.issue ?? issueRefFromBranch(pull.data.head?.ref) ?? null;
-  if (candidate && !isSafeIssueRef(candidate)) {
-    throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
-  }
-  const issueRef = candidate;
-  if (!issueRef) warnings.push("no Substrate Issue ref in the PR body or branch; the review is not journaled");
-  const lines = input.body.split("\n");
-  const line1 = (lines[0] ?? "").trim();
-  const rest = lines.slice(1).join("\n").trim();
-  const body = `${line1}
-
-${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}
-${rest}
-`;
-  const MAX_BODY = 65536;
-  if (body.length > MAX_BODY) {
-    throw new ReviewRefused(`the review body is ${body.length} characters; GitHub's limit is ${MAX_BODY} \u2014 shorten it and re-post`);
-  }
-  const created = await githubRequest({
-    method: "POST",
-    path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
-    body: { commit_id: resolved, event: verdict, body }
-  }, deps);
-  if (created.status !== 200 && created.status !== 201) {
-    throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
-  }
-  const url2 = created.data.html_url ?? `https://github.com/${input.repo}/pull/${input.pr}`;
-  const dismissed = await dismissStaleChangesRequested(
-    { repo: input.repo, pr: input.pr, head: resolved, postedId: created.data.id ?? 0 },
-    deps,
-    `${deps.slug}[bot]`,
-    warnings
-  );
-  return {
-    id: created.data.id ?? 0,
-    url: url2,
-    verdict,
-    state: created.data.state ?? (verdict === "APPROVE" ? "APPROVED" : verdict === "COMMENT" ? "COMMENTED" : "CHANGES_REQUESTED"),
-    head: resolved,
-    issueRef: issueRef ?? null,
-    dismissed,
-    warnings
-  };
-}
-async function dismissStaleChangesRequested(input, deps, botLogin, warnings) {
-  const reviews = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const listed = await githubRequest({
-      method: "GET",
-      path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100&page=${page}`
-    }, deps);
-    if (listed.status !== 200 || !Array.isArray(listed.data)) {
-      warnings.push(`could not list reviews to dismiss a stale change request (HTTP ${listed.status})`);
-      break;
-    }
-    reviews.push(...listed.data);
-    if (listed.data.length < 100) break;
-  }
-  const dismissed = [];
-  for (const review of reviews) {
-    if (review.state !== "CHANGES_REQUESTED") continue;
-    if (review.user?.login !== botLogin) continue;
-    if (typeof review.id !== "number" || review.id === input.postedId) continue;
-    const response = await githubRequest({
-      method: "PUT",
-      path: `/repos/${input.repo}/pulls/${input.pr}/reviews/${review.id}/dismissals`,
-      body: { message: `Superseded by a review at head ${sha12(input.head)}` }
-    }, deps);
-    if (response.status === 200 || response.status === 204) dismissed.push(review.id);
-    else warnings.push(`could not dismiss stale review ${review.id} (HTTP ${response.status})`);
-  }
-  return dismissed;
-}
-function reviewJournalArgs(receipt, input, issueRef, slug) {
-  const refs = JSON.stringify([{
-    kind: "github-review",
-    key: receipt.url,
-    value: {
-      repo: input.repo,
-      pr: input.pr,
-      head: receipt.head,
-      actor: slug ? `${slug}[bot]` : input.holder
-    }
-  }]);
-  const result = JSON.stringify({
-    summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
-    verdict: receipt.verdict,
-    head: receipt.head,
-    artifact: { kind: "review", head: receipt.head, verdict: receipt.verdict, url: receipt.url }
-  });
-  return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
-}
-var OUTCOME_TO_EVENT, LINE1, VERDICT_LINE, ISSUE_REF_PATTERN, ReviewRefused;
-var init_review_posting = __esm({
-  "src/core/review-posting.ts"() {
-    "use strict";
-    init_github_apps();
-    OUTCOME_TO_EVENT = {
-      PASS: "APPROVE",
-      PARTIAL: "COMMENT",
-      FAIL: "REQUEST_CHANGES"
-    };
-    LINE1 = /^Review by ([A-Za-z][A-Za-z0-9 -]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
-    VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
-    ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
-    ReviewRefused = class extends Error {
-      constructor(message) {
-        super(message);
-        this.name = "ReviewRefused";
-      }
-    };
   }
 });
 
@@ -58586,10 +58102,223 @@ function panePath(env3 = process.env) {
 // src/core/launch-identity.ts
 var import_node_fs6 = require("fs");
 var import_node_child_process4 = require("child_process");
-init_github_apps();
 
-// src/core/git-transport.ts
-init_github_apps();
+// src/core/github-apps.ts
+var import_node_crypto7 = require("crypto");
+var import_node_fs4 = require("fs");
+var import_node_os10 = __toESM(require("os"), 1);
+var import_node_path17 = __toESM(require("path"), 1);
+var DEFAULT_API_BASE = "https://api.github.com";
+var TOKEN_REUSE_SKEW_MS = 5 * 60 * 1e3;
+var TOKEN_TTL_MS = 60 * 60 * 1e3;
+var GitHubAppError = class extends Error {
+  constructor(message, detail) {
+    super(message);
+    this.detail = detail;
+    this.name = "GitHubAppError";
+  }
+  detail;
+};
+function githubAppPaths(home = import_node_os10.default.homedir(), runtimeDir) {
+  const identitiesDir = import_node_path17.default.join(home, ".xtrm", "identities", "github-apps");
+  const runtime = runtimeDir ?? process.env.XDG_RUNTIME_DIR ?? import_node_path17.default.join(home, ".xtrm", "run");
+  return {
+    identitiesDir,
+    tokenCacheDir: import_node_path17.default.join(runtime, "xtrm", "gh-tokens"),
+    appFile: (slug) => import_node_path17.default.join(identitiesDir, slug, "app.json"),
+    defaultKeyPath: (slug) => import_node_path17.default.join(home, ".secrets", "github-apps", `${slug}.pem`)
+  };
+}
+function readAppConfig(slug, deps = {}) {
+  const read = deps.readFile ?? ((file3) => (0, import_node_fs4.readFileSync)(file3, "utf8"));
+  const file2 = githubAppPaths(deps.home, deps.runtimeDir).appFile(slug);
+  let raw;
+  try {
+    raw = JSON.parse(read(file2));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const record2 = raw;
+  if (record2.slug !== slug) return null;
+  if (typeof record2.appId !== "string" || !record2.appId.trim()) return null;
+  const installations = {};
+  const rawInstallations = record2.installations;
+  if (rawInstallations && typeof rawInstallations === "object") {
+    for (const [account, value] of Object.entries(rawInstallations)) {
+      const id = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+      if (id) installations[account] = id;
+    }
+  }
+  return {
+    slug,
+    appId: record2.appId.trim(),
+    owner: typeof record2.owner === "string" ? record2.owner : "",
+    keyPath: typeof record2.keyPath === "string" && record2.keyPath.trim() ? record2.keyPath : githubAppPaths(deps.home, deps.runtimeDir).defaultKeyPath(slug),
+    installations,
+    pollerHost: typeof record2.pollerHost === "string" ? record2.pollerHost : void 0,
+    inbound: typeof record2.inbound === "string" ? record2.inbound : void 0
+  };
+}
+function base64url3(value) {
+  return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function buildAppJwt(appId, privateKey, nowMs = Date.now()) {
+  const now = Math.floor(nowMs / 1e3);
+  const header = base64url3(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = base64url3(JSON.stringify({ iat: now - 60, exp: now + 540, iss: appId }));
+  const signingInput = `${header}.${payload}`;
+  const signer = (0, import_node_crypto7.createSign)("RSA-SHA256");
+  signer.update(signingInput);
+  return `${signingInput}.${base64url3(signer.sign(privateKey))}`;
+}
+function repoOwner(repo) {
+  const match = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/.exec(repo.trim());
+  if (!match) return null;
+  if (match[2] === "." || match[2] === "..") return null;
+  return match[1];
+}
+function installationForRepo(config3, repo) {
+  const owner = repoOwner(repo);
+  if (!owner) return null;
+  for (const [account, id] of Object.entries(config3.installations)) {
+    if (account.toLowerCase() === owner.toLowerCase()) return { account, id };
+  }
+  return null;
+}
+function readCached(file2, deps) {
+  const read = deps.readFile ?? ((f) => (0, import_node_fs4.readFileSync)(f, "utf8"));
+  try {
+    const parsed = JSON.parse(read(file2));
+    if (typeof parsed.token === "string" && parsed.token && typeof parsed.expiresAt === "number") {
+      return { token: parsed.token, expiresAt: parsed.expiresAt };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function ensurePrivateDir(dir) {
+  (0, import_node_fs4.mkdirSync)(dir, { recursive: true, mode: 448 });
+  let mode;
+  try {
+    mode = (0, import_node_fs4.statSync)(dir).mode & 511;
+  } catch (error51) {
+    throw new GitHubAppError(`cannot stat the token cache directory ${dir}: ${error51.message}`);
+  }
+  if ((mode & 63) !== 0) {
+    try {
+      (0, import_node_fs4.chmodSync)(dir, 448);
+      mode = (0, import_node_fs4.statSync)(dir).mode & 511;
+    } catch {
+    }
+  }
+  if ((mode & 63) !== 0) {
+    throw new GitHubAppError(`the token cache directory ${dir} is mode ${mode.toString(8)}; refusing to write a token into a directory other users can read`);
+  }
+}
+function writeCached(file2, value) {
+  ensurePrivateDir(import_node_path17.default.dirname(file2));
+  const tmp = `${file2}.${process.pid}.tmp`;
+  (0, import_node_fs4.writeFileSync)(tmp, JSON.stringify(value), { mode: 384 });
+  (0, import_node_fs4.renameSync)(tmp, file2);
+  try {
+    (0, import_node_fs4.chmodSync)(file2, 384);
+  } catch {
+  }
+}
+function requireFetch(deps) {
+  const fetchImpl = deps.fetch ?? globalThis.fetch;
+  if (!fetchImpl) throw new GitHubAppError("no fetch implementation available");
+  return fetchImpl;
+}
+async function readJson(response) {
+  try {
+    const data = await response.json();
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+async function mintInstallationToken(input, deps = {}) {
+  const paths = githubAppPaths(deps.home, deps.runtimeDir);
+  const config3 = readAppConfig(input.slug, deps);
+  if (!config3) throw new GitHubAppError(`no app.json for ${input.slug}: the App is not configured on this machine`);
+  const installationId = config3.installations[input.account];
+  if (!installationId) {
+    throw new GitHubAppError(`${input.slug} has no recorded installation for account ${input.account}`);
+  }
+  const now = (deps.now ?? Date.now)();
+  const cacheFile = import_node_path17.default.join(paths.tokenCacheDir, `${config3.slug}-${input.account}.json`);
+  const cached2 = readCached(cacheFile, deps);
+  if (cached2 && cached2.expiresAt - now > TOKEN_REUSE_SKEW_MS) {
+    return { token: cached2.token, expiresAt: cached2.expiresAt, cached: true, slug: config3.slug, account: input.account, installationId };
+  }
+  try {
+    const mode = (0, import_node_fs4.statSync)(config3.keyPath).mode & 511;
+    if ((mode & 63) !== 0) {
+      throw new GitHubAppError(`${config3.slug}: the App private key ${config3.keyPath} is mode ${mode.toString(8)}; it must be 600`);
+    }
+  } catch (error51) {
+    if (error51 instanceof GitHubAppError) throw error51;
+  }
+  const read = deps.readFile ?? ((f) => (0, import_node_fs4.readFileSync)(f, "utf8"));
+  let privateKey;
+  try {
+    privateKey = read(config3.keyPath);
+  } catch {
+    throw new GitHubAppError(`${config3.slug}: cannot read the App private key at ${config3.keyPath}`);
+  }
+  const jwt2 = buildAppJwt(config3.appId, privateKey, now);
+  const apiBase = deps.apiBase ?? DEFAULT_API_BASE;
+  const response = await requireFetch(deps)(`${apiBase}/app/installations/${installationId}/access_tokens`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt2}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    },
+    body: "{}"
+  });
+  const data = await readJson(response);
+  if (response.status !== 201 && response.status !== 200) {
+    throw new GitHubAppError(
+      `${config3.slug}: token mint refused (HTTP ${response.status})`,
+      typeof data.message === "string" ? data.message : void 0
+    );
+  }
+  const token = typeof data.token === "string" ? data.token : "";
+  if (!token) throw new GitHubAppError(`${config3.slug}: token mint returned no token`);
+  const expiresAt = typeof data.expires_at === "string" && data.expires_at ? Date.parse(data.expires_at) : now + TOKEN_TTL_MS;
+  const value = { token, expiresAt: Number.isFinite(expiresAt) ? expiresAt : now + TOKEN_TTL_MS };
+  writeCached(cacheFile, value);
+  return { token: value.token, expiresAt: value.expiresAt, cached: false, slug: config3.slug, account: input.account, installationId };
+}
+function appInstallationSummary(config3) {
+  return Object.entries(config3.installations).map(([account, id]) => `${account}=${id}`).join(", ");
+}
+function fileMode(file2) {
+  try {
+    return (0, import_node_fs4.statSync)(file2).mode & 511;
+  } catch {
+    return null;
+  }
+}
+async function githubRequest(input, deps) {
+  const response = await requireFetch(deps)(`${deps.apiBase ?? DEFAULT_API_BASE}${input.path}`, {
+    method: input.method,
+    headers: {
+      Authorization: `Bearer ${deps.token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...input.body === void 0 ? {} : { "Content-Type": "application/json" }
+    },
+    ...input.body === void 0 ? {} : { body: JSON.stringify(input.body) }
+  });
+  const data = await readJson(response);
+  return { status: response.status, data };
+}
 
 // src/core/identity-roles.ts
 var import_node_fs5 = require("fs");
@@ -72181,7 +71910,6 @@ var import_node_fs23 = require("fs");
 var import_node_os26 = __toESM(require("os"), 1);
 var import_node_path47 = __toESM(require("path"), 1);
 var import_node_child_process22 = require("child_process");
-init_github_apps();
 
 // src/core/agent-run-id.ts
 var import_node_crypto17 = require("crypto");
@@ -72211,16 +71939,265 @@ function resolveAgentRunId(deps = {}) {
   return (0, import_node_crypto17.createHash)("sha1").update(`${boot}:${sid}:${start}`).digest("hex").slice(0, 6);
 }
 
-// src/commands/identity.ts
-init_review_posting();
+// src/core/review-posting.ts
+var OUTCOME_TO_EVENT = {
+  PASS: "APPROVE",
+  PARTIAL: "COMMENT",
+  FAIL: "REQUEST_CHANGES"
+};
+function eventForFlags(flags) {
+  const chosen = [
+    flags.approve ? "APPROVE" : null,
+    flags.requestChanges ? "REQUEST_CHANGES" : null,
+    flags.comment ? "COMMENT" : null
+  ].filter(Boolean);
+  return chosen.length === 1 ? chosen[0] : null;
+}
+function eventForOutcome(outcome) {
+  const key = (outcome ?? "").trim().toUpperCase();
+  return OUTCOME_TO_EVENT[key] ?? null;
+}
+function sha12(sha) {
+  return sha.trim().slice(0, 12);
+}
+var LINE1 = /^Review by ([A-Za-z][A-Za-z0-9 -]*) \((\S.*)\) at head ([0-9a-f]{7,40})$/;
+var VERDICT_LINE = /^- Verdict: (PASS|PARTIAL|FAIL)\s*$/;
+function parseHeaderLine(body) {
+  const first = (body.split("\n")[0] ?? "").trim();
+  const match = LINE1.exec(first);
+  if (!match) return null;
+  return { role: match[1], model: match[2].trim(), head12: match[3].toLowerCase() };
+}
+function bodyVerdicts(body) {
+  const out = [];
+  for (const line of body.split("\n")) {
+    const match = VERDICT_LINE.exec(line);
+    if (match) out.push(OUTCOME_TO_EVENT[match[1]]);
+  }
+  return out;
+}
+function buildMarker(input) {
+  const parts = [
+    `agent=${input.holder}`,
+    `run=${input.runId}`,
+    ...input.issueRef ? [`issue=${input.issueRef}`] : [],
+    ...input.activationId ? [`activation=${input.activationId}`] : []
+  ];
+  return `<!-- ${parts.join(" ")} -->`;
+}
+function lintModelBody(body) {
+  const header = parseHeaderLine(body);
+  if (!header) return 'review body line 1 must be "Review by <role> (<model>) at head <sha12>"';
+  const rest = body.split("\n").slice(1).join("\n");
+  if (/<!--/.test(rest)) {
+    return "the review body must not carry a hidden marker: the tool writes it (agent, run, Issue)";
+  }
+  const verdicts = bodyVerdicts(body);
+  if (verdicts.length === 0) return 'the review body needs exactly one "- Verdict: PASS|PARTIAL|FAIL" line, found none';
+  if (verdicts.length > 1) return `the review body needs exactly one "- Verdict:" line, found ${verdicts.length}`;
+  return null;
+}
+var XTRM_MARKER = /<!--[^>]*?xtrm\b([^>]*?)-->/g;
+function markerAttributes(attributes) {
+  const out = {};
+  for (const part of attributes.trim().split(/\s+/)) {
+    const index = part.indexOf("=");
+    if (index <= 0) continue;
+    const key = part.slice(0, index);
+    const value = part.slice(index + 1);
+    if (key === "issue") out.issue = value;
+    else if (key === "holder") out.holder = value;
+    else if (key === "run") out.run = value;
+  }
+  return out;
+}
+function parseIssueMarkers(text) {
+  const out = [];
+  let fenced = false;
+  for (const line of (text ?? "").split("\n")) {
+    if (/^\s{0,3}(```|~~~)/.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || /^\s*>/.test(line)) continue;
+    for (const match of line.matchAll(XTRM_MARKER)) {
+      const marker = markerAttributes(match[1]);
+      if (marker.issue || marker.holder || marker.run) out.push(marker);
+    }
+  }
+  return out;
+}
+function parseIssueMarker(text) {
+  const markers = parseIssueMarkers(text);
+  return markers.length ? markers[markers.length - 1] : null;
+}
+var ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
+function isSafeIssueRef(ref) {
+  return ISSUE_REF_PATTERN.test((ref ?? "").trim());
+}
+var ReviewRefused = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ReviewRefused";
+  }
+};
+async function resolveHead(repo, pr, prefix, deps) {
+  if (prefix.length >= 40) return prefix;
+  const listed = await githubRequest({
+    method: "GET",
+    path: `/repos/${repo}/pulls/${pr}/commits?per_page=100`
+  }, deps);
+  if (listed.status === 200 && Array.isArray(listed.data)) {
+    const hit = listed.data.find((commit) => (commit.sha ?? "").toLowerCase().startsWith(prefix));
+    if (hit?.sha) return hit.sha;
+  }
+  return null;
+}
+async function postReview(input, deps) {
+  const warnings = [];
+  const lint = lintModelBody(input.body);
+  if (lint) throw new ReviewRefused(`review body refused by the lint: ${lint}`);
+  const header = parseHeaderLine(input.body);
+  const verdict = bodyVerdicts(input.body)[0];
+  if (!verdict) throw new ReviewRefused('review body has no "- Verdict:" line');
+  if (input.expectedModel && input.expectedModel !== header.model) {
+    throw new ReviewRefused(`--model says ${input.expectedModel}, line 1 says ${header.model}; line 1 is authoritative`);
+  }
+  if (input.expectedVerdict && input.expectedVerdict !== verdict) {
+    throw new ReviewRefused(`the flag requests ${input.expectedVerdict}, the body's verdict line says ${verdict}`);
+  }
+  const pull = await githubRequest({ method: "GET", path: `/repos/${input.repo}/pulls/${input.pr}` }, deps);
+  if (pull.status !== 200) {
+    throw new ReviewRefused(`cannot read PR #${input.pr} in ${input.repo} (HTTP ${pull.status})`);
+  }
+  const currentHead = (pull.data.head?.sha ?? "").toLowerCase();
+  if (!currentHead) throw new ReviewRefused(`PR #${input.pr} returned no head SHA`);
+  if (input.expectedHead && !input.expectedHead.toLowerCase().startsWith(header.head12) && !currentHead.startsWith(input.expectedHead.toLowerCase())) {
+    throw new ReviewRefused(`the supplied head ${sha12(input.expectedHead)} does not match line 1 (${header.head12})`);
+  }
+  const resolved = await resolveHead(input.repo, input.pr, header.head12, deps) ?? (currentHead.startsWith(header.head12) ? currentHead : null);
+  if (!resolved) {
+    throw new ReviewRefused(`reviewed head ${header.head12} is not among the commits of PR #${input.pr}; review the current head`);
+  }
+  if (resolved !== currentHead) {
+    throw new ReviewRefused(
+      `PR head moved: reviewed ${sha12(resolved)}, current ${sha12(currentHead)} \u2014 review the current head`
+    );
+  }
+  const marker = parseIssueMarker(pull.data.body ?? "");
+  if (!marker) {
+    throw new ReviewRefused(
+      `PR #${input.pr} carries no xtrm marker in its body (<!-- xtrm issue=<REF> holder=<holder> run=<id> -->); refusing to post an unattributable review`
+    );
+  }
+  if (!marker.holder) {
+    throw new ReviewRefused(
+      `PR #${input.pr} has an xtrm marker without holder=, so an own-PR review cannot be excluded; ask the opener to add holder= to the marker`
+    );
+  }
+  if (marker.holder === input.holder) {
+    throw new ReviewRefused(`refusing own-PR review: PR #${input.pr} was opened by holder ${input.holder}`);
+  }
+  const candidate = input.issueRef ?? marker.issue ?? null;
+  if (candidate && !isSafeIssueRef(candidate)) {
+    throw new ReviewRefused(`the Issue ref '${candidate}' is not a Substrate ref (expected e.g. CORE-2528); refusing to journal it`);
+  }
+  const issueRef = candidate;
+  if (!issueRef) warnings.push("no Substrate Issue ref in the PR body or branch; the review is not journaled");
+  const lines = input.body.split("\n");
+  const line1 = (lines[0] ?? "").trim();
+  const rest = lines.slice(1).join("\n").trim();
+  const body = `${line1}
+
+${buildMarker({ holder: input.holder, runId: input.runId, issueRef, activationId: input.activationId })}
+${rest}
+`;
+  const MAX_BODY = 65536;
+  if (body.length > MAX_BODY) {
+    throw new ReviewRefused(`the review body is ${body.length} characters; GitHub's limit is ${MAX_BODY} \u2014 shorten it and re-post`);
+  }
+  const created = await githubRequest({
+    method: "POST",
+    path: `/repos/${input.repo}/pulls/${input.pr}/reviews`,
+    body: { commit_id: resolved, event: verdict, body }
+  }, deps);
+  if (created.status !== 200 && created.status !== 201) {
+    throw new ReviewRefused(`review post refused (HTTP ${created.status})`);
+  }
+  const url2 = created.data.html_url ?? `https://github.com/${input.repo}/pull/${input.pr}`;
+  const dismissed = await dismissStaleChangesRequested(
+    { repo: input.repo, pr: input.pr, head: resolved, postedId: created.data.id ?? 0 },
+    deps,
+    `${deps.slug}[bot]`,
+    warnings
+  );
+  return {
+    id: created.data.id ?? 0,
+    url: url2,
+    verdict,
+    state: created.data.state ?? (verdict === "APPROVE" ? "APPROVED" : verdict === "COMMENT" ? "COMMENTED" : "CHANGES_REQUESTED"),
+    head: resolved,
+    issueRef: issueRef ?? null,
+    dismissed,
+    warnings
+  };
+}
+async function dismissStaleChangesRequested(input, deps, botLogin, warnings) {
+  const reviews = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const listed = await githubRequest({
+      method: "GET",
+      path: `/repos/${input.repo}/pulls/${input.pr}/reviews?per_page=100&page=${page}`
+    }, deps);
+    if (listed.status !== 200 || !Array.isArray(listed.data)) {
+      warnings.push(`could not list reviews to dismiss a stale change request (HTTP ${listed.status})`);
+      break;
+    }
+    reviews.push(...listed.data);
+    if (listed.data.length < 100) break;
+  }
+  const dismissed = [];
+  for (const review of reviews) {
+    if (review.state !== "CHANGES_REQUESTED") continue;
+    if (review.user?.login !== botLogin) continue;
+    if (typeof review.id !== "number" || review.id === input.postedId) continue;
+    const response = await githubRequest({
+      method: "PUT",
+      path: `/repos/${input.repo}/pulls/${input.pr}/reviews/${review.id}/dismissals`,
+      body: { message: `Superseded by a review at head ${sha12(input.head)}` }
+    }, deps);
+    if (response.status === 200 || response.status === 204) dismissed.push(review.id);
+    else warnings.push(`could not dismiss stale review ${review.id} (HTTP ${response.status})`);
+  }
+  return dismissed;
+}
+function reviewJournalArgs(receipt, input, issueRef, slug) {
+  const refs = JSON.stringify([{
+    kind: "github-review",
+    key: receipt.url,
+    value: {
+      repo: input.repo,
+      pr: input.pr,
+      head: receipt.head,
+      actor: slug ? `${slug}[bot]` : input.holder
+    }
+  }]);
+  const result = JSON.stringify({
+    summary: `Review ${receipt.verdict} at head ${sha12(receipt.head)} for ${input.repo}#${input.pr}`,
+    verdict: receipt.verdict,
+    head: receipt.head,
+    artifact: { kind: "review", head: receipt.head, verdict: receipt.verdict, url: receipt.url }
+  });
+  return ["journal", "append", issueRef, "--kind", "result", "--result", result, "--refs", refs, "--json"];
+}
 
 // src/core/merge-guard.ts
 var import_node_fs21 = require("fs");
 var import_node_os24 = __toESM(require("os"), 1);
 var import_node_path45 = __toESM(require("path"), 1);
-init_github_apps();
-init_review_posting();
 var OVERRIDE_ENV_VAR = "XTRM_MERGE_GUARD_OVERRIDE";
+var OFFLINE_ENV_VAR = "XTRM_MERGE_GUARD_OFFLINE";
+var ISSUE_LOOKUP_TIMEOUT_MS = 5e3;
 var MERGE_GUARD_ENV_VAR = "XTRM_MERGE_GUARD";
 function mergeGuardEnabled(env3 = process.env) {
   const value = (env3[MERGE_GUARD_ENV_VAR] ?? "").trim().toLowerCase();
@@ -72233,18 +72210,34 @@ var ROUTING_HINT = [
 ].join("\n");
 function refusalMessage(input) {
   const head = input.head ? sha12(input.head) : "(unknown head)";
-  return [
-    `merge refused for ${input.repo}#${input.pr}: ${input.reason}`,
+  const guidance = input.guidance ?? [
     `a review by xtrm-reviewer[bot] is required at head ${head}`,
     "ways to get one:",
-    ROUTING_HINT,
+    ROUTING_HINT
+  ];
+  return [
+    `merge refused for ${input.repo}#${input.pr}: ${input.reason}`,
+    ...guidance,
     `override (coordinator and operator only): ${OVERRIDE_ENV_VAR}=<reason>`
   ].join("\n");
+}
+function markerGuidance(ref) {
+  const example = `<!-- xtrm issue=${ref ?? "CORE-2528"} holder=<holder> run=<id> -->`;
+  return [
+    `put ONE marker in the PR body that names an existing Substrate Issue, for example ${example}`,
+    `a marker inside a fenced code block or a > quote is ignored; check the ref with: sb issue show ${ref ?? "<REF>"} --json`
+  ];
 }
 function defaultRunSb() {
   const { spawnSync: spawnSync43 } = require("child_process");
   return (cmd, args, opts) => {
-    const result = spawnSync43(cmd, args, { encoding: "utf8", input: opts.input ?? void 0, stdio: ["pipe", "pipe", "pipe"] });
+    const result = spawnSync43(cmd, args, {
+      encoding: "utf8",
+      input: opts.input ?? void 0,
+      cwd: opts.cwd,
+      timeout: opts.timeout,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
     return { status: result.status, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
   };
 }
@@ -72263,6 +72256,40 @@ function journalEntries(stdout) {
   const envelope = parseSbJson(stdout);
   const data = envelope?.data;
   return Array.isArray(data) ? data : [];
+}
+function offlineRequested(env3) {
+  const value = (env3[OFFLINE_ENV_VAR] ?? "").trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+function lookupIssue(ref, deps) {
+  const env3 = deps.env ?? process.env;
+  if (offlineRequested(env3)) return { state: "unknown", detail: `${OFFLINE_ENV_VAR} is set` };
+  const run5 = deps.runSb ?? defaultRunSb();
+  let result;
+  try {
+    result = run5("sb", ["issue", "show", ref, "--json"], {
+      input: "",
+      timeout: ISSUE_LOOKUP_TIMEOUT_MS,
+      cwd: deps.cwd ?? process.cwd()
+    });
+  } catch (error52) {
+    return { state: "unknown", detail: `sb could not run (${error52.message})` };
+  }
+  if (result.status === null) return { state: "unknown", detail: "sb is absent or did not answer in 5 s" };
+  const envelope = parseSbJson(result.stdout);
+  if (!envelope || typeof envelope !== "object") {
+    return { state: "unknown", detail: "sb returned output the guard cannot parse" };
+  }
+  if (result.status === 0) {
+    const returned = typeof envelope.data?.humanRef === "string" ? envelope.data.humanRef.trim() : "";
+    if (envelope.ok === true && returned === ref) return { state: "verified" };
+    return { state: "unknown", detail: `sb exited 0 without returning ${ref}` };
+  }
+  const error51 = typeof envelope.error === "string" ? envelope.error : "";
+  if (envelope.ok === false && error51.includes(ref) && /unresolvable ref|not[ -]?found|no such issue|unknown (issue|ref)/i.test(error51)) {
+    return { state: "missing" };
+  }
+  return { state: "unknown", detail: `sb exited ${result.status} without an explicit not-found` };
 }
 function findValidDecision(entries, input) {
   const head12 = sha12(input.head);
@@ -72322,12 +72349,12 @@ async function mergeCheck(input, deps) {
   const reviewerSlug = deps.reviewerSlug ?? "xtrm-reviewer";
   const botLogin = `${reviewerSlug}[bot]`;
   const base = { repo: input.repo, pr: input.pr };
-  const deny = (reason, extra = {}) => ({
+  const deny = (reason, extra = {}, guidance) => ({
     allow: false,
     reason,
     ...base,
     ...extra,
-    message: refusalMessage({ ...base, head: extra.head, reason })
+    message: refusalMessage({ ...base, head: extra.head, reason, guidance })
   });
   const allow = (reason, extra = {}) => ({
     allow: true,
@@ -72357,11 +72384,20 @@ async function mergeCheck(input, deps) {
   }
   const head = pull.head?.sha ?? "";
   if (!head) return deny("the PR returned no head SHA");
-  const marker = parseIssueMarker(pull.body ?? "");
-  const rawRef = marker?.issue ?? issueRefFromBranch(pull.head?.ref) ?? null;
+  const markers = parseIssueMarkers(pull.body ?? "");
+  const namedRefs = [...new Set(markers.map((entry) => entry.issue).filter((value) => typeof value === "string" && value !== ""))];
+  if (namedRefs.length > 1) {
+    return deny(
+      `the PR body carries ${namedRefs.length} xtrm markers naming different Issues (${namedRefs.join(", ")}); leave exactly one`,
+      { head },
+      markerGuidance()
+    );
+  }
+  const marker = markers.length ? markers[markers.length - 1] : null;
+  const rawRef = marker?.issue ?? null;
   const issueRef = rawRef && isSafeIssueRef(rawRef) ? rawRef : null;
   if (rawRef && !issueRef) {
-    return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha });
+    return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha }, markerGuidance());
   }
   const mine = reviews.filter((review) => review.user?.login === botLogin && review.state && review.state !== "DISMISSED" && (review.submitted_at ?? "") !== "").sort((a, b) => Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? ""));
   const latest = mine[mine.length - 1];
@@ -72379,17 +72415,41 @@ async function mergeCheck(input, deps) {
   if (latest.state === "APPROVED") {
     if (!issueRef) {
       return deny(
-        "the PR names no resolvable Substrate Issue, so the guard refuses even an approval at the current head",
-        { head, issueRef, ...reviewInfo }
+        "the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head",
+        { head, issueRef, ...reviewInfo },
+        markerGuidance()
       );
     }
-    return allow("xtrm-reviewer[bot] approved the current head", { head, issueRef, ...reviewInfo });
+    const lookup = lookupIssue(issueRef, deps);
+    if (lookup.state === "missing") {
+      return deny(
+        `the marker names ${issueRef}, and Substrate has no such Issue; fix the marker before merging`,
+        { head, issueRef, issueLookup: "missing", ...reviewInfo },
+        markerGuidance(issueRef)
+      );
+    }
+    if (lookup.state === "unknown") {
+      return allow(
+        `xtrm-reviewer[bot] approved the current head; ${issueRef} could not be verified (${lookup.detail}), so the merge is allowed`,
+        { head, issueRef, issueLookup: "unknown", issueLookupDetail: lookup.detail, ...reviewInfo }
+      );
+    }
+    return allow("xtrm-reviewer[bot] approved the current head", {
+      head,
+      issueRef,
+      issueLookup: "verified",
+      ...reviewInfo
+    });
   }
   if (latest.state !== "COMMENTED" && latest.state !== "COMMENT") {
     return deny(`the reviewer App's latest review state ${latest.state} does not allow a merge`, { head, issueRef, ...reviewInfo });
   }
   if (!issueRef) {
-    return deny("the PR names no Substrate Issue, so a PARTIAL review cannot be accepted", { head, issueRef, ...reviewInfo });
+    return deny(
+      "the PR names no Substrate Issue in a marker, so a PARTIAL review cannot be accepted",
+      { head, issueRef, ...reviewInfo },
+      markerGuidance()
+    );
   }
   const run5 = deps.runSb ?? defaultRunSb();
   let entries = [];
@@ -72506,9 +72566,6 @@ function recordMerge(input, deps) {
   if (result.status === 0) return { ok: true };
   return { ok: false, error: result.stderr.trim() || `sb exited ${result.status}` };
 }
-
-// src/commands/identity.ts
-init_review_posting();
 
 // src/core/reviewer-routing.ts
 var import_node_fs22 = require("fs");
@@ -73048,7 +73105,11 @@ function createIdentityCommand() {
       token,
       apiBase: DEFAULT_API_BASE,
       reviewerSlug: appSlugForRole("reviewer", map2),
-      roleMap: map2
+      roleMap: map2,
+      // Passed explicitly: the guard reads its flags and the Issue-existence
+      // check from this environment, and runs `sb` from the caller's cwd.
+      env: process.env,
+      cwd: opts.cwd
     };
     let decision = unreachable ? await unreachableRefusal(repo, pr, unreachable) : await mergeCheck({ repo, pr }, deps);
     if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? "").trim()) {
@@ -73078,7 +73139,7 @@ function createIdentityCommand() {
     }
     process.exit(decision.allow ? 0 : 1);
   });
-  identity.command("merge-record").description("Append the github-merge Journal ref after a merge (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository").requiredOption("--pr <number>", "Pull request number").requiredOption("--head <sha>", "Merged head").option("--issue <ref>", "Issue ref (default: resolved from the PR body or branch)").action(async (opts) => {
+  identity.command("merge-record").description("Append the github-merge Journal ref after a merge (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository").requiredOption("--pr <number>", "Pull request number").requiredOption("--head <sha>", "Merged head").option("--issue <ref>", "Issue ref (default: the PR body marker)").action(async (opts) => {
     const pr = Number(opts.pr);
     if (!Number.isInteger(pr) || pr <= 0) fail2(`--pr ${opts.pr} is not a pull request number`);
     const { map: map2 } = effectiveRole();
@@ -73203,9 +73264,7 @@ async function fetchPullBody(repo, pr, token) {
     { token, apiBase: DEFAULT_API_BASE }
   );
   const marker = parseIssueMarker(pull.data.body ?? "");
-  if (marker?.issue) return { issueRef: marker.issue };
-  const { issueRefFromBranch: issueRefFromBranch2 } = await Promise.resolve().then(() => (init_review_posting(), review_posting_exports));
-  return { issueRef: issueRefFromBranch2(pull.data.head?.ref) ?? void 0 };
+  return { issueRef: marker?.issue };
 }
 
 // src/commands/docs.ts
