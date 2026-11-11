@@ -676,6 +676,7 @@ Folded in: **XT-191** Pi 1.4.0 upgrade · **XT-183** bundle drops extension sele
 Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mode re-registers a hook · **XT-192** one status line
 
 > **Ruling · 11-11 · a clear surface for every command and tool**
+> - Operator's words: “all commands have to have a clear surface”, and the deferred-loading research “maps onto the new tools we're going to build for the plugin/extension” (CORE-2613 Journal seq 2). Applied here as the points below.
 > - Every command has a clear surface: one verb per job, flags that fail closed and name the bad flag, a `--json` shape, and its own help topic. Substrate's strict parsing (xtrm #348) is the model; no hidden aliases and no overlapping verbs.
 > - The model-facing tool set stays small and distinct. Fewer, well-named, non-overlapping tools beat any search layer: near-duplicates and thin wrappers defeat selection even after a search. The starting point is the nine-tool vocabulary and text budget in `integrations/tool-surface.ts` on `xt/sb-improve-plugin` (2,311 characters, down from 13,875).
 > - Hybrid loading: the hot path (claim, show, journal append, close) is always loaded. Situational tools are deferred and found through the runtime's tool search, Claude Code's `ToolSearch` and Pi's `tool_search`. Deferred loading is one measure among several (the research recommends a hybrid loadout and a smaller catalog), not the whole answer.
@@ -896,7 +897,7 @@ Folded in: **XT-162** one complete specialists skill per runtime
 > - When runners are unavailable, the merge guard accepts a local run record (command, commit SHA, exit code, host) stored in Substrate as a validation artifact. It is written down and never silent.
 > - This is a per-repo setting: local run record or hard block. For users other than you, the default is to block.
 
-> **Ruling · 11-11 · tool descriptions come from the same source**
+> **Proposal · 11-11 · derived from the tool-surface ruling on step 12; not yet confirmed by the operator · tool descriptions come from the same source**
 > - The generated reference also generates the tool descriptions for the plugin and the extension (step 12), so the searchable metadata of each tool matches its CLI verb and help topic word for word.
 > - The drift check also fails when a tool and a CLI verb disagree on name or arguments, or when two tools describe the same job.
 
