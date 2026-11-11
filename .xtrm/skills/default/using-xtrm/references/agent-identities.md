@@ -160,21 +160,26 @@ gh pr review <pr> --repo <owner/repo> \
 Verdict mapping: `PASS` → `--approve`, `PARTIAL` → `--comment`,
 `FAIL` → `--request-changes`.
 
-The model writes **findings only**. The `gh` shim prepends the header
-`Review by <role> (<model>) at head <sha12>` and the hidden marker from the process
-identity, sets `commit_id` to the reviewed head, refuses a head that moved after the
-review was prepared, and refuses a review of a PR the same holder opened. Never author
-the header yourself: attribution is not typed in.
+The model writes **line 1** exactly as `Review by <role> (<model>) at head <sha12>`,
+then its findings, then exactly one `- Verdict: PASS|PARTIAL|FAIL` line at column 0. The
+`gh` shim refuses a body without that header and verdict, and derives the head and model
+from the text, never from a flag: it sets `commit_id` to the reviewed head, refuses a head
+that moved after the review was prepared, and refuses a review of a PR the same holder
+opened. The shim adds the attribution the model must not type — the visible
+`Agent <name> · run <id> · Issue <REF>` line and the hidden `<!-- agent=… -->` marker —
+from the process identity. Line 1 is the one part of the attribution the model writes.
 
-Verify the post by reading it back:
+Verify the post by reading it back from the REST reviews API:
 
 ```bash
-gh pr view <pr> --repo <owner/repo> --json reviews \
-  -q '.reviews[-1] | {login: .user.login, state, commit_id}'
+gh api repos/<owner>/<repo>/pulls/<n>/reviews \
+  | jq '[.[] | {login: .user.login, state, commit_id, html_url}]'
 ```
 
-Expect `<slug>[bot]`, the reviewed `commit_id`, and `APPROVED`/`COMMENT`/
-`CHANGES_REQUESTED`. A `gh pr comment` is invisible to the guard.
+Expect `<slug>[bot]`, the reviewed `commit_id`, and `APPROVED`, `COMMENT` or
+`CHANGES_REQUESTED`. `gh pr view --json reviews` reports the same state and `commit_id`,
+but prints the login as `xtrm-reviewer` without the `[bot]` suffix. A `gh pr comment` is
+invisible to the guard.
 
 ## The PR marker and the Issue link
 
@@ -200,7 +205,7 @@ branch against the project prefixes, and attaches the PR to the one distinct Iss
 finds. The attach is fail-open and ordered: T1 (the PR is the outcome) then T2 (commit
 evidence). Two different refs or none warn and skip; guessing would attach durable
 evidence to the wrong Issue. The `sb` verbs, the gate codes and the close gate belong to
-the `using-substrate` skill; they need substrate `>= 0.2.7`, and a create still succeeds
+the `using-substrate` skill; they need substrate `>= 0.3.0`, and a create still succeeds
 without them.
 
 ## The merge guard
@@ -227,14 +232,9 @@ bypasses it.
 
 ## Verifying a review landed
 
-```bash
-gh api repos/<owner>/<repo>/pulls/<n>/reviews \
-  | jq '[.[] | {id, login: .user.login, state, commit_id, html_url}]'
-```
-
-Expect `xtrm-reviewer[bot]`, the reviewed `commit_id`, and `APPROVED`,
-`COMMENT` or `CHANGES_REQUESTED`. The body's line 1 names the role, the model and
-the head.
+The REST read above is the check: `login` must be `xtrm-reviewer[bot]` (with the suffix;
+`gh pr view --json reviews` drops it) and `commit_id` must be the reviewed head. The body's
+line 1 names the role, the model and the head, and line 2 carries the run and the Issue.
 
 ## Adding the worker and coordinator Apps
 
