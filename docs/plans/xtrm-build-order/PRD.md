@@ -54,7 +54,7 @@ The per-step "Your notes" boxes are live Site Data on the here.now page, not par
 
 ## Jira programme epic
 
-Jira programme epic that mirrors this PRD: _PLACEHOLDER — to be filled once the Jira sync creates or picks the epic._
+Jira programme epic that mirrors this PRD: [XT-217](https://mercuryintel.atlassian.net/browse/XT-217), `[EPIC] XTRM Build Order (programme PRD)` on mercuryintel.atlassian.net (created 2026-11-11, CORE-2593). Its description carries this PRD’s brief, path and mirror URL. The 43 plan-cited tickets are linked to it (Relates); 21 of them still need the epic set as their parent.
 
 <!-- BEGIN GENERATED BODY: scripts/plan-to-md.mjs -->
 
@@ -62,7 +62,7 @@ Jira programme epic that mirrors this PRD: _PLACEHOLDER — to be filled once th
 
 ## The build order, from safe installs to the new xtrm-app
 
-There are 46 numbered steps and 13 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.
+There are 46 numbered steps and 16 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.
 
 **What changed since version 1.** You confirmed the reading of XT-104, XT-110, XT-114, XT-178 and XT-184. You asked for a strong GitHub and Jira binding. I measured how linking works today; it barely does (next section). I added a linking spine to phases 1–4 and folded 27 open XT tickets into the steps they belong to.
 
@@ -71,6 +71,8 @@ There are 46 numbered steps and 13 lettered additions in six phases. Each phase 
 **Version 4.** I read your notes from 10-29 and checked each one against the server. Steps with a note now carry a "Ruling on your note" box. New work is added as lettered steps (4b, 15b and so on), so no step number moved and every note stays on its step. The page now lives on here.now, and your notes save there.
 
 **Already written to Jira** as xtrm-bot: XT-178 is renamed and has an appended amendment with the linking design (the original text is unchanged). XT-110, XT-114 and XT-184 have a ruling comment each. Every folded-in ticket has a Relates link to its parent.
+
+**Jira sync · 11-11** (CORE-2593): the programme epic is XT-217, whose description carries this plan’s brief, the PRD path (`docs/plans/xtrm-build-order/PRD.md` in xtrm-dev/core) and this page. Its 43 plan-cited tickets are linked to it (Relates); 21 of them still need the epic set as their parent, which the server’s acli cannot do. XT-190, XT-127 and XT-126 moved to In corso. XT-125 and XT-191 stay open with a comment: the installer still falls back to `oh-pi` and the Pi extensions still compile against `^1.0.0`, so steps 10 and 11 are partly done, not done. Steps 13b (SPECIALISTS-4391 still open) and 15e (CORE-2528 merged in part) are partly done.
 
 ## How linking works today
 
@@ -617,7 +619,7 @@ Goal: `xt init` brings a fresh machine to a verified ready state and `xt update`
 
 ### Step 10 — Real Pi runtime, current Pi, packages that really upgrade
 
-[done] [draft] `CORE-2378 · CORE-2400 · CORE-2379 · XT-125`
+[partly done] [draft] `CORE-2378 · CORE-2400 · CORE-2379 · XT-125`
 
 - **Brings** — The real `pi`, no oh-pi, the extension audit, and a refresh that verifies the installed version. The pin target is Pi 1.4.0 if that upgrade is proven first; otherwise 1.3.0. Specialists bundles keep their extension selection.
 - **Why here** — Pi runs the specialists. Dispatch in phase 3 breaks if Pi drifts between machines.
@@ -641,7 +643,7 @@ Folded in: **XT-191** Pi 1.4.0 upgrade · **XT-183** bundle drops extension sele
 
 ### Step 11 — Manage the unmanaged Pi packages; remove dead ones
 
-[done] [draft] `CORE-2385 · CORE-2386 · XT-125`
+[partly done] [draft] `CORE-2385 · CORE-2386 · XT-125`
 
 - **Brings** — pi-subagents and pi-processes join the managed list; the dead quality-gates extension goes.
 - **Why here** — Until every package has an owner, the update cannot tell a stale package from one you installed. That is how `~/.pi` drifted.
@@ -695,7 +697,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 ### Step 13b — Retire dead commands and roles
 
-(v5) [new] `CORE-2552 · SPECIALISTS-4391 · CORE-2386`
+(v5) [partly done] `CORE-2552 · SPECIALISTS-4391 · CORE-2386`
 
 - **Brings** — `xt merge` (unused since July, CORE-2552), the `xt-merge` and `node-coordinator` specialists (usage checked first), and the dead quality-gates Pi extension (CORE-2386). Each retirement counts real uses before removal and asks you if it finds one.
 - **Why here** — A stale command is a wrong route for agents. Removing them before the coordinator and identity work means nothing new is built on them.
@@ -794,7 +796,7 @@ Open evidence: **INFRA-620** 14 services and 53 files drifted, with three runtim
 
 ### Step 15e — One reviewer, chosen by evidence
 
-(v4) [new] `MMD-2934 · SPECIALISTS-4386 · CORE-2528`
+(v4) [partly done] `MMD-2934 · SPECIALISTS-4386 · CORE-2528`
 
 - **Brings** — The eight-step comparison from the review process page runs on at least three qualifying PRs: a frozen head SHA, one brief, three arms (the `reviewer` specialist, the `pr-reviewer` specialist, the Claude `reviewer` subagent), and a blind arbiter scoring the findings. The winner becomes the one reviewer definition, with two modes: job review (verdict to the coordinator) and PR review (verdict on GitHub). It posts as `xtrm-reviewer[bot]`, and its verdict is stored as the review record of step 15b.
 - **Why here** — Three definitions share one checklist family and drift apart. Two of them post under the same GitHub account, told apart only by the first line of the comment. No live run has proven the OCR preflight yet. The gates (15) and the review trail (15b) need one reviewer whose verdict can be trusted.
