@@ -20,11 +20,12 @@ to verify, and what a failure means. Read the runbook before changing a host.
 
 Only the reviewer App is in use today. Worker and coordinator sessions still act
 as the operator: nothing breaks, nothing is attributed either. Read the two
-unbuilt rows as design intent, not as enforcement. Pushing needs
-`Contents: write`, and on private repositories GitHub cannot restrict which refs
-an App pushes (the Free plan refuses branch protection and rulesets), so
-"`xtrm-worker` never merges and never pushes outside `xt/*`" is enforced by the
-`gh` shim, the pre-push hook and an alarm on bot pushes, not by GitHub.
+unbuilt rows as design intent. Pushing needs `Contents: write`, and on private
+repositories GitHub cannot restrict which refs an App pushes (the Free plan
+refuses branch protection and rulesets), so nothing on GitHub holds the worker to
+`xt/*`. Nothing on the host does either: the `gh` shim intercepts `gh`, not
+`git push`, and no alarm on bot pushes exists yet. The row states the intended
+design, not an enforced limit.
 
 ## When to reach for this skill
 
@@ -73,4 +74,4 @@ reviewer falling back to the operator login defeats the App.
 - Do not claim a review is posted without the printed `commit_id` matching the
   reviewed head, or a merge is guarded when `XTRM_MERGE_GUARD` is off.
 
-<!-- pending: #889 — the last line describes the launched-session default on. On main the launcher exports no XTRM_MERGE_GUARD, so a launched session is off unless the operator set it; recheck after #889 merges. -->
+<!-- pending: #889 — the launched-session default on is claimed in configuration.md (`XTRM_MERGE_GUARD | launcher default on`) and troubleshooting.md ("Launched sessions get `on` by default"), each marked. On main the launcher exports no XTRM_MERGE_GUARD, so a launched session is off unless the operator set it; recheck both after #889 merges. -->

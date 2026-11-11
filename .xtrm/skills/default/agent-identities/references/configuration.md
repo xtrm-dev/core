@@ -68,16 +68,12 @@ the one rule.
 | `XTRM_ROLE` | launcher | `reviewer`, `worker` or `coordinator`, exported only when that role's App is configured **and** installed for the repository owner; today that means the reviewer role |
 | `XTRM_MERGE_GUARD` | launcher default `on` | `on`/`1`/`true`/`yes` gates `gh pr merge`; anything else leaves it off |
 | `XTRM_MERGE_GUARD_OVERRIDE` | coordinator/operator, per command | reason string; the guard logs it and journals a decision |
+| `XTRM_MERGE_GUARD_OFFLINE` | operator, per command | `1` forces the Issue-existence check to `unknown`, so the merge is allowed with one warning from the shim and the hook that names the flag |
 | `XTRM_SPECIALIST_DEFAULT` | supervisor | role for a supervisor-launched activation |
 | `XTRM_REVIEW_HEAD`, `XTRM_REVIEW_MODEL` | optional | cross-checks only; the review body's line 1 is authoritative |
 | `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n` | launcher | the git transport override; inherited entries are preserved and forwarded through tmux `-e` |
 
 <!-- pending: #889 — the launcher row for XTRM_MERGE_GUARD. On main the variable is off unless the operator sets it and the launcher exports nothing; verify the row after #889 merges. -->
-
-Not in effect on main: `XTRM_MERGE_GUARD_OFFLINE=1` skips the Substrate Issue
-check and degrades it to a warning. Nothing in `cli/src` reads it yet.
-
-<!-- pending: #890 — move XTRM_MERGE_GUARD_OFFLINE into the variable table, or delete this paragraph, once #890 merges. -->
 
 The guard is a client-side convenience plus the shim's enforcement. It does not
 stop a process that calls the REST API directly; that limit is documented in
@@ -87,7 +83,7 @@ stop a process that calls the REST API directly; that limit is documented in
 
 ```bash
 xt identity doctor            # role map, each App, each installation, the shim; exit 1 on an invalid role map or a bad shim
-xt identity setup             # creates the role map when absent, installs the shim; refuses a non-xtrm gh file, rewrites its own shim
+xt identity setup             # creates the role map when absent, installs the shim and the routing reminder; refuses a foreign gh file, rewrites its own shim
 xt identity role --json       # the resolved role and its source (what the gh shim calls)
 xt identity token --repo o/r  # mints this session's own role token; --role only widens an operator shell; never the reviewer token
 xt identity review-post       # what the shim calls; not for agents to call by hand

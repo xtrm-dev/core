@@ -67,23 +67,29 @@ Correct refusal: a push landed after the review. Get a review at the new head.
 If it happened immediately after a push, GitHub's REST may still report the old
 head for a moment; re-run the check a second later before believing it.
 
-## "the PR names no resolvable Substrate Issue …" (merge guard) and "the PR carries no xtrm marker …" (review-post)
+## "the PR names no Substrate Issue in a marker …" (merge guard) and "the PR carries no xtrm marker …" (review-post)
 
-Two refusals, two rules:
+Two refusals, two rules. Both take the Issue only from the PR's marker: a branch
+name such as `fix/UTF-8-parser` is never read as a ref.
 
-- **Merge guard** (`gh pr merge` through the shim): the marker is preferred, and
-  while no marker exists the guard reads an uppercase ref out of the branch
-  name, so `xt/worker-CORE-2528-x` resolves while `xt/some-branch` and a
-  lowercase ref do not. The refusal text is "the PR names no resolvable
-  Substrate Issue, so the guard refuses even an approval at the current head".
-  Fix: add `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` to the PR body.
-- **`review-post`** is stricter: no marker at all is refused with "PR #N carries
-  no xtrm marker in its body (<!-- xtrm issue=<REF> holder=<holder> run=<id> -->);
-  refusing to post an unattributable review", and a marker without `holder=` is
-  refused too. An Issue missing from the marker only costs the Journal entry: "no
-  Substrate Issue ref in the PR body or branch; the review is not journaled".
+- **Merge guard** (`gh pr merge` through the shim): with no `issue=` in the
+  marker it denies "the PR names no Substrate Issue in a marker, so the guard
+  refuses even an approval at the current head"; a PARTIAL review gets "…, so a
+  PARTIAL review cannot be accepted". Several markers naming different Issues are
+  denied as "the PR body carries N xtrm markers naming different Issues (A, B);
+  leave exactly one". Fix: add
+  `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` to the PR body.
+- **`review-post`** collects only markers that carry `issue=`, so such a body is
+  refused: "PR #N carries no xtrm marker in its body (<!-- xtrm issue=<REF>
+  holder=<holder> run=<id> -->); refusing to post an unattributable review". A
+  marker with `issue=` but no `holder=` is refused too: "PR #N has an xtrm marker
+  without holder=, so an own-PR review cannot be excluded; ask the opener to add
+  holder= to the marker".
 
-<!-- pending: #890 — after it merges the marker is the only Issue source in merge-check, merge-record and review-post (branch derivation removed), the merge-guard text becomes "the PR names no Substrate Issue in a marker …", and a missing Issue is denied with "the marker names <REF>, and Substrate has no such Issue". Drop the branch sentence and requote, then remove this comment. -->
+A marker whose ref Substrate does not know is refused at merge time: "the marker
+names <REF>, and Substrate has no such Issue; fix the marker before merging". A
+Substrate outage allows the merge with a warning instead (CORE-2590), and
+`XTRM_MERGE_GUARD_OFFLINE=1` forces that same path.
 
 ## "Journal receipt failed: sb exited 1"
 
@@ -97,11 +103,14 @@ happened; only the receipt was lost, so re-record it with
 
 ## A review posted as the operator instead of `<slug>[bot]`
 
-The shim was not used. The cause seen on 11-10 was the pane `PATH`: a launched
-tmux pane inherited the tmux **server's** PATH, so `gh` resolved to the real
-binary instead of the `~/.local/bin/gh` shim. The launcher now forwards its own
+The shim was not used. The cause seen on 2026-11-10 was the pane `PATH`: a
+launched tmux pane inherited the tmux **server's** PATH, so `gh` resolved to the
+real binary instead of the `~/.local/bin/gh` shim. The launcher now forwards a
 PATH to every session and window it creates (#891, merged 4de65af8), but only for
-panes created after it: a pane opened earlier keeps the server PATH.
+panes created after it: a pane opened earlier keeps the server PATH. The
+forwarded value is the launcher's PATH with the shim directory (`~/.local/bin`)
+placed first, empty segments dropped and duplicates removed, so the shim wins
+even when the launcher's own PATH lacks it.
 
 Check in the session that would post: `command -v gh` must print
 `~/.local/bin/gh`. If it prints anything else, relaunch the pane.

@@ -90,15 +90,15 @@
       "install_scope": "global",
       "files": {
         "agent-identities/references/configuration.md": {
-          "hash": "6ca6b0f7895c4ea3e8751af8a10757f258ad776cb98dc2e840fc29cd6a71d9c3",
+          "hash": "a5653894f8ce64c37cae594d1af4d3014e165a124844f2e8852ea47d80c5f2a6",
           "version": "0.15.3"
         },
         "agent-identities/references/troubleshooting.md": {
-          "hash": "e08aa62c31025aa66f93ac9c6d770cb0d26712c0878606f51bceb27122b702a1",
+          "hash": "e111e39d41d568d12f62571946c11e8c8b760c7b906b5da8a9f0175462873b59",
           "version": "0.15.3"
         },
         "agent-identities/SKILL.md": {
-          "hash": "e73838a0ce5b3bee07bec867ed9433aa43a3ca0baee7a9128a76ba7c507642dc",
+          "hash": "d7e03be1daf179ffdd94362c04d188ce463a94dd6a6076ee94179c0a3c280132",
           "version": "0.15.3"
         },
         "codemode/references/kernel-mechanics.md": {
