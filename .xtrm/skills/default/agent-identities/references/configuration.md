@@ -30,11 +30,8 @@ content):
 }
 ```
 
-`appId` is a JSON string. A bare number makes `readAppConfig` return null on
-main, so the App reports "not configured"; #888 accepts a number and normalises
-it.
-
-<!-- pending: #888 — drop the second sentence (or the whole paragraph) once #888 merges, and say plainly that a number is accepted. -->
+`appId` is a string or a number: `readAppConfig` converts a number to its decimal
+string, so a hand-written `"appId": 123456` works.
 
 The `installations` map is the only thing that decides whether a session gets an
 identity for a repository: the launcher looks up the **owner** of the origin.
@@ -66,14 +63,12 @@ the one rule.
 |---|---|---|
 | `SUBSTRATE_HOLDER` | launcher | who the agent is; also the git author name |
 | `XTRM_ROLE` | launcher | `reviewer`, `worker` or `coordinator`, exported only when that role's App is configured **and** installed for the repository owner; today that means the reviewer role |
-| `XTRM_MERGE_GUARD` | launcher default `on` | `on`/`1`/`true`/`yes` gates `gh pr merge`; anything else leaves it off |
+| `XTRM_MERGE_GUARD` | launcher, default `on` | `on`/`1`/`true`/`yes` gates `gh pr merge`, anything else leaves it off; an inherited value is forwarded explicitly, so a coordinator's `off` reaches its workers |
 | `XTRM_MERGE_GUARD_OVERRIDE` | coordinator/operator, per command | reason string; the guard logs it and journals a decision |
-| `XTRM_MERGE_GUARD_OFFLINE` | operator, per command | `1` forces the Issue-existence check to `unknown`, so the merge is allowed with one warning from the shim and the hook that names the flag |
+| `XTRM_MERGE_GUARD_OFFLINE` | anyone (unsigned), per command | `1`/`true`/`on`/`yes` forces the Issue-existence check to `unknown`, so the merge is allowed with one warning from the shim and the hook |
 | `XTRM_SPECIALIST_DEFAULT` | supervisor | role for a supervisor-launched activation |
 | `XTRM_REVIEW_HEAD`, `XTRM_REVIEW_MODEL` | optional | cross-checks only; the review body's line 1 is authoritative |
 | `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n` | launcher | the git transport override; inherited entries are preserved and forwarded through tmux `-e` |
-
-<!-- pending: #889 — the launcher row for XTRM_MERGE_GUARD. On main the variable is off unless the operator sets it and the launcher exports nothing; verify the row after #889 merges. -->
 
 The guard is a client-side convenience plus the shim's enforcement. It does not
 stop a process that calls the REST API directly; that limit is documented in
@@ -116,6 +111,6 @@ Four steps each, no code change: create the App with its permission set, install
 it on every account whose repositories agents touch, write `app.json` and the
 600-mode key, then verify with `xt identity doctor` and one real action seen as
 `<slug>[bot]`. Full detail: the runbook's "Create each App", "Install on the
-three accounts" and "Store the key and the identifiers" sections.
-
-<!-- pending: #889 — the runbook gains a dedicated "Turning on `xtrm-worker` and `xtrm-coord` later" section; point at it once #889 merges. -->
+three accounts" and "Store the key and the identifiers" sections, and "Turning on
+`xtrm-worker` and `xtrm-coord` later" for the same four steps when the two Apps
+are built.

@@ -73,5 +73,3 @@ reviewer falling back to the operator login defeats the App.
   while testing: point `HOME` at a temp directory.
 - Do not claim a review is posted without the printed `commit_id` matching the
   reviewed head, or a merge is guarded when `XTRM_MERGE_GUARD` is off.
-
-<!-- pending: #889 — the launched-session default on is claimed in configuration.md (`XTRM_MERGE_GUARD | launcher default on`) and troubleshooting.md ("Launched sessions get `on` by default"), each marked. On main the launcher exports no XTRM_MERGE_GUARD, so a launched session is off unless the operator set it; recheck both after #889 merges. -->

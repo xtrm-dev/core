@@ -17,8 +17,8 @@ writes the map (it keeps an existing one); `xt identity doctor` then reports the
 
 1. `app.json` is missing, is not valid JSON, or is not a JSON object.
 2. the `slug` inside the file does not match the directory name.
-3. `appId` is missing, empty, or not a string. A JSON `null` is not enough, and
-   neither is a bare number on main.
+3. `appId` is missing, empty, or neither a string nor a number. A JSON `null` is
+   not enough.
 
 The key is not part of this message. An absent `keyPath` falls back to
 `~/.secrets/github-apps/<slug>.pem`; a `.pem` that does not exist, or one with
@@ -27,8 +27,6 @@ path and its mode, and the mint is where a bad mode is refused: "the App private
 key … is mode 644; it must be 600".
 
 `xt identity doctor --json` prints the failing check with the resolved path.
-
-<!-- pending: #888 — a numeric appId becomes acceptable; amend cause 3 when #888 merges. -->
 
 ## "token mint refused (HTTP 404)"
 
@@ -74,8 +72,8 @@ name such as `fix/UTF-8-parser` is never read as a ref.
 
 - **Merge guard** (`gh pr merge` through the shim): with no `issue=` in the
   marker it denies "the PR names no Substrate Issue in a marker, so the guard
-  refuses even an approval at the current head"; a PARTIAL review gets "…, so a
-  PARTIAL review cannot be accepted". Several markers naming different Issues are
+  refuses even an approval at the current head…" and names the line-2 marker as
+  the fix; a PARTIAL review gets "…, so a PARTIAL review cannot be accepted". Several markers naming different Issues are
   denied as "the PR body carries N xtrm markers naming different Issues (A, B);
   leave exactly one". Fix: add
   `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->` to the PR body.
@@ -99,8 +97,6 @@ or `sb` was an older binary on a trimmed `PATH`. The review and the merge still
 happened; only the receipt was lost, so re-record it with
 `xt identity merge-record` or re-post the review.
 
-<!-- pending: #888 — on main the merge receipt still sends `head` and `pr` in `--result`, so the first cause reproduces and re-recording fails the same way; #888 moves the SHA into the summary and the PR into `artifactRefs`. Recheck this entry when it merges. -->
-
 ## A review posted as the operator instead of `<slug>[bot]`
 
 The shim was not used. The cause seen on 2026-11-10 was the pane `PATH`: a
@@ -123,9 +119,9 @@ downgraded `--approve` to `COMMENTED`.
 ## The guard allows a merge that should be refused
 
 Check `XTRM_MERGE_GUARD`. Launched sessions get `on` by default; a plain shell
-does not. `xt identity doctor` does not report the flag.
-
-<!-- pending: #889 — on main the launcher exports no XTRM_MERGE_GUARD at all, so a launched session is off unless the operator exported it. Verify the first sentence after #889 merges. -->
+does not. The launcher forwards an inherited value explicitly, so an `off` set in
+a coordinator's shell reaches its workers as `off` rather than being re-defaulted.
+`xt identity doctor` does not report the flag.
 
 ## `xt identity setup` changed my real home
 
