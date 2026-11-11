@@ -11,6 +11,26 @@ ExecutionBinding / WorkReceipt / Specialists settlement.
 | `XTRM_SESSION_NAME` | tmux session name (`pi-<slug>`, `claude-<slug>`, `role-<slug>…`, post-suffix) | Always on `xt`-launched sessions |
 | `XTRM_SESSION_ID` | tmux `#{session_id}` (e.g. `$7`) | Always except bare `new-session` first exec (see below) |
 
+## These are session ids, not worker ids (CORE-2619)
+
+`XTRM_SESSION_ID` and `XTRM_PARENT_SESSION_ID` name a tmux **session**, and every
+window launched into that session shares the value. On this machine five workers
+ran as windows of session `xx` and all five carried `XTRM_SESSION_ID=$1`. The
+value is a tmux session id: it looks like `$0`, `$1`, `$7`.
+
+Therefore:
+
+- Never use `XTRM_SESSION_ID` as a worker's run identity. It cannot distinguish
+two workers of one session, and its `$N` form reads like an unexpanded shell
+parameter — which is how it was once misreported as a quoting bug (CORE-2618,
+closed invalid: the value was correct, the scoping was wrong).
+- The worker's own run identity is the runtime session id: `PI_SESSION_ID` for
+Pi, the Claude session id for Claude. Per-worker lineage is the Substrate holder
+plus that id, and `TMUX_PANE` if a pane address is needed.
+- The `run=` field of the hidden `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->`
+marker takes that runtime session id, never `XTRM_SESSION_ID`. The `gh` shim
+refuses a create whose marker carries a `$N` run and names the right variable.
+
 ## Transport (all carry identical values)
 
 - Current-pane launches: process spawn env (both fields).

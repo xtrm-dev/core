@@ -85,7 +85,8 @@ export const ALWAYS_ON = `XTRM always-on rules (primer-injected; excerpt — loa
 - Coordinate peers via SendMessage + ListAgents from the repo intercom extension (never Pi-native).
 - Project runner: a project's own tests, scripts, and CLIs run in the project's documented environment (uv run, .venv/bin/python, npm/bun run); treat that environment's failures as the result.
 - Capability tags: the python kernel with preflight() and background tasks/monitors are repo-extension capabilities (absent outside this repo's extensions). bun/tsx (TS probes), cargo (Rust), dolt sql (Dolt) are environment guidance — reach them through the project runner, not as model tools.
-- Memory on demand: before editing, run file-scoped preflight(); consult bd memories and the commit corpus; never bulk-prime. Service-knowledge reconcile only where its pack is installed: follow the status-suggested /updating-service-knowledge action and stamp last_sync_ref.`;
+- Memory on demand: before editing, run file-scoped preflight(); consult bd memories and the commit corpus; never bulk-prime. Service-knowledge reconcile only where its pack is installed: follow the status-suggested /updating-service-knowledge action and stamp last_sync_ref.
+- Run identity: a PR marker's run= takes the worker's own runtime session id — PI_SESSION_ID in Pi, the Claude session id in Claude — never XTRM_SESSION_ID or XTRM_PARENT_SESSION_ID, which are tmux session ids ($N) that every window in one tmux session shares (CORE-2619; the gh shim refuses a $N run=).`;
 
 /**
  * Skills already warned about in this process. CORE-2405: buildPrimer runs on

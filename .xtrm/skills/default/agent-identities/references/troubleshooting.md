@@ -89,6 +89,16 @@ names <REF>, and Substrate has no such Issue; fix the marker before merging". A
 Substrate outage allows the merge with a warning instead (CORE-2590), and
 `XTRM_MERGE_GUARD_OFFLINE=1` forces that same path.
 
+**`run=` is the runtime session id, not a tmux id (CORE-2619).** The marker's
+`run=` takes the worker's own runtime session id — `PI_SESSION_ID` for Pi, the
+Claude session id for Claude — never `XTRM_SESSION_ID`. `XTRM_SESSION_ID` and
+`XTRM_PARENT_SESSION_ID` are tmux **session** ids (`$0`, `$1`, `$7`) that every
+window in one tmux session shares, so they cannot attribute a run; `gh pr create`
+refuses such a marker before the pull request exists: "refusing to create the
+pull request: run=$1 is a tmux session id (XTRM_SESSION_ID), … use the worker's
+own runtime session id — PI_SESSION_ID for Pi, the Claude session id for
+Claude". Read the correct value with `echo $PI_SESSION_ID` in a Pi worker.
+
 ## "Journal receipt failed: sb exited 1"
 
 Two causes seen: the `--result` payload used a field Substrate does not accept

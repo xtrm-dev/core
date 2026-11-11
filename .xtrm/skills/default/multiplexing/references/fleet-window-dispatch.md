@@ -16,6 +16,13 @@ itself, `xt` resolves the dispatcher and exports to the worker, with no typing:
 | `XTRM_DISPATCHER_ADDRESS` | `uds:<messagingSocketPath>` of that session |
 | `XTRM_PARENT_SESSION_ID`, `XTRM_PARENT_PANE_ID` | the coordinator's tmux session and pane |
 
+`XTRM_SESSION_ID` and `XTRM_PARENT_SESSION_ID` are tmux **session** ids (`$0`, `$1`,
+`$7`), and every window in one session shares the same value — five windows of
+session `xx` all carry `$1`. They identify the session, never a worker. The
+worker's own run identity is its runtime session id: `PI_SESSION_ID` for Pi, the
+Claude session id for Claude. A PR marker's `run=` takes that id, never
+`XTRM_SESSION_ID` (CORE-2619; the `gh` shim refuses a `$N` run=).
+
 Unknown values are absent. When no ancestor is registered, inherited `XTRM_DISPATCHER_*` is used.
 The worker's session-start primer names the dispatcher and the reply address.
 

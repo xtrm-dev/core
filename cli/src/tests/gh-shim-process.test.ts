@@ -219,6 +219,14 @@ if (argv[0] === 'identity' && argv[1] === 'pr-link') {
   process.stderr.write(result.stderr || '');
   process.exit(result.status === null ? 1 : result.status);
 }
+if (argv[0] === 'identity' && argv[1] === 'marker-check') {
+  // CORE-2619: the REAL marker check runs, so the refusal text and the $N rule
+  // are the shipped ones; the shim test asserts what happens to the create.
+  const result = runDist(['identity', 'marker-check', ...argv.slice(2)]);
+  process.stdout.write(result.stdout || '');
+  process.stderr.write(result.stderr || '');
+  process.exit(result.status === null ? 1 : result.status);
+}
 if (argv[0] === 'identity' && argv[1] === 'merge-check' && argv.indexOf('--gh-args') > 0) {
   // Real resolution, stubbed decision: the guard's verdict is what the shim tests.
   const resolved = runDist(['identity', 'resolve-gh', '--argv', argv[argv.indexOf('--gh-args') + 1], '--cwd', argv[argv.indexOf('--cwd') + 1] || process.cwd()]);
@@ -836,5 +844,56 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
         const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root }, repo.dir);
         expect(result.status).toBe(0);
         expect(attachCalls()).toEqual([t1(), t2(['--commit', repo.head])]);
+    });
+});
+
+// CORE-2619: the marker's run= is the worker's own runtime session id. A tmux
+// session id ($N) is shared by every window in that session, so it attributes
+// nothing — and the create must not happen at all, because a PR that exists with
+// a wrong marker has to be edited by hand afterwards.
+//
+// No scratch repository here: the refusal happens before gh runs, so nothing in
+// these cases touches git. An absolute --body-file keeps the case independent of
+// the process cwd.
+describe('a tmux session id in the marker run= is refused before the create (CORE-2619)', () => {
+    const TMUX_RUN = '<!-- xtrm issue=CORE-2619 holder=pi152-core run=$1 -->';
+
+    it('refuses the create and never runs the real gh', () => {
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', TMUX_RUN], { HOME: root });
+        expect(result.status).toBe(1);
+        // Nothing was teed: the real gh never ran, so no PR exists.
+        expect(result.stdout).toBe('');
+        expect(result.stderr).not.toContain(CREATE_STDERR);
+        expect(result.stderr).toContain('refusing to create the pull request');
+        expect(result.stderr).toContain('run=$1 is a tmux session id (XTRM_SESSION_ID)');
+        expect(result.stderr).toContain('PI_SESSION_ID');
+        // No link ran either: the shim stopped before the post-create step.
+        expect(sbCalls()).toHaveLength(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'pr-link')).toHaveLength(0);
+    });
+
+    it('refuses through --body-file as well', () => {
+        const bodyFile = join(root, 'body.md');
+        writeFileSync(bodyFile, `${TMUX_RUN}\n`);
+        const result = runShim(['pr', 'create', '--body-file', bodyFile], { HOME: root });
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('PI_SESSION_ID');
+        expect(sbCalls()).toHaveLength(0);
+    });
+
+    it('creates normally when run= is the runtime session id', () => {
+        const body = '<!-- xtrm issue=CORE-2619 holder=pi152-core run=01a1cb5f-5915-7026-b5ba-d3041434385c -->';
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', body], { HOME: root });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+    });
+
+    it('does not refuse a marker inside a code fence, which the guard ignores too', () => {
+        const fenced = ['```md', TMUX_RUN, '```'].join('\n');
+        const body = `${fenced}\n<!-- xtrm issue=CORE-2619 holder=pi152-core run=run-9c1f -->`;
+        const result = runShim(['pr', 'create', '--title', 'docs', '--body', body], { HOME: root });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
     });
 });

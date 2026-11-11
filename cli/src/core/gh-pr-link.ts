@@ -37,7 +37,7 @@
  */
 
 import { runReceipt, listProjects, resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps, type SbProject } from './sb-receipt.js';
-import { parseIssueMarkers } from './review-posting.js';
+import { parseIssueMarker, parseIssueMarkers, markerRunVerdict } from './review-posting.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
@@ -139,6 +139,24 @@ export function readCreateBody(
     }
     if (body !== null) return { text: body, source: 'body' };
     return { text: '', source: 'none' };
+}
+
+/**
+ * The refusal for a create whose effective marker carries a tmux session id in
+ * `run=`, or null. Read-only: the gh shim refuses before the pull request
+ * exists, and the link step stays a warning (CORE-2619).
+ *
+ * The effective marker is the one the merge guard and the link both use — the
+ * LAST marker carrying `issue=` outside a code fence — so a pasted or quoted
+ * marker cannot decide this check.
+ */
+export function markerRunRefusal(
+    argv: string[],
+    readFile: (file: string) => string = (file) => readFileSync(file, 'utf8'),
+): string | null {
+    const body = readCreateBody(argv, readFile);
+    if (!body.text) return null;
+    return markerRunVerdict(parseIssueMarker(body.text)?.run);
 }
 
 function lastIndexOfFlag(argv: string[], long: string, short?: string): number {
