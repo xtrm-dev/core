@@ -279,6 +279,16 @@ export interface ManagedPackage {
     required: boolean;
 }
 
+/** npm name of the Claude Code bridge extension (CORE-2591). */
+export const PI_CLAUDE_BRIDGE_NPM_NAME = 'pi-claude-bridge';
+/**
+ * Exact pin for the bridge. Both live Claude Code dispatch proofs ran on 0.12.0 and the
+ * package is pre-1.0, so a bump is a deliberate change with the dispatch proofs re-run
+ * (CORE-2591 Journal decision 2026-11-11).
+ */
+export const PI_CLAUDE_BRIDGE_VERSION = '0.12.0';
+export const PI_CLAUDE_BRIDGE_PACKAGE_ID = `npm:${PI_CLAUDE_BRIDGE_NPM_NAME}@${PI_CLAUDE_BRIDGE_VERSION}`;
+
 const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:pi-gitnexus', displayName: 'pi-gitnexus', required: true },
     { id: 'npm:@aliou/pi-guardrails', displayName: 'pi-guardrails', required: false },
@@ -289,8 +299,9 @@ const MANAGED_PACKAGES: ManagedPackage[] = [
     { id: 'npm:@parcha/agentrun-pi@beta', displayName: 'agentrun-pi', required: false },
     { id: 'npm:billion-context', displayName: 'billion-context', required: false },
     { id: 'npm:@jaggerxtrm/substrate', displayName: 'substrate', required: false },
-    // CORE-2591: managed optional; the Claude Code route stays opt-in (SPECIALISTS-4403).
-    { id: 'npm:pi-claude-bridge', displayName: 'pi-claude-bridge', required: false },
+    // CORE-2591: managed optional. Installing the bridge does not enable the Claude Code
+    // route; that stays opt-in through claude_bridge.enabled (SPECIALISTS-4403).
+    { id: PI_CLAUDE_BRIDGE_PACKAGE_ID, displayName: PI_CLAUDE_BRIDGE_NPM_NAME, required: false },
 ];
 
 const PROJECT_REQUIRED_PACKAGE_IDS = [
@@ -354,6 +365,17 @@ export interface XtManagedPiPackageDoctorReport {
     outdated: XtManagedPiPackageDoctorIssue[];
     ok: XtManagedPiPackageDoctorIssue[];
     hasIssues: boolean;
+    /** Resolved Claude Code bridge install, when present in the Pi npm store (CORE-2591). */
+    bridge?: PiClaudeBridgeInstallStatus | null;
+}
+
+/** Where the installed bridge lives; `entryPresent` proves the src entry the resolver reads exists. */
+export interface PiClaudeBridgeInstallStatus {
+    npmPackageName: string;
+    installedVersion: string | null;
+    packageDir: string;
+    entryPath: string;
+    entryPresent: boolean;
 }
 
 export interface PiPackageVersionInfo {
@@ -743,6 +765,54 @@ async function getExpectedPiPackageVersion(npmPackageName: string): Promise<stri
     return version.length > 0 ? version : null;
 }
 
+/**
+ * Exact `@x.y.z` selector on a managed npm id, or null. A dist-tag (`@beta`) or a
+ * range is not a pin and still follows the registry.
+ */
+export function getPinnedPiPackageVersion(piPackageId: string): string | null {
+    const npmPackageName = parseNpmPackageName(piPackageId);
+    if (!npmPackageName) return null;
+    const selector = piPackageId.slice('npm:'.length).trim().slice(npmPackageName.length);
+    if (!selector.startsWith('@')) return null;
+    const version = selector.slice(1);
+    return /^\d+\.\d+\.\d+$/.test(version) ? version : null;
+}
+
+/**
+ * Expected version for freshness: the exact pin when the managed id carries one, the
+ * registry latest otherwise. A pinned package must not be reported outdated just because
+ * upstream published a newer version (CORE-2591).
+ */
+export async function resolveExpectedPiPackageVersion(
+    piPackageId: string,
+    npmPackageName: string,
+    registryLookup: (name: string) => Promise<string | null> = getExpectedPiPackageVersion,
+): Promise<string | null> {
+    return getPinnedPiPackageVersion(piPackageId) ?? await registryLookup(npmPackageName);
+}
+
+/**
+ * The installed bridge, or null when it is absent. Read-only: the specialists resolver
+ * owns route resolution, so this reports the store/entry it will find and nothing else.
+ */
+export async function getPiClaudeBridgeInstallStatus(
+    agentDir: string = resolvePiAgentDir(),
+    npmRootDir?: string | null,
+): Promise<PiClaudeBridgeInstallStatus | null> {
+    const packageJsonPath = resolveInstalledPiPackageJsonPath(agentDir, PI_CLAUDE_BRIDGE_NPM_NAME, npmRootDir ?? undefined);
+    if (!await fs.pathExists(packageJsonPath)) return null;
+
+    const packageDir = path.dirname(packageJsonPath);
+    const entryPath = path.join(packageDir, 'src', 'index.ts');
+    return {
+        npmPackageName: PI_CLAUDE_BRIDGE_NPM_NAME,
+        installedVersion: await getInstalledPiPackageVersion(agentDir, PI_CLAUDE_BRIDGE_NPM_NAME, npmRootDir ?? undefined),
+        packageDir,
+        entryPath,
+        entryPresent: await fs.pathExists(entryPath),
+    };
+}
+
 export async function getManagedPiPackageFreshness(
     versionProvider: PiPackageVersionProvider,
     packages: readonly ManagedPackage[] = getXtManagedPiPackages(),
@@ -929,9 +999,9 @@ export async function assureXtManagedPiPackages(
     // CORE-2443 M1: sweep the retired packages' settings entries and installed
     // dirs on every assurance; xt update --apply persists the removals.
     const retiredM1 = await removeRetiredM1Packages(dryRun, log, agentDir, projectRoots);
-    const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+    const resolvedVersionProvider = versionProvider ?? (async (piPackageId, npmPackageName) => ({
         installedVersion: await getInstalledPiPackageVersion(agentDir, npmPackageName, npmRootDir ?? undefined),
-        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+        expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName),
     }));
 
     const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider);
@@ -992,9 +1062,9 @@ export async function getXtManagedPiPackageDoctorReport(
 ): Promise<XtManagedPiPackageDoctorReport> {
     const npmRootDir = await resolveGlobalNpmRootDir();
     const resolvedAgentDir = resolvePiAgentDir();
-    const resolvedVersionProvider = versionProvider ?? (async (_piPackageId, npmPackageName) => ({
+    const resolvedVersionProvider = versionProvider ?? (async (piPackageId, npmPackageName) => ({
         installedVersion: await getInstalledPiPackageVersion(resolvedAgentDir, npmPackageName, npmRootDir ?? undefined),
-        expectedVersion: await getExpectedPiPackageVersion(npmPackageName),
+        expectedVersion: await resolveExpectedPiPackageVersion(piPackageId, npmPackageName),
     }));
 
     const statuses = await getManagedPiPackageFreshness(resolvedVersionProvider, getXtManagedPiPackages());
@@ -1010,8 +1080,9 @@ export async function getXtManagedPiPackageDoctorReport(
     const missing = issues.filter((issue) => issue.state === 'missing');
     const outdated = issues.filter((issue) => issue.state === 'outdated');
     const ok = statuses.filter((status) => status.state === 'current').map((status) => ({ ...status, remediation: '' }));
+    const bridge = await getPiClaudeBridgeInstallStatus(resolvedAgentDir, npmRootDir ?? undefined);
 
-    return { issues, missing, outdated, ok, hasIssues: issues.length > 0 };
+    return { issues, missing, outdated, ok, hasIssues: issues.length > 0, bridge };
 }
 
 export type CoreSymlinkStatus = 'missing-source' | 'ok' | 'created' | 'repaired' | 'would-create' | 'would-repair';

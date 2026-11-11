@@ -146,21 +146,60 @@ describe('pi runtime safeguards', () => {
       'npm:@parcha/agentrun-pi@beta',
       'npm:billion-context',
       'npm:@jaggerxtrm/substrate',
-      'npm:pi-claude-bridge',
+      'npm:pi-claude-bridge@0.12.0',
     ]);
   });
 
   it('manages pi-claude-bridge as an optional package that never affects runtime health', async () => {
     // regression: CORE-2591 - the specialists Claude Code route resolves pi-claude-bridge from
     // the managed npm store; core installs it without enabling the route (SPECIALISTS-4403).
-    const { getXtManagedPiPackages } = await import('../core/pi-runtime.js');
+    const { getXtManagedPiPackages, PI_CLAUDE_BRIDGE_PACKAGE_ID, PI_CLAUDE_BRIDGE_VERSION } = await import('../core/pi-runtime.js');
 
-    const bridge = getXtManagedPiPackages().find(pkg => pkg.id === 'npm:pi-claude-bridge');
+    expect(PI_CLAUDE_BRIDGE_PACKAGE_ID).toBe('npm:pi-claude-bridge@0.12.0');
+    expect(PI_CLAUDE_BRIDGE_VERSION).toBe('0.12.0');
+    const bridge = getXtManagedPiPackages().find(pkg => pkg.id === PI_CLAUDE_BRIDGE_PACKAGE_ID);
     expect(bridge).toEqual({
-      id: 'npm:pi-claude-bridge',
+      id: 'npm:pi-claude-bridge@0.12.0',
       displayName: 'pi-claude-bridge',
       required: false,
     });
+  });
+
+  it('compares a pinned package against its pin, not the registry latest', async () => {
+    // regression: CORE-2591 - a newer upstream release must not mark the pinned bridge outdated.
+    const { resolveExpectedPiPackageVersion, getPinnedPiPackageVersion } = await import('../core/pi-runtime.js');
+    const registryLookup = vi.fn(async () => '0.13.0');
+
+    expect(await resolveExpectedPiPackageVersion('npm:pi-claude-bridge@0.12.0', 'pi-claude-bridge', registryLookup)).toBe('0.12.0');
+    expect(registryLookup).not.toHaveBeenCalled();
+    expect(await resolveExpectedPiPackageVersion('npm:billion-context', 'billion-context', registryLookup)).toBe('0.13.0');
+    expect(registryLookup).toHaveBeenCalledWith('billion-context');
+    // A dist-tag is not a pin; only an exact version is.
+    expect(getPinnedPiPackageVersion('npm:@parcha/agentrun-pi@beta')).toBeNull();
+    expect(getPinnedPiPackageVersion('npm:@jaggerxtrm/substrate')).toBeNull();
+  });
+
+  it('resolves the bridge package and its src entry from the user Pi npm store', async () => {
+    // regression: CORE-2591 - the package ships no main/exports; the resolver reads
+    // <agentDir>/npm/node_modules/pi-claude-bridge/src/index.ts.
+    const { getPiClaudeBridgeInstallStatus } = await import('../core/pi-runtime.js');
+    const agentDir = path.join(tempRoot, 'bridge-agent');
+    const packageDir = path.join(agentDir, 'npm', 'node_modules', 'pi-claude-bridge');
+    await fs.outputJson(path.join(packageDir, 'package.json'), {
+      name: 'pi-claude-bridge',
+      version: '0.12.0',
+      pi: { extensions: ['./src/index.ts'] },
+    });
+    await fs.outputFile(path.join(packageDir, 'src', 'index.ts'), 'export {};\n');
+
+    expect(await getPiClaudeBridgeInstallStatus(agentDir, null)).toEqual({
+      npmPackageName: 'pi-claude-bridge',
+      installedVersion: '0.12.0',
+      packageDir,
+      entryPath: path.join(packageDir, 'src', 'index.ts'),
+      entryPresent: true,
+    });
+    expect(await getPiClaudeBridgeInstallStatus(path.join(tempRoot, 'empty-agent'), null)).toBeNull();
   });
 
   it('installs every absent managed package using its canonical Pi install selector', async () => {

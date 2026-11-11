@@ -57,6 +57,18 @@ vi.mock('../utils/npm-latest.js', () => ({
   updatesSummary: () => '',
 }));
 
+// CORE-2591: force the `claude` probe to miss so the doctor wording is deterministic;
+// every other binary still runs for real.
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawnSync: (bin: Parameters<typeof actual.spawnSync>[0], args?: Parameters<typeof actual.spawnSync>[1], options?: Parameters<typeof actual.spawnSync>[2]) => (
+      bin === 'claude' ? { status: 1, stdout: '', stderr: '' } : actual.spawnSync(bin, args, options)
+    ),
+  };
+});
+
 import { createDoctorCommand } from '../commands/doctor.js';
 
 let tmpDir = '';
@@ -107,6 +119,45 @@ function buildReport(overrides: Partial<Awaited<ReturnType<typeof getXtManagedPi
 }
 
 describe('xt doctor command', () => {
+  it('names the Claude Code consequence when the claude CLI is missing (CORE-2591)', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('claude CLI not found; the Claude Code route will refuse at dispatch');
+  });
+
+  it('reports the resolved bridge version and src entry in the Pi packages section (CORE-2591)', async () => {
+    const packageDir = '/tmp/bridge-agent/npm/node_modules/pi-claude-bridge';
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
+      bridge: {
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath: `${packageDir}/src/index.ts`,
+        entryPresent: true,
+      },
+    }));
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain(`pi-claude-bridge 0.12.0 → ${packageDir}/src/index.ts`);
+  });
+
+  it('warns when the installed bridge has no src entry (CORE-2591)', async () => {
+    const packageDir = '/tmp/bridge-agent/npm/node_modules/pi-claude-bridge';
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport({
+      bridge: {
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath: `${packageDir}/src/index.ts`,
+        entryPresent: false,
+      },
+    }));
+
+    const textLogs = await runDoctorCli([]);
+    expect(textLogs.join('\n')).toContain('missing src/index.ts; the specialists resolver cannot load it');
+  });
+
   it('prints clean text and json when all xt pi packages are current', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
 

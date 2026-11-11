@@ -1476,7 +1476,7 @@
           "version": "0.15.3"
         },
         "pi/install-schema.json": {
-          "hash": "07f0a94827d1bb957629ee683d0c51e5d2f1430f6caaa50f36acfe6326fec0ec",
+          "hash": "e27731f5355e16d165fe4fc616b0613b0f84af65b42528a1f9d390cf8399effd",
           "version": "0.15.3"
         },
         "pi/models.json.template": {
@@ -1488,7 +1488,7 @@
           "version": "0.15.3"
         },
         "pi/settings.json.template": {
-          "hash": "5e08bdd997ec9493a298b74a6efef78bced08d9867ae02c52e4802809fd870ac",
+          "hash": "35acfe758a6f9df707033f4bca378a9a68ba07c321cbd3538ac6196588a84fff",
           "version": "0.15.3"
         },
         "README.md": {

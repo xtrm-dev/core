@@ -39,6 +39,6 @@
     "npm:@parcha/agentrun-pi@beta",
     "npm:billion-context",
     "npm:@jaggerxtrm/substrate",
-    "npm:pi-claude-bridge"
+    "npm:pi-claude-bridge@0.12.0"
   ]
 }

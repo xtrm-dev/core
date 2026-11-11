@@ -40,9 +40,16 @@ The runtime also marks packages as either required or optional for health semant
 | `npm:@parcha/agentrun-pi@beta` | managed optional | agent run integration (`beta` dist-tag selector) |
 | `npm:billion-context` | managed optional | context tooling |
 | `npm:@jaggerxtrm/substrate` | managed optional | Substrate integration for Pi |
-| `npm:pi-claude-bridge` | managed optional | Claude Code model route for Pi and specialists; opt-in through `claude_bridge.enabled` |
+| `npm:pi-claude-bridge@0.12.0` | managed optional | Claude Code model route for Pi and specialists; opt-in through `claude_bridge.enabled` |
 
-`npm:pi-claude-bridge` is installed into the Pi npm store, where the specialists Claude Code route resolves it (SPECIALISTS-4405, SPECIALISTS-4422). Installing the package does not enable the route: the route stays opt-in under the SPECIALISTS-4403 ruling, and Core never writes `claude_bridge.enabled` or `execution.claude_bridge` in any specialists config. Its absence never makes the runtime unhealthy.
+`npm:pi-claude-bridge@0.12.0` installs into the user Pi npm store (`<agentDir>/npm/node_modules/pi-claude-bridge`), where the specialists Claude Code route resolves its `src/index.ts` entry (SPECIALISTS-4405, SPECIALISTS-4422). Four rules accompany that install:
+
+- **Pin.** The selector is an exact version, not a range or a dist-tag: both live dispatch proofs ran on `0.12.0` and the package is pre-1.0, so a bump is a deliberate change that re-runs those proofs. Because the id is pinned, freshness compares against the pin rather than the registry latest, so a newer upstream release does not mark the install outdated.
+- **Layout.** The package ships no `main` and no `exports`; its entry comes from `"pi": {"extensions": ["./src/index.ts"]}`. The installer keeps the package intact, so `src/index.ts` exists after install and the resolver can load it.
+- **Node floor.** The package declares `engines.node >= 20` and depends on `@anthropic-ai/claude-agent-sdk`; install it on Node 20 or newer.
+- **`claude` CLI.** The bridge spawns the `claude` binary, and `~/.pi/agent/claude-bridge.json` may point at one through `provider.pathToClaudeCodeExecutable`. The CLI is optional at install; `xt doctor` says `claude CLI not found; the Claude Code route will refuse at dispatch` when it is absent.
+
+Installing the package does not enable the route: it stays opt-in under the SPECIALISTS-4403 ruling, and Core never writes `claude_bridge.enabled` or `execution.claude_bridge` in any specialists config. Its absence never makes the runtime unhealthy. When the bridge is installed, `xt doctor` reports the resolved version and entry path.
 
 `native-specialists` and `xtmux` are local packages added by their own repos; Core does not install them.
 
