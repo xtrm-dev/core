@@ -227,11 +227,23 @@ export function resolveGhTarget(argvText: string, cwd: string): GhTarget {
     return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
 
+/** The binary actually invoked, so a failure names it instead of saying "sb". */
+function resolveSbBinary(): string {
+    const found = spawnSync('sh', ['-c', 'command -v sb'], { encoding: 'utf8' });
+    const resolved = (found.stdout || '').trim();
+    return resolved || 'sb';
+}
+
 function runSb(args: string[]): { ok: boolean; error?: string } {
-    const result = spawnSync('sb', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.error) return { ok: false, error: result.error.message };
+    const binary = resolveSbBinary();
+    const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    if (result.error) return { ok: false, error: `${binary}: ${result.error.message}` };
     if (result.status === 0) return { ok: true };
-    return { ok: false, error: (result.stderr || '').trim() || `sb exited ${result.status}` };
+    const stderr = (result.stderr || '').trim();
+    return {
+        ok: false,
+        error: stderr ? `sb (${binary}) exited ${result.status}: ${stderr}` : `sb (${binary}) exited ${result.status}: no stderr`,
+    };
 }
 
 export function createIdentityCommand(): Command {
