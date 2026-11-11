@@ -328,6 +328,21 @@ Known limits, accepted rather than hidden:
 - A PR whose body carries no `<!-- xtrm issue=<REF> … -->` marker is refused even with an approval at the head:
   the refusal tells the agent to add the line-2 marker or to contact the operator.
 
+### Environment variables
+
+| Variable | Meaning | Values |
+| --- | --- | --- |
+| `SUBSTRATE_HOLDER` | Agent identity on Journal rows; also what makes a process an agent for the shim. | holder name; unset in an operator shell |
+| `XTRM_ROLE` | Role the process acts as when the role map has no answer. | `reviewer`, `coordinator`, `worker` |
+| `XTRM_MERGE_GUARD` | Gates the merge check. | unset = **off**; `on`, `1`, `true`, `yes` enable it |
+| `XTRM_MERGE_GUARD_OVERRIDE` | Coordinator/operator override of a refused merge; needs a reason and a resolvable head. | reason text |
+| `XTRM_MARKER_CHECK_TIMEOUT_MS` | Budget the `gh` shim gives `xt identity marker-check` before it kills the call and lets the `gh pr create`/`pr edit` proceed. | integer milliseconds, clamped **50–60000**, default **4000**; a non-numeric or non-positive value falls back to the default |
+
+`XTRM_MARKER_CHECK_TIMEOUT_MS` exists because the marker check is fail-open: a slow or absent `xt` must never
+block a write. Raising it trades a longer worst-case create for more tolerance of a slow `sb`/`xt`; lowering it
+below the default makes a slow machine refuse less and proceed more. The value is clamped, so a stray entry in a
+launch environment cannot turn the check into a long blocker.
+
 | Command | What it does |
 | --- | --- |
 | `xt identity doctor` | Reports role map validity, each App's `app.json` and key mode, recorded installations and the `gh` shim. Exit 1 on a hard failure (bad role map, missing/foreign/stale shim, key readable by group/other). |

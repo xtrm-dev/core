@@ -9,13 +9,15 @@
  *                         best-effort `sb provenance attach` link to the Issue
  *                         the PR body marker (or the title and branch) names.
  *                         Refused before the create runs when the marker's
- *                         run= is a tmux session id ($N), which some other
- *                         worker shares (CORE-2619)
+ *                         run= is a tmux session id ($N), quoted or not, which
+ *                         some other worker shares (CORE-2619, CORE-2622)
+ *   gh pr edit ...     -> the same marker refusal (an edit sets the same body),
+ *                         then the real gh; refused for the reviewer role
  *   gh pr review ...   -> `xt identity review-post` (formal review, commit_id
  *                         pinned to the reviewed head, reviewer App token)
  *   gh pr merge ...    -> `xt identity merge-check` first, then the real gh with
  *                         --match-head-commit, then a github-merge Journal ref
- *   gh pr close|edit   -> refused for the reviewer role
+ *   gh pr close        -> refused for the reviewer role
  *
  * An operator process (no holder, no role) always reaches the real gh: the shim
  * changes nothing outside an agent tree. The shim never prints or stores a
@@ -183,14 +185,36 @@ const LINK_TIMEOUT_MS = 6000;
 // Fail-open by design: only a refusal blocks, never a slow or absent xt.
 const MARKER_CHECK_TIMEOUT_MS = 4000;
 
+/**
+ * The budget actually used. XTRM_MARKER_CHECK_TIMEOUT_MS exists so a test can
+ * exercise the timeout branch without sleeping through the production budget;
+ * it is clamped, so a stray value cannot turn the check into a slow blocker.
+ */
+function markerCheckTimeoutMs() {
+  const raw = Number(process.env.XTRM_MARKER_CHECK_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return MARKER_CHECK_TIMEOUT_MS;
+  return Math.min(Math.max(Math.round(raw), 50), 60_000);
+}
+
 /** The refusal for this create's marker, or '' when the create may proceed. */
 function markerRefusal(args) {
   const checked = xtJson(
     ['identity', 'marker-check', '--argv', JSON.stringify(args), '--cwd', process.cwd()],
-    MARKER_CHECK_TIMEOUT_MS,
+    markerCheckTimeoutMs(),
   );
   if (checked.status !== 0 || !checked.data) return '';
   return typeof checked.data.refusal === 'string' ? checked.data.refusal : '';
+}
+
+/**
+ * Refuse a write verb whose effective marker carries a tmux session id in run=.
+ * One message for create and edit (CORE-2622): the create refusal is pointless
+ * if a pr edit can set the same marker a command later. Fail-open on an absent,
+ * slow or broken xt, like the link step: only a refusal blocks.
+ */
+function refuseBadRun(args, action) {
+  const refused = markerRefusal(args);
+  if (refused) die('refusing to ' + action + ': ' + refused);
 }
 
 /**
@@ -219,8 +243,7 @@ function linkCreatedPr(stdout, args) {
  */
 function createAndLink(real, args) {
   if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
-  const refused = markerRefusal(args);
-  if (refused) die('refusing to create the pull request: ' + refused);
+  refuseBadRun(args, 'create the pull request');
   const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
   if (run.error) die('cannot run ' + real + ': ' + run.error.message);
   const out = typeof run.stdout === 'string' ? run.stdout : '';
@@ -383,6 +406,17 @@ function main() {
 
   // CORE-2607: a create happens for any agent role; the link is not a permission.
   if (verb === 'create') createAndLink(real, args);
+
+  // CORE-2622: a pr edit sets the same body, so it gets the same refusal.
+  // An edit that carries no body never reaches the marker parser's work.
+  // The role gate must run HERE: pass() exits the process, so an edit that
+  // reached the shared gate below would never come back (review 6pgu, #921).
+  if (verb === 'edit') {
+    if (isRestricted(roleOf())) die('the reviewer role may not change PR state (gh pr edit)');
+    refuseBadRun(args, 'edit the pull request');
+    pass(real, args);
+  }
+
 
   if (verb === 'review') {
     // One parser for the target (CORE-2530 review): the CLI resolves the same gh

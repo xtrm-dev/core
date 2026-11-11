@@ -57850,14 +57850,36 @@ const LINK_TIMEOUT_MS = 6000;
 // Fail-open by design: only a refusal blocks, never a slow or absent xt.
 const MARKER_CHECK_TIMEOUT_MS = 4000;
 
+/**
+ * The budget actually used. XTRM_MARKER_CHECK_TIMEOUT_MS exists so a test can
+ * exercise the timeout branch without sleeping through the production budget;
+ * it is clamped, so a stray value cannot turn the check into a slow blocker.
+ */
+function markerCheckTimeoutMs() {
+  const raw = Number(process.env.XTRM_MARKER_CHECK_TIMEOUT_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return MARKER_CHECK_TIMEOUT_MS;
+  return Math.min(Math.max(Math.round(raw), 50), 60_000);
+}
+
 /** The refusal for this create's marker, or '' when the create may proceed. */
 function markerRefusal(args) {
   const checked = xtJson(
     ['identity', 'marker-check', '--argv', JSON.stringify(args), '--cwd', process.cwd()],
-    MARKER_CHECK_TIMEOUT_MS,
+    markerCheckTimeoutMs(),
   );
   if (checked.status !== 0 || !checked.data) return '';
   return typeof checked.data.refusal === 'string' ? checked.data.refusal : '';
+}
+
+/**
+ * Refuse a write verb whose effective marker carries a tmux session id in run=.
+ * One message for create and edit (CORE-2622): the create refusal is pointless
+ * if a pr edit can set the same marker a command later. Fail-open on an absent,
+ * slow or broken xt, like the link step: only a refusal blocks.
+ */
+function refuseBadRun(args, action) {
+  const refused = markerRefusal(args);
+  if (refused) die('refusing to ' + action + ': ' + refused);
 }
 
 /**
@@ -57886,8 +57908,7 @@ function linkCreatedPr(stdout, args) {
  */
 function createAndLink(real, args) {
   if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
-  const refused = markerRefusal(args);
-  if (refused) die('refusing to create the pull request: ' + refused);
+  refuseBadRun(args, 'create the pull request');
   const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
   if (run.error) die('cannot run ' + real + ': ' + run.error.message);
   const out = typeof run.stdout === 'string' ? run.stdout : '';
@@ -58050,6 +58071,17 @@ function main() {
 
   // CORE-2607: a create happens for any agent role; the link is not a permission.
   if (verb === 'create') createAndLink(real, args);
+
+  // CORE-2622: a pr edit sets the same body, so it gets the same refusal.
+  // An edit that carries no body never reaches the marker parser's work.
+  // The role gate must run HERE: pass() exits the process, so an edit that
+  // reached the shared gate below would never come back (review 6pgu, #921).
+  if (verb === 'edit') {
+    if (isRestricted(roleOf())) die('the reviewer role may not change PR state (gh pr edit)');
+    refuseBadRun(args, 'edit the pull request');
+    pass(real, args);
+  }
+
 
   if (verb === 'review') {
     // One parser for the target (CORE-2530 review): the CLI resolves the same gh
@@ -69243,6 +69275,14 @@ function createHelpCommand() {
       "    Allow or refuse a merge; called by the gh shim and by the xtrm-review-gate hook.",
       "    Allows only a reviewer-App review at the current head (or PARTIAL plus a Journal",
       "    decision). Override: XTRM_MERGE_GUARD_OVERRIDE=<reason>, coordinator/operator only.",
+      "  xt identity marker-check --argv <json> [--cwd <dir>]",
+      "    Refuse a gh pr create/edit whose xtrm marker puts a tmux session id",
+      "    ($0, $1, $7 - what XTRM_SESSION_ID carries, quoted or not) in run=; the",
+      "    refusal names PI_SESSION_ID (Pi) or the Claude session id. Called by the",
+      "    gh shim before gh runs, so an agent never creates a PR with a run= that",
+      "    cannot attribute it. Fail-open: only a refusal blocks.",
+      "    Shims call it with XTRM_MARKER_CHECK_TIMEOUT_MS (ms, 50-60000, default",
+      "    4000): a slower call is killed and the create proceeds unexplained.",
       "  xt identity setup | doctor [--json]",
       "    Install/refresh the gh shim, role map and routing reminder; report App and key state.",
       "    The GitHub Apps themselves are operator-created: see docs/github-apps-operator-runbook.md."
@@ -72250,9 +72290,11 @@ function parseIssueMarker(text) {
 }
 var TMUX_SESSION_ID_PATTERN = /^\$(\d+)$/;
 function markerRunVerdict(run5) {
-  const value = (run5 ?? "").trim();
+  const raw = (run5 ?? "").trim();
+  const quoted = /^(?:"([^"]*)"|'([^']*)')$/.exec(raw);
+  const value = (quoted ? quoted[1] ?? quoted[2] ?? "" : raw).trim();
   if (!value || !TMUX_SESSION_ID_PATTERN.test(value)) return null;
-  return `run=${value} is a tmux session id (XTRM_SESSION_ID), which every window in that tmux session shares, so it cannot attribute this run; use the worker's own runtime session id \u2014 PI_SESSION_ID for Pi, the Claude session id for Claude`;
+  return `run=${raw} is a tmux session id (XTRM_SESSION_ID), which every window in that tmux session shares, so it cannot attribute this run; use the worker's own runtime session id \u2014 PI_SESSION_ID for Pi, the Claude session id for Claude`;
 }
 var ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 function isSafeIssueRef(ref) {
