@@ -60174,10 +60174,10 @@ function buildRoleTmuxPlan(args) {
   }
   let model = modelOverride ?? role.model;
   if (runtime === "claude" && !modelOverride && role.model) {
-    const bridgedModel = claudeBridgeModelId(role.model);
-    if (bridgedModel) {
-      model = bridgedModel;
-    } else if (!isClaudeRunnableModel(role.model)) {
+    const resolvedModel = claudeBridgeModelId(role.model) ?? role.model;
+    if (isClaudeRunnableModel(resolvedModel)) {
+      model = resolvedModel;
+    } else {
       process.stderr.write(kleur_default.yellow(
         `  \u26A0 role '${role.name}': ignoring model '${role.model}'; claude inherits its own default. Declare execution.surface_models.claude on the specialist (or pass --model <claude-id>) to pin one.
 `

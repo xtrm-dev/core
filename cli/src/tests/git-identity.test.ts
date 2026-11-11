@@ -83,6 +83,8 @@ describe('buildDispatcherEnv git identity', () => {
         const out = buildDispatcherEnv('worker-a', { ...deps, gitEmail: 'op@example.com' });
         expect(out).toEqual({
             SUBSTRATE_HOLDER: 'worker-a',
+            // CORE-2528: every launched agent carries the guard default.
+            XTRM_MERGE_GUARD: 'on',
             GIT_AUTHOR_NAME: 'worker-a',
             GIT_COMMITTER_NAME: 'worker-a',
             GIT_AUTHOR_EMAIL: 'op@example.com',
@@ -97,7 +99,7 @@ describe('buildDispatcherEnv git identity', () => {
     });
 
     it('emits no git identity when the caller passes no email source', () => {
-        expect(buildDispatcherEnv('worker-a', deps)).toEqual({ SUBSTRATE_HOLDER: 'worker-a' });
+        expect(buildDispatcherEnv('worker-a', deps)).toEqual({ SUBSTRATE_HOLDER: 'worker-a', XTRM_MERGE_GUARD: 'on' });
     });
 
     it('never inherits the dispatcher git identity as the worker identity', () => {
