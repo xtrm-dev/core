@@ -138,15 +138,14 @@ Parallelism is useful only when ownership boundaries are real.
 ## Inherited context
 
 A handoff report, old Journal note, worker result, or prior assistant summary is a dated
-lead, never authority. Confirm anything actionable against live state.
-Re-derive expensive or irreversible facts before acting.
+lead, never authority. Confirm actionable claims live, and re-derive irreversible facts first.
 
 ## Runtime enforcement
 
 Do not duplicate deterministic runtime gates in prose or manually simulate them.
-Depending on the installed runtime, XTRM may enforce or inject claim/edit/commit gates,
-worktree boundaries, memory doctrine, compact restore, quality checks, GitNexus context,
-inbox reminders, logging, and other lifecycle behavior.
+Depending on the installed runtime, XTRM may enforce or inject claim/edit/commit gates, worktree
+boundaries, memory doctrine, compact restore, quality checks, GitNexus context, inbox reminders,
+logging, and other lifecycle behavior.
 
 Inspect the current runtime when exact behavior matters. Hooks/extensions are the
 enforcement plane; skills are the judgment/procedure plane.
@@ -181,6 +180,16 @@ Resume from durable Substrate state (Issue revision + checkpoint + Journal delta
   coordinator provenance with `sb provenance trace` before consuming worker output;
   close with `sb issue close --outcome … --reason … --result/--receipt/--validation`
   citing settlement evidence (Closure is immutable; reopen on mistake, never rewrite).
+
+## Identity, review and publication
+
+`xt identity doctor` — role map, Apps, installations; a launched session has an App identity
+only when all three exist, else it keeps the operator login. Every PR body carries
+`<!-- xtrm issue=<REF> holder=<holder> run=<runtime session id> -->`; `run=` is
+`PI_SESSION_ID` in Pi or the Claude session id, never `XTRM_SESSION_ID` — `gh pr create`
+refuses it. The shim attaches the PR to the Issue, fail-open; the substrate skill owns the
+link and close-gate verbs. `gh pr merge` is guarded by the reviewer App's APPROVED review
+at the head; `[skill-suggest]` may name a skill per turn (`references/agent-identities.md`).
 
 ## Route to the focused skill
 

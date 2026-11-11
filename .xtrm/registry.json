@@ -89,18 +89,6 @@
       "install_mode": "copy",
       "install_scope": "global",
       "files": {
-        "agent-identities/references/configuration.md": {
-          "hash": "7c656259c0d9a5f8b15bbb91f095cb59d1b9e266349c3761fda88a1ce3eeb69b",
-          "version": "0.15.3"
-        },
-        "agent-identities/references/troubleshooting.md": {
-          "hash": "def895985597b1e67056f8d143734c5a696286625b0dd6a435e5c9f87873a272",
-          "version": "0.15.3"
-        },
-        "agent-identities/SKILL.md": {
-          "hash": "a7fe38c757ef15a775dcdf21af92aeee9b51dd23aacb25c92c914f1a075f1933",
-          "version": "0.15.3"
-        },
         "codemode/references/kernel-mechanics.md": {
           "hash": "8ed79613b827b54f9ff974483c117e96606ec474cb7927fdc5b549b34a0cb035",
           "version": "0.15.3"
@@ -138,7 +126,7 @@
           "version": "0.15.3"
         },
         "engineering-quality/references/review.md": {
-          "hash": "60669b0c2ebcd22013a71a92b6bbcff5ab5898243ea6adc0f1d7373e302513c8",
+          "hash": "6e22f1503d8aff69b1e75b8ef04c40ae2702e359b24c8fd83c9af1a21bb50b4f",
           "version": "0.15.3"
         },
         "engineering-quality/references/testing.md": {
@@ -673,6 +661,10 @@
           "hash": "e8d893d6303eed306e4a2ded8e8afeaaa7a2e00462387a784ebe9ed0fb57fb55",
           "version": "0.15.3"
         },
+        "using-xtrm/references/agent-identities.md": {
+          "hash": "c5c01d490ff2812826ea4fa26633657b6697ac5cd66683210445f81a73b79688",
+          "version": "0.15.3"
+        },
         "using-xtrm/references/continuity.md": {
           "hash": "5fd6c04f502e13590ff1d40106873da8ecd0ff9e48a0d6c7f52421a00dcce677",
           "version": "0.15.3"
@@ -682,7 +674,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "1624c9231c444c12d74f9c51a1661c035cfa2b05bd435e868fc4016592330cd1",
+          "hash": "1679ce046828c563aaf99941b23a0632442e2897a290397238f5e75ac0093a6e",
           "version": "0.15.3"
         }
       }

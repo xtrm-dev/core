@@ -111,9 +111,10 @@ A PR merges only with a review by the reviewer App (**`xtrm-reviewer[bot]`**) at
 head. GitHub Actions is billing-locked and the organisation is on the Free plan, so nothing on
 GitHub enforces it: the check runs on the agent's machine.
 
-The merge guard is **OFF by default**: it runs only when `XTRM_MERGE_GUARD` is `on`, `1`, `true`
-or `yes`. With it off, both the `gh` shim and the Claude Code hook pass the merge through and say
-so on stderr.
+The merge guard is **on by default for launched sessions**: the launcher exports
+`XTRM_MERGE_GUARD=on` (a plain shell does not), and `XTRM_MERGE_GUARD=off` reaches the workers
+explicitly. With it off, both the `gh` shim and the Claude Code hook pass the merge through and
+say so on stderr. Rules, refusals and the override: `using-xtrm/references/agent-identities.md`.
 
 - `gh pr merge` first runs `xt identity merge-check`. It refuses when the bot's latest review is
   missing, is at an older head, or requested changes. A `COMMENT` (PARTIAL) review passes only
@@ -124,8 +125,9 @@ so on stderr.
   (`~/.xtrm/config/reviewer-routing.md`, installed by `xt identity setup`).
 - The `gh` shim (`xt identity setup` installs it as `~/.local/bin/gh`) carries the merge guard and
   turns `gh pr review` into a formal review pinned to the reviewed head when the agent runs as the
-  reviewer role. The shim has **no** `gh pr create` handling: the create reminder below is the
-  Claude Code hook's, so Pi and Codex agents get no reminder.
+  reviewer role. It also handles `gh pr create`: the created PR is attached to the Issue named in
+  its `xtrm issue=` marker (T1 then T2), fail-open. The create reminder below is the Claude Code
+  hook's, so Pi and Codex agents get no reminder.
 - The Claude Code hook `xtrm-review-gate` (policy `policies/xtrm-review-gate.json`) runs the same
   guard as a PreToolUse check: it tokenises the Bash command and gates only a simple command whose
   argv is `gh … pr … merge`, then hands that argv to `xt identity merge-check --gh-args`. Text in

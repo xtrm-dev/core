@@ -24,7 +24,6 @@ const BUDGETS = {
   'goal-prompt':                180,
   codemode:                      90,
   'open-code-review':           200,
-  'agent-identities':            90,
 };
 
 let failed = false;
