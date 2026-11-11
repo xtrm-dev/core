@@ -792,7 +792,7 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 
 > **Filed · 11-11 · identity Apps shipped**
 > - Merged 11-11, each reviewed at its exact head: #887 (an override is refused when the head it names does not resolve), #888 (a numeric `appId` is accepted, and receipt payloads use the bounded Journal fields), #889 (the guard is on by default for launched agents, and an inherited value is forwarded explicitly, so a coordinator’s `off` reaches its workers as `off`), #892 (the agent-identities skill: three roles, the export rule, and the failures seen live), #909 (one shared receipt diagnostic, plus the CORE-2606 review lows).
-> - The receipt root cause is fixed: `review-post`, `merge-check` and `merge-record` now write a receipt the Journal accepts. Still open here: `pr-review-gate`’s link check and the template fan-out to the 16 repos; `sb issue close`’s PR-or-commit requirement behind XTRM-729, which has no attestation yet.
+> - The receipt root cause is fixed on main (#888, #909); a host gets it once its core checkout is updated. `review-post`, `merge-check` and `merge-record` now write a receipt the Journal accepts. Still open here: `pr-review-gate`’s link check and the template fan-out to the 16 repos; `sb issue close`’s PR-or-commit requirement behind XTRM-729, which has no attestation yet.
 
 ### Step 15b — A review is a step in the trail, not a new issue
 
@@ -1112,7 +1112,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 ### Step 26 — The GitHub reconciler
 
-(v2) [partly done] [new] `XT-178 amendment · XT-184 · XTRM-728`
+(v2) [new] `XT-178 amendment · XT-184 · XTRM-728`
 
 - **Brings** — One poller in the agent host, using conditional requests a few minutes apart. It is the only writer of PR state into Substrate (review, merged with SHA, closed). It also repairs a PR the host missed when its title, branch or trailer names a ref.
 - **Why here** — One event source serves three consumers: the lifecycle (27), the Jira status map (34) and the app. Built once, it adds no load per consumer.
