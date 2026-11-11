@@ -65,6 +65,21 @@ The monitor's stdout is a channel into the model. It prints the nudge line and n
 
 ## Install and run
 
+The plugin is offered by the `xtrm` marketplace (`xtrm-dev/specialists`), which points at this directory on
+`main` of `xtrm-dev/core` with a git-subdir source. Install it for every session from GitHub:
+
+```
+claude plugin marketplace add xtrm-dev/specialists   # once; the marketplace is named xtrm
+claude plugin install skill-suggest@xtrm
+```
+
+A new session loads it; an open session does not. To pick up a new version, run
+`claude plugin marketplace update xtrm`, then `claude plugin update skill-suggest@xtrm`, then `/reload-plugins` or
+restart. Claude Code keys its plugin cache on the `version` in `.claude-plugin/plugin.json`, so a change to the
+plugin ships to installed users only when that version is bumped.
+
+To try a local checkout in one session without installing it:
+
 ```
 claude --plugin-dir packages/claude-skill-suggest
 ```
