@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { SUBSTRATE_HOLDER_VAR } from '../core/dispatcher-identity.js';
+import { SUBSTRATE_HOLDER_VAR, XTRM_AGENT_NAME_VAR } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import {
     DEFAULT_API_BASE,
@@ -84,6 +84,10 @@ export function readIdentityEnv(
             ...buildGitIdentityEnv({ holder, email: resolveGitEmail({ cwd }) }),
             ...(role ? { [ROLE_ENV_VAR]: role } : {}),
             ...buildGitTransportEnv({ role, map: map ?? DEFAULT_ROLE_MAP, deps: appDeps }),
+            // CORE-2606: the visible review attribution reads it, so `eval "$(xt
+            // identity env)"` in a launched session must not drop it. Absent stays
+            // absent: a session without one falls back to the holder at review time.
+            ...((env[XTRM_AGENT_NAME_VAR] ?? '').trim() ? { [XTRM_AGENT_NAME_VAR]: (env[XTRM_AGENT_NAME_VAR] ?? '').trim() } : {}),
         },
     };
 }
@@ -227,11 +231,40 @@ export function resolveGhTarget(argvText: string, cwd: string): GhTarget {
     return { ...base, repo: inv.repo || here.repo, pr: here.pr, head: here.head };
 }
 
-function runSb(args: string[]): { ok: boolean; error?: string } {
-    const result = spawnSync('sb', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.error) return { ok: false, error: result.error.message };
+/** The binary actually invoked, so a failure names it instead of saying "sb". */
+export function resolveSbBinary(): string {
+    const found = spawnSync('sh', ['-c', 'command -v sb'], { encoding: 'utf8' });
+    const resolved = (found.stdout || '').trim();
+    return resolved || 'sb';
+}
+
+/**
+ * The `error` field of an `sb --json` refusal, or null. `sb` reports a JSON
+ * failure on STDOUT and exits 1 with empty stderr, which is why the live warning
+ * said only "sb exited 1" (CORE-2606 finding): the reason was always there, just
+ * on the other stream.
+ */
+export function sbJsonError(stdout: string | null | undefined): string | null {
+    const text = (stdout ?? '').trim();
+    if (!text.startsWith('{')) return null;
+    try {
+        const parsed = JSON.parse(text) as { error?: unknown };
+        return typeof parsed.error === 'string' && parsed.error.trim() ? parsed.error.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Run one `sb` receipt; never throws, and names the binary and its reason. */
+export function runSb(args: string[]): { ok: boolean; error?: string } {
+    const binary = resolveSbBinary();
+    const result = spawnSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    if (result.error) return { ok: false, error: `${binary}: ${result.error.message}` };
     if (result.status === 0) return { ok: true };
-    return { ok: false, error: (result.stderr || '').trim() || `sb exited ${result.status}` };
+    const stderr = (result.stderr || '').trim();
+    const fromStdout = sbJsonError(result.stdout);
+    const reason = stderr || (fromStdout ? `(stdout) ${fromStdout}` : 'no stderr and no JSON error on stdout');
+    return { ok: false, error: `sb (${binary}) exited ${result.status}: ${reason}` };
 }
 
 export function createIdentityCommand(): Command {
@@ -545,12 +578,14 @@ export function createIdentityCommand(): Command {
                 : await mergeCheck({ repo, pr }, deps);
             if (!decision.allow && (process.env[OVERRIDE_ENV_VAR] ?? '').trim()) {
                 // The override log and the receipt need the head even when the App was
-                // unreachable and the decision carries none (CORE-2528 review).
+                // unreachable and the decision carries none.
                 if (!decision.head) {
                     const argv = opts.ghArgs ?? JSON.stringify(['pr', 'merge', '--repo', repo, String(pr)]);
                     const resolved = await resolveGhTarget(argv, opts.cwd ?? process.cwd());
                     if (resolved.head) decision = { ...decision, head: resolved.head };
                 }
+                // The head refusal lives in applyOverride, AFTER the role gate: a
+                // worker must still be told it may not override, whatever the head.
                 decision = await applyOverride(decision, deps);
             }
             if (opts.json) {

@@ -391,7 +391,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
         ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
-        ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }) }),
+        ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }),
         ...launchIdentity.env,
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);

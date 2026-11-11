@@ -440,6 +440,9 @@ describe('marker selection (CORE-2590)', () => {
         ), { runSb: sb.runSb }));
         expect(decision.allow).toBe(false);
         expect(decision.reason).toMatch(/no Substrate Issue/);
+        // The no-marker case is the one that tells the agent what to add.
+        expect(decision.message).toContain('<!-- xtrm issue=<REF> holder=<holder> run=<id> -->');
+        expect(decision.message).toContain('or contact the operator');
         expect(sb.calls).toHaveLength(0);
     });
 

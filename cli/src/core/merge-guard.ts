@@ -403,7 +403,7 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         // means no record of the merge, so an approval alone cannot pass the guard.
         if (!issueRef) {
             return deny(
-                'the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head',
+                'the PR names no Substrate Issue in a marker, so the guard refuses even an approval at the current head. Add the line-2 marker <!-- xtrm issue=<REF> holder=<holder> run=<id> --> to the PR body, or contact the operator',
                 { head, issueRef, ...reviewInfo },
                 markerGuidance(),
             );
@@ -501,6 +501,17 @@ export async function applyOverride(
             ? `an unresolved role (${(env.XTRM_ROLE ?? '').trim() || 'no role'} is not a role or a mapped specialist)`
             : `role ${role}`;
         return { ...refusal, reason: `${refusal.reason} (override refused: ${who} may not override the merge guard)` };
+    }
+    // An override needs a head to record: the log line and the Journal receipt both
+    // name it, and an unpinned merge would leave an audit entry nobody can tie to a
+    // commit. There is no case where the merge pins the head by itself.
+    if (!refusal.head) {
+        const why = 'the reviewed head could not be resolved, so the override is refused';
+        return {
+            ...refusal,
+            reason: `${refusal.reason} (override refused: ${why})`,
+            message: `merge refused for ${refusal.repo}#${refusal.pr}: ${why}`,
+        };
     }
     const actorRole = source === 'operator' ? 'operator' : String(role);
     const log = appendOverrideLog(deps, {

@@ -3,10 +3,11 @@
 // wrote), and the tool adds the hidden marker. A fake GitHub proves every
 // refusal without the Apps.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     bodyVerdicts,
+    buildAttribution,
     buildMarker,
     eventForFlags,
     eventForOutcome,
@@ -16,6 +17,7 @@ import {
     parseIssueMarkers,
     postReview,
     reviewJournalArgs,
+    sanitizeAgentName,
     sha12,
     ReviewRefused,
     type PostReviewInput,
@@ -24,6 +26,21 @@ import {
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01';
 const OTHER = '0123456789abcdef0123456789abcdef01234567';
 const ISSUE = 'CORE-2528';
+
+// CORE-2606: the visible attribution reads the launch environment, so the file
+// owns it instead of whatever shell started the test run.
+const SAVED_AGENT_NAME = process.env.XTRM_AGENT_NAME;
+const SAVED_SESSION_NAME = process.env.XTRM_SESSION_NAME;
+afterAll(() => {
+    if (SAVED_AGENT_NAME === undefined) delete process.env.XTRM_AGENT_NAME;
+    else process.env.XTRM_AGENT_NAME = SAVED_AGENT_NAME;
+    if (SAVED_SESSION_NAME === undefined) delete process.env.XTRM_SESSION_NAME;
+    else process.env.XTRM_SESSION_NAME = SAVED_SESSION_NAME;
+});
+beforeEach(() => {
+    delete process.env.XTRM_AGENT_NAME;
+    delete process.env.XTRM_SESSION_NAME;
+});
 
 type Call = { method: string; path: string; body?: unknown };
 
@@ -177,6 +194,56 @@ describe('reading the model body', () => {
     });
 });
 
+describe('the visible attribution line (CORE-2606)', () => {
+    it('reads Agent <XTRM_AGENT_NAME> · run <id> · Issue <REF> · activation <id>', () => {
+        process.env.XTRM_AGENT_NAME = 'core-xt-pi-0fln';
+        expect(buildAttribution({ holder: 'holder7', runId: 'r1', issueRef: 'CORE-2606', activationId: 'act:a1' }))
+            .toBe('Agent core-xt-pi-0fln · run r1 · Issue CORE-2606 · activation act:a1');
+    });
+
+    it('lets XTRM_AGENT_NAME win over the holder, and never reads XTRM_SESSION_NAME', () => {
+        process.env.XTRM_AGENT_NAME = 'core-xt-pi-0fln';
+        process.env.XTRM_SESSION_NAME = 'xx';
+        expect(buildAttribution({ holder: 'holder7', runId: 'r1' })).toBe('Agent core-xt-pi-0fln · run r1');
+        delete process.env.XTRM_AGENT_NAME;
+        expect(buildAttribution({ holder: 'holder7', runId: 'r1' })).toBe('Agent holder7 · run r1');
+        expect(buildAttribution({ holder: 'holder7', runId: 'r1' })).not.toContain('xx');
+    });
+
+    it('degrades by omission: no Issue, no activation, and an empty environment stays empty', () => {
+        expect(buildAttribution({ holder: 'h', runId: 'r' })).toBe('Agent h · run r');
+        expect(buildAttribution({ holder: 'h', runId: 'r', issueRef: 'CORE-1' })).toBe('Agent h · run r · Issue CORE-1');
+        expect(buildAttribution({ holder: 'h', runId: 'r', activationId: 'act:a1' })).toBe('Agent h · run r · activation act:a1');
+        expect(buildAttribution({ holder: 'h' })).toBe('Agent h');
+        expect(buildAttribution({})).toBe('');
+    });
+
+    it('sanitises a name that tries to break the line', () => {
+        process.env.XTRM_AGENT_NAME = 'evil\nname\twith  spaces';
+        const line = buildAttribution({ holder: 'h', runId: 'r' });
+        expect(line).toBe('Agent evil name with spaces · run r');
+        expect(line.split('\n')).toHaveLength(1);
+        expect(sanitizeAgentName('\u0000\u001b')).toBeNull();
+    });
+
+    it('posts the attribution on line 2 and the hidden marker on line 3', async () => {
+        process.env.XTRM_AGENT_NAME = 'core-xt-pi-0fln';
+        const github = fakeGitHub(headRoutes({
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': {
+                status: 201,
+                data: { id: 55, state: 'COMMENTED', html_url: 'https://github.com/xtrm-dev/core/pull/42#pullrequestreview-55' },
+            },
+        }));
+        await postReview(input({ activationId: 'act:a1' }), github.deps);
+        const body = String((github.calls.find((call) => call.method === 'POST')?.body as { body?: string })?.body ?? '');
+        const lines = body.split('\n');
+        expect(lines[1]).toBe('Agent core-xt-pi-0fln · run run123 · Issue CORE-2528 · activation act:a1');
+        // The hidden marker's format is unchanged; only its line moved down one.
+        expect(lines[2]).toBe('<!-- agent=core-worker-a run=run123 issue=CORE-2528 activation=act:a1 -->');
+        expect(body.split('\n').filter((line) => line.startsWith('Agent '))).toHaveLength(1);
+    });
+});
+
 describe('postReview', () => {
     it('resolves the header head, pins commit_id to it, keeps line 1 and adds the marker', async () => {
         const github = fakeGitHub(headRoutes({
@@ -209,7 +276,7 @@ describe('postReview', () => {
         const body = String((posted?.body as { body?: string })?.body ?? '');
         const lines = body.split('\n');
         expect(lines[0]).toBe(`Review by reviewer (sonnet) at head ${sha12(HEAD)}`);
-        expect(lines[1]).toBe('');
+        expect(lines[1]).toBe('Agent core-worker-a · run run123 · Issue CORE-2528');
         expect(lines[2]).toContain('agent=core-worker-a');
         expect(lines[2]).toContain('run=run123');
         expect(lines[2]).toContain(`issue=${ISSUE}`);

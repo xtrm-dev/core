@@ -242,8 +242,8 @@ OFF by default, so installing the shim cannot refuse every agent merge before th
 
 Known limits, accepted rather than hidden:
 
-- `SUBSTRATE_HOLDER`, `XTRM_ROLE`, `XTRM_MERGE_GUARD`, `XTRM_MERGE_GUARD_OFFLINE`, `XTRM_MERGE_GUARD_OVERRIDE`
-  and the `<!-- xtrm … -->` marker all live in the agent's own environment, so that agent can change them; they are signed by nothing.
+- `SUBSTRATE_HOLDER`, `XTRM_ROLE`, `XTRM_MERGE_GUARD`, `XTRM_MERGE_GUARD_OVERRIDE` and the `<!-- xtrm … -->`
+  marker all live in the agent's own environment, so that agent can change them; they are signed by nothing.
   This is the accepted same-unix-user limit, not a control. The shim's pass-through uses that process's own
   `gh` login, which is the operator login unless the App credential is configured. The controls are attribution on
   every review (agent/run marker plus a Journal receipt), refusal of a review of the holder's own PR, a
@@ -275,25 +275,11 @@ Known limits, accepted rather than hidden:
 - `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the
   shim passes `gh pr merge` through and prints one line saying the guard is off. With it on, an unreachable
   GitHub or App is still refusable by `XTRM_MERGE_GUARD_OVERRIDE` from the coordinator or the operator, and an
-  override whose log and Journal receipt both fail is refused, not allowed.
-- A launched session resolves `gh` to the shim because the launcher forwards PATH to every tmux
-  session and window it creates: the pane PATH is the launcher's PATH with the shim directory
-  (`~/.local/bin`, the directory `xt identity setup` writes) prepended, deduplicated and with empty
-  segments dropped (CORE-2524.4). A `new-session` pane otherwise inherits the tmux SERVER's PATH,
-  which need not contain `~/.local/bin`, so a review posts under the operator identity.
-  `xt identity doctor`'s PATH-order warning evaluates the launcher's PATH, not the pane's, so it
-  cannot detect a server PATH that lacks the shim directory.
-- The merge guard reads the **PR body marker** and nothing else: `<!-- xtrm issue=<REF> holder=<holder> run=<id> -->`.
-  A branch name such as `fix/CORE-2590-x` or `fix/UTF-8-parser` is **not** an Issue source (branch derivation was
-  removed by CORE-2590). Only comments whose content starts with `xtrm` and that carry `issue=` are markers, so a
-  comment such as `<!-- see xtrm-tools run=9 -->` or a holder-only comment is ignored; only the LAST marker in the
-  body counts; a marker inside a fenced code block (fences close only on the same character, at least as long, as
-  CommonMark requires) or on a `>` quote line is ignored; two markers naming different refs are refused as
-  ambiguous. When the review would otherwise allow, the guard makes ONE read-only `sb issue show <REF> --json`
-  call (5 s timeout, explicit cwd, no stdin) and never prints the Issue body: an explicit not-found **denies**
-  (fix the marker), while `sb` absent, a timeout, unparseable output or `XTRM_MERGE_GUARD_OFFLINE=1` records the
-  `unknown` state, prints one warning naming the reason on the path the agent sees (the `gh` shim, or the review
-  hook) and **allows** the merge — an outage must not block an approved merge.
+  override whose log and Journal receipt both fail is refused, not allowed. An override also needs a resolvable
+  head: without one the guard refuses it, because the log line and the Journal receipt both name the commit and
+  the merge would be otherwise unpinned. A worker or unmapped role is told it may not override whatever the head.
+- A PR whose body carries no `<!-- xtrm issue=<REF> … -->` marker is refused even with an approval at the head:
+  the refusal tells the agent to add the line-2 marker or to contact the operator.
 
 | Command | What it does |
 | --- | --- |
@@ -302,8 +288,8 @@ Known limits, accepted rather than hidden:
 | `xt identity token --repo <owner/name> [--role <role>]` | Mints or reuses a one-hour installation token for this process's resolved role. `--role` is an operator-shell convenience: inside an agent tree it may only name that session's own role, an unknown name is refused, and the reviewer token is refused here (`review-post` and, for reads, `merge-check`/`merge-record` mint it). Prints the token by design (an agent that runs it puts the token in its transcript). The shim mints internally and never prints; `review-post` prints the review URL, id, `commit_id` and state, never a token. |
 | `xt identity credential get` | The git credential helper answer: `username=x-access-token`, `password=<installation token>`. Answers only for `https://github.com/<owner>/…` and only for this role's App; otherwise it stays silent. |
 | `xt identity review-post --repo <r> --pr <n> --body-file <file>` | One formal review. The body's line 1 (`Review by <role> (<model>) at head <sha12>`) supplies the head and model, and its single `- Verdict:` line supplies the event; a disagreeing flag or environment value is refused. The tool pins `commit_id`, adds the line-2 marker (agent, run, Issue) and prints url, id, `commit_id` and state. Called by the `gh` shim, so agents keep plain `gh pr review`. |
-| `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Off unless `XTRM_MERGE_GUARD=on`. The Issue comes from the PR body marker only (CORE-2590): the guard verifies that ref with one `sb issue show --json` call and denies only an explicit not-found; `unknown` allows with a warning, and `XTRM_MERGE_GUARD_OFFLINE=1` forces it. Refusal names the way forward (fix the marker, or get a review) and the coordinator/operator override; an override whose log and Journal writes both fail is itself refused. The `--json` decision carries `issueLookup` (`verified`/`missing`/`unknown`). |
-| `xt identity merge-record` | Post-merge `github-merge` Journal ref, called by the shim after a successful `gh pr merge`. The Issue ref comes from the PR body marker only (or `--issue`). |
+| `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Off unless `XTRM_MERGE_GUARD=on`. Refusal names the ways to get a review and the coordinator/operator override; an override whose log and Journal writes both fail is itself refused. |
+| `xt identity merge-record` | Post-merge `github-merge` Journal ref, called by the shim after a successful `gh pr merge`. |
 
 Files the code reads (nothing else is authoritative):
 

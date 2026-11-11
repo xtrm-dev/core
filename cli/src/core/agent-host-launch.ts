@@ -21,6 +21,7 @@ import { validate } from '@xtrm/contracts';
 import type { AgentHostApiV1, CommandOutcomeV1 } from '@xtrm/contracts';
 import { action } from './launch-outcome.js';
 import { panePath } from './pane-path.js';
+import { XTRM_AGENT_NAME_VAR } from './dispatcher-identity.js';
 import { INITIAL_PROMPT_ENV, forwardedLaunchEnv } from '../utils/worktree-session.js';
 
 export type LaunchRequest = Extract<AgentHostApiV1, { kind: 'launch_request' }>;
@@ -168,6 +169,9 @@ export function buildLaunchEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     // The host is not a tmux client: xt pi must neither run in the host's pane nor parent to its session.
     delete env.TMUX;
     delete env.TMUX_PANE;
+    // CORE-2606: the host's own agent name is not the child's. A `xt pi` launch
+    // recomputes it from the child worktree; a bare pi launch has none to give.
+    delete env[XTRM_AGENT_NAME_VAR];
     return env;
 }
 

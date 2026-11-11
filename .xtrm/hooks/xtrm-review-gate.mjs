@@ -120,7 +120,8 @@ function simpleCommands(command) {
                 const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
                 index = newline < 0 ? command.length : newline + 1;
                 // An unquoted `<<-` strips leading TABS from the body lines; the
-                // terminator matches the line exactly, never after trim().
+                // terminator matches the line exactly, never after trim(). The line
+                // already lost a CRLF carriage return above, so `EOF\r` matches.
                 const candidate = heredoc.stripTabs ? line.replace(/^\t+/, '') : line;
                 if (candidate === heredoc.delimiter) break;
             }

@@ -31,6 +31,8 @@ import { buildGitIdentityEnv, GIT_IDENTITY_ENV_KEYS } from './git-identity.js';
 import type { TmuxProbe } from './session-identity.js';
 
 export const SUBSTRATE_HOLDER_VAR = 'SUBSTRATE_HOLDER';
+/** The human-readable agent name (`<repo>-xt-<runtime>-<name>`), CORE-2606. */
+export const XTRM_AGENT_NAME_VAR = 'XTRM_AGENT_NAME';
 export const XTRM_DISPATCHER_NAME_VAR = 'XTRM_DISPATCHER_NAME';
 export const XTRM_DISPATCHER_ADDRESS_VAR = 'XTRM_DISPATCHER_ADDRESS';
 export const XTRM_PARENT_SESSION_ID_VAR = 'XTRM_PARENT_SESSION_ID';
@@ -39,6 +41,7 @@ export const XTRM_PARENT_PANE_ID_VAR = 'XTRM_PARENT_PANE_ID';
 /** Every key this module owns; launchers strip them from inherited env first. */
 export const DISPATCHER_ENV_KEYS = [
     SUBSTRATE_HOLDER_VAR,
+    XTRM_AGENT_NAME_VAR,
     XTRM_DISPATCHER_NAME_VAR,
     XTRM_DISPATCHER_ADDRESS_VAR,
     XTRM_PARENT_SESSION_ID_VAR,
@@ -71,6 +74,11 @@ export interface DispatcherIdentityDeps {
      * callers that do not launch a runtime stay byte-identical to before.
      */
     gitEmail?: string | null;
+    /**
+     * CORE-2606: the full agent name (`<repo>-xt-<runtime>-<name>`) the launcher
+     * computed, exported next to SUBSTRATE_HOLDER. Omitted keeps it absent.
+     */
+    agentName?: string | null;
 }
 
 export interface DispatcherIdentity {
@@ -82,6 +90,17 @@ function clean(value: unknown): string | null {
     if (typeof value !== 'string') return null;
     const trimmed = value.trim();
     return trimmed ? trimmed : null;
+}
+
+/**
+ * A single-line name for the review attribution (CORE-2606): controls become
+ * spaces, runs collapse, the result is bounded. The visible line reads it, so a
+ * hostile worktree name must not be able to inject a second line.
+ */
+export function cleanAgentName(value: unknown, max = 96): string | null {
+    if (typeof value !== 'string') return null;
+    const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned ? cleaned.slice(0, max) : null;
 }
 
 function defaultTmux(args: string[]): { status: number | null; stdout: string } {
@@ -169,6 +188,8 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
             Object.assign(out, buildGitIdentityEnv({ holder, email: deps.gitEmail }));
         }
     }
+    const agentName = cleanAgentName(deps.agentName);
+    if (agentName) out[XTRM_AGENT_NAME_VAR] = agentName;
 
     const dispatcher = resolveDispatcher(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;

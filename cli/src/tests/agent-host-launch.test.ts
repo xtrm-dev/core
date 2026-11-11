@@ -110,6 +110,13 @@ describe('launch argv (XTRM-566)', () => {
         const env = buildLaunchEnv({ PATH: '/bin', TMUX: '/tmp/tmux-1/default,1,0', TMUX_PANE: '%3', XTRM_AGENT_LAUNCH: 'terminal' });
         expect(env).toEqual({ PATH: '/bin', XTRM_AGENT_LAUNCH: 'gui' });
     });
+
+    it('drops the host\'s own XTRM_AGENT_NAME so a child never inherits it (CORE-2606)', () => {
+        // A `xt pi` launch recomputes it from the child worktree; a bare pi launch
+        // has no agent name to give. Either way the host's name is not the child's.
+        const env = buildLaunchEnv({ PATH: '/bin', XTRM_AGENT_NAME: 'core-xt-pi-host' });
+        expect(env).toEqual({ PATH: '/bin', XTRM_AGENT_LAUNCH: 'gui' });
+    });
 });
 
 describe('launch request validation (XTRM-566)', () => {

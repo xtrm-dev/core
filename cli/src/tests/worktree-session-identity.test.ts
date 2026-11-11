@@ -138,7 +138,10 @@ describe('xt/tmux launcher session-identity propagation', () => {
   let previousCompat: string | undefined;
   let previousDispatchEnv: Record<string, string | undefined> = {};
   let h: Harness;
-  const DISPATCH_KEYS = ['SUBSTRATE_HOLDER', 'XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID', 'TMUX_PANE'];
+  // XTRM_SESSION_ID/NAME are here because an agent shell exports them: without
+  // the delete, a direct launch inherits the caller's session and the
+  // non-fabrication test fails for the environment, not for the product.
+  const DISPATCH_KEYS = ['SUBSTRATE_HOLDER', 'XTRM_AGENT_NAME', 'XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME', 'TMUX_PANE'];
 
   // CORE-2390: the test worker's parent pid is a "Claude session" with a
   // socket, and the launching env carries a dispatcher's own holder.
@@ -227,6 +230,23 @@ describe('xt/tmux launcher session-identity propagation', () => {
     const eVars = h.newSessionArgs?.filter((a) => a.startsWith('XTRM_SESSION_')) ?? [];
     expect(eVars).not.toContain('XTRM_SESSION_ID=$7');
     expect(eVars).not.toContain('XTRM_SESSION_ID=');
+  });
+
+  it('exports XTRM_AGENT_NAME with the full worktree name next to SUBSTRATE_HOLDER (CORE-2606)', async () => {
+    // A developer shell that already exports a name must not decide this test.
+    process.env.XTRM_AGENT_NAME = 'stale-parent-name';
+    process.env.XTRM_SESSION_NAME = 'xx';
+    installMock(h);
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    await expect(launchWorktreeSession({ runtime: 'pi', name: 'attr1', attach: false })).rejects.toThrow('exit:0');
+
+    const env = envPairs(h.newSessionArgs);
+    expect(env['SUBSTRATE_HOLDER']).toBe('attr1');
+    // The full `<repo>-xt-<runtime>-<name>`, not the slug and not the session name.
+    expect(env['XTRM_AGENT_NAME']).toBe('repo-xt-pi-attr1');
+    expect(env['XTRM_AGENT_NAME']).not.toBe(env['XTRM_SESSION_NAME']);
+    expect(env['XTRM_AGENT_NAME']).not.toBe('stale-parent-name');
   });
 
   it('prepends the shim directory when the launcher PATH does not contain it (CORE-2524.4)', async () => {
