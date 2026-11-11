@@ -589,7 +589,11 @@ function blockProse(lines) {
   const kept = lines
     .map((line) => line.replace(/^>\s?/, ''))
     .filter((line) => !(/^[|\s:-]+$/.test(line.trim()) && line.includes('---')))
-    .map((line) => line.replace(/^-\s+/, ''));
+    .map((line) => line.replace(/^-\s+/, ''))
+    // The HTML side contributes a link's text only, so a rendered `[text](url)` must
+    // shed its target before the comparison: both sides then carry the same prose,
+    // and a dropped link still fails on the missing text (CORE-2600).
+    .map((line) => line.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'));
   return proseProjection(kept.join(' '));
 }
 

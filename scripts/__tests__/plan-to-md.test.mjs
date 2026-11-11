@@ -117,6 +117,26 @@ test('a ruling box keeps every child: two lists, a paragraph and a table, in ord
   }
 });
 
+const LINK_BODY = FIXTURE_BODY.replace(
+  '<p>paragraph between the lists</p>',
+  '<p>the note is at <a href="https://example.test/note">the design note</a> for this step</p>',
+);
+
+test('a link inside a ruling box keeps its URL and still passes the box check', () => {
+  const dir = scratchRepo(LINK_BODY);
+  try {
+    const result = runScratch(dir);
+    assert.equal(result.status, 0, result.stderr);
+    const prd = readFileSync(join(dir, 'docs/plans/xtrm-build-order/PRD.md'), 'utf8');
+    assert.ok(
+      prd.includes('> the note is at [the design note](https://example.test/note) for this step'),
+      'the link is rendered as Markdown, URL included',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('an unknown element inside a ruling box fails loudly, naming the step', () => {
   const withUnknown = FIXTURE_BODY.replace(
     '<p>paragraph between the lists</p>',
