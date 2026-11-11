@@ -14,6 +14,7 @@ import path, { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ghShimSource } from '../core/gh-shim.js';
+import { PR_ROUTES } from '../core/gh-shim-routes.js';
 
 let root = '';
 let bin = '';
@@ -966,4 +967,122 @@ describe('a tmux session id in the marker run= is refused before the create (COR
         expect(result.stdout).toBe(CREATE_STDOUT);
         expect(result.stderr).not.toContain('refusing to create');
     }, 20_000);
+});
+
+// CORE-2626: one choke point for a restricted role replaces the per-verb
+// denylist. The security read (rev-890, review 5865051160) found four ways past
+// the old gates: `gh issue close|reopen|edit <PR#>` (gh resolves the number to a
+// pull request), `gh pr lock|unlock|update-branch`, an unknown XTRM_ROLE that
+// resolved to unrestricted, and `gh pr new` plus aliases/extensions. Each case
+// below runs the generated shim with a reviewer role and asserts the real gh was
+// never called.
+describe('a restricted role reaches only the read allowlist (CORE-2626)', () => {
+    const REVIEWER = { HOME: '', STUB_ROLE: 'reviewer', XTRM_ROLE: 'reviewer' };
+
+    /** Every refused route must die before the real gh and name the route. */
+    function expectRefused(args: string[], expected: string): void {
+        const result = runShim(args, { ...REVIEWER, HOME: root });
+        expect(result.status, `gh ${args.join(' ')} should be refused`).toBe(1);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain(expected);
+        expect(readLog(ghLog), `gh ${args.join(' ')} reached the real gh`).toHaveLength(0);
+    }
+
+    it('refuses gh issue close|reopen|edit, which gh resolves to the pull request', () => {
+        for (const verb of ['close', 'reopen']) {
+            expectRefused(['issue', verb, '5'], `may only read through this shim (refused: gh issue ${verb})`);
+        }
+        expectRefused(['issue', 'edit', '5', '--title', 'x'], 'may only read through this shim (refused: gh issue edit)');
+    });
+
+    it('refuses gh pr lock, unlock and update-branch', () => {
+        for (const verb of ['lock', 'unlock', 'update-branch']) {
+            expectRefused(['pr', verb, '5'], `may only read through this shim (refused: gh pr ${verb})`);
+        }
+    });
+
+    it('refuses the PR-state routes it already named, through the same choke point', () => {
+        expectRefused(['pr', 'merge', '5'], 'the reviewer role may not merge');
+        expectRefused(['pr', 'close', '5'], 'the reviewer role may not change PR state (gh pr close)');
+        expectRefused(['pr', 'ready', '5'], 'the reviewer role may not change PR state (gh pr ready)');
+    });
+
+    it('refuses an unknown first token, which is what an alias or an extension looks like', () => {
+        // An unknown token is shown alone: there is no subcommand to name.
+        expectRefused(['co', '5'], 'may only read through this shim (refused: gh co)');
+        expectRefused(['alias', 'set', 'm', 'pr merge'], 'may only read through this shim (refused: gh alias)');
+    });
+
+    it('refuses a route spelled with a flag between pr and the verb', () => {
+        expectRefused(['pr', '-R', 'xtrm-dev/core', 'lock', '5'], 'may only read through this shim (refused: gh pr lock)');
+    });
+
+    it('treats an unknown XTRM_ROLE as restricted instead of unrestricted', () => {
+        // A typo: the role map answers null, and before CORE-2626 that read as
+        // "not restricted" while the credential path already failed closed.
+        const result = runShim(['pr', 'close', '5'], { HOME: root, XTRM_ROLE: 'pr-revewer', STUB_ROLE: '' });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('the reviewer role may not change PR state (gh pr close)');
+        expect(readLog(ghLog)).toHaveLength(0);
+    });
+
+    it('routes gh pr new through the create path, so the run= refusal still applies', () => {
+        const tmux = '<!-- xtrm issue=CORE-2626 holder=pi152-core run=$1 -->';
+        const refused = runShim(['pr', 'new', '--title', 'docs', '--body', tmux], { ...REVIEWER, HOME: root });
+        expect(refused.status).toBe(1);
+        expect(refused.stderr).toContain('refusing to create the pull request');
+        expect(readLog(ghLog)).toHaveLength(0);
+
+        const allowed = runShim(['pr', 'new', '--title', 'docs', '--body', 'plain body'], { ...REVIEWER, HOME: root });
+        expect(allowed.status).toBe(0);
+        // gh's own alias runs the real gh, so the shim forwards `new` unchanged;
+        // that it went through the create path is what the refusal above proves.
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'new')).toHaveLength(1);
+    });
+
+    it('lets the read allowlist through without a refusal', () => {
+        for (const args of [
+            ['pr', 'view', '5'],
+            ['pr', 'diff', '5'],
+            ['pr', 'checks', '5'],
+            ['pr', 'list'],
+            ['issue', 'view', '5'],
+            ['issue', 'list'],
+            ['auth', 'status'],
+            ['run', 'list'],
+            ['search', 'issues', 'shim'],
+            ['status'],
+        ]) {
+            const before = readLog(ghLog).length;
+            const result = runShim(args, { ...REVIEWER, HOME: root });
+            expect(result.status, `gh ${args.join(' ')} should pass`).toBe(0);
+            expect(result.stderr, `gh ${args.join(' ')}`).not.toContain('may only read');
+            expect(readLog(ghLog).length - before, `gh ${args.join(' ')}`).toBe(1);
+        }
+    });
+
+    it('keeps gh api on its own GET-only verdict, even behind a global flag', () => {
+        const patch = runShim(['-R', 'xtrm-dev/core', 'api', '-X', 'PATCH', '/repos/o/r/pulls/5'], { ...REVIEWER, HOME: root });
+        expect(patch.status).toBe(1);
+        expect(patch.stderr).toContain('may only GET through gh api');
+        expect(readLog(ghLog)).toHaveLength(0);
+    });
+
+    it('leaves an operator and an unroled worker unrestricted', () => {
+        const operator = runShim(['issue', 'close', '5'], { HOME: root, SUBSTRATE_HOLDER: '' });
+        expect([0, 1]).toContain(operator.status); // the stub exits 0; no role, so the shim passes
+        expect(readLog(ghLog)).toHaveLength(1);
+
+        const worker = runShim(['pr', 'lock', '5'], { HOME: root, XTRM_ROLE: '', STUB_ROLE: '' });
+        expect(worker.status).toBe(0);
+        expect(readLog(ghLog)).toHaveLength(2);
+    });
+
+    it('matches the route table for every gh pr verb', () => {
+        for (const [verb, cls] of Object.entries(PR_ROUTES)) {
+            const result = runShim(['pr', verb, '5'], { ...REVIEWER, HOME: root });
+            const refused = result.stderr.includes('the reviewer role');
+            expect(refused, `gh pr ${verb} is class ${cls} but refused=${refused}`).toBe(cls === 'write');
+        }
+    });
 });
