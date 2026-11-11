@@ -15,9 +15,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PI_SDK_PACKAGES = {
-    '@earendil-works/pi-coding-agent': '1.0.0',
-    '@earendil-works/pi-ai': '1.0.0',
-    '@earendil-works/pi-tui': '1.0.0',
+    '@earendil-works/pi-coding-agent': '1.4.0',
+    '@earendil-works/pi-ai': '1.4.0',
+    '@earendil-works/pi-tui': '1.4.0',
     typebox: '1.0.0',
 };
 

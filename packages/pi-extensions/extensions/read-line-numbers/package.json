@@ -12,7 +12,7 @@
   "type": "module",
   "main": "index.ts",
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.0"
+    "@earendil-works/pi-coding-agent": "^1.4.0"
   },
   "pi": {
     "extensions": [

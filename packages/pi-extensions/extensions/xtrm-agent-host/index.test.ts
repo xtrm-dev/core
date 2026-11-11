@@ -124,7 +124,7 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
   test("pushes identity first, then the lifecycle in order, all schema-valid", async () => {
     const s = start();
     await until(() => s.bridge.state === "open" && frames.length >= 2);
-    s.fire("before_agent_start", { prompt: "hi", systemPrompt: "SYS", systemPromptOptions: {} }, s.ctx);
+    s.fire("before_agent_start", { messageType: "user", prompt: "hi", systemPrompt: "SYS", systemPromptOptions: {} }, s.ctx);
     s.fire("agent_start", {}, s.ctx);
     s.fire("turn_start", { turnIndex: 0, timestamp: 1 }, s.ctx);
     s.fire("message_start", { message: { role: "assistant", content: [] } }, s.ctx);
@@ -169,6 +169,31 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     expect(lastUpdate.assistantMessageEvent.partial).toBeUndefined();
     expect(frames.find((f) => f.payload.type === "agent_end").payload.willRetry).toBeUndefined();
     expect(host.registry.list()[0]).toMatchObject({ sessionId: "s-1", state: "settled", frameCount: 1, extensionConnected: true });
+  });
+
+  // CORE-2616: pi 1.4 unions before_agent_start on messageType. A run started
+  // by pi.sendMessage({triggerTurn: true}) carries `message` and no `prompt`, so
+  // the prompt-bearing frame must not be emitted for it.
+  test("a custom-message run emits no before_agent_start frame and still opens its frame at agent_start", async () => {
+    const s = start();
+    await until(() => s.bridge.state === "open" && frames.length >= 2);
+    s.fire("before_agent_start", {
+      messageType: "custom",
+      message: { role: "user", content: [{ type: "text", text: "wake" }] },
+      systemPrompt: "SYS",
+      systemPromptOptions: {},
+    }, s.ctx);
+    s.fire("agent_start", {}, s.ctx);
+    s.fire("agent_settled", {}, s.ctx);
+    await until(() => frames.some((f) => f.payload.type === "agent_settled"));
+
+    expect(frames.filter((f) => f.payload.type === "before_agent_start")).toEqual([]);
+    const started = frames.findIndex((f) => f.payload.type === "agent_start");
+    expect(started).toBeGreaterThan(-1);
+    const record = host.registry.frames("s-1")?.[0];
+    expect(record).toMatchObject({ settled: true });
+    expect(record?.request).toBeUndefined();
+    expect(hostLog.filter((l) => l.includes("rejected"))).toEqual([]);
   });
 
   test("reports model, thinking level and context usage, and again only when they change (XTRM-603)", async () => {
@@ -243,7 +268,7 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     expect(prompt.status).toBe("accepted");
     expect(s.sent).toEqual([{ content: "do it", options: undefined }]);
     s.setIdle(false);
-    s.fire("before_agent_start", { prompt: "do it" }, s.ctx);
+    s.fire("before_agent_start", { messageType: "user", prompt: "do it" }, s.ctx);
     s.fire("agent_start", {}, s.ctx);
     await until(() => frames.some((f) => f.payload.type === "agent_start"));
     expect(frames.find((f) => f.payload.type === "before_agent_start").payload.ingress).toEqual({ origin: "gui", commandId: "c1" });
@@ -277,7 +302,7 @@ describe("xtrm-agent-host bridge against the XTRM-563 host", () => {
     expect((await submit({ type: "prompt", commandId: "c1", message: "do it" })).status).toBe("accepted");
     // Pi 1.0.0 reports isIdle() true from the prompt until agent_start; ctx stays idle here.
     expect((await submit({ type: "steer", commandId: "c2", message: "early" })).status).toBe("accepted");
-    s.fire("before_agent_start", { prompt: "do it" }, s.ctx);
+    s.fire("before_agent_start", { messageType: "user", prompt: "do it" }, s.ctx);
     await until(() => frames.some((f) => f.payload.type === "before_agent_start"));
     expect((await submit({ type: "prompt", commandId: "c3", message: "again" })).status).toBe("busy");
     expect((await submit({ type: "follow_up", commandId: "c4", message: "then" })).status).toBe("accepted");
@@ -469,7 +494,7 @@ describe("xtrm-agent-host bridge busy rule without host-side guards", () => {
       await until(() => bridge.state === "open" && raw.frames.length >= 2);
 
       // A terminal prompt: Pi emits before_agent_start and keeps reporting idle until agent_start.
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       raw.send("s-raw", { type: "prompt", commandId: "p1", message: "gui" });
       expect(await raw.resultFor("p1")).toMatchObject({ status: "rejected", reason: "busy" });
       expect(pi.sent).toEqual([]);
@@ -616,7 +641,7 @@ describe("xtrm-agent-host bridge wake contract (CORE-2432)", () => {
       await until(() => bridge.state === "open" && raw.frames.length >= 2);
       // A started session (first turn ran) takes wakes immediately; the
       // pre-first-turn grace path is covered by the CORE-2436 grace test.
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       pi.fire("agent_start", {}, c.ctx);
       raw.send("s-wake-r3", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
       expect(await raw.resultFor("w1")).toMatchObject({ status: "accepted" });
@@ -811,7 +836,7 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
       expect(pi.sentCustom).toEqual([]);
       // before_agent_start opens the starting window; agent_start flushes
       // the held wake as a queued followUp, never with triggerTurn.
-      pi.fire("before_agent_start", { prompt: "initial" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "initial" }, c.ctx);
       pi.fire("agent_start", {}, c.ctx);
       await until(
         () => raw.frames.filter((f) => f.payload.type === "command_result" && f.payload.commandId === "w1").length >= 2,
@@ -922,7 +947,7 @@ describe("xtrm-agent-host bridge replacement and held wakes (CORE-2432 F1/F7)", 
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => bridge.state === "open" && raw.frames.length >= 2);
       // A terminal prompt starts a run that has not reached agent_start yet.
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       raw.send("s-fup-f7", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2432" });
       // Held, not accepted, and nothing delivered into the operator session yet.
       expect(await raw.resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
