@@ -20,6 +20,7 @@ import path from 'node:path';
 import { validate } from '@xtrm/contracts';
 import type { AgentHostApiV1, CommandOutcomeV1 } from '@xtrm/contracts';
 import { action } from './launch-outcome.js';
+import { panePath } from './pane-path.js';
 import { INITIAL_PROMPT_ENV, forwardedLaunchEnv } from '../utils/worktree-session.js';
 
 export type LaunchRequest = Extract<AgentHostApiV1, { kind: 'launch_request' }>;
@@ -232,6 +233,10 @@ export class AgentHostLauncher {
         for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
             if (key !== LAUNCH_ENV) envArgs.push('-e', `${key}=${value}`);
         }
+        // CORE-2524.4: a tmux new-session pane inherits the SERVER's PATH, which
+        // need not hold the gh shim directory. Forward the launcher's PATH with
+        // the shim directory first so `gh` in the pane is the shim.
+        envArgs.push('-e', `PATH=${panePath(this.env)}`);
         const created = await this.run('tmux', [
             'new-session', '-d', '-P', '-F', '#{session_id} #{pane_id}',
             '-s', sessionName, '-c', cwd, ...envArgs,

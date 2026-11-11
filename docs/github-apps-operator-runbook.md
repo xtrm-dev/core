@@ -276,6 +276,13 @@ Known limits, accepted rather than hidden:
   shim passes `gh pr merge` through and prints one line saying the guard is off. With it on, an unreachable
   GitHub or App is still refusable by `XTRM_MERGE_GUARD_OVERRIDE` from the coordinator or the operator, and an
   override whose log and Journal receipt both fail is refused, not allowed.
+- A launched session resolves `gh` to the shim because the launcher forwards PATH to every tmux
+  session and window it creates: the pane PATH is the launcher's PATH with the shim directory
+  (`~/.local/bin`, the directory `xt identity setup` writes) prepended, deduplicated and with empty
+  segments dropped (CORE-2524.4). A `new-session` pane otherwise inherits the tmux SERVER's PATH,
+  which need not contain `~/.local/bin`, so a review posts under the operator identity.
+  `xt identity doctor`'s PATH-order warning evaluates the launcher's PATH, not the pane's, so it
+  cannot detect a server PATH that lacks the shim directory.
 
 | Command | What it does |
 | --- | --- |

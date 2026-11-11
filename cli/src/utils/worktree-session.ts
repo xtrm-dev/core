@@ -13,6 +13,7 @@ import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
 import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-identity.js';
+import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import {
@@ -3684,6 +3685,10 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // environment, not this process's, so exported launch context never
     // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
     for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push('-e', `${k}=${v}`);
+    // CORE-2524.4: the server's PATH need not hold the gh shim directory, so the
+    // pane gets the launcher's PATH with the shim directory first. Without this,
+    // a launched review posts as the operator instead of the App.
+    envArgs.push('-e', `PATH=${panePath()}`);
 
     // Transport. The buffered handshake exists so a 50-1000KB role system
     // prompt never has to fit on a command line: tmux starts a consumer

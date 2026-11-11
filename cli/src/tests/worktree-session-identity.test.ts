@@ -219,11 +219,46 @@ describe('xt/tmux launcher session-identity propagation', () => {
     expect(sessionName).toBe('pi-idem1');
     // Name rides the spawn boundary (-e); id is server-assigned, published after.
     expect(envPairs(h.newSessionArgs)['XTRM_SESSION_NAME']).toBe(sessionName);
+    // CORE-2524.4: the pane gets the launcher's PATH with the gh shim directory
+    // first, because a new-session pane inherits the tmux SERVER's PATH.
+    expect(envPairs(h.newSessionArgs)['PATH'].startsWith(`${path.join(homeRoot, '.local', 'bin')}${path.delimiter}`)).toBe(true);
     expect(h.setEnvCalls).toContainEqual(['set-environment', '-t', sessionName, 'XTRM_SESSION_ID', '$7']);
     // Same values, no fabrication anywhere on the boundary.
     const eVars = h.newSessionArgs?.filter((a) => a.startsWith('XTRM_SESSION_')) ?? [];
     expect(eVars).not.toContain('XTRM_SESSION_ID=$7');
     expect(eVars).not.toContain('XTRM_SESSION_ID=');
+  });
+
+  it('prepends the shim directory when the launcher PATH does not contain it (CORE-2524.4)', async () => {
+    const previousPath = process.env.PATH;
+    process.env.PATH = `/usr/bin${path.delimiter}/bin`;
+    try {
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'pp-absent', attach: false })).rejects.toThrow('exit:0');
+      expect(envPairs(h.newSessionArgs)['PATH'])
+        .toBe(`${path.join(homeRoot, '.local', 'bin')}${path.delimiter}/usr/bin${path.delimiter}/bin`);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  });
+
+  it('keeps one shim entry when the launcher PATH already starts with it (CORE-2524.4)', async () => {
+    const shimDir = path.join(homeRoot, '.local', 'bin');
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${shimDir}${path.delimiter}${previousPath ?? ''}`;
+    try {
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'pp-present', attach: false })).rejects.toThrow('exit:0');
+      const pane = envPairs(h.newSessionArgs)['PATH'];
+      expect(pane.startsWith(`${shimDir}${path.delimiter}`)).toBe(true);
+      expect(pane.split(path.delimiter).filter((entry) => entry === shimDir)).toHaveLength(1);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
   });
 
   it('bare claude launch propagates the same identity values', async () => {
@@ -554,6 +589,8 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expect(env['XTRM_PARENT_SESSION_ID']).toBe('$7');
       // The window lives in the caller's session and says so.
       expect(env['XTRM_SESSION_NAME']).toBe('cur-sess');
+      // CORE-2524.4: --window panes get the same PATH fix as new-session panes.
+      expect(env['PATH'].startsWith(`${path.join(homeRoot, '.local', 'bin')}${path.delimiter}`)).toBe(true);
       expect(process.stdout.write).toHaveBeenCalledWith('cur-sess:%21\n');
     });
 

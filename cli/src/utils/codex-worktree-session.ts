@@ -19,6 +19,7 @@ import {
     type CodexTrustProfile,
 } from '../core/codex-session.js';
 import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
@@ -394,6 +395,9 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...launchIdentity.env,
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+    // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
+    // not hold the gh shim directory; forward the launcher's PATH with it first.
+    envArgs.push('-e', `PATH=${panePath()}`);
     let windowPaneId = '';
     const killWindow = (): void => {
         if (windowPaneId) spawnSync('tmux', ['kill-pane', '-t', windowPaneId], { stdio: 'ignore' });

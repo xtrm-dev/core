@@ -285,6 +285,12 @@ describe('Codex worktree launcher', () => {
 
         expect(windowArgs.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$42:']);
         const env = Object.fromEntries(windowArgs.flatMap((a, i) => (windowArgs[i - 1] === '-e' ? [a.split(/=(.*)/s, 2)] : [])));
+        // CORE-2524.4: a tmux-created pane inherits the server's PATH, so the
+        // launcher forwards its own with the gh shim directory first.
+        const shimDir = path.join(homeRoot, '.local', 'bin');
+        const panePathValue = String(env.PATH ?? '');
+        expect(panePathValue.startsWith(`${shimDir}${path.delimiter}`)).toBe(true);
+        expect(panePathValue.split(path.delimiter).filter((entry: string) => entry === shimDir)).toHaveLength(1);
         expect(env).toMatchObject({
             SUBSTRATE_HOLDER: 'win',
             // CORE-2525: the worker's own git identity rides the same -e block.
