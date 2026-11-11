@@ -15,8 +15,13 @@ Verified with `git grep`; the files were not all re-read.
 - `packages/pi-extensions/shared/suggest-pipeline.ts` (109 lines) is the async flow: `detach`,
   `propose`, `settle`, the epoch guard (`stale`, `turn_taken`, `duplicate`), and `DELIVERY`
   (`steer`, no turn trigger). Read this first.
-- `packages/pi-extensions/shared/shortlist.ts` and `extensions/skill-suggest/roster.ts`: build
-  the skill roster (279 entries) and shortlist it before Jev is called.
+- `packages/pi-extensions/shared/shortlist.ts` and `shared/roster.ts`: build the skill roster
+  (about 270 entries) and shortlist it before Jev is called. `extensions/skill-suggest/roster.ts`
+  re-exports `shared/roster.ts`.
+- `packages/pi-extensions/shared/judge.ts`: the decision itself (CORE-2594), shared by Pi and the
+  Claude plugin: `judge()` (two Jev stages and the fitted score), `criteriaOf`, `SCORE_MODEL`, and
+  `buildIndex(cwd)`. It owns no state; each host caches its own index.
+  `tests/skill-suggest/judge-golden.test.ts` pins its Jev payloads and every skip reason.
 - `packages/pi-extensions/extensions/skill-suggest/index.ts` (853 lines): prompt, classify,
   rate limit and delivery wired together.
 - `packages/pi-extensions/shared/jsonl-log.ts`: log writer.
@@ -48,6 +53,11 @@ Verified with `git grep`; the files were not all re-read.
   `.xtrm/skills/optional/programme/board-audit/scripts/agentrun-config-stock.mjs`.
 
 ## CORE-2580 (Claude Code port) and CORE-2581 (recall design)
+
+- The Claude plugin is `packages/claude-skill-suggest/` (CORE-2594). Read its `README.md` first. A thin
+  Python monitor (`bin/monitor.py`, `bin/turnstate.py`) owns delivery; a bun/node worker
+  (`worker/worker.ts`, bundled to `dist/worker.mjs`) runs the shared `judge()`. The monitor delivers
+  a nudge only while the turn it was computed for is still running.
 
 - Substrate Journals: `sb journal show CORE-2580`, `sb journal show CORE-2581`. They hold the
   delivery-path, latency and memory measurements and the recall design.

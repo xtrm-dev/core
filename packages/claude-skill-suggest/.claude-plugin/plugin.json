@@ -1,0 +1,5 @@
+{
+  "name": "skill-suggest",
+  "version": "0.1.0",
+  "description": "Suggests one skill per turn from an async monitor. Reads the session transcript tail, never wakes an idle session, never wraps tool calls, fails open."
+}

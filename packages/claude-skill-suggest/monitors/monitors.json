@@ -1,0 +1,7 @@
+[
+  {
+    "name": "skill-suggest",
+    "command": "python3 ${CLAUDE_PLUGIN_ROOT}/bin/monitor.py",
+    "description": "Skill suggestion: classifies the current request off the hot path and posts at most one nudge per turn"
+  }
+]
