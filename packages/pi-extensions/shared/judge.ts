@@ -17,10 +17,12 @@ import { discoverRoster, repoRootOf, type RosterEntry } from "./roster.ts";
  * The retrieval index for `cwd`: the curated roster plus the service registry.
  * Pure of module state (the caller caches); rejects on an unreadable tree, so a
  * host must treat a rejection as "no index" and fail open.
+ *
+ * `home` pins the home roots (CORE-2605); it defaults to the process home.
  */
-export async function buildIndex(cwd: string): Promise<RetrievalIndex<RosterEntry>> {
+export async function buildIndex(cwd: string, { home }: { home?: string } = {}): Promise<RetrievalIndex<RosterEntry>> {
   const repoRoot = await repoRootOf(cwd);
-  const [entries, services] = await Promise.all([discoverRoster(cwd), loadServices(repoRoot)]);
+  const [entries, services] = await Promise.all([discoverRoster(cwd, Date.now(), { home }), loadServices(repoRoot)]);
   return buildRetrievalIndex(entries, services, repoRoot, cwd);
 }
 
