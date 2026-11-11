@@ -82,7 +82,15 @@ figcaption{font-size:13px;color:var(--mut);margin-top:8px;max-width:84ch}
 .tl b{color:var(--fg);font-weight:600}
 .small{font-size:12.5px;color:var(--mut)}
 .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)}
-</style></head>
+</style><meta property="og:title" content="Linking a Substrate issue to its pull request" />
+<meta property="og:description" content="A technical design note detailing the implementation of a structured linking system between Substrate issues and GitHub pull requests using distinct created from and mentioned relations." />
+<meta property="og:url" content="https://soulful-karma-8zk3.here.now/" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://here.now/og/soulful-karma-8zk3.jpg" />
+<meta property="og:image:width" content="1280" />
+<meta property="og:image:height" content="720" />
+<meta name="twitter:image" content="https://here.now/og/soulful-karma-8zk3.jpg" />
+<meta name="twitter:card" content="summary_large_image" /></head>
 <body>
 <div class="wrap">
 <p class="eyebrow">XTRM · Substrate design note · 2026-11-11</p>
@@ -227,6 +235,8 @@ issue   XTRM-718   evidence <span class="g">trailer</span>   artifact <span clas
 <p class="small">T2 names its evidence in a child table: <code>issue_pr_commits(issue_id, repository, number, sha, landed_sha, trailer_revision)</code>, indexed on <code>sha</code> so <code>provenance commit</code> and the step-27 revert check read SHA→issue in one hop. New pushes append rows. <code>landed_sha</code> is the one host-owned finalization, set when the merge lands. <code>trailer_revision</code> is audit only; a mismatch is reported, never gated. A conflicting writer keeps the first row and records <code>links check</code> “commit claimed by two issues”; it never throws, so one bad commit cannot stall the poll. T2 reads <strong>every</strong> <code>XTRM-Issue:</code> value on a commit: more than one distinct issue yields no T2 row plus a finding, because <code>parseTrailers</code> (<code>packages/substrate/src/domain/provenance.ts:108</code>) is last-wins today and must gain an all-values form before T2 ships. <code>landed_sha</code> is deliberately not unique: a squash commit on main can carry trailers for several issues, and the step-27 revert check resolves <code>landed_sha</code> through the child rows instead of re-parsing the main-branch message. A later <code>sb links check</code> finding flags T2 commits with no <code>Agent:</code>/hook marker; it does not block.</p>
 </div>
 
+<div class="banner"><strong>Converged rulings · 11-11.</strong> A trailer receipt must exist, must not be superseded, and must belong to the issue; otherwise the result is <code>mentioned</code> plus a <code>links check</code> finding, with no fallback to <code>findByCommit</code>. The gate requires the artifact on the receipt. Repeated reads tie-break with <code>ORDER BY created_at, id</code>. The step-14 verb runs in this order: <strong>(a)</strong> parse the input form, <strong>(b)</strong> normalize to <code>org/repo#n</code>, <strong>(c)</strong> resolve the receipt (explicit → live claim → latest live binding), <strong>(d)</strong> validate it exists, is not superseded and belongs to this issue, <strong>(e)</strong> attach the <code>kind=pr</code> artifact, <strong>(f)</strong> insert the <code>created_from</code> row, <strong>(g)</strong> emit the event and return the row.</div>
+
 <div class="kicker">Alignment</div>
 <h2>What changes in the build order text</h2>
 <div class="tbox"><table><thead><tr><th>Build order v4</th><th>This design</th><th>Delta</th></tr></thead><tbody>
@@ -270,7 +280,7 @@ CREATE TABLE issue_pull_requests (
   repository TEXT    NOT NULL,              -- owner/repo
   number     INTEGER NOT NULL,
   relation   TEXT    NOT NULL CHECK (relation IN ('created_from','mentioned')),
-  source     TEXT    NOT NULL CHECK (source IN ('provenance','explicit','trailer','title','branch','prose')),
+  source     TEXT    NOT NULL CHECK (source IN ('provenance','explicit','trailer','title','branch','prose','backfill')),
   url        TEXT    NULL,
   actor      TEXT    NULL,
   created_at INTEGER NOT NULL,

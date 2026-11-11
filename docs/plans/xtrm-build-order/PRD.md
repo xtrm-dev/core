@@ -497,7 +497,7 @@ Folded in: **XT-106** Beads removal across machines
 
 ### Step 6b — Every bound commit names its Issue, in any session
 
-(v4) [new] `git hooks · Substrate trailers · XT-178`
+(v4) [new] `git hooks · Substrate trailers · XT-178 · XTRM-734`
 
 - **Brings** — A git `prepare-commit-msg` hook adds `XTRM-Issue` and `XTRM-Issue-Revision`, plus `Jira: <KEY>` when the Issue is bound to Jira. It works the same in Claude, Pi, Codex, a specialist or a plain terminal, because git runs it, not the agent. It finds the Issue in this order: `SUBSTRATE_ISSUE_REF`; the worktree's own binding, which `xt` and the specialists lease write when they create or claim a worktree (`git config --worktree xtrm.issue`); the ref in the branch name. With no binding it adds nothing and never blocks.
 - **Why here** — The trailers are the evidence that survives rebase, squash and cherry-pick (steps 26, 27), and Substrate already has the code that writes and parses them (`provenance.ts`). Nothing calls it: 0 of the last 300 commits on core's main carry `XTRM-Issue`. The Issue trailer needs no receipt, so it can start in phase 1; the receipt trailer follows in step 22.
@@ -513,7 +513,7 @@ Folded in: **XT-106** Beads removal across machines
 > - XTRM-684: the hook resolves the Issue without a receipt (env, worktree binding, branch) and adds `XTRM-Issue`, revision, `Jira:` and `Agent:` (taken over from CORE-2525). CORE-2570: `xt` chains it into each repo’s existing hook and writes the worktree binding. XTRM-684 lands first.
 
 > **Measured · 11-11 · design note**
-> - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashed to the PR body until 11-11; its squash setting now keeps commit messages, so T2 counts there too. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships.
+> - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashed to the PR body until 11-11; its squash setting now keeps commit messages, so T2 counts there too. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships; `XTRM-734` tracks the fix and blocks `XTRM-727`.
 
 ### Step 7 — Decide how Substrate works across two machines
 
@@ -729,7 +729,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 
 ### Step 14 — Substrate records PRs and commits
 
-(v2) [new] `XT-178 amendment · prj_xtrm`
+(v2) [new] `XT-178 amendment · prj_xtrm · XTRM-725 · XTRM-726 … 730`
 
 - **Brings** — A new `sb provenance attach <ref> pr github:org/repo#n` verb, using the existing `attachArtifact`. The host records the PR (number, URL, head SHA) in the same step that opens it, and the commit SHA at receipt. `sb issue show` and `trace` print them as clickable links.
 - **Why here** — It is the core of your ruling: an open PR means Substrate has its number and link. It ships in this release, so every PR from phase 3 on is recorded.
@@ -750,10 +750,11 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Two kinds of delivery evidence: T1 a receipt (host record at PR open, or an `XTRM-Receipt` trailer of this issue); T2 a commit in the PR carrying `XTRM-Issue: <this issue>`, which survives squash because it reads the PR’s own commits.
 > - `sb provenance attach` accepts `github:org/repo#n`, `org/repo#n`, a PR URL or a bare `#N` (scoped to the issue’s repository) and stores `org/repo#n`. The opener is the `gh` shim now, the host later; not `xt end`.
 > - Delivery in five slices, each shippable alone: schema and read model with a dry-run check; writers; reconciler; enforcement (last, flagged, warn-only first); console.
+> - Filed 11-11: the epic is `XTRM-725`; the slices are `XTRM-726` schema, read model and `sb links check` dry run, `XTRM-727` T1 and T2 writers, `XTRM-728` reconciler, `XTRM-729` close gate and `sb links check`, `XTRM-730` console. `XTRM-734` (parseTrailers keeps only the last `XTRM-Issue` trailer) blocks `XTRM-727`.
 
 ### Step 15 — Gates refuse unlinked work
 
-(v2) [new] `XT-178 amendment · XT-167`
+(v2) [new] `XT-178 amendment · XT-167 · XTRM-729`
 
 - **Brings** — pr-review-gate fails a PR whose title or link block names no Substrate ref. `sb issue close` needs a live claim, a result entry, and a PR or commit record (or an explicit no-code reason). A claim refuses a contract that fails `sb issue validate`.
 - **Why here** — A rule nothing enforces decays, as the 1-in-400 figure shows. The gate goes live before agents open PRs by themselves. The gate template is fanned out by hand to the 16 repos.
@@ -1097,7 +1098,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 ### Step 26 — The GitHub reconciler
 
-(v2) [new] `XT-178 amendment · XT-184`
+(v2) [new] `XT-178 amendment · XT-184 · XTRM-728`
 
 - **Brings** — One poller in the agent host, using conditional requests a few minutes apart. It is the only writer of PR state into Substrate (review, merged with SHA, closed). It also repairs a PR the host missed when its title, branch or trailer names a ref.
 - **Why here** — One event source serves three consumers: the lifecycle (27), the Jira status map (34) and the app. Built once, it adds no load per consumer.
@@ -1113,7 +1114,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
-[new] `XT-184 lifecycle · XT-172 · XT-148`
+[new] `XT-184 lifecycle · XT-172 · XT-148 · XTRM-729`
 
 - **Brings** — The host pushes a writer's branch and opens one PR into the coordinator branch, recorded at once (14). On merge, the reconciler closes the Issue citing the PR record, stops the activation, and removes worktree and branch. Today 47 merged worktrees are never reaped.
 - **Why here** — It needs claims (21), the inventory (24), authors (20) and merge events (26).
