@@ -229,7 +229,7 @@ describe("intercom live regression: specialist dispatch keeps the parent listene
       bridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => bridge.state === "open");
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       // A registry flush of the same wake while still deferred answers held, not accepted.
       send("s-holdflush", { type: "wake", commandId: "w1", messageId: "m1", payloadRef: "CORE-2433" });
       expect(await resultsFor("w1")).toMatchObject([{ status: "rejected", reason: "held" }]);
@@ -365,7 +365,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       bridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => host.registry.list().length === 1);
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       const wake = host.registry.wake("s-dispose", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "held");
       // Graceful shutdown parks the wake: neither delivered (the listener is
@@ -379,7 +379,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       rebridge.register();
       pi.fire("session_start", { reason: "startup" }, c.ctx);
       await until(() => host.registry.list().length === 1);
-      pi.fire("before_agent_start", { prompt: "typed" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "typed" }, c.ctx);
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "held");
       pi.fire("agent_start", {}, c.ctx);
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
@@ -403,7 +403,7 @@ describe("intercom review delta: shutdown order, dispose, attribution (CORE-2433
       await until(() => host.registry.list().length === 1);
       const wake = host.registry.wake("s-ingress", "CORE-2433");
       await until(() => host.registry.wakeStatus(wake.messageId)?.state === "delivered");
-      pi.fire("before_agent_start", { prompt: "CORE-2433" }, c.ctx);
+      pi.fire("before_agent_start", { messageType: "user", prompt: "CORE-2433" }, c.ctx);
       await until(() => frames.some((f) => f.payload.type === "before_agent_start"));
       expect(frames.find((f) => f.payload.type === "before_agent_start").payload.ingress).toEqual({ origin: "terminal" });
     } finally {

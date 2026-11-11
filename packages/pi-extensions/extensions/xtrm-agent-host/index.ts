@@ -1364,6 +1364,12 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
         b.guiIngress = null;
         return;
       }
+      // CORE-2616: pi 1.4 unions this event on messageType. Only a user run
+      // carries `prompt` and `images`; a run started by
+      // pi.sendMessage({triggerTurn: true}) carries its starting `message`
+      // instead. The frame contract has no place for that message, so a custom
+      // run emits none: agent_start opens the frame one event later.
+      if (event.messageType !== "user") return;
       emit(b, compact({ type: "before_agent_start" as const, prompt: event.prompt, images: images(event.images), ingress: ingressFor(b, event.prompt) }));
     });
 
