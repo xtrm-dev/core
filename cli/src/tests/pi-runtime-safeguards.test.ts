@@ -217,31 +217,57 @@ describe('pi runtime safeguards', () => {
   });
 
   it('populates the bridge status on the real doctor report (CORE-2591)', async () => {
-    // The doctor fixtures mock the report function, so this test exercises the real
-    // builder and fails if `bridge` is dropped from it.
+    // The doctor fixtures mock the report function, so this test exercises the real builder:
+    // dropping `, bridge` from its return turns it red.
     const { getXtManagedPiPackageDoctorReport } = await import('../core/pi-runtime.js');
-    const agentDir = process.env.PI_AGENT_DIR as string;
+    const previousHome = process.env.HOME;
+    const previousCodingAgentDir = process.env.PI_CODING_AGENT_DIR;
+    const previousAgentDir = process.env.PI_AGENT_DIR;
+    const scratchHome = path.join(tempRoot, 'bridge-home');
+    const agentDir = path.join(scratchHome, '.pi', 'agent');
+    process.env.HOME = scratchHome;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    // resolvePiAgentDir deliberately reads PI_AGENT_DIR only (CORE-2412), so keep it in step.
+    process.env.PI_AGENT_DIR = agentDir;
+
     const packageDir = path.join(agentDir, 'npm', 'node_modules', 'pi-claude-bridge');
-    await fs.outputJson(path.join(packageDir, 'package.json'), {
-      name: 'pi-claude-bridge',
-      version: '0.12.0',
-      pi: { extensions: ['./src/index.ts'] },
-    });
-    await fs.outputFile(path.join(packageDir, 'src', 'index.ts'), 'export {};\n');
+    const entryPath = path.join(packageDir, 'src', 'index.ts');
+    const provider = async () => ({ installedVersion: '0.12.0', expectedVersion: '0.12.0' });
 
-    const installed = await getXtManagedPiPackageDoctorReport(async () => ({ installedVersion: '0.12.0', expectedVersion: '0.12.0' }));
-    expect(installed.bridge).toEqual({
-      npmPackageName: 'pi-claude-bridge',
-      installedVersion: '0.12.0',
-      packageDir,
-      entryPath: path.join(packageDir, 'src', 'index.ts'),
-      entryPresent: true,
-    });
+    try {
+      await fs.outputJson(path.join(packageDir, 'package.json'), {
+        name: 'pi-claude-bridge',
+        version: '0.12.0',
+        pi: { extensions: ['./src/index.ts'] },
+      });
+      await fs.outputFile(entryPath, 'export {};\n');
 
-    await fs.remove(packageDir);
-    const absent = await getXtManagedPiPackageDoctorReport(async () => ({ installedVersion: null, expectedVersion: '0.12.0' }));
-    expect(absent.bridge).toBeNull();
-  });
+      const installed = await getXtManagedPiPackageDoctorReport(provider);
+      expect(installed.bridge).toEqual({
+        npmPackageName: 'pi-claude-bridge',
+        installedVersion: '0.12.0',
+        packageDir,
+        entryPath,
+        entryPresent: true,
+      });
+
+      // Installed but its src entry is gone: the layout requirement is visibly broken.
+      await fs.remove(entryPath);
+      const entryMissing = await getXtManagedPiPackageDoctorReport(provider);
+      expect(entryMissing.bridge).toMatchObject({ installedVersion: '0.12.0', entryPath, entryPresent: false });
+
+      // Package absent entirely.
+      await fs.remove(packageDir);
+      const absent = await getXtManagedPiPackageDoctorReport(provider);
+      expect(absent.bridge).toBeNull();
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+      if (previousCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousCodingAgentDir;
+      if (previousAgentDir === undefined) delete process.env.PI_AGENT_DIR; else process.env.PI_AGENT_DIR = previousAgentDir;
+    }
+    // The real report resolves the global npm root with a subprocess; under a loaded
+    // worker pool that spawn can exceed the default budget.
+  }, 120_000);
 
   it('resolves the bridge package and its src entry from the user Pi npm store', async () => {
     // regression: CORE-2591 - the package ships no main/exports; the resolver reads
