@@ -41,7 +41,7 @@ import {
     parseCredentialRequest,
 } from '../core/git-transport.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
-import { linkCreatedPr } from '../core/gh-pr-link.js';
+import { linkCreatedPr, markerRunRefusal } from '../core/gh-pr-link.js';
 import { resolveAgentRunId } from '../core/agent-run-id.js';
 import { resolveLaunchIdentity, roleMapConfigured } from '../core/launch-identity.js';
 import {
@@ -526,6 +526,37 @@ export function createIdentityCommand(): Command {
                 return;
             }
             emit(linkCreatedPr(opts.stdout, argv, { cwd: opts.cwd }));
+        });
+
+    identity
+        .command('marker-check')
+        .description('Refuse a create whose xtrm marker puts a tmux session id in run= (called by the gh shim)')
+        .requiredOption('--argv <json>', 'The gh argv the shim is about to run, as a JSON array')
+        .option('--cwd <dir>', 'Directory a relative --body-file is read from', process.cwd())
+        .option('--json', 'Emit JSON', false)
+        .action((opts: { argv: string; cwd: string; json: boolean }) => {
+            // The shim refuses BEFORE `gh pr create` runs, so this must answer
+            // without touching the network, git or sb. Exit 0 whenever the check
+            // ran: the shim reads `refusal` and stays fail-open on any other
+            // outcome, so an unreadable argv never blocks a create.
+            const emit = (result: { ok: boolean; refusal: string | null }) => {
+                console.log(JSON.stringify(result, null, opts.json ? 2 : 0));
+                process.exit(result.ok ? 0 : 2);
+            };
+            let argv: string[];
+            try {
+                const parsed = JSON.parse(opts.argv) as unknown;
+                if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+                    throw new Error('the argv must be a JSON array of strings');
+                }
+                argv = parsed as string[];
+            } catch (error) {
+                process.stderr.write(`xt: cannot read the gh argv: ${(error as Error).message}\n`);
+                emit({ ok: false, refusal: null });
+                return;
+            }
+            const refusal = markerRunRefusal(argv, (file) => readFileSync(path.resolve(opts.cwd, file), 'utf8'));
+            emit({ ok: true, refusal });
         });
 
     identity

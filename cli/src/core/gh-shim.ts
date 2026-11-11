@@ -7,7 +7,10 @@
  *
  *   gh pr create ...   -> the real gh, its output teed byte for byte, then a
  *                         best-effort `sb provenance attach` link to the Issue
- *                         the PR body marker (or the title and branch) names
+ *                         the PR body marker (or the title and branch) names.
+ *                         Refused before the create runs when the marker's
+ *                         run= is a tmux session id ($N), which some other
+ *                         worker shares (CORE-2619)
  *   gh pr review ...   -> `xt identity review-post` (formal review, commit_id
  *                         pinned to the reviewed head, reviewer App token)
  *   gh pr merge ...    -> `xt identity merge-check` first, then the real gh with
@@ -173,6 +176,23 @@ function xtQuiet(args, timeoutMs) {
 // post-create step, so a slow or absent sb can never hold gh pr create open.
 const LINK_TIMEOUT_MS = 6000;
 
+// CORE-2619: a marker's run= must be the worker's own runtime session id. A tmux
+// session id ($N — what XTRM_SESSION_ID carries) is shared by every window in
+// that tmux session, so it attributes nothing. xt owns marker parsing (fences,
+// the last marker wins), so ask it and refuse BEFORE the pull request exists.
+// Fail-open by design: only a refusal blocks, never a slow or absent xt.
+const MARKER_CHECK_TIMEOUT_MS = 4000;
+
+/** The refusal for this create's marker, or '' when the create may proceed. */
+function markerRefusal(args) {
+  const checked = xtJson(
+    ['identity', 'marker-check', '--argv', JSON.stringify(args), '--cwd', process.cwd()],
+    MARKER_CHECK_TIMEOUT_MS,
+  );
+  if (checked.status !== 0 || !checked.data) return '';
+  return typeof checked.data.refusal === 'string' ? checked.data.refusal : '';
+}
+
 /**
  * Ask xt to attach the created PR to its Issue. At most one warning line on
  * stderr, and never a change to the create's own output or exit code: an
@@ -199,6 +219,8 @@ function linkCreatedPr(stdout, args) {
  */
 function createAndLink(real, args) {
   if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
+  const refused = markerRefusal(args);
+  if (refused) die('refusing to create the pull request: ' + refused);
   const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
   if (run.error) die('cannot run ' + real + ': ' + run.error.message);
   const out = typeof run.stdout === 'string' ? run.stdout : '';

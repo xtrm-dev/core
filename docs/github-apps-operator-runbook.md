@@ -337,6 +337,7 @@ Known limits, accepted rather than hidden:
 | `xt identity review-post --repo <r> --pr <n> --body-file <file>` | One formal review. The body's line 1 (`Review by <role> (<model>) at head <sha12>`) supplies the head and model, and its single `- Verdict:` line supplies the event; a disagreeing flag or environment value is refused. The tool pins `commit_id`, adds the line-2 marker (agent, run, Issue) and prints url, id, `commit_id` and state. Called by the `gh` shim, so agents keep plain `gh pr review`. |
 | `xt identity merge-check --repo <r> --pr <n>` | Allow or refuse a merge. Off unless `XTRM_MERGE_GUARD=on`. Refusal names the ways to get a review and the coordinator/operator override; an override whose log and Journal writes both fail is itself refused. |
 | `xt identity merge-record` | Post-merge `github-merge` Journal ref, called by the shim after a successful `gh pr merge`. |
+| `xt identity marker-check --argv <json>` | Refuses a `gh pr create` whose effective xtrm marker puts a tmux session id in `run=` (`$0`, `$1`, `$7` — what `XTRM_SESSION_ID` carries). Every window in one tmux session shares that value, so it attributes nothing; the refusal names `PI_SESSION_ID` (Pi) or the Claude session id. Called by the `gh` shim before the create runs, and fail-open: only a refusal blocks. |
 
 Files the code reads (nothing else is authoritative):
 

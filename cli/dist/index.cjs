@@ -57843,6 +57843,23 @@ function xtQuiet(args, timeoutMs) {
 // post-create step, so a slow or absent sb can never hold gh pr create open.
 const LINK_TIMEOUT_MS = 6000;
 
+// CORE-2619: a marker's run= must be the worker's own runtime session id. A tmux
+// session id ($N \u2014 what XTRM_SESSION_ID carries) is shared by every window in
+// that tmux session, so it attributes nothing. xt owns marker parsing (fences,
+// the last marker wins), so ask it and refuse BEFORE the pull request exists.
+// Fail-open by design: only a refusal blocks, never a slow or absent xt.
+const MARKER_CHECK_TIMEOUT_MS = 4000;
+
+/** The refusal for this create's marker, or '' when the create may proceed. */
+function markerRefusal(args) {
+  const checked = xtJson(
+    ['identity', 'marker-check', '--argv', JSON.stringify(args), '--cwd', process.cwd()],
+    MARKER_CHECK_TIMEOUT_MS,
+  );
+  if (checked.status !== 0 || !checked.data) return '';
+  return typeof checked.data.refusal === 'string' ? checked.data.refusal : '';
+}
+
 /**
  * Ask xt to attach the created PR to its Issue. At most one warning line on
  * stderr, and never a change to the create's own output or exit code: an
@@ -57869,6 +57886,8 @@ function linkCreatedPr(stdout, args) {
  */
 function createAndLink(real, args) {
   if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
+  const refused = markerRefusal(args);
+  if (refused) die('refusing to create the pull request: ' + refused);
   const run = spawnSync(real, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
   if (run.error) die('cannot run ' + real + ': ' + run.error.message);
   const out = typeof run.stdout === 'string' ? run.stdout : '';
@@ -72229,6 +72248,12 @@ function parseIssueMarker(text) {
   const markers = parseIssueMarkers(text);
   return markers.length ? markers[markers.length - 1] : null;
 }
+var TMUX_SESSION_ID_PATTERN = /^\$(\d+)$/;
+function markerRunVerdict(run5) {
+  const value = (run5 ?? "").trim();
+  if (!value || !TMUX_SESSION_ID_PATTERN.test(value)) return null;
+  return `run=${value} is a tmux session id (XTRM_SESSION_ID), which every window in that tmux session shares, so it cannot attribute this run; use the worker's own runtime session id \u2014 PI_SESSION_ID for Pi, the Claude session id for Claude`;
+}
 var ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 function isSafeIssueRef(ref) {
   return ISSUE_REF_PATTERN.test((ref ?? "").trim());
@@ -72453,6 +72478,11 @@ function readCreateBody(argv, readFile2 = (file2) => (0, import_node_fs20.readFi
   }
   if (body !== null) return { text: body, source: "body" };
   return { text: "", source: "none" };
+}
+function markerRunRefusal(argv, readFile2 = (file2) => (0, import_node_fs20.readFileSync)(file2, "utf8")) {
+  const body = readCreateBody(argv, readFile2);
+  if (!body.text) return null;
+  return markerRunVerdict(parseIssueMarker(body.text)?.run);
 }
 function lastIndexOfFlag(argv, long, short) {
   let at = -1;
@@ -73594,6 +73624,27 @@ function createIdentityCommand() {
       return;
     }
     emit(linkCreatedPr(opts.stdout, argv, { cwd: opts.cwd }));
+  });
+  identity.command("marker-check").description("Refuse a create whose xtrm marker puts a tmux session id in run= (called by the gh shim)").requiredOption("--argv <json>", "The gh argv the shim is about to run, as a JSON array").option("--cwd <dir>", "Directory a relative --body-file is read from", process.cwd()).option("--json", "Emit JSON", false).action((opts) => {
+    const emit = (result) => {
+      console.log(JSON.stringify(result, null, opts.json ? 2 : 0));
+      process.exit(result.ok ? 0 : 2);
+    };
+    let argv;
+    try {
+      const parsed = JSON.parse(opts.argv);
+      if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+        throw new Error("the argv must be a JSON array of strings");
+      }
+      argv = parsed;
+    } catch (error51) {
+      process.stderr.write(`xt: cannot read the gh argv: ${error51.message}
+`);
+      emit({ ok: false, refusal: null });
+      return;
+    }
+    const refusal = markerRunRefusal(argv, (file2) => (0, import_node_fs24.readFileSync)(import_node_path47.default.resolve(opts.cwd, file2), "utf8"));
+    emit({ ok: true, refusal });
   });
   identity.command("merge-check").description("Allow or refuse a merge: the reviewer App's latest review must be at the current head").option("--repo <owner/name>", "Repository (with --pr)").option("--pr <number>", "Pull request number (with --repo)").option("--gh-args <json>", "A gh argv as a JSON array; the target is resolved the way gh resolves it").option("--cwd <dir>", "Directory for the cwd-PR fallback", process.cwd()).option("--json", "Emit JSON", false).action(async (opts) => {
     let repo = (opts.repo ?? "").trim();

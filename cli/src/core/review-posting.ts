@@ -218,6 +218,30 @@ export function parseIssueMarker(text: string): IssueMarker | null {
     return markers.length ? markers[markers.length - 1] : null;
 }
 
+/**
+ * A tmux session id, as `XTRM_SESSION_ID` and `XTRM_PARENT_SESSION_ID` carry it
+ * (`$0`, `$7`). Every window in that tmux session shares the value, so it names
+ * a session and never a worker (CORE-2619).
+ */
+export const TMUX_SESSION_ID_PATTERN = /^\$(\d+)$/;
+
+/**
+ * Why a marker's `run=` cannot attribute a run, or null when it can.
+ *
+ * `run=` is the worker's own runtime session id: `PI_SESSION_ID` for Pi, the
+ * Claude session id for Claude. A tmux session id is shared by every window in
+ * that session, so it would journal, review and merge under a value that two
+ * workers share — and `$1` reads like an unexpanded shell parameter, which is
+ * exactly how it was misdiagnosed as a quoting bug (CORE-2618, closed invalid).
+ */
+export function markerRunVerdict(run: string | null | undefined): string | null {
+    const value = (run ?? '').trim();
+    if (!value || !TMUX_SESSION_ID_PATTERN.test(value)) return null;
+    return `run=${value} is a tmux session id (XTRM_SESSION_ID), which every window`
+        + ' in that tmux session shares, so it cannot attribute this run; use the worker\'s own'
+        + ' runtime session id — PI_SESSION_ID for Pi, the Claude session id for Claude';
+}
+
 /** The ref format a Substrate Issue uses: an upper-case key, a dash and digits. */
 export const ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 
