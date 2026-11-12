@@ -28,11 +28,11 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 | Claude route switch (claude_bridge block in ~/.config/specialists/user.json) | SPECIALISTS-4442 (not a core Issue) | NOT COVERED (missing) | No installer in core; .xtrm does not write it; docs say opt-in. |
 | pi-claude-bridge package | CORE-2591 (DONE) | covered (done) | MANAGED_PACKAGES contains it; xt init/update reconcile it. |
 | substrate CLI/plugin version 0.3.1 | Step 3 (sb creates state) + manual | partial | sb 0.3.1 on PC and server (hand-installed); server Claude substrate plugin still 0.2.3 (installed_plugins.json shows 0.2.3 vs PC 0.2.6). No xt init step upgrades Claude plugins. |
-| gh shim + XTRM_LINK_GATE | Step 15 (identity, CORE-2528) | partial | xt identity setup installs shim; not invoked by xt init/update. XTRM_LINK_GATE default warn (xtrm #347) not configured anywhere by installer. |
+| gh shim + XTRM_LINK_GATE | Step 15 (identity, CORE-2528) | partial | xt identity setup installs shim; not invoked by xt init/update. XTRM_LINK_GATE default warn (xtrm #347) not configured anywhere by installer. (No core.hooksPath is set in this repo.) |
 | git-cliff | not cited in any step | NOT COVERED (missing) | git-cliff binary present on PC (/run/.../bin/git-cliff) via npm; not in MANAGED_DEPS/machine-bootstrap; no step references it. |
 | skill pack swap programme -> project-management | Step 46 (Phase 6) / CORE-2624 (done) | NOT COVERED on HOME (pending) | manifests pc.json/server.json/state.json still list "programme"; skills dir still has programme pack. CORE-2624 renamed the pack but HOME manifests not migrated. No xt update step migrates pack names. |
 | skill-suggest@xtrm plugin | Step 4c CORE-2532 (hotfix) / Step 12b | partial | Plugin installed on PC only (installed_plugins.json has skill-suggest@xtrm 0.1.0); server does not. Not in xt init Claude plugin list (OFFICIAL_CLAUDE_PLUGINS = ['context7'] only). |
-| service-knowledge install everywhere | Step 15c (XTRM-631) | partial | ensureServiceSkills in update.ts; not in init.ts phases. |
+| service-knowledge install everywhere | Step 15c (XTRM-631) | partial | ensureServiceSkills is called in init.ts inside runProjectBootstrap (cli/src/commands/init.ts) and in update.ts; remaining gap is only where not covered (e.g. non-service repos / older layouts). |
 | xt-worktree-reap timer (systemd) | Step 27/24 | partial | Timer exists on server only; not installed by xt init on PC; no unit file shipped by core. |
 | agent author identity / git identity env | Step 20 CORE-2525 | partial | git-identity.ts helpers exist; launcher exports env; not an installer concern but doctor could check. |
 | skill pack state migration (programme->project-management) | not covered | NOT COVERED (missing) | No migration code in skills-state or update. |
@@ -82,7 +82,7 @@ Applying the operator's 11-11 rulings (linking automated as far as possible; xt 
 3. programme -> project-management: one-time idempotent migration in xt update, backup first.
 4. git-cliff: managed, required:false.
 5. Claude plugin version reconciliation (incl. substrate plugin 0.3.1): yes, in xt init/update.
-6. skill-suggest: pending operator decision (core-85 to ask).
+6. skill-suggest: included in the Claude plugin baseline installed by xt init (OFFICIAL_CLAUDE_PLUGINS / new XTRM_CLAUDE_PLUGINS list), amending Step 4c/12. (Operator ruling: yes, by default.)
 7. Claude route switch: an xt command writes the claude_bridge block only after explicit operator consent. Filed as child Issue CORE-2632 under CORE-2629, with SPECIALISTS-4442 as its dependency.
 
 Child Issues for 1-5 are NOT filed; core-85 extends existing Issues (CORE-2570, XTRM-728, CORE-2624, CORE-2380/CORE-2383).
