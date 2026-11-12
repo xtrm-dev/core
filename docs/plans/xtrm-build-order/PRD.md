@@ -532,6 +532,9 @@ Folded in: **XT-106** Beads removal across machines
 > **Ruling · 11-11 · operator, via CORE-2629**
 > - 6b trailer hook: xt init/update install it by default; xt doctor warns when it is missing (CORE-2629 §3.1, resolving CORE-2570).
 
+> **Findings · 11-11 · XTRM-752**
+> - Hook install needs xt hook wiring plus per-repo squash handling: xtrm squashes to PR_BODY, so T2 cannot be delivery evidence there without COMMIT_MESSAGES or a PR-body bridge. Core dry sync found 3 created_from candidates; xtrm found 0.
+
 ### Step 7 — Decide how Substrate works across two machines
 
 [partly done] [new] `prompt 3 · XT-127`
@@ -806,6 +809,9 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Verified: only CORE-2622 (core #921) has a link row; PRs opened today (core #922, #923, #924, xtrm #335, #364, #365, #367) have none and read `gate_no_evidence`. XTRM-752 scopes the root cause.
 > - Live use needs an sb deploy: the operator PC runs 0.2.6, which predates these verbs, so the shim warns and skips until then (XTRM-725 stays open for that).
 > - Installed by xt: the gh shim is installed by xt init and updated by xt update; the gate mode is set there (CORE-2629 where no step owns it).
+
+> **Findings · 11-11 · XTRM-752**
+> - Root cause: xt identity pr-link calls provenance attach without dispatch and allocate, so fresh Issues fail no_receipt (CORE-2631). PRs opened outside the shim and a stale installed shim add the rest. Live store: 1 link row, 0 commits, 0 PR state rows. (a) attach requires a receipt dispatch/allocate must create first; the shim never creates it; operator/direct PRs never invoke the shim at all.
 
 ### Step 15 — Gates refuse unlinked work
 
@@ -1203,6 +1209,9 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 > **Ruling · 11-11 · operator, via CORE-2629**
 > - sb links sync timer: server role only (PC uses remote sb); installed by xt init/update and checked by doctor (CORE-2629 §3.2).
+
+> **Findings · 11-11 · XTRM-752**
+> - (b) sb links sync needs a scheduler, a --since cursor and a fail-open wrapper. The verb and sync service already exist; no timer or cron invokes them.
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
