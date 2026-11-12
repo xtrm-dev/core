@@ -23,6 +23,7 @@ import { shouldUseGlobalHooks } from '../core/global-hooks-flag.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { inventoryDeps, renderBootstrapPlan, runMachineBootstrapPhase, type BootstrapPlan } from '../core/machine-bootstrap.js';
 import { runInitVerification, renderVerificationSummary } from '../core/init-verification.js';
+import { installTrailerHook } from '../core/trailer-hooks.js';
 import { assertRuntimeSkillsViews } from '../core/skills-runtime-views.js';
 import { getGlobalSkillsOverrideRoots } from '../core/global-skills-flag.js';
 import { syncPiMcpConfig, syncProjectMcpConfig } from '../core/project-mcp-sync.js';
@@ -988,6 +989,14 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         console.log(kleur.red('  ✗ Substrate project not linked — init cannot complete Substrate-first setup.'));
         process.exitCode = 1;
         return;
+    }
+
+    // Trailer hook chaining (CORE-2570): install by default.
+    try {
+        const tr = await installTrailerHook(projectRoot);
+        if (tr.changed) console.log(kleur.dim('  • chained Substrate prepare-commit-msg into repo hooks'));
+    } catch (e) {
+        console.log(kleur.yellow(`  ⚠ trailer hook install failed: ${e instanceof Error ? e.message : String(e)}`));
     }
 
     // ── Phase 8: Dependency maintenance ──────────────────────────────────────

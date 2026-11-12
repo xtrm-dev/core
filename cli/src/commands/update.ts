@@ -20,6 +20,7 @@ import { migrationBlockedReason, planSubstrateMigration, substrateMigrationTrans
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
+import { installTrailerHook } from '../core/trailer-hooks.js';
 import { resolveMainProjectRoot } from '../utils/repo-root.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
@@ -281,6 +282,13 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         // apply. runInstall skips this phase so update can keep its project hook
         // reconciliation explicit and idempotent.
         const hookSync = await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
+
+        // Trailer hook chaining (CORE-2570): install by default.
+        let trailerChanged = false;
+        try {
+            const tr = await installTrailerHook(repoRoot);
+            trailerChanged = tr.changed;
+        } catch { /* fail-open */ }
 
         if (runtimeFailed.length > 0) {
             return {
