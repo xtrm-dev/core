@@ -64,6 +64,8 @@ Jira programme epic that mirrors this PRD: [XT-217](https://mercuryintel.atlassi
 
 There are 46 numbered steps and 17 lettered additions in six phases. Each phase gives the next one something it cannot work without. Two rules run through the whole plan. Every Jira item, Substrate issue, PR and commit links to the others. Every Substrate duty is done by the host or enforced by a gate, so no agent can skip it.
 
+**Ruling · 2026-11-11 · PR and commit linking are automatic.** No agent or human types a link in the normal path: the git hook (6b) writes trailers, the opener (14) writes `created_from` at PR open, a scheduled reconciler (26) repairs and records state, the gate (15) enforces, and merge closes (27). Manual verbs (`sb issue link pr`, `sb links sync`) are repair tools only. See XTRM-752 for the verified gaps.
+
 **What changed since version 1.** You confirmed the reading of XT-104, XT-110, XT-114, XT-178 and XT-184. You asked for a strong GitHub and Jira binding. I measured how linking works today; it barely does (next section). I added a linking spine to phases 1–4 and folded 27 open XT tickets into the steps they belong to.
 
 **Version 3.** You pointed at the gap between what Substrate can do and what the instructions tell agents. I measured it (section below). The plan now has a duty track (steps 8, 16, 22) and a stage model for statuses (step 30).
@@ -518,6 +520,12 @@ Folded in: **XT-106** Beads removal across machines
 > **Measured · 11-11 · design note**
 > - The hook is not installed: 3 of the last 100 squash commits on core’s main carry the trailer, 0 of 100 on xtrm. xtrm squashed to the PR body until 11-11; its squash setting now keeps commit messages, so T2 counts there too. Substrate’s `parseTrailers` is last-wins and needs an all-values form before T2 ships; `XTRM-734` tracks the fix and blocks `XTRM-727`.
 
+> **Status · 11-11 · automation**
+> - Automation is the rule: the hook writes trailers, no agent types a link. Today it does not run: the hook is not installed in any repo, and Substrate's `prepare-commit-msg` adds trailers only when `XTRM_RECEIPT_ID` is set, which nothing sets (XTRM-684).
+> - Verified: 3 of the last 100 squash commits on core's main carry the trailer; 0 of 100 on xtrm. xtrm now keeps commit messages on squash, so T2 counts there too. parseTrailers is last-wins and needs the all-values form (XTRM-734).
+> - Next: XTRM-684 (hook resolves the Issue without a receipt: env, worktree binding, branch) lands first; CORE-2570 chains it into each repo's existing hook and writes the worktree binding.
+> - Installed by xt: chained into each repo's existing hook by xt init/update and checked by xt doctor (design pending in CORE-2629).
+
 ### Step 7 — Decide how Substrate works across two machines
 
 [partly done] [new] `prompt 3 · XT-127`
@@ -620,6 +628,8 @@ Folded in: **XT-106** Beads removal across machines
 
 Goal: `xt init` brings a fresh machine to a verified ready state and `xt update` brings an existing one to latest, both from one release manifest with exact pins. The release also ships PR recording and the link gate.
 
+**Ruling · 11-11 · one setup surface.** Every component built or planned in this plan is installed by `xt init`, updated by `xt update` and checked by `xt doctor`, from one manifest. That covers the git hooks (6b), the scheduled `sb links sync` (26), the Claude route switch (step 10), the Substrate CLI and plugins, the gh shim and gate mode (15), and skill packs. Step 17 owns the install story and doctor checks; CORE-2629 is the gap analysis against this Phase, and names what no step owns yet.
+
 ### Step 9 — Install runtimes before Substrate enrollment
 
 [draft] `CORE-2380 · XT-126`
@@ -650,6 +660,9 @@ Folded in: **XT-191** Pi 1.4.0 upgrade · **XT-183** bundle drops extension sele
 > **Filed · 11-11 · CORE-2591**
 > - `npm:pi-claude-bridge` joins the managed Pi package set as managed optional, so `xt init` installs it and `xt update` reconciles it. Today it is on the PC only because it was installed by hand (0.12.0). Installing it does not turn the Claude route on: that stays `claude_bridge.enabled`, opt-in, operator login only.
 > - Worker `bridge-pkg` (xt pi). The server gets the package but not the switch (unattended fleet).
+
+> **Installed by xt · 11-11**
+> - The Claude route switch: the bridge package is installed by xt init and reconciled by xt update (CORE-2591); the route itself stays opt-in via `claude_bridge.enabled` in `user.json`. CORE-2629 where no step owns the switch.
 
 ### Step 11 — Manage the unmanaged Pi packages; remove dead ones
 
@@ -773,6 +786,12 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - The host side: `CORE-2607` (core#912, `c9cf3777`) makes the `gh pr create` shim record the PR on its Issue as it opens it: `sb provenance attach` for T1, then `sb issue link pr` with the commit range for T2. It fails open with one warning.
 > - Delivered is not deployed. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then. The epic `XTRM-725` stays open for that.
 
+> **Status · 11-11 · automation**
+> - Automation is the rule: the opener writes `created_from` at PR open, so no agent types a link. The gh shim (CORE-2607) does this today and fails open with one warning.
+> - Verified: only CORE-2622 (core #921) has a link row; PRs opened today (core #922, #923, #924, xtrm #335, #364, #365, #367) have none and read `gate_no_evidence`. XTRM-752 scopes the root cause.
+> - Live use needs an sb deploy: the operator PC runs 0.2.6, which predates these verbs, so the shim warns and skips until then (XTRM-725 stays open for that).
+> - Installed by xt: the gh shim is installed by xt init and updated by xt update; the gate mode is set there (CORE-2629 where no step owns it).
+
 ### Step 15 — Gates refuse unlinked work
 
 (v2) [partly done] [new] `XT-178 amendment · XT-167 · XTRM-729`
@@ -812,6 +831,11 @@ Folded in: **XT-167** close succeeds after the claim lapsed · **CORE-2527** to 
 > **Delivered · 11-11 · the close gate merged**
 > - `XTRM-729` merged as xtrm#347 (`50e21f02`): the close gate reads the link rows at the done transition. `XTRM_LINK_GATE` is `warn` by default (`enforce` and `off` are opt-in), every move to done is gated: `sb issue close --outcome completed` and a bare `sb issue state <ref> done` (other close outcomes are not), `beads-import` and `beads-repair` are named exemptions, and `--gate-override` records why. `sb links check` shows each verdict.
 > - Still open in this step: switching the gate to `enforce`, the claim refusing a contract that fails `sb issue validate`, and the pr-review-gate fan-out. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then.
+
+> **Status · 11-11 · automation**
+> - Automation is the rule: the gate enforces; manual close is a repair tool. `XTRM_LINK_GATE` is `warn` by default (`enforce` and `off` are opt-in).
+> - Verified: only CORE-2622 passes; the rest read `gate_no_evidence`. Switching to `enforce` is the next concrete item; pr-review-gate's link check and the template fan-out to the 16 repos are still open.
+> - Installed by xt: gate mode and the pr-review-gate template fan-out are owned by xt init/update (CORE-2629 where no step owns it).
 
 ### Step 15b — A review is a step in the trail, not a new issue
 
@@ -1153,6 +1177,12 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 > - `XTRM-728` merged as xtrm#345 (`5eeeb9b7`): `sb links sync`, a one-shot reconciler over conditional `gh api` reads (`If-None-Match`, `If-Modified-Since`; a 304 writes nothing), with trailer-first linkage, the cross-issue guard and live PR state in its own `pull_requests` table.
 > - Still to build here: running it on a schedule in the agent host (today it runs when called), and serving the consumers in steps 27 and 34. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then.
 
+> **Status · 11-11 · automation**
+> - Automation is the rule: a scheduled reconciler repairs missed PRs and records state; manual `sb links sync` is a repair tool. Today it runs only when called; no timer schedules it.
+> - Verified: `sb links sync` (XTRM-728) exists and is one-shot over conditional gh reads; nothing schedules it on the server. XTRM-752 scopes the gap.
+> - Next: schedule `sb links sync` on the server and serve the consumers in steps 27 and 34.
+> - Installed by xt: the schedule and its service unit are installed by xt init and updated by xt update (CORE-2629).
+
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
 [new] `XT-184 lifecycle · XT-172 · XT-148 · XTRM-729`
@@ -1172,6 +1202,11 @@ Folded in: **XT-172** executor worktree and PR integration · **XT-148** paralle
 
 > **Ruling · 11-11 · design note**
 > - Auto-close needs T1 or T2, merged into the default branch, no other open PR linked, no live claim and no deploy window. A writer PR into a coordinator branch is integration, not delivery. Unreachable GitHub fails closed; an override is a Journal decision.
+
+> **Status · 11-11 · automation**
+> - Automation is the rule: on merge the reconciler closes the Issue citing the PR record, stops the activation and reaps the worktree. Today none of this happens automatically: 47 merged worktrees are never reaped and Substrate has no PR records except the one opener write.
+> - Next: needs claims (21), inventory (24), authors (20) and merge events (26); the auto-close criteria are defined but not wired.
+> - Installed by xt: reaper and activation stop run in the agent host installed by xt (CORE-2629).
 
 ### Step 28 — Launcher options and the process panel
 
