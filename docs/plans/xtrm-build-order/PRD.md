@@ -427,6 +427,9 @@ Folded in: **XT-189** version the guard hooks in ~/.xtrm
 > - `skill-suggest/log.jsonl` is git-ignored in `~/.xtrm` (PR #8); it no longer causes conflicts on pull.
 > - Headroom proxy removed from the PC: proxy, cron jobs, shell blocks and the tmux variable. Claude Code now connects to Anthropic directly, as on the server. Reason: Remote Control did not work on the PC, and the proxy address was the only difference found. Confirmed 11-02: Remote Control now works on the PC. Backup: `~/xtrm-parity-backup-20261031/headroom-20261101/`.
 
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - One-time migration in xt update: rewrite enabledPacks "programme" -> "project-management" in ~/.xtrm/skills/state.json and manifests/*.json, idempotent, backup first (CORE-2629 §3.3).
+
 ### Step 4b — Unlock GitHub Actions for xtrm-dev
 
 [done] (v4) [you] `billing · all xtrm-dev repos`
@@ -525,6 +528,9 @@ Folded in: **XT-106** Beads removal across machines
 > - Verified: 3 of the last 100 squash commits on core's main carry the trailer; 0 of 100 on xtrm. xtrm now keeps commit messages on squash, so T2 counts there too. parseTrailers is last-wins and needs the all-values form (XTRM-734).
 > - Next: XTRM-684 (hook resolves the Issue without a receipt: env, worktree binding, branch) lands first; CORE-2570 chains it into each repo's existing hook and writes the worktree binding.
 > - Installed by xt: chained into each repo's existing hook by xt init/update and checked by xt doctor (design pending in CORE-2629).
+
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - 6b trailer hook: xt init/update install it by default; xt doctor warns when it is missing (CORE-2629 §3.1, resolving CORE-2570).
 
 ### Step 7 — Decide how Substrate works across two machines
 
@@ -637,6 +643,9 @@ Goal: `xt init` brings a fresh machine to a verified ready state and `xt update`
 - **Brings** — `xt init` installs node packages, Pi, Claude plugins and Python tools, then calls `sb init`. The audit needed six manual fixes on a fresh machine.
 - **Why here** — It shapes the installer; the Pi, plugin and picker steps plug into it.
 
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - git-cliff managed in MANAGED_DEPS, required:false (CORE-2629 §3.4); Claude plugin version reconciliation incl. substrate 0.3.1 (CORE-2629 §3.5).
+
 ### Step 10 — Real Pi runtime, current Pi, packages that really upgrade
 
 [partly done] [draft] `CORE-2378 · CORE-2400 · CORE-2379 · XT-125`
@@ -663,6 +672,9 @@ Folded in: **XT-191** Pi 1.4.0 upgrade · **XT-183** bundle drops extension sele
 
 > **Installed by xt · 11-11**
 > - The Claude route switch: the bridge package is installed by xt init and reconciled by xt update (CORE-2591); the route itself stays opt-in via `claude_bridge.enabled` in `user.json`. CORE-2629 where no step owns the switch.
+
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - Claude route switch: an xt command writes the claude_bridge block only after explicit operator consent; depends on SPECIALISTS-4442 (CORE-2629 §3.7, new child Issue under CORE-2629).
 
 ### Step 11 — Manage the unmanaged Pi packages; remove dead ones
 
@@ -727,6 +739,9 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - A wake turn on an idle session cost about 39.6k cached input tokens, so a suggestion for a finished turn is dropped, never delivered by waking the session.
 > - Not yet measured: an authenticated classifier call from the monitor process, and the drop rate. CORE-2594 measures both before anything is built.
 > - The mod is a standalone plugin directory that the xtrm Claude plugin (step 12, CORE-2391) adopts unchanged. Nothing is merged into that plugin before step 12.
+
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - skill-suggest in the Claude plugin baseline: operator decision pending (CORE-2629 §3.6).
 
 ### Step 12c — Substrate recall: one search over project memory
 
@@ -968,6 +983,9 @@ Folded in: **XT-162** one complete specialists skill per runtime
 
 Folded in: **XT-160** doctor warns on a second MCP server
 
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - One-time migration programme -> project-management (CORE-2629 §3.3); Claude plugin version reconciliation incl. substrate 0.3.1 (CORE-2629 §3.5); one declarative component registry checked by doctor, one entry per component with installer + check + machine roles (CORE-2629 §4).
+
 ### Step 18 — Clean-PATH end-to-end test, then publish
 
 [you] `CORE-2382 · CORE-2377 · XT-128`
@@ -1182,6 +1200,9 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 > - Verified: `sb links sync` (XTRM-728) exists and is one-shot over conditional gh reads; nothing schedules it on the server. The opener's failure on fresh Issues (CORE-2631) is why the reconciler matters now. XTRM-752 scopes the gap.
 > - Next: schedule `sb links sync` on the server and serve the consumers in steps 27 and 34.
 > - Installed by xt: the schedule and its service unit are installed by xt init and updated by xt update (CORE-2629).
+
+> **Ruling · 11-11 · operator, via CORE-2629**
+> - sb links sync timer: server role only (PC uses remote sb); installed by xt init/update and checked by doctor (CORE-2629 §3.2).
 
 ### Step 27 — PR merged closes the Issue and reaps the worktree
 
