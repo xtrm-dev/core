@@ -305,6 +305,10 @@ export interface GhPrLinkDeps extends ReceiptProjectDeps {
     runGit?: RunGit;
     /** The receipt runner; tests inject a fake so no real store is touched. */
     runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    /** The dispatch runner; defaults to the same runner as attach. */
+    runDispatch?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    /** The allocate runner; defaults to the same runner as attach. */
+    runAllocate?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
 }
 
 export interface GhPrLinkResult {
@@ -370,6 +374,8 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
     }
     const run = deps.runAttach ?? defaultAttach;
+    const runDispatch = deps.runDispatch ?? run;
+    const runAllocate = deps.runAllocate ?? run;
     // One deadline for the pair: the whole post-create step, not each receipt,
     // is what must stay inside the budget.
     const deadline = Date.now() + ATTACH_TIMEOUT_MS;
@@ -378,13 +384,61 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
     const attachArgv = withReceiptProject(['provenance', 'attach', ref, 'pr', pr.canonical], project);
     const t1 = run(attachArgv, env, budget());
     if (!t1.ok) {
-        return {
-            attached: false,
-            ref,
-            canonical: pr.canonical,
-            argv: attachArgv,
-            warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? 'sb gave no reason')}`,
-        };
+        // CORE-2631: `attach` resolves a WorkReceipt, which only exists after
+        // `dispatch` (creates the binding) and `allocate` (creates the receipt).
+        // A fresh issue has neither, so attach fails with `no_receipt`. Recover
+        // once: dispatch -> allocate -> attach. A receipt that already exists makes
+        // the first attach succeed, so this path is a no-op on repeat runs.
+        const err = t1.error ?? '';
+        if (!/no_receipt/i.test(err)) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || 'sb gave no reason')}`,
+            };
+        }
+        // Dispatch: create the execution binding. --participant is required when
+        // the issue is live-held (anti-steal); omit it when unclaimed.
+        const dispatchArgs = ['provenance', 'dispatch', ref];
+        const holder = (env.SUBSTRATE_HOLDER ?? '').trim();
+        if (holder) dispatchArgs.push('--participant', holder);
+        if (deps.cwd) dispatchArgs.push('--workspace', cwd);
+        const dispatchArgv = withReceiptProject(dispatchArgs, project);
+        const td = runDispatch(dispatchArgv, env, budget());
+        if (!td.ok) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(td.error ?? 'sb gave no reason')}`,
+            };
+        }
+        // Allocate: create the receipt from the binding.
+        const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
+        const ta = runAllocate(allocateArgv, env, budget());
+        if (!ta.ok) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(ta.error ?? 'sb gave no reason')}`,
+            };
+        }
+        // Retry attach once.
+        const t1b = run(attachArgv, env, budget());
+        if (!t1b.ok) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1b.error ?? 'sb gave no reason')}`,
+            };
+        }
     }
 
     const range = resolveLinkRange(git, cwd);

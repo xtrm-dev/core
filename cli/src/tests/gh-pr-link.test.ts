@@ -440,6 +440,134 @@ describe('linkCreatedPr', () => {
     });
 });
 
+// CORE-2631: a fresh issue has no WorkReceipt, so `provenance attach` fails with
+// `no_receipt`. The shim recovers once: dispatch -> allocate -> attach. A receipt
+// that already exists makes the first attach succeed, so recovery is a no-op on
+// repeat runs. Any other failure never triggers dispatch or allocate.
+describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
+    function recoveryDeps(overrides: {
+        attachErrors?: string[];   // sequence of errors for attach calls
+        dispatchOk?: boolean;
+        dispatchError?: string;
+        allocateOk?: boolean;
+        allocateError?: string;
+        commitsOk?: boolean;
+    } = {}) {
+        const calls: { kind: string; argv: string[] }[] = [];
+        const { runGit } = gitFake({
+            branch: 'core-2631-gh-shim',
+            mergeBases: { 'origin/HEAD': BASE },
+        });
+        const runSb = () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' });
+        let attachIndex = 0;
+        const attachErrors = overrides.attachErrors ?? [];
+        const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+            cwd: '/repo',
+            env: {},
+            runGit,
+            runSb,
+            readFile: () => { throw new Error('no file'); },
+            runAttach: (args) => {
+                const kind = args[1]; // attach | dispatch | allocate
+                calls.push({ kind, argv: [...args] });
+                if (kind === 'attach') {
+                    const err = attachErrors[attachIndex++];
+                    if (err) return { ok: false, error: err };
+                    return { ok: true };
+                }
+                if (kind === 'dispatch') {
+                    return overrides.dispatchOk === false
+                        ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed' }
+                        : { ok: true };
+                }
+                if (kind === 'allocate') {
+                    return overrides.allocateOk === false
+                        ? { ok: false, error: overrides.allocateError ?? 'allocate failed' }
+                        : { ok: true };
+                }
+                return { ok: true };
+            },
+        });
+        // Actually, runDispatch and runAllocate default to run (runAttach mock).
+        // The mock above handles dispatch/allocate by kind, so we don't need
+        // separate runners. Remove the bogus overrides.
+        return { result, calls };
+    }
+
+    it('recovers from no_receipt: dispatch + allocate once, attach retried once, attached true', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: ['no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first'] });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(dispatches).toHaveLength(1);
+        expect(allocates).toHaveLength(1);
+        expect(attaches).toHaveLength(2);
+        // dispatch carries the ref and project
+        expect(dispatches[0].argv).toContain('CORE-2607');
+        expect(dispatches[0].argv).toContain('--project');
+        expect(dispatches[0].argv).toContain('prj_core');
+        // allocate carries the ref
+        expect(allocates[0].argv).toContain('CORE-2607');
+        expect(allocates[0].argv).toContain('--project');
+        // attach retried with the same argv
+        expect(attaches[0].argv).toEqual(attaches[1].argv);
+    });
+
+    it('does not attempt dispatch or allocate when attach fails for another reason', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: ['unknown migration: foo'] });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*unknown migration/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(0);
+        expect(allocates).toHaveLength(0);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+
+    it('is a no-op when a receipt already exists (attach succeeds first time)', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: [] });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(0);
+        expect(allocates).toHaveLength(0);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+
+    it('warns once when dispatch fails during recovery', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: unknown flag --participant',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*unknown flag --participant/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(allocates).toHaveLength(0);
+    });
+
+    it('warns once when allocate fails during recovery', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            allocateOk: false,
+            allocateError: 'sb exited 1: no binding',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*no binding/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(1);
+        expect(allocates).toHaveLength(1);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+});
+
 // The argv above is only as good as sb's flag allowlist: a flag sb does not
 // declare makes the whole receipt fail ("unknown flag --x for `verb`") and the
 // link degrades to a warning, so the golden tests alone cannot see it. This

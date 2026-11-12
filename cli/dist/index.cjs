@@ -73605,18 +73605,59 @@ function linkOrWarn(stdout, argv, deps) {
     return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
   }
   const run5 = deps.runAttach ?? defaultAttach;
+  const runDispatch = deps.runDispatch ?? run5;
+  const runAllocate = deps.runAllocate ?? run5;
   const deadline = Date.now() + ATTACH_TIMEOUT_MS;
   const budget = () => Math.max(250, deadline - Date.now());
   const attachArgv = withReceiptProject(["provenance", "attach", ref, "pr", pr.canonical], project);
   const t1 = run5(attachArgv, env3, budget());
   if (!t1.ok) {
-    return {
-      attached: false,
-      ref,
-      canonical: pr.canonical,
-      argv: attachArgv,
-      warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? "sb gave no reason")}`
-    };
+    const err = t1.error ?? "";
+    if (!/no_receipt/i.test(err)) {
+      return {
+        attached: false,
+        ref,
+        canonical: pr.canonical,
+        argv: attachArgv,
+        warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || "sb gave no reason")}`
+      };
+    }
+    const dispatchArgs = ["provenance", "dispatch", ref];
+    const holder = (env3.SUBSTRATE_HOLDER ?? "").trim();
+    if (holder) dispatchArgs.push("--participant", holder);
+    if (deps.cwd) dispatchArgs.push("--workspace", cwd);
+    const dispatchArgv = withReceiptProject(dispatchArgs, project);
+    const td = runDispatch(dispatchArgv, env3, budget());
+    if (!td.ok) {
+      return {
+        attached: false,
+        ref,
+        canonical: pr.canonical,
+        argv: attachArgv,
+        warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(td.error ?? "sb gave no reason")}`
+      };
+    }
+    const allocateArgv = withReceiptProject(["provenance", "allocate", ref], project);
+    const ta = runAllocate(allocateArgv, env3, budget());
+    if (!ta.ok) {
+      return {
+        attached: false,
+        ref,
+        canonical: pr.canonical,
+        argv: attachArgv,
+        warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(ta.error ?? "sb gave no reason")}`
+      };
+    }
+    const t1b = run5(attachArgv, env3, budget());
+    if (!t1b.ok) {
+      return {
+        attached: false,
+        ref,
+        canonical: pr.canonical,
+        argv: attachArgv,
+        warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1b.error ?? "sb gave no reason")}`
+      };
+    }
   }
   const range = resolveLinkRange(git7, cwd);
   if (!range) {
