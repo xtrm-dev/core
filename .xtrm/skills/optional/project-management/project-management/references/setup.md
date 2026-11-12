@@ -31,6 +31,44 @@ Skill-specific details extend this file:
 A structured setting (list or object) is JSON: in the config file as a JSON value, in the environment as a JSON string. A required setting that is
 missing stops the script with its name and a pointer to this file.
 
+### Several projects
+
+One operator can run several projects with the pack at once. Put them in one config file as profiles; a project's
+keys override `defaults`, and values that do not differ (your identity, the token file, the Jira site) sit in
+`defaults` once:
+
+```json
+{
+  "defaults": {"jira_site": "https://example.atlassian.net", "operator_email": "you@example.com",
+               "jira_token_file": "~/.secrets/atlassian-api-token.txt"},
+  "projects": {
+    "alpha": {"jira_project": "ALPHA", "sb_prefix": "AL", "repo_dir": "~/projects/alpha",
+              "lane_dir": "~/.local/state/pm/alpha/lane", "state_dir": "~/.local/state/pm/alpha"},
+    "beta":  {"jira_project": "BETA", "sb_prefix": "BE", "repo_dir": "~/projects/beta",
+              "lane_dir": "~/.local/state/pm/beta/lane", "state_dir": "~/.local/state/pm/beta",
+              "jira_site": "https://other.atlassian.net"}
+  }
+}
+```
+
+A script picks its project in this order, and never guesses:
+1. `PM_PROJECT=<name>` in its environment;
+2. the current directory inside a project's `repo_dir` (or one of its `match_dirs`); the deepest match wins, so a
+   worker in a worktree under the repo gets that project with nothing set;
+3. the only project in the file;
+4. otherwise it stops and names the projects. A wrong guess would write to another project's board.
+
+Rules:
+- Every coordinator launch, timer, cron line and lane scheduler sets `PM_PROJECT` explicitly. Do not rely on the
+  directory for anything that runs outside the repo (the lane runs in its lane dir).
+- Each project has its own `lane_dir`, `state_dir`, `tabellone_state_dir` and `tabellone_site`. `pm_check.py`
+  reports a `CLASH` when two projects share one: their runs would overwrite each other.
+- Check all of them with `python3 scripts/pm_check.py --project all`; one with `--project <name>`.
+- Shell scripts read a setting with `python3 scripts/pm_config.py get NAME [DEFAULT]`, and the chosen project with
+  `python3 scripts/pm_config.py project`.
+- A flat config (no `projects` key) is one project and needs no `PM_PROJECT`; turn it into a profile when you add
+  the second project.
+
 ## 3. Settings
 
 Required by: **PM** = project-management scripts (`jira.py`, `post-guard.py`, `window-lineage.py`), **BA** = board-audit, **TK** =

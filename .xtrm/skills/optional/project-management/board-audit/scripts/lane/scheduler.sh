@@ -5,9 +5,12 @@
 # HEAVY nightly queue watch 15 min, operator-channel router 5 min (this lane is the only router/filter).
 # Settings: board-audit/references/setup-lane.md.
 set -u
-LANE=${PM_LANE_DIR:?set PM_LANE_DIR, see board-audit/references/setup-lane.md}
+PMCFG="$(cd "$(dirname "$0")" && pwd)/../../../project-management/scripts/pm_config.py"
+# Resolve the project once; every child script then reads the same one.
+PM_PROJECT=${PM_PROJECT:-$(python3 "$PMCFG" project)} || exit 1; export PM_PROJECT
+LANE=${PM_LANE_DIR:-$(python3 "$PMCFG" get PM_LANE_DIR)} || exit 1
 SCRIPTS=$(cd "$(dirname "$0")" && pwd)
-TAB_UNIT=${PM_TABELLONE_UNIT:-tabellone-sync.service}
+TAB_UNIT=${PM_TABELLONE_UNIT:-$(python3 "$PMCFG" get PM_TABELLONE_UNIT tabellone-sync.service)}
 EV=$LANE/events.log
 ST=$LANE/sched.state
 touch "$EV"

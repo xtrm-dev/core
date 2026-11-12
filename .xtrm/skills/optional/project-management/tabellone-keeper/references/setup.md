@@ -105,8 +105,20 @@ described in the shared setup file.
 3. Run the sync without `--dry`. It writes, reads back, and prints `RESULT OK` (exit 0).
    `ASSERT-FAIL` lines and exit 1 mean a hole in the schedule; fix the Jira data, not the page.
 4. Open `https://<site>.here.now` and confirm that the workers and today's schedule show.
-5. Install a 5-minute timer (for example a systemd `--user` unit `tabellone-sync.timer`)
-   that runs the script without `--dry`. Its log is the place the keeper reads
-   (`journalctl --user -u tabellone-sync`).
+5. Install a 5-minute timer that runs the script without `--dry`. Its log is the place the keeper reads.
+   With one project, a plain unit `tabellone-sync.timer` will do (`journalctl --user -u tabellone-sync`).
+   With several projects, use one template instance per project, so each sync reads its own profile and
+   writes its own state:
+
+   ```ini
+   # ~/.config/systemd/user/tabellone-sync@.service (plus a matching tabellone-sync@.timer)
+   [Service]
+   Type=oneshot
+   Environment=PM_PROJECT=%i
+   ExecStart=/usr/bin/python3 <pack>/tabellone-keeper/scripts/tabellone_sync.py
+   ```
+
+   `systemctl --user enable --now tabellone-sync@alpha.timer`; set `tabellone_unit` to
+   `tabellone-sync@alpha.service` in that project's profile so the lane's health check reads the right unit.
 
 Tests (no network): `python3 -m unittest tabellone-keeper/scripts/test_tabellone_sync.py`.

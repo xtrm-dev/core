@@ -138,6 +138,8 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
   with `sb issue renew <ref>` (`references/substrate.md`, "Renew a claim"); a same-holder re-claim renews nothing. Put this in the prompt.
 - Name a worker `<story-key>-<slug>` (`PROJ-260-pi-runtime`): branch `xt/<name>`, window `claude-<name>` lower case, so the Jira key reaches
   branches, PRs and commits.
+- **Several projects in one config:** every launch, timer and lane sets `PM_PROJECT=<name>` (`references/setup.md`, "Several projects");
+  the scripts stop rather than guess.
 - **Never leave a worker stale.** Each cycle check every window and act (`references/fleet.md`, "Liveness"); keep a prompt-and-silence monitor armed.
 - The operator answers destructive or privileged prompts. Quota 429: pause dispatch, tell the operator in one line (rule 30). At 25-30% Pi worker
   context: `/compact` once, then a fresh worker (rule 3).

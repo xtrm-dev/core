@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the project-management pack setup: tools on PATH, settings, token file.
 
-Usage: pm_check.py [--skill project-management|board-audit|tabellone-keeper|all] [--all-settings]
+Usage: pm_check.py [--skill project-management|board-audit|tabellone-keeper|all] [--project NAME|all] [--all-settings]
 
 Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING. Values are
 not printed, so the output is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import shutil
 import stat
 import sys
@@ -61,6 +62,8 @@ SETTINGS = [
     ("PM_PARKED_STATUSES", True, (BA,), (), "statuses the lane cycle treats as parked"),
 ]
 TOOLS = ("sb", "xt", "gh", "tmux", "python3")
+# Per-project state that two projects must never share: they would overwrite each other.
+UNIQUE_KEYS = ("lane_dir", "state_dir", "tabellone_state_dir", "tabellone_site")
 
 
 def source(name: str, structured: bool):
@@ -74,9 +77,64 @@ def source(name: str, structured: bool):
     return ("env" if os.environ.get(name) else "config"), None
 
 
+def check_settings(chosen, all_settings: bool) -> int:
+    missing = 0
+    for name, structured, req, opt, meaning in SETTINGS:
+        need = [s for s in chosen if s in req]
+        want = [s for s in chosen if s in opt]
+        if not need and not want:
+            continue
+        src, err = source(name, structured)
+        if src is None:
+            if need:
+                missing += 1
+                print(f"MISSING {name:<24} required by {', '.join(need)}: {meaning}" + (f" [{err}]" if err else ""))
+            elif all_settings:
+                print(f"unset   {name:<24} optional: {meaning}" + (f" [{err}]" if err else ""))
+            continue
+        if need or all_settings:
+            print(f"OK      {name:<24} ({src})")
+
+    token = pm_config.path("JIRA_TOKEN_FILE")
+    if token is not None:
+        if not token.is_file():
+            missing += 1
+            print("MISSING token file at JIRA_TOKEN_FILE does not exist or is not a file")
+        elif token.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print("WARN    token file is readable by group or others; run chmod 600 on it")
+    return missing
+
+
+def clashes() -> int:
+    """Count per-project state shared by two projects."""
+    raw = pm_config.raw_config()
+    defaults = raw.get("defaults") or {}
+    found = 0
+    for key in UNIQUE_KEYS:
+        seen: dict[str, str] = {}
+        for name in pm_config.project_names():
+            value = {**defaults, **raw["projects"][name]}.get(key)
+            if value in (None, ""):
+                continue
+            value = str(pathlib.Path(str(value)).expanduser()) if key.endswith("_dir") else str(value)
+            if value in seen:
+                found += 1
+                print(f"CLASH   {key} is the same for {seen[value]} and {name}: their runs would overwrite each other")
+            else:
+                seen[value] = name
+    return found
+
+
+def use_project(name: str | None) -> None:
+    if name:
+        os.environ["PM_PROJECT"] = name
+    pm_config._CACHE = None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--skill", choices=(*SKILLS, "all"), default="all")
+    ap.add_argument("--project", help="project to check (a name, or 'all'); default: the one pm_config would choose")
     ap.add_argument("--all-settings", action="store_true", help="also list optional settings that are set")
     a = ap.parse_args()
     chosen = SKILLS if a.skill == "all" else (a.skill,)
@@ -94,34 +152,27 @@ def main() -> int:
     for tool in TOOLS:
         print(f"tool    {tool:<24} {'OK' if shutil.which(tool) else 'MISSING'}")
 
-    missing = 0
-    for name, structured, req, opt, meaning in SETTINGS:
-        need = [s for s in chosen if s in req]
-        want = [s for s in chosen if s in opt]
-        if not need and not want:
-            continue
-        src, err = source(name, structured)
-        if src is None:
-            if need:
-                missing += 1
-                print(f"MISSING {name:<24} required by {', '.join(need)}: {meaning}" + (f" [{err}]" if err else ""))
-            elif a.all_settings:
-                print(f"unset   {name:<24} optional: {meaning}" + (f" [{err}]" if err else ""))
-            continue
-        if need or a.all_settings:
-            print(f"OK      {name:<24} ({src})")
+    names = pm_config.project_names()
+    problems = 0
+    if names:
+        print(f"projects {', '.join(names)}")
+        problems += clashes()
+    targets = names if a.project == "all" and names else [a.project]
+    for target in targets:
+        use_project(target)
+        if names:
+            try:
+                name, how = pm_config.select_project()
+            except SystemExit as exc:
+                print(f"MISSING project choice: {exc}")
+                problems += 1
+                continue
+            print(f"project {name} ({how})")
+        problems += check_settings(chosen, a.all_settings)
 
-    token = pm_config.path("JIRA_TOKEN_FILE")
-    if token is not None:
-        if not token.is_file():
-            missing += 1
-            print(f"MISSING token file at JIRA_TOKEN_FILE does not exist or is not a file")
-        elif token.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-            print("WARN    token file is readable by group or others; run chmod 600 on it")
-
-    print(f"result  {'ready' if not missing else f'{missing} required setting(s) missing'} for {', '.join(chosen)}"
+    print(f"result  {'ready' if not problems else f'{problems} problem(s)'} for {', '.join(chosen)}"
           " (see project-management/references/setup.md)")
-    return 0 if not missing else 1
+    return 0 if not problems else 1
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured 
 | `PM_ANSWERS_INBOX` | `answers_inbox` | JSONL inbox of Tabellone answers. | route-watch |
 | `PM_LANE_HOLDER` | `lane_holder` | Substrate holder name for writes through post-guard. Default `board-lane`. | post-guard |
 | `PM_LANE_WATCHDOG` | `lane_watchdog` | Optional module with `sync(unwatched, detail) -> str`, called by deadman to publish an unwatched lane. Unset: the alarm stays in `events.log`. | deadman |
-| `PM_TABELLONE_UNIT` | (env only) | systemd user unit of the Tabellone sync. Default `tabellone-sync.service`. | scheduler.sh |
+| `PM_TABELLONE_UNIT` | `tabellone_unit` | systemd user unit of the Tabellone sync. Default `tabellone-sync.service`. | scheduler.sh |
 | `COORD_SOCK` | (env only) | Coordinator reply address printed by route-forward. | route-forward |
 
 ## Structured settings (config file)
@@ -136,23 +136,27 @@ Example fragment (placeholder values):
 Start one scheduler and one dead-man switch per lane. Both append to `$PM_LANE_DIR/events.log`, which the
 session monitor tails (`tail -n 0 -F "$PM_LANE_DIR/events.log"`, exactly one tail).
 
+Run one lane per project. With several projects in the config, set `PM_PROJECT`; the scheduler exports it to every
+script it starts, and reads `lane_dir` from that project's profile.
+
 ```bash
-export PM_CONFIG=~/.config/xtrm/project-management.json
-export PM_LANE_DIR=~/.local/state/board-lane
+export PM_PROJECT=alpha                # omit with a single-project config
 LANE_SCRIPTS=<pack>/board-audit/scripts/lane
-mkdir -p "$PM_LANE_DIR/cycle"
-cd "$PM_LANE_DIR"                      # deadman checks that the scheduler's cwd is the lane dir
+LANE=$(python3 <pack>/project-management/scripts/pm_config.py get PM_LANE_DIR)
+mkdir -p "$LANE/cycle"
+cd "$LANE"                             # deadman checks that the scheduler's cwd is the lane dir
 nohup "$LANE_SCRIPTS/scheduler.sh" >/dev/null 2>&1 &
 nohup python3 "$LANE_SCRIPTS/deadman.py" >/dev/null 2>&1 &
 ```
 
-As a systemd user service, set the same environment and `WorkingDirectory`:
+As a systemd user template, one instance per project (`systemctl --user enable --now board-lane@alpha`):
 
 ```ini
+# ~/.config/systemd/user/board-lane@.service
 [Service]
-Environment=PM_CONFIG=%h/.config/xtrm/project-management.json
-Environment=PM_LANE_DIR=%h/.local/state/board-lane
-WorkingDirectory=%h/.local/state/board-lane
+Environment=PM_PROJECT=%i
+Environment=PM_TABELLONE_UNIT=tabellone-sync@%i.service
+WorkingDirectory=%h/.local/state/pm/%i/lane
 ExecStart=<pack>/board-audit/scripts/lane/scheduler.sh
 Restart=on-failure
 ```

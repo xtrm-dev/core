@@ -6,7 +6,13 @@ Nothing instance-specific lives in the pack. Every script reads it here, in this
    keyed by the same name in lower case without the ``PM_`` prefix (``PM_LANE_DIR`` -> ``lane_dir``);
 3. the default the caller passes.
 
+The config file holds one project (flat keys) or several (``{"defaults": {...}, "projects": {name: {...}}}``;
+a project's keys override ``defaults``). With several, the project is chosen by ``$PM_PROJECT``, else by the
+current directory lying inside a project's ``repo_dir`` (or one of its ``match_dirs``), else by being the only
+one; otherwise the script stops rather than guess, because a wrong guess writes to another project's board.
+
 A required setting that is missing stops the script with the name and the setup reference.
+Shell scripts read a setting with ``python3 pm_config.py get NAME`` and the chosen project with ``project``.
 """
 from __future__ import annotations
 
@@ -27,17 +33,82 @@ def config_path() -> pathlib.Path:
     return pathlib.Path(base) / "xtrm" / "project-management.json"
 
 
+_RAW: dict | None = None
 _CACHE: dict | None = None
+_CHOICE: tuple[str | None, str] = (None, "single-project config")
+
+
+def raw_config() -> dict:
+    """The config file as written (all projects), or {} when absent."""
+    global _RAW
+    if _RAW is None:
+        try:
+            _RAW = json.loads(config_path().read_text())
+        except FileNotFoundError:
+            _RAW = {}
+    return _RAW
+
+
+def project_names() -> list[str]:
+    return sorted((raw_config().get("projects") or {}).keys())
+
+
+def _under(cwd: pathlib.Path, d) -> int:
+    """Length of ``d`` when ``cwd`` lies inside it, else -1 (longest match wins)."""
+    try:
+        root = pathlib.Path(str(d)).expanduser().resolve()
+        cwd.relative_to(root)
+        return len(str(root))
+    except (ValueError, OSError):
+        return -1
+
+
+def select_project() -> tuple[str | None, str]:
+    """(project name, how it was chosen). Exits when several projects exist and none is chosen."""
+    raw = raw_config()
+    projects = raw.get("projects")
+    if not projects:
+        return None, "single-project config"
+    defaults = raw.get("defaults") or {}
+    name = os.environ.get("PM_PROJECT")
+    if name:
+        if name not in projects:
+            sys.exit(f"pm_config: PM_PROJECT={name} is not in {config_path()} (projects: {', '.join(sorted(projects))})")
+        return name, "PM_PROJECT"
+    cwd = pathlib.Path.cwd().resolve()
+    best, best_len = None, -1
+    for pname, prof in projects.items():
+        merged = {**defaults, **prof}
+        for d in [merged.get("repo_dir"), *(merged.get("match_dirs") or [])]:
+            n = _under(cwd, d) if d else -1
+            if n > best_len:
+                best, best_len = pname, n
+    if best is not None:
+        return best, f"current directory inside {best}'s repo_dir/match_dirs"
+    if len(projects) == 1:
+        return next(iter(projects)), "only project in the config"
+    sys.exit(f"pm_config: {len(projects)} projects in {config_path()} and none chosen; set PM_PROJECT to one of "
+             f"{', '.join(sorted(projects))} (or run inside its repo_dir); see {SETUP_DOC}")
 
 
 def _file() -> dict:
-    global _CACHE
+    """The settings of the chosen project (defaults merged), or the flat single-project config."""
+    global _CACHE, _CHOICE
     if _CACHE is None:
-        try:
-            _CACHE = json.loads(config_path().read_text())
-        except FileNotFoundError:
-            _CACHE = {}
+        raw = raw_config()
+        if raw.get("projects"):
+            _CHOICE = select_project()
+            _CACHE = {**(raw.get("defaults") or {}), **raw["projects"][_CHOICE[0]]}
+        else:
+            _CHOICE = (None, "single-project config")
+            _CACHE = raw
     return _CACHE
+
+
+def project() -> str | None:
+    """Name of the chosen project (None for a single-project flat config)."""
+    _file()
+    return _CHOICE[0]
 
 
 def _key(name: str) -> str:
@@ -83,3 +154,15 @@ def skill_dir(skill: str) -> pathlib.Path:
 
 def jira_py() -> pathlib.Path:
     return skill_dir("project-management") / "scripts" / "jira.py"
+
+
+if __name__ == "__main__":
+    # python3 pm_config.py get NAME [DEFAULT]  |  python3 pm_config.py project
+    args = sys.argv[1:]
+    if args[:1] == ["project"]:
+        print(project() or "")
+    elif args[:1] == ["get"] and len(args) in (2, 3):
+        value = get(args[1], args[2] if len(args) == 3 else None, required=len(args) == 2)
+        print(pathlib.Path(str(value)).expanduser() if str(value).startswith("~") else value)
+    else:
+        sys.exit("usage: pm_config.py get NAME [DEFAULT] | pm_config.py project")

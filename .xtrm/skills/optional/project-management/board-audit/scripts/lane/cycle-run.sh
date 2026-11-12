@@ -3,7 +3,9 @@
 # Engine: cycle/cycle.py; its state lives in $PM_LANE_DIR/cycle.
 set -u
 SCRIPTS=$(cd "$(dirname "$0")" && pwd)
-LANE=${PM_LANE_DIR:?set PM_LANE_DIR, see board-audit/references/setup-lane.md}
+PMCFG="$(cd "$(dirname "$0")" && pwd)/../../../project-management/scripts/pm_config.py"
+PM_PROJECT=${PM_PROJECT:-$(python3 "$PMCFG" project)} || exit 1; export PM_PROJECT
+LANE=${PM_LANE_DIR:-$(python3 "$PMCFG" get PM_LANE_DIR)} || exit 1
 L=$LANE/cycle
 mkdir -p "$L"
 OUT=$L/CYCLE-$(date -u +%H%MZ).md

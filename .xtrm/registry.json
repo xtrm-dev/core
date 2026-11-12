@@ -797,11 +797,11 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/references/setup-lane.md": {
-          "hash": "40c8641b127de3dfc0c4bb9959e144ff09da6adb29f07aca8bbdd37f618c7c91",
+          "hash": "cb7781da6b2654ee40c0dd296f57e90da2e953063ab95e05597ff23b163b4929",
           "version": "0.15.3"
         },
         "project-management/board-audit/references/setup.md": {
-          "hash": "51baf4c84106708475f598b9068697a426adfe820632435eb315b065560bd959",
+          "hash": "aa9078e84612e600efea09394e60bcbd273ee481c0a592b0faf6fd35f1066749",
           "version": "0.15.3"
         },
         "project-management/board-audit/references/verification.md": {
@@ -825,7 +825,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/cycle/hygiene_cycle.py": {
-          "hash": "0744d7a28044179722d7ce5a84667c25d2cb4d25d774845f4d97655127556566",
+          "hash": "abec183639c51ea330cba035bb1204336721f5c184571e591f116810024efb4e",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/facts.py": {
@@ -841,7 +841,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/cycle-run.sh": {
-          "hash": "db39a26c2d779ab06b9cde37fcfd1b05f7a33691ec50c39563b0a83f7b090bf9",
+          "hash": "1bf93d1c1a794377b218007a5dd368628756b52a81dab280f70baa454bcccb40",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/cycle/cycle.py": {
@@ -929,7 +929,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/scheduler.sh": {
-          "hash": "8d12f83757a2b18e788f856d505f1b2e6be433237b07946f89adeabfc56d8240",
+          "hash": "d42200393a6fe65f662a49512a874b4b723f73221ea35ad09295520d4751302f",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/wp-audit.py": {
@@ -1005,7 +1005,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/setup.md": {
-          "hash": "484c0e2e8762975ecba7ad7d6a358071c59e0fd3ed5958e7612ecb479c46d677",
+          "hash": "4d6e6ed86a6ed24d27cb45609d0bc5de4549809dc35a21ce1bfcf9533571dcd1",
           "version": "0.15.3"
         },
         "project-management/project-management/references/substrate.md": {
@@ -1025,11 +1025,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_check.py": {
-          "hash": "7958ca88bec960ccd7707ce5ec8661bb61e36be59fd5fc275a599c198abdeb92",
+          "hash": "fa42da5458274629abc6dc67d4f2bcff2d4dc4273eaccb63a8552c05755824c6",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_config.py": {
-          "hash": "9dc4df73f5f8ac0b515db97f0b5f6838be51359ab3b3fda63c143ae7e1a8e8e3",
+          "hash": "da775f27b6191caff65d3a9f4ac17547510a78ed96d0917006da585d65a0867f",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/post-guard.py": {
@@ -1041,11 +1041,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "b22a99dfe03e9b441b590704fd014b5d29a74d8ba3b433b71cca4e430d60717b",
+          "hash": "30574b3eaa61c77b35ba4b715f82a2396aca587f19ae9046d9c8eca28c4bd98f",
           "version": "0.15.3"
         },
         "project-management/tabellone-keeper/references/setup.md": {
-          "hash": "b964c25c73795864a4adee771b1786979a703f4c22e7546097063ce949aba5df",
+          "hash": "9072d8b8d35e40edb39a057766039252d91412bad1195463c7ac547c0da6ef7f",
           "version": "0.15.3"
         },
         "project-management/tabellone-keeper/scripts/tabellone_sync.py": {
