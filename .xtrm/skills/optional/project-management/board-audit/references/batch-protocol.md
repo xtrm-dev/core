@@ -16,14 +16,14 @@ Never `GET /rest/api/3/search` (410, removed). The response carries `issues` and
 `total`**: count the rows you received and follow the cursor, never report a total you did not get.
 `orderBy` is not a body parameter — it returns 400 `Invalid request payload` (2026-10-26), so order in JQL
 or sort client-side. Parent queries:
-`parent = ISSUE-198`, `parent = <epic>`. Label queries:
-`labels = window`, `labels = mmd-programme AND summary ~ "..."` + exact
+`parent = $PM_JIRA_EPIC`, `parent = <epic>`. Label queries:
+`labels = window`, `labels = $PM_JIRA_LABEL AND summary ~ "..."` + exact
 string compare client-side for idempotency.
 
 ## Writes
 
 - PUT summary/description/dates/labels replaces the field: snapshot labels
-  first, re-add kept ones (the `mmd-calendar` wipe lesson).
+  first, re-add kept ones (the calendar-label wipe lesson).
 - Parent moves: `PUT {"fields": {"parent": {"key": ...}}}`; pre-read must show
   the expected old parent, post-read the new one.
 - Epic create: project + issuetype + summary (+ sprint id, labels). Sprint ids
@@ -49,7 +49,7 @@ string compare client-side for idempotency.
   peer attribution is coordinator-stated, record it as such.
 - Links: `POST /rest/api/3/issueLink {"type": {"name": "Relates"},
   "inwardIssue": {"key": A}, "outwardIssue": {"key": B}}`.
-- Blocks link: inwardIssue = the blocker, outwardIssue = the blocked; re-read both rows; a script that sees the wrong direction stops (fail-closed helper: ~/.cache/MMD-3017/blocks_link.py; two wrong-direction slips on 2026-10-30).
+- Blocks link: inwardIssue = the blocker, outwardIssue = the blocked; re-read both rows; a script that sees the wrong direction stops (fail-closed helper `blocks_link.py` in `$PM_LANE_DIR`; two wrong-direction slips on 2026-10-30).
 - Authorship evidence: the changelog shows a deleted comment as
   `Comment -> None` and bumps the issue's `updated`, so a mysterious `updated`
   change is often a deletion, not an edit.
@@ -62,27 +62,27 @@ backfill: merges and opens continue, so the ledger needs top-ups.
 **Format (match it exactly — the duplicate check depends on it):**
 
 ```
-PR-link market-data#<n> (head <12-hex sha>, <merged|open>). Ticket <KEY> governs <MMD-ref> (<how the mirror was found>).
+PR-link <PM_REPO_NAME>#<n> (head <12-hex sha>, <merged|open>). Ticket <KEY> governs <PM_SB_PREFIX-ref> (<how the mirror was found>).
 ```
 
 **Two shapes exist; accept both.** The format above is the canonical one, but a large share of the
 comments actually posted (every `[agent:<name> | run:<id>] PR-link https://github.com/...` body) use the
 full PR URL and carry an attribution prefix. A presence check that only tests
-`body.startswith('PR-link market-data#')` therefore reports zero on a ticket whose link is present.
+`body.startswith('PR-link <PM_REPO_NAME>#')` therefore reports zero on a ticket whose link is present.
 Match `PR-link\s+\S*?(<org>/<repo>/pull/<n>|<repo>#<n>)` anywhere in the flattened body, and derive
 `<org>/<repo>` from the remote with `git@` and `:` normalised first: an SSH remote parsed naively yields
 `com:org/repo`, and every ticket then looks link-less (epic-coord-3, 2026-10-30, two false zeros before
 a known-present PR exposed them).
 
 **Give the PR-link predicate its own control, and know it is a superset.**
-`project = ISSUE AND comment ~ "PR-link market-data#"` returns every issue whose comments *mention* the
+`project = $PM_JIRA_PROJECT AND comment ~ "PR-link <PM_REPO_NAME>#"` returns every issue whose comments *mention* the
 string — 64 issues on 2026-10-26, against 0 for a nonsense repo — so it proves the instrument discriminates
 but it cannot prove a link exists. Presence is decided client-side on `body.startswith('PR-link
-market-data#')`; report the two numbers separately, or an over-count gets read as coverage.
+<PM_REPO_NAME>#')`; report the two numbers separately, or an over-count gets read as coverage.
 
 **A passing mention is not a link.** A status, audit, ruling or "DONE" comment that cites a PR number
 does not satisfy the rule and does not suppress a later link. The duplicate check must therefore match
-only an earlier comment in the format above (`body.startswith('PR-link market-data#')` and the number
+only an earlier comment in the format above (`body.startswith('PR-link <PM_REPO_NAME>#')` and the number
 present), never a bare number or SHA search across the comment list. Measured 2026-10-24: a substring
 dup guard tripped on old planning comments, silently skipped 22 of 51 rows, and had to be re-run under
 a tightened rule (coordinator ruling: "a passing mention inside a status comment is not a link").
@@ -96,7 +96,7 @@ gh pr list --repo <owner/repo> --state merged --search "merged:>=<YYYY-MM-DD>" -
   --json number,title,headRefName,headRefOid,mergedAt,url
 ```
 
-Run it for every in-scope repo (market-data, market-archive, quant) and for `--state open` too.
+Run it for every in-scope repo (`$PM_REPO_SLUG` and every repo in config `other_repos`) and for `--state open` too.
 
 **Mirror resolution order:** explicit `ISSUE-<n>` in title or branch > `substrate:<MMD>` label lookup >
 `NO-MIRROR` (no comment proposed). State the resolution path in the comment so the next audit can
@@ -113,13 +113,13 @@ confirm the returned comment id carries the SHA.
 
 ## Date discipline
 
-Windows: the two slot fields (ids in `project-management/references/jira.md`) carry full
+Windows: the two slot fields (ids in config `custom_fields`, see `project-management/references/jira.md`) carry full
 timestamps with an offset, start/due are plain dates, and all four are set together. The offset is per date, not per project (+0200 CEST until
-2026-10-25, +0100 CET after): compute it with zoneinfo, write the offset the slot
+2026-10-25, +0100 CET after, in `$PM_TIMEZONE`): compute it with zoneinfo, write the offset the slot
 requires, and report UTC in the comment. A Friday slot that claims the CME halt
 cannot run at all — CME closes for the weekend at 21:00Z.
 
-**Never print a stored timestamp truncated and label it Z.** `cf[10237]` comes back as
+**Never print a stored timestamp truncated and label it Z.** the window-start field (`custom_fields.window_start`) comes back as
 `2026-10-27T08:00:00.000+0100`; slicing 19 characters yields `08:00` and reporting it as `08:00Z` shifts the
 window an hour (2026-10-26: three Tuesday windows were published an hour late in two cycle reports for
 exactly this reason). Convert with zoneinfo before it reaches any report, ledger or comment, and convert

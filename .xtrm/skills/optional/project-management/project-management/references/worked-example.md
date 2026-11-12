@@ -1,17 +1,16 @@
 # Worked example: CORE-2377, one-command install and update
 
-The first project run with this model's lessons (journal CORE-2377 seq 4, 5, 7).
+First project run with this model's lessons (journal CORE-2377 seq 4, 5, 7).
 
 ## What went wrong first
 
-The coordinator opened Jira XT-114 with ten subtasks XT-115..124, one per Substrate issue
-CORE-2378..2387, and a project folder with `PLAN.md` and `COORDINATOR-JOURNAL.md`. Jira became a
-copy of Substrate, and the plan lived in files that Substrate already replaces.
+The coordinator opened Jira XT-114 with ten subtasks XT-115..124, one per Substrate issue CORE-2378..2387, plus `PLAN.md` and
+`COORDINATOR-JOURNAL.md`. Jira copied Substrate and the plan lived in files Substrate replaces.
 
 ## The corrected shape
 
-Substrate: project epic **CORE-2377** (the plan, decisions, open questions and evidence are its
-journal), with the worker issues beneath it. Jira: parent **XT-114**, one subtask per theme:
+Substrate: project epic **CORE-2377** (plan, decisions, questions, evidence are its journal), worker issues beneath. Jira: parent **XT-114**, one
+subtask per theme:
 
 | Jira theme | Substrate refs it lists |
 |---|---|
@@ -21,16 +20,12 @@ journal), with the worker issues beneath it. Jira: parent **XT-114**, one subtas
 | XT-128 Releases and publishing (operator approval) | CORE-2382 |
 | XT-129 Picker and xtmux | CORE-2387 |
 
-Open questions were one `blocker` entry (seq 6). Rulings were `decision` entries (seq 3, 5, 7).
+Open questions were one `blocker` entry (seq 6); rulings were `decision` entries (seq 3, 5, 7).
 
 ## The same project in this skill's model
 
-- Jira project ISSUE: Epic for the project; Stories for the five themes, each in a weekly sprint.
-- Substrate: CORE-2377 stays the project epic. Each theme becomes a child epic
-  (`sb issue create --kind epic --parent CORE-2377`), and CORE-2378.. move under their theme.
-  The Story lists the refs, never one ticket per ref. Operator approvals (the publish in CORE-2382)
-  are Tasks related to the Story, in the sprint.
-- Findings during the run: a child issue, `relate --kind discovered_from`, and its ref added to the
-  matching Story.
-- Workers: one window each in the coordinator's tmux session, named for the issue they own.
-- Handoff: a `handoff` entry on CORE-2377 plus `sb issue resume CORE-2377`.
+- The board's Jira project (`$PM_JIRA_PROJECT`): an Epic for the project, Stories for the five themes, each in a weekly sprint.
+- Substrate: CORE-2377 stays the project epic; each theme becomes a child epic (`sb issue create --kind epic --parent CORE-2377`) and CORE-2378..
+  move under it. The Story lists refs. Operator approvals (the publish in CORE-2382) are Tasks related to the Story.
+- Findings: a child issue, `relate --kind discovered_from`, ref added to the Story. Workers: one pane each in the tiled `workers` window, named for
+  their issue. Handoff: a `handoff` entry plus `sb issue resume CORE-2377`.

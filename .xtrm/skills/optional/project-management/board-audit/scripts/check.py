@@ -5,9 +5,11 @@ Run before every commit that touches scripts/ or workflows/:
     python3 check.py
 
 Three checks:
-1. No file in this directory carries a cache path, a user name or a mail address.
-   The harness must run from the skill, for whoever holds the board, not from one
-   person's scratch directory.
+1. No file in this directory carries a cache path, a user name or a mail address, and no
+   file of the skill (scripts, workflows, references, SKILL.md) names a customer instance
+   (tenant, repository, operator, time zone). The harness must run from the skill, for
+   whoever holds the board, not from one person's scratch directory; instance values are
+   settings (references/setup.md).
 2. Threshold lock (jevcal analog): the STALE-7d age and the CME halt band are
    provisional constants, fitted to single cases and never calibrated. If any of
    them changes, this guard fails until it is updated deliberately with a refit
@@ -24,28 +26,42 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 # Built from pieces so this file does not match its own guard when the directory is grepped.
 FORBIDDEN = ('.' + 'cache', 'daw' + 'id', '@' + 'gmail')
+# Customer-instance literals, matched case-insensitively across the whole skill.
+INSTANCE = ('daw' + 'id', '@' + 'gmail', 'jag' + 'ger', 'mer' + 'cury',
+            'market' + '-data', 'europe/' + 'berlin')
 SKIP_SUFFIXES = {'.pyc'}
+
+
+def scanned():
+    """(path, patterns): scripts/ with every pattern, the rest of the skill with the instance ones."""
+    skill = HERE.parent
+    for path in sorted(HERE.rglob('*')):
+        yield path, FORBIDDEN + INSTANCE
+    for path in [skill / 'SKILL.md', *sorted((skill / 'references').rglob('*')),
+                 *sorted((skill / 'workflows').rglob('*'))]:
+        yield path, INSTANCE
 
 
 def main():
     problems = []
-    for path in sorted(HERE.rglob('*')):
+    for path, patterns in scanned():
         if not path.is_file() or path.suffix in SKIP_SUFFIXES:
             continue
         if path.name == 'check.py':
             continue
         text = path.read_text(errors='replace')
-        for pattern in FORBIDDEN:
-            for match in re.finditer(re.escape(pattern), text):
+        low = text.lower()
+        for pattern in dict.fromkeys(patterns):
+            for match in re.finditer(re.escape(pattern.lower()), low):
                 line = text[:match.start()].count('\n') + 1
-                problems.append(f'{path.name}:{line}: literal {pattern!r} is not allowed')
+                problems.append(f'{path.relative_to(HERE.parent)}:{line}: literal {pattern!r} is not allowed')
 
     if problems:
         print('LITERAL GUARD: FAIL')
         for item in problems:
             print('  ' + item)
     else:
-        print('LITERAL GUARD: PASS (no cache path, user name or mail address in scripts/)')
+        print('LITERAL GUARD: PASS (no cache path, user name, mail address or customer-instance literal)')
 
     result = subprocess.run([sys.executable, str(HERE / 'facts.py'), '--selftest'],
                             capture_output=True, text=True)

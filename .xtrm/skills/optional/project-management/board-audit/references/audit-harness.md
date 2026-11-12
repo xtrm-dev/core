@@ -18,9 +18,10 @@ cd skills/optional/project-management/board-audit
 ./scripts/run-audit.sh 3                 # the pinned sample rows
 ```
 
-Requires `AGENTRUN_PI_ROOT` (the `@parcha/agentrun-pi` install root), `JIRA_EMAIL` and
-`JIRA_TOKEN_FILE`. Receipts go to `$MMD_AUDIT_RUN_DIR` (default
-`~/.local/state/mmd-board-audit`), never into this repo.
+Requires `AGENTRUN_PI_ROOT` (the `@parcha/agentrun-pi` install root) and the settings in
+`setup.md` (`JIRA_SITE`, `PM_OPERATOR_EMAIL`, `JIRA_TOKEN_FILE`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`,
+`PM_REPO_SLUG`, `custom_fields`, `terminal_statuses`). Receipts go to `$PM_STATE_DIR/board-audit`
+(default `~/.local/state/board-audit`), never into this repo.
 
 Files: `scripts/facts.py` (snapshot + facts + `--selftest`), `workflows/board-batch-verdicts-v3.json`
 (the judged workflow), `scripts/aggregate.py` (odd-N majority, refuses a run that is not

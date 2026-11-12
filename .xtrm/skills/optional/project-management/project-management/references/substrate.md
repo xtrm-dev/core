@@ -12,22 +12,13 @@ so an older `sb` answers `unknown help topic`. The merge guard, `xt identity mar
 
 ## Issue kinds and hierarchy
 
-Kinds: `epic | task | bug | decision | research | followup`. Any issue can have a parent, so epics
-nest: project epic > theme epic > worker task. Locators are hierarchical (`CORE-2377.2.3`).
-
-| Need | Command |
-|---|---|
-| Whole project tree | `sb issue tree --root <epic>` |
-| Direct children | `sb issue children <ref>` |
-| Find issues | `sb issue query --project <id> --kind task --lifecycle open --search <q>` |
-| Dispatchable now | `sb issue ready` |
-| Dependency | `sb issue relate --from A --to B --kind blocks` (A blocks B: B is not ready until A is done) |
-| Other graph links | kinds `relates_to`, `discovered_from`, `supersedes`, `duplicates` (do not block readiness) |
+Kinds `epic | task | bug | decision | research | followup`; epics nest (project > theme > worker task); locators like `CORE-2377.2.3`.
+`sb issue tree --root <epic>`, `children <ref>`, `query --project <id> --kind task --lifecycle open --search <q>`, `ready`.
+`relate --from A --to B --kind blocks` blocks B until A is done; `relates_to`, `discovered_from`, `supersedes`, `duplicates` do not.
 
 ## Create the tree in one step
 
-`sb plan check` validates, `sb plan apply` commits everything in one transaction. Pipe the plan; keep
-no file (`--file /dev/stdin` tested with `plan check`; run `check` before `apply`). The same `planKey` re-applied is a no-op, so a retry cannot duplicate.
+`sb plan check`, then `sb plan apply` (one transaction; pipe the plan, keep no file; the same `planKey` is a no-op).
 
 ```
 sb plan apply --file /dev/stdin <<'JSON'
@@ -44,12 +35,9 @@ sb plan apply --file /dev/stdin <<'JSON'
 JSON
 ```
 
-`parentKey` is a draft key or an existing issue id. `edges` use draft keys. Contract fields:
-`problem`, `success` (strings); `scope`, `nonGoals`, `constraints` (string arrays);
-`validation` `[{"check": ...}]`; `output` `[{"artifact": ...}]`. Scrutiny is uppercase
-(`LOW MEDIUM HIGH CRITICAL`). To add one issue later: `sb issue create --kind task --parent <theme> ...`.
-- Write `validation` and `output` as objects; other shapes stay DRAFT, so read `data.reasons` and attest with `--policy default`, to keep issues claimable.
-- Verify all 7 headers and scope correctness by reading the body; `contract=ready` is not evidence, to avoid burning a worker cycle.
+`parentKey` is a draft key or an existing issue id. Scrutiny: `LOW MEDIUM HIGH CRITICAL`. Add one issue later:
+`sb issue create --kind task --parent <theme> ...`. `validation` and `output` must be objects, else the issue stays DRAFT (`data.reasons`). Verify all
+7 headers and scope correctness by reading the body; `contract=ready` is not evidence, to avoid burning a worker cycle.
 
 ## Lifecycle of one contract
 
@@ -132,81 +120,35 @@ Full identity picture (roles, App tokens, review routing): `using-xtrm`,
 
 ## Journal: the project's memory
 
-Nine kinds. Use the one that says what the entry is.
-
-| Kind | Use on a project epic |
-|---|---|
-| `decision` | A chosen course plus the reason. The operator's rulings. |
-| `finding` | A discovered fact. |
-| `blocker` | An open question or stuck condition. Answer it with a later `decision` that names it. |
-| `milestone` | A theme or sprint boundary reached. |
-| `result` | A bounded outcome (needs `--result '{"summary": "..."}'`). Cite it when closing. |
-| `handoff` | Bounded continuation state: next steps, live workers, timers, the /goal text. |
-| `checkpoint` | A resumability boundary (`sb journal checkpoint <ref>`; mechanical row first). |
-| `compaction` | Written by the compaction hook. |
-| `note` | Anything else. |
-
-- Fast path: `sb issue note <ref> "text" --kind decision` (`--file -` reads stdin).
-- Structured: `sb journal append <ref> --kind <k> --semantic '{"summary": "..."}'`. `--semantic`,
-  `--result` and `--mechanical` take a file or JSON; plain text fails.
-- `--kind result` needs `--result <file|json>`. A checkpoint needs a mechanical row: use
-  `sb journal checkpoint`; `append --kind checkpoint` without `--mechanical` is refused.
-- Read: `show`, `since <ref> <cursor>` (delta), `latest --kind <k>`, `timeline --limit n`,
-  `render <ref>` (latest checkpoint as text).
-- The text views print a short preview of each entry (about 60 characters). Add `--json` to read
-  the full entry: a 4.4 KB entry reads back complete with `sb journal latest <ref> --json`. Storage
-  does not truncate. Still keep one fact per entry.
-- The journal never changes the contract, revision or readiness.
+Kinds: `decision` (course plus reason; operator rulings), `finding`, `blocker` (answer with a later `decision`), `milestone`, `result`, `handoff`,
+`checkpoint` (`sb journal checkpoint <ref>`, mechanical row first), `compaction` (hook), `note`.
+- `result` needs `--result '{"resultVersion":1,"summary":"..."}'`, else "requires a bounded result payload (§29)".
+- `sb issue note <ref> "text" --kind decision` is the fast path. Structured: `sb journal append <ref> --kind <k> --semantic '{"summary": "..."}'`
+  (file or JSON; plain text fails; a bare `"text"` stores NOTHING and does not fail: check for a `summary:` line).
+- Read: `show`, `since <ref> <cursor>`, `latest --kind <k>`, `timeline --limit n`, `render <ref>`. Text views preview about 60 characters; `--json`
+  gives the full entry. One fact per entry; the journal never changes contract or readiness.
 
 ## Pin a worker's name on every entry
 
-Journal writes take identity from the environment: `SUBSTRATE_HOLDER` becomes `participantId`;
-`XTRM_SESSION_NAME` and `XTRM_SESSION_ID` stamp the session; `--session '<tmux id>'` overrides
-(quote `$2`). Verified with `sb` run directly (not through `xt claude`): with
-`SUBSTRATE_HOLDER=w1 XTRM_SESSION_NAME=w1`, a new entry reads
-`participantId: w1, xtrmSessionName: w1`. Without them the participant is `(none recorded)`.
+- Identity: `SUBSTRATE_HOLDER` becomes `participantId`; `XTRM_SESSION_NAME`, `XTRM_SESSION_ID` stamp the session; without them `(none recorded)`. `xt`
+  exports `SUBSTRATE_HOLDER=<worker>` on every launch since CORE-2390 (specialists get `specialist::<role>`); export it yourself otherwise, in every
+  Bash call that writes with `sb`. The worker name is the holder.
 
-`xt` publishes `XTRM_SESSION_ID` and `XTRM_SESSION_NAME` at launch
-(`cli/src/core/session-identity.ts`), and since CORE-2390 it also exports `SUBSTRATE_HOLDER=<worker>`
-on every `xt claude|pi|codex` launch, so no one types an identity. Specialists get theirs
-automatically (`specialist::<role>`, activation and attempt too).
-- If `SUBSTRATE_HOLDER` is empty, export it in every Bash call that writes with `sb` until the Substrate auto-holder fix lands (no promise on timing), because empty holders record `(none recorded)`.
-
-Workers share the coordinator's tmux session, so the session name is the same for all of them.
-**The worker name is `SUBSTRATE_HOLDER`**; claim with the same name: `sb issue claim --holder <name>`.
-Launch with `xt <runtime> <name> --window` (see `fleet.md`; if it refuses, follow "When --window
-refuses" there): a raw `tmux new-window 'xt …'` loses the dispatcher identity. Check a worker's first entry: `sb journal latest <ref> --json` shows
-`participantId`.
-
-For commit and PR evidence use provenance: `sb provenance dispatch <ref> --participant <name>`
-before work, then `allocate` and `bind <receipt> <sha>`. `sb provenance trace <ref>` shows the
-spine; `sb provenance session <id>` shows what one session touched.
+- Commit and PR evidence: `sb provenance dispatch <ref> --participant <name>` before work, then `allocate` and `bind <receipt> <sha>`;
+  `sb provenance trace <ref>` shows the spine, `sb provenance session <id>` what one session touched.
 
 ## Journal pitfalls
 
-- `sb journal append <ref> --kind <k> "text"` stores NOTHING (the entry is mechanical-only), and
-  it does not fail. Always pass `--semantic '{"summary":"..."}'`, built with `json.dumps`. Verify
-  that the first append shows a `summary:` line.
-- Close outcomes are `completed|superseded|duplicate|wont_fix|invalid|cancelled|abandoned`
-  (not "done").
+A bare `"text"` append stores NOTHING and does not fail; close outcomes are never "done".
+A `result` entry can hold its whole payload in `result.summary` with `hasSemantic:false`: read results with `--json` before claiming "it did not run"
+(11-04). A drift check that reads semantic text only misses it: fix the check before trusting its counts.
 
 ## Epic and Story contracts
 
-The seven fields stay. For an Epic or Story they carry the brief's content (the brief itself is
-written in Jira, ADR-style, and is the source for these fields):
-
-| Field | Leaf task | Epic or Story |
-|---|---|---|
-| problem | 1-3 sentences | context, current state, trigger evidence, origin |
-| success | a testable condition | outcomes the epic commits to |
-| scope | files and symbols | workstreams, and the Stories or children that cover them |
-| nonGoals | exclusions | boundaries with adjacent epics and their owners |
-| constraints | technical limits | decisions, rejected alternatives, governing rules |
-| validation | commands and checks | completion gates and the evidence standard |
-| output | artifacts | deliverables |
+The seven fields carry the Jira brief: problem = context, state, evidence, origin; success = outcomes; scope = workstreams and covering Stories;
+nonGoals = adjacent boundaries and owners; constraints = decisions, rejected alternatives, rules; validation = gates; output = deliverables. A leaf
+task: 1-3 sentence problem, testable success, files and symbols. `success` is a string; any other shape leaves readiness at DRAFT.
 
 ## Not available
 
-- `sb` has no Jira sync command. Substrate ships a Jira mapping design
-  (`src/projections/jira/mapping.ts`, epic to Epic, roots only by default) but no verb runs it.
-  Jira is written through `scripts/jira.py`.
+`sb` has no Jira sync command (a mapping design exists in `src/projections/jira/mapping.ts`): Jira is written through `scripts/jira.py`.

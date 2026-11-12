@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only MMD board cycle: hygiene predicates with real controls, and status drift with Jira.
+"""Read-only board cycle: hygiene predicates with real controls, and status drift with Jira.
 
 Every number carries the JQL key that produced it. Every predicate carries a positive control (a row
 the predicate must accept) and a negative control (a row the predicate must reject), each derived from
@@ -12,20 +12,61 @@ Usage:
   python3 hygiene_cycle.py            # hygiene + drift, human table + JSON
   python3 hygiene_cycle.py --json     # JSON only
   python3 hygiene_cycle.py --since=2026-10-30   # replay a day, to prove the drift section works
-Exit: 0 all controls passed, 3 a control failed (numbers still printed, flagged).
+  python3 hygiene_cycle.py --check-names[=FILE] # predicate names against the owner file; no Jira call
+Exit: 0 all controls passed, 3 a control failed (numbers still printed, flagged), 4 a name mismatch.
+
+Settings (pm_config; see ../../references/setup.md): PM_JIRA_PROJECT, PM_EPIC (the Substrate project
+root whose journal timeline is read), PM_REPO_SLUG, PM_LANE_DIR (CYCLE-HYGIENE.json is written there),
+custom_fields.window_start, done_statuses, active_statuses; Jira access through the pack's jira.py.
+
+Predicate names have ONE owner (catalogue DT-07): `references/hygiene-predicates.md` defines
+the canonical name of every predicate with its JQL and its control pair. Before this, the file called a
+predicate `O1` that the script reported as `O1w`/`O1b`, and a cycle report quoted `H1`, `H2` or `H3`
+without naming the file that defines it. `--check-names` compares this script's keys with the headings
+of that file and fails on any name that exists on one side only.
 """
 from __future__ import annotations
 
 import importlib.util
 import json
+import pathlib
+import re
 import subprocess
 import datetime as dt
 import sys
 
-JIRA_HELPER = "/home/dawid/.xtrm/skills/optional/project-management/project-management/scripts/jira.py"
-OUT = "/home/dawid/.cache/MMD-3017/CYCLE-HYGIENE.json"
-DONE_STATUSES = {"Completata", "Done with Follow-up", "Won't Do", "Cancelled"}
-ACTIVE_STATUSES = {"Da completare", "In corso", "Waiting Production", "In verifica"}
+SKILL_DIR = pathlib.Path(__file__).resolve().parents[2]
+NAMES_FILE = SKILL_DIR / "references" / "hygiene-predicates.md"
+
+# The owner file. Every output that quotes a predicate name quotes this path beside it, so a reader can
+# find the rule without asking a session (DT-07).
+PREDICATE_OWNER = "references/hygiene-predicates.md"
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "project-management" / "scripts"))
+import pm_config  # noqa: E402  (the pack's settings loader)
+
+JIRA_HELPER = str(pm_config.jira_py())
+# Read at import without stopping, so --check-names runs on an unconfigured host; main() requires
+# every setting before the first Jira call (require_settings).
+PROJECT = pm_config.get("PM_JIRA_PROJECT") or "PROJECT"
+EPIC = pm_config.get("PM_EPIC")
+REPO_SLUG = pm_config.get("PM_REPO_SLUG")
+_CF = pm_config.get_data("PM_CUSTOM_FIELDS", {})
+CF_WIN_START = _CF.get("window_start", "customfield_window_start")
+KEY_RE = re.escape(PROJECT) + r"-\d+"
+DONE_STATUSES = set(pm_config.get_data("PM_DONE_STATUSES", []))
+ACTIVE_STATUSES = set(pm_config.get_data("PM_ACTIVE_STATUSES", []))
+
+
+def require_settings():
+    for name in ("PM_JIRA_PROJECT", "PM_EPIC", "PM_REPO_SLUG", "PM_LANE_DIR"):
+        pm_config.get(name, required=True)
+    for name in ("PM_CUSTOM_FIELDS", "PM_DONE_STATUSES", "PM_ACTIVE_STATUSES"):
+        pm_config.get_data(name, required=True)
+
+
+def out_path():
+    return pm_config.path("PM_LANE_DIR", required=True) / "CYCLE-HYGIENE.json"
 
 _spec = importlib.util.spec_from_file_location("j", JIRA_HELPER)
 jira = importlib.util.module_from_spec(_spec)
@@ -47,22 +88,47 @@ def jql(q, fields, limit=100):
             return 200, rows
 
 
-FIELDS = ["key", "summary", "status", "duedate", "customfield_10015", "customfield_10237",
-          "customfield_10238", "parent", "labels", "issuetype", "updated"]
-BASE = "project = ISSUE AND labels = window AND statusCategory != Done"
+FIELDS = ["key", "summary", "status", "duedate", _CF.get("start_date"), _CF.get("window_start"),
+          _CF.get("window_end"), "parent", "labels", "issuetype", "updated"]
+BASE = f"project = {PROJECT} AND labels = window AND statusCategory != Done"
 
 PREDS = {
     "CTRL-pop": BASE,
     "H1": f"{BASE} AND issuetype in (Task, Story) AND duedate is EMPTY",
-    "H2": "project = ISSUE AND labels = window AND (duedate is EMPTY OR customfield_10237 is EMPTY)",
-    "H3": 'project = ISSUE AND labels = window AND summary ~ "10-*"',
-    "H4": "project = ISSUE AND labels = window AND parent is EMPTY",
-    "O1w": ("project = ISSUE AND statusCategory != Done AND status not in (Blocked, Deferred) "
+    "H2": f"project = {PROJECT} AND labels = window AND (duedate is EMPTY OR {CF_WIN_START} is EMPTY)",
+    "H3": f'project = {PROJECT} AND labels = window AND summary ~ "10-*"',
+    "H4": f"project = {PROJECT} AND labels = window AND parent is EMPTY",
+    "O1w": (f"project = {PROJECT} AND statusCategory != Done AND status not in (Blocked, Deferred) "
             "AND duedate < now() AND labels = window"),
-    "O1b": "project = ISSUE AND statusCategory != Done AND status not in (Blocked, Deferred) AND duedate < now()",
+    "O1b": f"project = {PROJECT} AND statusCategory != Done AND status not in (Blocked, Deferred) AND duedate < now()",
     "N1": f"{BASE} AND duedate >= now() AND duedate <= 2d",
-    "N2": "project = ISSUE AND statusCategory != Done AND duedate is EMPTY",
+    "N2": f"project = {PROJECT} AND statusCategory != Done AND duedate is EMPTY",
 }
+
+
+# CTRL-pop is a population control, not a predicate: the owner file describes it under "Controls", so it
+# has no predicate section of its own. Every other key must have one.
+NAMES_WITHOUT_SECTION = {"CTRL-pop"}
+
+
+def check_names(path=None):
+    """(ok, problems, names) comparing PREDS with the headings of the one owner file (DT-07).
+
+    A name that exists on one side only is a name a report can quote without its rule: the file said O1,
+    the script said O1w and O1b. The comparison is by exact heading text, so it cannot pass by prose.
+    """
+    path = pathlib.Path(path or NAMES_FILE)
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        return False, [f'owner file unreadable: {exc}'], []
+    headings = {m.group(1).strip() for m in re.finditer(r"^##\s+(\S+)\s+—", text, re.M)}
+    problems = []
+    for name in sorted(set(PREDS) - headings - NAMES_WITHOUT_SECTION):
+        problems.append(f'{name}: in the script, no section in {PREDICATE_OWNER}')
+    for name in sorted(headings - set(PREDS)):
+        problems.append(f'{name}: in {PREDICATE_OWNER}, no predicate in the script')
+    return not problems, problems, sorted(headings)
 
 
 def keys_of(rows):
@@ -74,7 +140,7 @@ def count(jq):
     return (st, len(rows), keys_of(rows))
 
 
-def by_key(key, predicate="project = ISSUE"):
+def by_key(key, predicate=f"project = {PROJECT}"):
     """Re-ask the predicate narrowed to one row: 1 means the predicate accepts it, 0 means it rejects."""
     st, rows = jql(f"{predicate} AND key = {key}", ["key"])
     return st, len(rows)
@@ -107,17 +173,29 @@ def controls():
     st, rows = jql(PREDS["H4"], ["key"])
     # Positive control: the parent-is-EMPTY mechanism must accept a row where the field really is empty.
     # One is taken from outside the window population, because inside it no such row exists.
-    st2, any_no_parent = jql("project = ISSUE AND parent IS EMPTY", ["key"])
+    st2, any_no_parent = jql(f"project = {PROJECT} AND parent IS EMPTY", ["key"])
     pos4 = any_no_parent[0]["key"] if any_no_parent else None
-    neg4_rows = jql("project = ISSUE AND labels = window AND parent is not EMPTY", ["key"])[1]
+    neg4_rows = jql(f"project = {PROJECT} AND labels = window AND parent is not EMPTY", ["key"])[1]
     neg4 = neg4_rows[0]["key"] if neg4_rows else None
     out["H4"] = {
         "positive": {"key": pos4, "expect": 1,
-                     "got": by_key(pos4, "project = ISSUE AND parent IS EMPTY")[1] if pos4 else None,
+                     "got": by_key(pos4, f"project = {PROJECT} AND parent IS EMPTY")[1] if pos4 else None,
                      "why": "parent-is-EMPTY must accept a row that has no parent; H4=0 then means no "
                             "WINDOW is parentless, not that the predicate is broken"},
         "negative": {"key": neg4, "expect": 0, "got": by_key(neg4, PREDS["H4"])[1] if neg4 else None,
                      "why": "a window with a parent must not match H4"},
+    }
+
+    # H2 — "window missing a due date or a slot field". Positive: an H2 row. Negative: an open window
+    # that HAS both fields (same population, opposite field values).
+    st, rows = jql(PREDS["H2"], ["key"])
+    pos2 = rows[0]["key"] if rows else None
+    st2, rows2 = jql(f"{BASE} AND duedate is not EMPTY AND {CF_WIN_START} is not EMPTY", ["key"])
+    neg2 = rows2[0]["key"] if rows2 else None
+    out["H2"] = {
+        "positive": {"key": pos2, "expect": 1, "got": by_key(pos2, PREDS["H2"])[1] if pos2 else None},
+        "negative": {"key": neg2, "expect": 0, "got": by_key(neg2, PREDS["H2"])[1] if neg2 else None,
+                     "why": "a window that has a due date and a slot start must not match H2"},
     }
 
     # H3 — "date in title". Negative: a window whose summary carries no date pattern.
@@ -132,7 +210,7 @@ def controls():
     }
 
     # O1 — "overdue and workable". Negative: a Blocked row carrying a past due date must be rejected.
-    st, rows = jql("project = ISSUE AND labels = window AND status = Blocked AND duedate < now()", ["key"])
+    st, rows = jql(f"project = {PROJECT} AND labels = window AND status = Blocked AND duedate < now()", ["key"])
     negO = rows[0]["key"] if rows else None
     st2, rows2 = jql(PREDS["O1w"], ["key"])
     posO = rows2[0]["key"] if rows2 else None
@@ -174,7 +252,7 @@ def drift(since=None):
 
     # `show` returns the journal OLDEST first, so any limit below the head silently hides the recent
     # window: at `--limit 400` it stopped on 2026-10-21 while the head was 1790, and every drift read
-    # returned a plausible zero (MMD-3223 cycle 09:36Z). `timeline` is the bounded RECENT window, so
+    # returned a plausible zero (a cycle at 09:36Z). `timeline` is the bounded RECENT window, so
     # the read cannot be blind by construction; three controls below prove it is not blind in fact:
     #   (1) the window must be live (newest entry younger than LIVE_MAX_S), which catches a stale or
     #       cached read;
@@ -185,31 +263,31 @@ def drift(since=None):
     LIVE_MAX_S = 3600
     limit = 5000
     entries = []
-    p = subprocess.run(["sb", "journal", "timeline", "MMD-2331", "--json", "--limit", str(limit)],
+    p = subprocess.run(["sb", "journal", "timeline", EPIC, "--json", "--limit", str(limit)],
                        capture_output=True, text=True)
     if p.returncode != 0:
-        errors.append({"source": "sb journal timeline MMD-2331", "error": p.stderr.strip()[:200]})
+        errors.append({"source": f"sb journal timeline {EPIC}", "error": p.stderr.strip()[:200]})
         substrate_blind = "command failed"
     else:
         substrate_blind = None
         try:
             entries = ((json.loads(p.stdout).get("data") or {}).get("entries")) or []
         except Exception as e:
-            errors.append({"source": "sb journal timeline MMD-2331", "error": f"unparseable: {e}"})
+            errors.append({"source": f"sb journal timeline {EPIC}", "error": f"unparseable: {e}"})
             substrate_blind = "unparseable response"
         if entries and len(entries) >= limit:
-            errors.append({"source": "sb journal timeline MMD-2331",
+            errors.append({"source": f"sb journal timeline {EPIC}",
                            "error": f"truncated at limit {limit}; the Substrate side of drift is unmeasurable"})
             substrate_blind = "truncated at the limit"
         stamps = [int(e.get("createdAt") or 0) for e in entries]
         now_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
         if entries:
             if (now_ms - max(stamps)) / 1000.0 > LIVE_MAX_S:
-                errors.append({"source": "sb journal timeline MMD-2331",
+                errors.append({"source": f"sb journal timeline {EPIC}",
                                "error": f"newest entry is older than {LIVE_MAX_S}s; the read is not live"})
                 substrate_blind = substrate_blind or "stale read"
             if min(stamps) > today_ms:
-                errors.append({"source": "sb journal timeline MMD-2331",
+                errors.append({"source": f"sb journal timeline {EPIC}",
                                "error": "window does not reach today's start; raise --limit"})
                 substrate_blind = substrate_blind or "window too small"
         elif not substrate_blind:
@@ -226,7 +304,7 @@ def drift(since=None):
                 continue
             kind = (e.get("kind") or "").lower()
             text = str(e.get("semantic") or "")
-            keys = set(re.findall(r"ISSUE-\d+", text))
+            keys = set(re.findall(KEY_RE, text))
             role = ("closure" if kind in {"closure", "closed", "done"} else
                     "result" if kind in {"result", "milestone"} else None)
             if role:
@@ -240,7 +318,7 @@ def drift(since=None):
     p = subprocess.run(["gh", "pr", "list", "--state", "merged", "--limit", "80",
                         "--search", f"merged:>={today_start.strftime('%Y-%m-%d')}",
                         "--json", "number,title,mergedAt,headRefOid,body",
-                        "--repo", "mercuryintelligence/market-data"],
+                        "--repo", REPO_SLUG],
                        capture_output=True, text=True)
     if p.returncode != 0:
         errors.append({"source": "gh pr list --state merged", "error": p.stderr.strip()[:200]})
@@ -248,7 +326,7 @@ def drift(since=None):
         try:
             for pr in json.loads(p.stdout or "[]"):
                 body = (pr.get("title") or "") + " " + (pr.get("body") or "")
-                for k in set(re.findall(r"ISSUE-\d+", body)):
+                for k in set(re.findall(KEY_RE, body)):
                     merged.setdefault(k, []).append(pr["number"])
         except Exception as e:
             errors.append({"source": "gh pr list --state merged", "error": f"unparseable: {e}"})
@@ -276,6 +354,15 @@ def drift(since=None):
 
 
 def main():
+    for a in sys.argv[1:]:
+        if a.startswith("--check-names"):
+            path = a.split("=", 1)[1] if "=" in a else None
+            ok, problems, names = check_names(path)
+            print(f"predicate names: {PREDICATE_OWNER} is the owner file; script keys {len(PREDS)}")
+            print("  " + ("PASS names agree: " + ", ".join(sorted(PREDS)) if ok else
+                          "MISMATCH\n  " + "\n  ".join(problems)))
+            return 0 if ok else 4
+    require_settings()
     as_json = "--json" in sys.argv
     res = {"generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "preds": {}, "controls": {}, "verdict": {}}
@@ -286,14 +373,14 @@ def main():
     since = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--since=")), None)
     res["drift_since"] = since or res["generated"][:10]
     res["drift"], res["drift_errors"] = drift(since)
-    json.dump(res, open(OUT, "w"), indent=1)
+    json.dump(res, open(out_path(), "w"), indent=1)
 
     bad = [p for p, v in res["verdict"].items() if v != "PASS"]
     res["controls_failed"] = bad
     if as_json:
         print(json.dumps(res, indent=1))
     else:
-        print(f"cycle {res['generated']}")
+        print(f"cycle {res['generated']} — predicates and controls defined in {PREDICATE_OWNER}")
         for k, v in res["preds"].items():
             flag = "" if k not in res["verdict"] else f"  [{res['verdict'][k]}]"
             print(f"  {k:<9} {v['count']:>4}  http {v['http']}{flag}")

@@ -14,18 +14,18 @@ Measured with `make deploy-status` (fri30-coord 15:1xZ, re-read by the worker 15
 
 | container | running image | SHA | started |
 |---|---|---|---|
-| mmd-api | `mmd-python:09094b192e0d` | `09094b192e0d` | 2026-10-28T13:10Z |
-| mmd-snapshot-feed | `mmd-python:09094b192e0d` | `09094b192e0d` | 2026-10-28T13:09Z |
-| mmd-data-feed | `mmd-python:b977fc994b01` | `b977fc994b01` | 2026-10-17T13:44Z |
-| mmd-mcp-server | `mmd-mcp-server@sha256:8847172a…` (export dir `0efb689c910d`) | `0efb689c910d` | 2026-10-26T13:45Z |
-| mmd-options-ingestor | `mmd-options-ingestor:35a72f6ea0a7` | `35a72f6ea0a7` | 2026-10-26T12:13Z |
-| mmd-backup-service | `mmd-backup-service:c04e0d38e416` | `c04e0d38e416` | 2026-10-22T12:24Z |
-| mmd-tick-ingestor-rust | `sha256:768d2ca11f3c…` | unknown (deployed from another repo, no git SHA in the tag) | 2026-10-29T21:39Z |
-| mmd-questdb | `questdb/questdb:pinned-e3643adc18f6` | third-party | 2026-10-29T21:15Z |
+| app-api | `app-python:09094b192e0d` | `09094b192e0d` | 2026-10-28T13:10Z |
+| app-snapshot-feed | `app-python:09094b192e0d` | `09094b192e0d` | 2026-10-28T13:09Z |
+| app-data-feed | `app-python:b977fc994b01` | `b977fc994b01` | 2026-10-17T13:44Z |
+| app-mcp-server | `app-mcp-server@sha256:8847172a…` (export dir `0efb689c910d`) | `0efb689c910d` | 2026-10-26T13:45Z |
+| app-options-ingestor | `app-options-ingestor:35a72f6ea0a7` | `35a72f6ea0a7` | 2026-10-26T12:13Z |
+| app-backup-service | `app-backup-service:c04e0d38e416` | `c04e0d38e416` | 2026-10-22T12:24Z |
+| app-tick-ingestor-rust | `sha256:768d2ca11f3c…` | unknown (deployed from another repo, no git SHA in the tag) | 2026-10-29T21:39Z |
+| app-questdb | `questdb/questdb:pinned-e3643adc18f6` | third-party | 2026-10-29T21:15Z |
 
 The MCP image is a registry digest, so its git SHA is read from the **export directory name**
 (`.deploy/exports/<sha>`), which is the same value the compose file and Makefile use as
-`MMD_IMAGE_TAG`.
+`IMAGE_TAG`.
 
 ## 1. The rule (rev 2, plus the exclusion in §1b)
 
@@ -42,13 +42,13 @@ A row belongs in **Waiting Production** when all four facts hold and all four ar
 
 Two refinements matter and both were tested:
 
-- **Scope, not membership.** The shared `mmd-python` Dockerfile copies `api/`, `analytics/`, `config/`
+- **Scope, not membership.** The shared `app-python` Dockerfile copies `api/`, `analytics/`, `config/`
   and `scripts/` into every python image, so *membership* would say an `api/` change affects
   data-feed and options-ingestor too. It does — as image content — but that is a host-wide staleness
   fact (three containers run code from 2026-10-17 to 2026-10-26), not a per-row status. The audit
   scopes a change to the service whose code path it belongs to (§2) and reports staleness once, as a
   finding.
-- **Window rows are ordinary rows under this rule.** A `MMD window: <what>` row is a production
+- **Window rows are ordinary rows under this rule.** A `<prefix> window: <what>` row is a production
   *step*; if its code is not in the running image, Waiting Production is exactly its status.
 
 ## 1b. The status definition — ADOPTED by fri30-coord 2026-10-30
@@ -65,7 +65,7 @@ window rows and are ruled Waiting Production.
 
 | term | operational reading |
 |---|---|
-| build vehicle | a PR named in the row text (`PR #n`, `market-data#n`, `pull/n`) **or** one whose body binds the ticket. State from the merged/open sets; a per-PR `gh pr view --json state` only when neither set contains it |
+| build vehicle | a PR named in the row text (`PR #n`, `<PM_REPO_NAME>#n`, `pull/n`) **or** one whose body binds the ticket. State from the merged/open sets; a per-PR `gh pr view --json state` only when neither set contains it |
 | prerequisite | a `Blocks` **inward** link (this row is blocked by X), plus the tickets the row's `Preconditions` text names. Outward `Blocks` links are consumers, not prerequisites |
 | ran | status in the done category (Completata, Done with Follow-up, Won't Do). Waiting Production / Pronto / Da completare / Blocked / In corso / Deferred are all NOT RUN |
 | verdict | WP: every vehicle merged, and no unrun prerequisite **whose output its own step consumes**. NOT-WP: any vehicle unmerged, or such a prerequisite unrun |
@@ -73,7 +73,7 @@ window rows and are ruled Waiting Production.
 **Adopted refinement of the "ANY prerequisite" clause.** Read literally, clause 2 fails its own
 examples: `ISSUE-274` has unrun inward `Blocks` links to 482, 498, 547 and 548, and `ISSUE-338` to 486
 and 498, yet both are ruled WP. The clause that separates the ruling's four examples is whether the
-row's own step **consumes the output** of the unrun prerequisite: a `mmd-api` deploy needs code and an
+row's own step **consumes the output** of the unrun prerequisite: a `app-api` deploy needs code and an
 image and does not consume the ingester swap's output at execution time, while a purge, a drop or a
 reader switch consumes the writer's output. fri30-coord adopted this wording on 2026-10-30 and upheld
 the two cut rows.
@@ -109,13 +109,13 @@ From `docker-compose.yml` (`command` modes) and the Dockerfiles' `COPY` sets:
 
 | changed path | container(s) the change is scoped to |
 |---|---|
-| `api/mcp*`, `api/docstrings*` | mmd-mcp-server |
-| `api/` (other) | mmd-api |
-| `analytics/`, `analysis/` | mmd-snapshot-feed + mmd-data-feed (both compute) |
-| `scripts/snapshot*`, `scripts/unified*`, other `scripts/` | mmd-snapshot-feed + mmd-data-feed |
-| `scripts/backup/` | mmd-backup-service |
+| `api/mcp*`, `api/docstrings*` | app-mcp-server |
+| `api/` (other) | app-api |
+| `analytics/`, `analysis/` | app-snapshot-feed + app-data-feed (both compute) |
+| `scripts/snapshot*`, `scripts/unified*`, other `scripts/` | app-snapshot-feed + app-data-feed |
+| `scripts/backup/` | app-backup-service |
 | `shared/` | all python containers |
-| `rust_ingestor/` | mmd-tick-ingestor-rust (no SHA → unmeasurable) |
+| `rust_ingestor/` | app-tick-ingestor-rust (no SHA → unmeasurable) |
 | `alembic/`, `config/`, `alembic.ini`, `requirements*.txt` | migrations (not a running service → unmeasurable) |
 | `docs/`, `tests/`, `examples/`, `.github/`, `Makefile`, `docker-compose.yml`, `*.md` | no image (`.dockerignore` excludes docs/tests) |
 
@@ -126,7 +126,7 @@ command per PR, identical to `gh pr view <n> --json files` for a merge commit, w
 
 | fact | command |
 |---|---|
-| open rows | `POST /rest/api/3/search/jql`, `jql = project = ISSUE AND statusCategory != Done` (318 rows, 4 pages) |
+| open rows | `POST /rest/api/3/search/jql`, `jql = project = $PM_JIRA_PROJECT AND statusCategory != Done` (318 rows, 4 pages) |
 | built | `gh pr list --state merged --limit 400 --json number,body,title,mergeCommit,mergedAt` (merge SHA pasted, never typed) |
 | still open | `gh pr list --state open` (59 PRs) |
 | scope | `git show --name-only --format= <merge-sha>` |
@@ -149,7 +149,7 @@ git rev-parse --short origin/master origin/stable
 ## 4. Controls (mandatory, from the same artefact)
 
 - **Positive** — a non-window row known to be built and not live must appear: `ISSUE-425` (PR #906,
-  merge `5482a00b33`); scoped to mmd-api and mmd-mcp-server, `merge-base --is-ancestor 5482a00b33
+  merge `5482a00b33`); scoped to app-api and app-mcp-server, `merge-base --is-ancestor 5482a00b33
   09094b192e0d` → rc=1 and `… 0efb689c910d` → rc=1.
 - **Negative** — a row already live must NOT appear: `ISSUE-165` (PR #865, merge `553cad6f5f`) is LIVE
   on the container that contains it (`… 09094b192e0d` → rc=0), and is absent from the proposal.

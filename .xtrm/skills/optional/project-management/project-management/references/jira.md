@@ -1,165 +1,106 @@
 # Jira: the operator's view
 
-Site `https://mercuryintel.atlassian.net`. Tool: `scripts/jira.py` (REST, token read from
-`~/.secrets/atlassian-api-token.txt` by default; override with `JIRA_TOKEN_FILE`, `JIRA_EMAIL`,
-`JIRA_SITE`; never printed). acli cannot set an issue's parent or put it in a sprint, so use `jira.py`.
+Site `$JIRA_SITE`. Tool `scripts/jira.py` (REST; the operator token is read from the file `$JIRA_TOKEN_FILE`, account `$PM_OPERATOR_EMAIL`;
+`JIRA_EMAIL` overrides the account; never printed). Every board-specific value below (project key, board id, status names, transition ids,
+custom field ids) is a setting in the pack config: `references/setup.md`. acli cannot set a parent or a sprint: use `jira.py`.
 
-Identity: agent processes act as the `xtrm-bot` account, not as the operator. A process is an agent
-when `SUBSTRATE_HOLDER` is set or a claude/pi/codex process is an ancestor. `jira.py` then reads
-`~/.xtrm/identities/atlassian-agent/identity.json`, and `acli` runs through a shim in
-`~/.local/bin` that uses a separate bot profile. `xt jira setup` creates both and `xt jira doctor`
-checks them. `XTRM_JIRA_AS=operator` forces the operator account; an explicit `JIRA_EMAIL` or
-`JIRA_TOKEN_FILE` always wins. An agent never falls back to the operator once the identity exists.
-
-Attribution: a comment an agent posts (`jira.py comment`, `acli jira workitem comment create` or `comment update`) starts with
-`[agent:<holder> | run:<id>]`, or `[agent:<runtime>-<worktree dir> | run:<id> | fallback]` when
-`SUBSTRATE_HOLDER` is unset. An agent create, `acli jira workitem create-bulk`, field edit (`PUT /rest/api/3/issue/<KEY>`,
-`acli jira workitem edit`) or transition adds the label `actor=agent`, merged with the labels already there. `jira.py comment`
-prints `POSTED_TEXT <json string>` (the exact text posted) after the JSON; as a module,
-`post_comment(key, text)` returns `(status, response, posted_text)`. Details: `docs/jira-identity.md` in xtrm-tools.
+Identity: agent processes (`SUBSTRATE_HOLDER` set, or a claude/pi/codex ancestor) act as the `xtrm-bot` account
+(`~/.xtrm/identities/atlassian-agent/identity.json`; `acli` through a shim in `~/.local/bin`; `xt jira setup`, `xt jira doctor`).
+`XTRM_JIRA_AS=operator` forces the operator; explicit `JIRA_EMAIL` or `JIRA_TOKEN_FILE` wins. An agent never falls back to the operator once the
+identity exists.
 
 ## Which project
 
-Two software projects, configured alike (2026-10-16). Use the label `prog:<project>` to separate
-projects inside one project.
+Agent comments start `[agent:<holder> | run:<id>]` (`[agent:<runtime>-<worktree dir> | run:<id> | fallback]` without `SUBSTRATE_HOLDER`); agent
+creates, edits and transitions add label `actor=agent`. Labels: `area:`, `repo:`, `prog:`, `kind:`, `substrate:<REF>`. `jira.py comment` prints
+`POSTED_TEXT <json string>` (the exact text posted); as a module `post_comment(key, text)` returns `(status, response, posted_text)`. Write variables: Phase 2 section below.
+
+The project's board is Jira project `$PM_JIRA_PROJECT`, board id `$PM_JIRA_BOARD_ID`. When one Jira project holds several projects, separate
+them with label `prog:<project>`; a second Jira project (for example one for tooling) is configured alike and read the same way.
+
+EXAMPLE (neutral names; read your own with "Read the board first"):
 
 | Project | Holds | Board | Sprints | Issue types |
 |---|---|---|---|---|
-| **ISSUE** (id 10000) | Mercury and market-data projects | 1 | weekly, "MMD Sprint n" | Epic, Story, Task, Bug, Subtask |
-| **XT** (id 10066) | xtrm tooling projects (XT-131, XT-132, XT-91) | 34 | "XT: Sprint 1" (id 40) and on | Epic, Story, Task, Bug, Feature, Request, Spike, Sottotask |
+| **PROJ** (id 10000) | the product projects | 1 | weekly, "PROJ Sprint n" | Epic, Story, Task, Bug, Subtask |
+| **TOOLS** (id 10066) | tooling | 34 | "TOOLS: Sprint 1" on | Epic, Story, Task, Bug, Feature, Request, Spike, Subtask |
 
-The old business project XTRM moved to XT (same numbers: XTRM-132 is XT-132) and is to be
-archived. Do not write to it. Check live before relying on this table:
-`jira.py GET /rest/api/3/project/<KEY>` (issueTypes) and `jira.py GET /rest/agile/1.0/board/<id>/sprint`.
+Binding rule: every PR body ends with `Jira binding: <PROJECT>-NNN, ...` naming its governing tickets (branches carry the key via `<story-key>-<slug>`).
+The footer backfills the dev panel without mirroring execution state; merged PRs get it by body edit. An empty panel on a ticket with merged PRs means
+no branch, commit or PR body carries the key. On a board not checked yet, read the dev panel once before relying on it.
 
-**GitHub for Jira** is installed for project ISSUE, so ISSUE issues show the development panel
-(branches, commits, PRs that carry the key). XT is not checked yet: read the dev panel once before
-relying on it. The panel is evidence only: Substrate still drives every status move, and smart
-commits and Jira Automation stay off.
+Custom fields: the ids are per tenant, so they live in the config object `custom_fields` (role -> `customfield_<n>`); `GET /rest/api/3/field` finds
+them. Below, `<window_start>` means the id stored under that role.
 
-Binding rule: every PR body ends with a `Jira binding: ISSUE-NNN, ...` footer line naming its
-governing tickets (titles keep the Substrate id; worker branch names already carry the Jira key
-via `<story-key>-<slug>`). The integration matches on the key, so the footer backfills each
-ticket's dev panel without mirroring execution state into Jira. Merged PRs gain the footer
-retroactively by body edit (no code change, no re-review). Check it the same way: empty dev
-panel on a ticket with merged PRs means no branch, commit or PR body carries the key yet.
-
-Custom fields on both projects (global ids, added to every type except subtasks):
-
-| Field | Id | Use |
+| Field | Config role (`custom_fields.<role>`) | Use |
 |---|---|---|
-| Window start (UTC) | `customfield_10237` | datetime; production and operator windows |
-| Window end (UTC) | `customfield_10238` | datetime |
-| Entity | `customfield_10239` | single select: Coordinator, Worker, Keeper, Human (who acts) |
-| Start date | `customfield_10015` | date; drives the calendar view |
-| Sprint | `customfield_10020` | read only through the agile API |
+| Window start (UTC) | `window_start` | datetime; production and operator windows |
+| Window end (UTC) | `window_end` | datetime |
+| Entity | `entity` | single select: Coordinator, Worker, Keeper, Human (who acts); option ids in `entity_options` |
+| Start date | `start_date` | date; drives the calendar view |
+| Sprint | `sprint` | read only through the agile API |
 
 ## The model
 
-| Jira | Is | Rule |
-|---|---|---|
-| **Epic** | the project | one per project; 1:1 with the Substrate project epic |
-| **Story** | a theme: a result a person recognises | 1:1 with a Substrate theme epic; `parent` = the Epic; assigned to a sprint |
-| **Task** | an operator action or production window: approval, release | related to its Story (Relates link), in the sprint; never a worker task |
-| **Bug** | a defect worth an operator's attention | Substrate `bug` kind |
-| (none) | worker tasks (task, followup, decision leaves) | live in Substrate only; listed in the Story description |
+An archived project is never written to. Shape example: an Epic `PROJ-184` with Stories `PROJ-252..257` in "PROJ Sprint 2".
 
-A research theme is a Spike on XT, or a Story with label `kind:spike` on ISSUE (no Spike type there).
-Every non-Epic issue has a parent: the board check is "no non-epic issue without a parent".
+- **Task** = an operator action or production window, related to its Story (Relates), in the sprint, never a worker task. **Bug** = a defect worth the
+  operator's attention.
+- Worker tasks (task, followup, decision leaves) live in Substrate only, listed in the Story description.
+- A research theme is a Spike where the board has that type, else a Story with label `kind:spike`. Every non-Epic issue has a parent (board check:
+  no non-epic issue without a parent).
 
-Why: Jira is read by people who ask "what is done, what is next, what do you need from me".
-Ten engineering tasks are noise to them. One Story per theme, in a sprint, answers the question.
+### Team-managed project: hierarchy
 
-Existing examples: Epic ISSUE-184 (Feedor) with Stories ISSUE-252..257, Epic ISSUE-198 (MMD),
-Epic ISSUE-228 (Economic Data) with Stories ISSUE-230..234 in "MMD Sprint 2".
-
-### Team-managed project ISSUE: hierarchy
-
-In project ISSUE, Story, Task, Bug and Feature are all hierarchy level 0, so a Task cannot have a
-Story as parent. Use this shape instead:
-
-- One theme **Epic** per theme (an Epic accepts a sprint and cannot have a parent). Windows are
-  parented to their theme Epic.
-- The old theme Story becomes an Epic child (a sprint deliverable).
-- Theme Epics are linked `Relates` to the project Epic.
-- A Story cannot change type to Epic in place (the allowed types exclude Epic). Create new Epics
-  and reparent.
-- `scripts/jira.py` truncates CLI output at 6000 chars: import it as a module for searches. Search
-  with `/rest/api/3/search/jql` (v2 search returns 410).
-- Add the title prefix `MMD window:` only when a window is touched for another reason (no bulk
-  renames).
-
-- Structural changes (new Epics, reparenting) run as a pilot on one theme first: create, move,
-  re-read the calendar fields (byte-identical), read children via search `parent=<key>`. Then do
-  the rest theme by theme, stop at the first failure, and roll back only that row (parent back to
-  the project Epic; new Epics closed Won't Do).
-
-Where a rule below says "parent = the Story", read "parent = the theme Epic" on project ISSUE.
+Story, Task, Bug and Feature are all level 0, so a Task cannot have a Story as parent. Instead:
+- One theme **Epic** per theme (takes a sprint, no parent). Windows are parented to it; the old theme Story becomes its child; theme Epics are
+  `Relates`-linked to the project Epic.
+- A Story cannot become an Epic in place (the allowed types exclude Epic): create new Epics and reparent. Structural changes (new Epics, reparenting)
+  pilot on one theme first: create, move, re-read the calendar fields (byte-identical), read children by search `parent=<key>`; then theme by theme,
+  stop at the first failure, roll back only that row (parent back to the project Epic; new Epics closed Won't Do).
 
 ## Ticket description (every Jira ticket, plain language)
 
-Every ticket (Epic, Story, Task, Bug, window Task) carries the whole idea, then the pointers.
-Pointer-only text ("Work: MMD-4429") is a thin ticket: enrich it from the Substrate contract and journal.
-
 ```
-Context: <what is wrong or missing, how it was found, why it matters for data correctness>
-Decision / plan: <what changes, who runs it, when (UTC); for a window: make target, DRY first, rollback>
-Rejected alternatives: <each option not taken and why, one line each>
-Consequences: <what changes for the operator, the data and other work; risks>
-Open questions: <each one, with its owner; or "none">
-Needs from the operator: <approval / decision, or "none">
-Evidence: <live checks, PR numbers, results; updated as the work progresses>
-Substrate: <theme or issue ref> (sb issue show <ref>); work: <refs>
-Related: <duplicates, merged-into, depends-on, relates-to, found by the duplicate check>
+Context: <the problem: what is wrong or missing, how it was found, why it matters for data correctness>
+Outcome: <success: what is true when the work is done>
+Scope: <what this ticket changes>
+Not in scope: <what it leaves alone>
+Constraints and decisions: <limits, what was decided and why; each rejected alternative with one line why not>
+How we check it: <the live checks and their pass/stop criteria>
+Deliverable and window: <output; for a window: when (UTC), make target, DRY first, rollback>
+Substrate ref: <theme or issue ref> (sb issue show <ref>); work refs; related tickets (duplicates, depends-on)
 ```
 
-Before filing, search for duplicates and overlapping tickets (same symptom, same code site, same
-fix) and link or merge instead of filing twice (skill `board-audit`, "New-ticket check").
+SKILL.md rule 46 (operator, 2026-11-06): these are the /planning sections in plain words. The ticket is a brief for a human, not a copy of the
+Substrate journal: evidence and progress stay in the journal and in comments. One ticket per operator-visible deliverable or window, never one per
+worker task. A follow-up named to the operator exists first as a Jira row with window fields (or explicitly "dates only") and a Substrate issue.
 
-Every PR reference in Jira text (descriptions, comments, PR-link comments) is a full clickable URL, for example https://github.com/mercuryintelligence/market-data/pull/1120, never market-data#1120 or a bracketed number (operator, 2026-10-29). A PR-link comment starts 'PR-link https://github.com/<org>/<repo>/pull/<n>'; matchers accept both the URL form and the old market-data#<n> form until the old comments are rewritten.
-
-Label namespaces: `area:`, `repo:`, `prog:`, `kind:`, and `substrate:<REF>` as the sync marker. Add
-`substrate:<theme-ref>` and `prog:<project>` so a script can find it (search by label AND the exact summary before
-creating, comparing the summary as an exact string after the read: a substrate ref can be shared
-by two themes, so a label-only search reuses the wrong Epic). Put the Jira key back on Substrate once:
-`sb issue note <theme> "Jira: ISSUE-260" --kind note`.
+Every PR reference in Jira text is a full clickable URL, for example `https://github.com/$PM_REPO_SLUG/pull/1120`, never
+`$PM_REPO_NAME#1120` or a bracketed number (operator, 2026-10-29). A PR-link comment starts 'PR-link https://github.com/<org>/<repo>/pull/<n>';
+matchers accept the old `$PM_REPO_NAME#<n>` form until old comments are rewritten.
 
 ## Sprints
 
-- Weekly. A sprint has a name, dates and a goal (existing: "MMD Sprint 2 - build in shadow",
-  2026-10-15..10-21).
-- A Story sits in the sprint where it will finish and moves with its slot. At sprint close, open
-  Stories carry to the next sprint, and the coordinator journals a `milestone` on the epic.
-- The coordinator's `/goal` horizon is the current sprint.
-- Create: `POST /rest/agile/1.0/sprint` `{"name":..., "originBoardId":<1 or 34>, "startDate":..., "endDate":..., "goal":...}`.
-  Move issues: `POST /rest/agile/1.0/sprint/<id>/issue` `{"issues": ["ISSUE-260"]}`.
-  Read an issue's sprint: field `customfield_10020`.
+- Weekly, with name, dates, goal ("PROJ Sprint 2 - build in shadow", 2026-10-15..10-21). A Story sits in the sprint where it will finish; at close,
+  open Stories carry over and the coordinator journals a `milestone`. The `/goal` horizon is the current sprint.
+- Create: `POST /rest/agile/1.0/sprint` `{"name":..., "originBoardId":<$PM_JIRA_BOARD_ID>, "startDate":..., "endDate":..., "goal":...}`. Move:
+  `POST /rest/agile/1.0/sprint/<id>/issue` `{"issues": ["<KEY>"]}`. Read an issue's sprint: field `custom_fields.sprint`.
 
 ## Read the board first
 
-Statuses, transition names and enabled features differ between boards and change over time. Never
-rely on a status list written in a skill. Before the first Jira write of a project, build a profile
-of the board with `jira.py` and act on what it returns:
+Statuses and transitions differ per board and change: never rely on a status list in a skill. Before the first Jira write of a project build a
+profile with `jira.py GET`:
+- issue types `/rest/api/3/project/<KEY>`; statuses `/rest/api/3/project/<KEY>/statuses`, matched by `statusCategory.key` (`new`, `indeterminate`,
+  `done`) because names are localised (an Italian UI shows Da completare, In corso, Completato). Store the names in the config: `done_statuses`,
+  `active_statuses`, `terminal_statuses`.
+- allowed moves `/rest/api/3/issue/<K>/transitions` (read the target `to.name`); columns `/rest/agile/1.0/board/<id>/configuration`; sprints
+  `/rest/agile/1.0/board/<id>/sprint`; fields `/rest/api/3/field`; labels `/rest/api/3/label`.
+- dev panel (where the board has one) `/rest/dev-status/latest/issue/summary?issueId=<id>` (internal, worked 2026-10-15); layout JQL
+  `parent = <Epic> ORDER BY key`.
 
-| Question | Read |
-|---|---|
-| Which issue types exist? Is there a Subtask type? | `GET /rest/api/3/project/<KEY>` (`issueTypes`) |
-| Which statuses, and in which category? | `GET /rest/api/3/project/<KEY>/statuses`; match the category by `statusCategory.key` (`new`, `indeterminate`, `done`): names are localised (Da completare, In corso, Completato) |
-| Which move is allowed from this status, and where does it lead? | `GET /rest/api/3/issue/<K>/transitions` (read the target `to.name`, not the transition name) |
-| Which columns does the board show? | `GET /rest/agile/1.0/board/<id>/configuration` |
-| Are sprints on? Which exist, with dates and goals? | `GET /rest/agile/1.0/board/<id>/sprint`; the sprint field is `customfield_10020` on ISSUE (look it up with `/rest/api/3/field`) |
-| Which custom fields exist (sprint, Substrate ref, readiness)? | `GET /rest/api/3/field` |
-| Which labels and namespaces are in use? | `GET /rest/api/3/label`, or a JQL count per `prog:` label |
-| Does the dev panel show this issue's work (GitHub for Jira, ISSUE only)? | `GET /rest/dev-status/latest/issue/summary?issueId=<id>` (an internal Jira endpoint, not in the public API; it worked on ISSUE on 2026-10-15). Zero PRs means no branch, commit or PR carries the key yet |
-| How is the project already laid out? | JQL: `parent = <Epic> ORDER BY key`, and the Epic's Stories with their sprints |
-
-Print only what you need; responses over 6,000 characters are cut, so import `jira.py` and filter
-(see the recipes below). Then record the result once, as a `finding` on the project epic: types
-used, the status chosen for each Substrate event, sprint ids, whether the dev panel shows data.
-
-**Pick statuses by meaning.** Substrate is the only status driver (no Jira Automation, no smart
-commits). Until `sb jira` exists, the coordinator moves each item by hand on the day of the event.
-For each event, choose the board's status that means this, using its category to break ties:
+**Pick statuses by meaning** (the event-to-status table). Substrate is the only status driver; until `sb jira` exists the coordinator orders each move
+on the day of the event and the board helper writes it, choosing the board status that means this (category breaks ties):
 
 | Substrate event | The board status should mean | Category |
 |---|---|---|
@@ -168,133 +109,155 @@ For each event, choose the board's status that means this, using its category to
 | PR bound and open | in review | In Progress |
 | PR merged, deploy pending | merged, waiting for production | In Progress |
 | Closure `completed` | done | Done |
-| Closure `completed` with a follow-up | done with follow-up (link the follow-up) | Done |
+| Closure `completed` with a follow-up | done with follow-up (link it) | Done |
 | Deferred | parked | To Do, not Done |
 | Blocking edge open | blocked | In Progress |
 | Closure `cancelled` or `wont_fix` | will not do | Done, with a resolution |
 
-If the board has no status for an event, use the nearest one and add a comment saying what it
-stands for; ask the operator before adding a status or changing a category.
+No status for an event: use the nearest and comment what it stands for; ask the operator before adding a status or changing a category.
 
-**Transition ids (read 2026-10-17).** Both projects have the same ten statuses, and every
-transition is global (allowed from any status). Move with the id, never the name: the same id
-leads to different statuses in the two projects.
+**Transition ids.** Move with the id, never the name: the same id leads to different statuses per project (one id meant Blocked on one board and
+Deferred on another). The board's ids live in the config object `transitions` (status name as the board shows it -> id), written once from the
+live read and journaled as a `finding`.
 
-| Event (status meaning) | Status shown (Italian UI) | XT id | ISSUE id |
-|---|---|---|---|
-| To Do | Da completare | 21 | 11 |
-| ready | Pronto | 51 | 44 |
-| being worked | In corso | 61 | 21 |
-| in review | In revisione | 71 | 31 |
-| merged, waiting for production | Waiting Production | 81 | 43 |
-| blocked | Blocked | 91 | 101 |
-| parked | Deferred (To Do category) | 101 | 41 |
-| done | Completata | 41 | 45 |
-| done with follow-up | Done with Follow-up | 111 | 42 |
-| will not do | Won't Do | 121 | 111 |
+EXAMPLE of the shape (neutral English names; the ids are illustrative, never copy them):
 
-Before the first move of a project, re-read the ids: `GET /rest/api/3/issue/<K>/transitions`
-(the `to.name` field is the target). If they differ from this table, trust the live read and record
-it in the board-profile finding. Move: `POST /rest/api/3/issue/<K>/transitions`
-`{"transition": {"id": "<id>"}}`.
+| Event (status meaning) | Status shown | Example id |
+|---|---|---|
+| To Do | To Do | 11 |
+| ready | Ready | 44 |
+| being worked | In Progress | 21 |
+| in review | In Review | 31 |
+| merged, waiting for production | Waiting Production | 43 |
+| blocked | Blocked | 101 |
+| parked | Deferred (To Do category) | 41 |
+| done | Done | 45 |
+| done with follow-up | Done with Follow-up | 42 |
+| will not do | Won't Do | 111 |
+
+Re-read the ids before the first move of a project (`GET /rest/api/3/issue/<K>/transitions`, `to.name`); if they differ trust the live read and
+record it. Move: `jira.py transition-by-id <KEY> <id>` or `jira.py transition <KEY> "<status name>"`, the id checked live (Phase 2 section below).
 
 ## Windows on the Jira calendar
 
-Jira is the only calendar (operator decision, 2026-10-16). No Google Calendar events, no Google
-Tasks. A production or operator window is:
-
-- a **Task** with label `window`;
-- **parent = the Story** of the theme it belongs to (create the Story first if none exists). Do not parent windows directly to the project Epic except for true project-level events;
-- all four date fields set: `customfield_10237` and `customfield_10238` (exact UTC times),
-  Start date `customfield_10015` and `duedate`. The calendar view reads only the two date
-  fields, so a window without them is invisible there;
-- Entity `customfield_10239` = who acts (Keeper or Coordinator, with Coordinator = option `10020` only; Human for an operator step);
-- the window owner keeps it current: the keeper if the project has one, otherwise the
-  coordinator.
-- the summary carries NO date or time — dates live in the four fields above, never in the
-  title. Pattern: `MMD window: <what> (<scope>)`. Re-dating a window never rewrites the title
-  except to remove a date that slipped in.
-- every window change (re-date, scope change, close-out) gets a comment stating why it
-  changed, old → new times in UTC, and whose ruling authorized it. A window whose times moved
-  without such a comment is an unauthorised move.
+Jira is the only calendar (operator, 2026-10-16): no Google Calendar events, no Google Tasks. A production or operator window is:
+- a **Task** with label `window`, **parent = its theme Epic** (the theme **Story** on a board where a Task can take a Story parent; create the
+  parent first); not the project Epic,
+  except project-level events;
+- all four dates set: `<window_start>` and `<window_end>` (the exact slot, written with that date's offset in `$PM_TIMEZONE`, by zoneinfo,
+  reported in UTC), Start date `<start_date>` and `duedate`. The calendar reads only
+  Start date and `duedate`: without them the window is invisible;
+- Entity `<entity>` = who acts (Keeper or Coordinator, Coordinator = the option id in `entity_options.Coordinator` only; Human for an operator step); kept current by the
+  keeper if the project has one, else the coordinator, written by the board helper;
+- a summary with NO date or time: `$PM_SB_PREFIX window: <what> (<scope>)`; re-dating never rewrites the title except to remove a date that slipped in. Add the
+  prefix to an existing title only when the window is touched for another reason (no bulk renames).
+- a comment on every change (re-date, scope, close-out) with why, old -> new UTC times and whose ruling authorized it; times moved without it are an
+  unauthorised move.
 
 ### Window discipline (added 2026-10-22)
 
-- State one plan per day in exactly one place and mark off-plan windows on the row, because two live plans read as misses.
-- Print the same-day overlap check in the comment before any re-date, because silent double-bookings survive otherwise.
-- Clear the slot fields in the same edit that blocks a window and record the old slot in the comment, keeping past slots only as attempt records, because a blocked window must not advertise a slot.
-- Close a window on a coordinator Verified OK comment, never on a deploy having started, because a tool verdict is only a claim.
-- Call a passed slot with no record unrecorded, not failed, and re-check late, because early flags misfire.
-- Compute the UTC offset per date with zoneinfo (e.g. 2026-10-25 flips +0200 to +0100), because a wrong offset silently moves the window an hour.
-- Clear a slot field with PUT null and re-read afterwards, because the API returns 204 either way.
+- One plan per day in one place; mark off-plan windows on the row (two live plans read as misses).
+- Print the same-day overlap check in the comment before any re-date (silent double-bookings survive otherwise).
+- Clear the slot fields in the same edit that blocks a window and record the old slot in the comment (a blocked window must not advertise a slot).
+- Close a window on a coordinator Verified OK comment, never on a deploy having started (a tool verdict is a claim).
+- Call a passed slot with no record unrecorded, not failed, and re-check late (early flags misfire).
+- Compute the UTC offset per date with zoneinfo in `$PM_TIMEZONE` (in a central European zone 2026-10-25 flips +0200 to +0100): a wrong offset moves the window an hour.
+- Clear a slot field with PUT null and re-read: the API returns 204 either way.
 
 ### PR readiness rule (mandatory)
 
-Every pull request that changes runtime behaviour, config, schema, serving paths, or that can be
-included in a deploy/promotion **must** have one of the following before it is considered ready
-for merge:
+A PR that itself deploys (a make target, a restart, a schema change) **must** have a window Task covering its merge and deploy before merge-ready. A
+master-only PR needs no window of its own (SKILL.md rule 49): it rides the promotion that carries it and says so in its body. Pure docs, pure tests and
+non-behavioural refactors carry label `no-window` (or a comment "no production window needed"). A PR with none is untracked and stays out of every
+promotion. Board checks flag open PRs lacking a covering window or a master-only note.
 
-1. A window Task that covers its merge and subsequent deploy, or
-2. An explicit exception: label `no-window` on the PR (or a comment “no production window needed”)
-   for pure documentation, pure tests, or pure non-behavioural refactors.
-3. The ticket key for Github/Jira tracking, to the one it is linked to.
+Health checks, must return 0 (`<n>` is the number of `custom_fields.window_start`):
+`project = $PM_JIRA_PROJECT AND labels = window AND (duedate is EMPTY OR cf[<n>] is EMPTY)`;
+`project = $PM_JIRA_PROJECT AND labels = window AND summary ~ "10-*"` (no dates in titles);
+`project = $PM_JIRA_PROJECT AND labels = window AND parent is EMPTY` (windows need a theme Epic parent).
 
-A PR that has neither is untracked. It must not be included in a promotion window. Coordinators
-and AgentRun workflows must flag open PRs that lack both a covering window and a `no-window`
-exception.
-
-Health checks, must return 0 (replace the project key):
-`project = ISSUE AND labels = window AND (duedate is EMPTY OR cf[10237] is EMPTY)`;
-`project = ISSUE AND labels = window AND summary ~ "10-*"` (no dates in titles);
-`project = ISSUE AND labels = window AND parent is EMPTY` (windows must have a Story parent).
 ## What is manual today, what XTRM-639 automates
 
-Manual now: creating Epic and Stories, copying keys and PR numbers, appending the PR-body
-binding footer, status moves, sprint moves, the daily report comment. Planned in `sb jira` and the agent host: the binding between a Jira item and a
-Substrate issue, status moves from Substrate events, closures and receipts as comments and remote
-links, a polling inbox, a brief-edit drift proposal (a Jira edit never rewrites a contract),
-sprint-aware `sb issue ready`. Do these by hand per this page; when `sb jira` lands, replace the step,
+Manual now: Epics and Stories, keys and PR numbers, the PR-body binding footer, status moves, sprint moves, the daily report comment. `sb jira` will
+take the binding between a Jira item and a Substrate issue, status moves from Substrate events, closures and receipts as comments and remote links, a
+polling inbox and a brief-edit drift proposal (a Jira edit never rewrites a contract), sprint-aware `sb issue ready`. When it lands, replace the step,
 not the model.
 
 ## Recipes (jira.py)
 
-```
-jira.py GET  /rest/api/3/issue/K?fields=summary,status,parent,customfield_10020
-jira.py POST /rest/api/3/issue body.json        # create (Epic, or Story with "parent":{"key":"ISSUE-n"})
-jira.py PUT  /rest/api/3/issue/K body.json      # edit fields
-jira.py POST /rest/api/3/issue/K/transitions body.json   # {"transition":{"id":"61"}}; ids above
-jira.py comment K text.txt                      # plain text; ADF is built for you
-```
+`jira.py GET|POST|PUT <path> [body.json]`; `comment <KEY> <text-file>` (plain text; ADF is built for you); `transition`, `transition-by-id`, `link`.
 
-Create body (descriptions are ADF; reuse `adf()` from `jira.py`, or build with Python):
-
-```
-{"fields": {"project": {"key": "ISSUE"}, "issuetype": {"name": "Story"},
-  "parent": {"key": "ISSUE-184"}, "summary": "...", "labels": ["substrate:CORE-2400"],
-  "description": <ADF doc>}}
-```
-
-- Bodies and comment text are temporary inputs: write them to the scratchpad, never to the repo.
-- `jira.py` prints only the first 6,000 characters of a response. For large reads, import it:
-  `import importlib.util as u; s=u.spec_from_file_location('j','jira.py'); m=u.module_from_spec(s);
-  s.loader.exec_module(m); st,data=m.call('GET', path)` and filter in Python.
-- Read the row fresh before writing and re-read after, posting corrections as new comments, because fields move under you.
-- Unpack Jira helper returns as `status, body` and inspect live state before retrying after a crash, because the artefact may already exist.
-- Write batch scripts as files with absolute UTC targets and a single sleeper (Pi BashBackground-only ceiling 7,200,000 ms), and read newest-first lists by id, because quoting, stale anchors and `[-1]` each broke a write.
-- A create script must have no import-time side effects. A re-import once created eight
-  duplicate tickets.
-
-When appropriate and/or requested, the Jira API can be used for more mutations.
+- Create: `jira.py POST /rest/api/3/issue body.json` with
+`{"fields": {"project": {"key": "<PM_JIRA_PROJECT>"}, "issuetype": {"name": "Story"}, "parent": {"key": "<EPIC-KEY>"}, "summary": "...", "labels": ["substrate:<REF>"], "description": <ADF doc>}}`;
+  edit with `PUT /rest/api/3/issue/K`; move with `jira.py transition` or `transition-by-id`; link with `jira.py link <BLOCKER> <BLOCKED> [type]`.
+- Descriptions are ADF (reuse `adf()` from `jira.py`). Bodies and comment text go in the scratchpad, never the repo.
+- `jira.py` truncates CLI output at 6000 chars: import it as a module for searches
+  (`import importlib.util as u; s=u.spec_from_file_location('j','jira.py'); m=u.module_from_spec(s); s.loader.exec_module(m); st,data=m.call('GET', path)`)
+  and filter in Python. Search with `/rest/api/3/search/jql` (v2 search returns 410).
+- Read the row fresh before writing, re-read after, post corrections as new comments. Unpack helper returns as `status, body`; inspect live state
+  before retrying after a crash.
+- Batch scripts are files with absolute UTC targets and a single sleeper (Pi BashBackground-only ceiling 7,200,000 ms); read newest-first lists by id.
+- Jira allows one reply level: a reply to a reply falls back to the thread root. A text-only comment flattener drops ADF inline cards: read the ADF
+  before routing an operator comment (11-04).
+- A create script has no import-time side effects: a re-import once created eight duplicate tickets. More mutations through the API only when
+  appropriate and/or requested.
 
 ## Batch change log (method ruling MMD-2930, 2026-10-26)
 
-Every board reorganisation or mutation batch is recorded durably, not only in `~/.cache` files.
+Every board reorganisation or mutation batch is recorded durably, not only in lane state files (`$PM_LANE_DIR`).
+- **Record:** one Substrate batch issue per reorganisation; its `result` entry lists every change: key, field, before, after, reason.
+- **Jira:** each touched ticket gets label `jira-batch:<sb-ref>`; one JQL (`labels = "jira-batch:<sb-ref>"`) lists the batch; Jira's history holds the
+  field diffs.
+- **Tabellone "Modifiche Jira":** a derived view only; the keeper writes one doc per batch in `jirabatches`: `{ref, at, by, count, jql, plain_it}`.
+  The board helper applies the label in the same write, on the coordinator's word.
 
-- **Record:** one Substrate batch issue per reorganisation. Its `result` entry lists every change:
-  key, field, before, after, reason.
-- **Jira:** every touched ticket gets the label `jira-batch:<sb-ref>` (same pattern as
-  `substrate:<ref>`). One JQL query (`labels = "jira-batch:<sb-ref>"`) lists the batch; Jira's own
-  history holds the field diffs.
-- **Tabellone page "Modifiche Jira":** a derived view only. The keeper writes one doc per batch in
-  collection `jirabatches`: `{ref, at, by, count, jql, plain_it}`. It is never the record.
-- The board helper applies the label in the same write as the change, on the coordinator's word.
+## Write guards and checked verbs (MMD-3546 Phase 2)
+
+Every guard runs on a `POST` or a `PUT`; reads are unchanged. A refusal prints its catalogue line, `REFUSED [<event>]` plus what to do, so a
+failure teaches the rule instead of showing a bare HTTP code. Each event has a positive and a negative control against a mock Jira on 127.0.0.1
+(`JIRA_SITE`), so no control reaches the live board.
+
+| Verb | Use |
+|---|---|
+| `jira.py transition <KEY> "<status name>"` | move to a status name, resolved against the moves this row offers now |
+| `jira.py transition-by-id <KEY> <id>` | move to an id read from this ticket in this run |
+| `jira.py link <BLOCKER> <BLOCKED> [type]` | create a link, the direction named once (default type Blocks) |
+
+- **TX-01** a status name this row does not offer is refused, and the live moves are printed.
+- **TX-02** an id this row does not offer now is refused, because one id means different statuses per project (one id meant Blocked on one
+  board and Deferred on another). `transition-by-id` reads `GET /rest/api/3/issue/<K>/transitions` in the same process, prints `move '<status>' (id <id>) read
+  live from <KEY> in this run`, and only then moves.
+- **LK-01** a Blocks link is read inward-to-outward, so `link` sends `inwardIssue` = the blocker and `outwardIssue` = the blocked ticket. A raw
+  body must declare `_blocks: {"blocker": "<KEY>", "blocked": "<KEY>"}`; the declaration is checked against both ends, then stripped.
+- **LK-02/LK-03** the created link is re-read at `GET /rest/api/3/issueLink/<id>`, and its direction is printed before the link is reported.
+
+Both move verbs run one checked path: the label `actor=agent` first (TX-06 prints, and the move continues, when the label fails), the move with no
+comment in the body (TX-04 refuses one, because Jira answers 204 and drops it), then a re-read of the status and the label (TX-05 reports the status
+it read, never the one you asked for). Jira can apply a transition a moment after it answers 204, so the re-read repeats up to 5 times over
+about 2 s before the move is called unverified; a move that the re-read still does not show is reported `UNVERIFIED` and **exits 3**, a signal
+distinct from a failed or refused move (exit 1): the transition may still apply, so a caller must not retry it. A refused or failed write exits 1;
+a read keeps the caller's exit status. Module use runs the same guards through `call()`, and `transition`/`transition-by-id` return the same status
+and text as the CLI prints (409 for an unverified move). `--dry-run` on `post-guard.py` runs the same SC-03 credential check as the write, so a
+preview never prints a credential-shaped value.
+
+A hand-built body is still accepted and still checked: `POST /rest/api/3/issue/<K>/transitions` needs an id this process read live from that
+ticket, and a comment inside it is refused. The other Phase 2 guards: SC-03 a body that looks like a credential is refused, and only the pattern
+name and the length are printed; DP-02 a create whose exact summary or `substrate:` label already exists is refused with the existing key.
+
+### Write variables
+
+| Variable | Effect |
+|---|---|
+| `JIRA_DEPLOY_EVIDENCE` | the production evidence for a move to a production status (config `production_statuses`; TX-07) |
+| `JIRA_FORCE_WRITE=1` | skips the other-writer check once, for a change you have READ (OW-02) |
+
+- **TX-07 (a warning, not a refusal)** a move to a production status (`production_statuses`, else `done_statuses` plus Waiting Production) with no proof of what runs in production prints the warning and
+  continues. The proof is the running image SHA and the merge commit, both read and both pasted into the move comment: being merged on master, or
+  promoted to stable, says nothing about the image that serves traffic. Pass the text as `JIRA_DEPLOY_EVIDENCE`, or as the `evidence` argument of
+  `transition`/`transition_by_id` (the argument wins). Text with no 7-40 hex SHA does not satisfy the check.
+- **OW-02** `JIRA_FORCE_WRITE=1` bypasses the other-writer check once. Use it only after the body you write quotes the foreign comment with its id
+  and UTC time, and only for a change you have read. The bypass prints the OW-02 text, so it leaves a record.
+- Without either variable: another writer's change inside 60 minutes refuses a field edit or an assignee change (OW-01) and a move (OW-03), and
+  a row this process already wrote is not another writer's. `post-guard.py` applies the same 60-minute rule to a comment.
+
+Comments still go through `post-guard.py`; `jira.py` refuses a direct `POST .../comment` unless `POST_GUARD_ACTIVE=1`, which only that tool sets.

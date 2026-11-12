@@ -1,6 +1,7 @@
 #!/bin/sh
 # code-readiness-v1 driver: snapshot -> selftest (controls must pass) -> chunks -> N runs each -> code majority + method-2 compare.
-# Usage: run-readiness.sh [N]   (run from a market-data git checkout; read-only everywhere)
+# Usage: run-readiness.sh [N]   (run from the PM_REPO_DIR git checkout; read-only everywhere)
+# Settings for readiness_facts.py come from the env or the pack config (../../references/setup.md).
 # Env: READINESS_OUT (required: the runs root, under your lane scratch dir), READINESS_METHOD2 (optional independent table to compare)
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -11,7 +12,7 @@ RUNS="$READINESS_OUT/runs-$STAMP"; mkdir -p "$RUNS"
 WF="$HERE/../../workflows/code-readiness-v1.json"
 : "${AGENTRUN_PI_ROOT:=$(npm root -g)/@parcha/agentrun-pi}"; export AGENTRUN_PI_ROOT
 CLI="$AGENTRUN_PI_ROOT/dist/cli.js"
-CONFIG="$HOME/.xtrm/skills/optional/project-management/board-audit/scripts/agentrun-config-stock.mjs"
+CONFIG="$HERE/../agentrun-config-stock.mjs"
 gate() { f=$(awk '/^full/{sub("avg10=","",$2);print $2}' /proc/pressure/memory); m=$(awk '/MemAvailable/{print int($2/1048576)}' /proc/meminfo)
   awk -v f="$f" -v m="$m" 'BEGIN{exit !(f<=10 && m>=4)}' || { echo "GATE SHUT psi_mem_full=$f memavail_gb=$m $(date -u +%H:%MZ)"; return 1; }; }
 python3 "$HERE/readiness_facts.py" snapshot --out "$RUNS/rows.json"

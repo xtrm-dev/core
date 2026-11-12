@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1",
   "name": "project-management",
-  "version": "1.4.0",
-  "description": "Run multi-week engineering projects with a coordinator, Substrate as the single record and Jira as the operator view",
+  "version": "1.5.0",
+  "description": "Run multi-week engineering projects with a coordinator, Substrate as the single record and Jira as the operator view; instance settings in project-management/references/setup.md",
   "skills": [
     "project-management",
     "board-audit",
