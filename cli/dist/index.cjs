@@ -73114,10 +73114,12 @@ function runReceipt(args, env3 = process.env, options = {}) {
     timeout: options.timeoutMs,
     killSignal: "SIGKILL"
   });
-  if (result.status === 0) return { ok: true };
+  const stdout = result.stdout ?? "";
+  if (result.status === 0) return { ok: true, stdout };
   const timedOut = result.error?.code === "ETIMEDOUT";
   return {
     ok: false,
+    stdout,
     error: describeSbFailure({
       binary,
       status: result.status,
@@ -73622,8 +73624,20 @@ function linkOrWarn(stdout, argv, deps) {
         warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || "sb gave no reason")}`
       };
     }
+    let holder = null;
+    const showArgv = ["issue", "show", ref, "--json"];
+    const showResult = run5(showArgv, env3, budget());
+    if (showResult.ok && showResult.stdout) {
+      try {
+        const parsed = JSON.parse(showResult.stdout);
+        const claim = parsed?.claim;
+        if (claim && claim.holder && !claim.releasedAt) {
+          holder = claim.holder;
+        }
+      } catch {
+      }
+    }
     const dispatchArgs = ["provenance", "dispatch", ref];
-    const holder = (env3.SUBSTRATE_HOLDER ?? "").trim();
     if (holder) dispatchArgs.push("--participant", holder);
     if (deps.cwd) dispatchArgs.push("--workspace", cwd);
     const dispatchArgv = withReceiptProject(dispatchArgs, project);

@@ -304,11 +304,11 @@ export interface GhPrLinkDeps extends ReceiptProjectDeps {
     readFile?: (file: string) => string;
     runGit?: RunGit;
     /** The receipt runner; tests inject a fake so no real store is touched. */
-    runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
     /** The dispatch runner; defaults to the same runner as attach. */
-    runDispatch?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    runDispatch?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
     /** The allocate runner; defaults to the same runner as attach. */
-    runAllocate?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    runAllocate?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
 }
 
 export interface GhPrLinkResult {
@@ -329,7 +329,7 @@ function oneLine(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
 }
 
-function defaultAttach(args: string[], env: NodeJS.ProcessEnv, timeoutMs = ATTACH_TIMEOUT_MS): { ok: boolean; error?: string } {
+function defaultAttach(args: string[], env: NodeJS.ProcessEnv, timeoutMs = ATTACH_TIMEOUT_MS): { ok: boolean; error?: string; stdout?: string } {
     return runReceipt(args, env, { timeoutMs });
 }
 
@@ -399,11 +399,29 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
                 warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || 'sb gave no reason')}`,
             };
         }
+        // CORE-2631 review (pr-reviewer): decide --participant from the Issue's
+        // claim state, not from env.SUBSTRATE_HOLDER (which every agent process
+        // has, even for unclaimed Issues). One read via the existing runner.
+        let holder: string | null = null;
+        const showArgv = ['issue', 'show', ref, '--json'];
+        const showResult = run(showArgv, env, budget());
+        if (showResult.ok && showResult.stdout) {
+            try {
+                const parsed = JSON.parse(showResult.stdout) as { claim?: { holder?: string | null; releasedAt?: string | null } | null };
+                const claim = parsed?.claim;
+                if (claim && claim.holder && !claim.releasedAt) {
+                    holder = claim.holder;
+                }
+            } catch {
+                // Unparseable show output: treat as unclaimed (omit --participant).
+            }
+        }
         // Dispatch: create the execution binding. --participant is required when
         // the issue is live-held (anti-steal); omit it when unclaimed.
         const dispatchArgs = ['provenance', 'dispatch', ref];
-        const holder = (env.SUBSTRATE_HOLDER ?? '').trim();
         if (holder) dispatchArgs.push('--participant', holder);
+        // --workspace is only meaningful when cwd is known; the shim always sets
+        // it, but tests may omit it.
         if (deps.cwd) dispatchArgs.push('--workspace', cwd);
         const dispatchArgv = withReceiptProject(dispatchArgs, project);
         const td = runDispatch(dispatchArgv, env, budget());

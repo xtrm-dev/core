@@ -452,6 +452,8 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         allocateOk?: boolean;
         allocateError?: string;
         commitsOk?: boolean;
+        held?: boolean;            // whether the issue is live-held
+        holder?: string;           // holder name when held
     } = {}) {
         const calls: { kind: string; argv: string[] }[] = [];
         const { runGit } = gitFake({
@@ -461,6 +463,8 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         const runSb = () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' });
         let attachIndex = 0;
         const attachErrors = overrides.attachErrors ?? [];
+        const isHeld = overrides.held ?? false;
+        const holderName = overrides.holder ?? 'pi152-core';
         const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
             cwd: '/repo',
             env: {},
@@ -468,24 +472,30 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
             runSb,
             readFile: () => { throw new Error('no file'); },
             runAttach: (args) => {
-                const kind = args[1]; // attach | dispatch | allocate
+                const kind = args[1]; // show | attach | dispatch | allocate
                 calls.push({ kind, argv: [...args] });
+                if (kind === 'show') {
+                    if (isHeld) {
+                        return { ok: true, stdout: JSON.stringify({ claim: { holder: holderName, releasedAt: null } }) };
+                    }
+                    return { ok: true, stdout: JSON.stringify({ claim: null }) };
+                }
                 if (kind === 'attach') {
                     const err = attachErrors[attachIndex++];
-                    if (err) return { ok: false, error: err };
-                    return { ok: true };
+                    if (err) return { ok: false, error: err, stdout: '' };
+                    return { ok: true, stdout: '' };
                 }
                 if (kind === 'dispatch') {
                     return overrides.dispatchOk === false
-                        ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed' }
-                        : { ok: true };
+                        ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed', stdout: '' }
+                        : { ok: true, stdout: '' };
                 }
                 if (kind === 'allocate') {
                     return overrides.allocateOk === false
-                        ? { ok: false, error: overrides.allocateError ?? 'allocate failed' }
-                        : { ok: true };
+                        ? { ok: false, error: overrides.allocateError ?? 'allocate failed', stdout: '' }
+                        : { ok: true, stdout: '' };
                 }
-                return { ok: true };
+                return { ok: true, stdout: '' };
             },
         });
         // Actually, runDispatch and runAllocate default to run (runAttach mock).
@@ -507,11 +517,37 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         expect(dispatches[0].argv).toContain('CORE-2607');
         expect(dispatches[0].argv).toContain('--project');
         expect(dispatches[0].argv).toContain('prj_core');
+        // unclaimed issue (held: false): no --participant
+        expect(dispatches[0].argv).not.toContain('--participant');
         // allocate carries the ref
         expect(allocates[0].argv).toContain('CORE-2607');
         expect(allocates[0].argv).toContain('--project');
         // attach retried with the same argv
         expect(attaches[0].argv).toEqual(attaches[1].argv);
+    });
+
+    it('passes --participant with the holder when the issue is live-held', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+        });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).toContain('--participant');
+        expect(dispatches[0].argv).toContain('pi152-core');
+    });
+
+    it('omits --participant when the issue is unclaimed', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: false,
+        });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).not.toContain('--participant');
     });
 
     it('does not attempt dispatch or allocate when attach fails for another reason', () => {

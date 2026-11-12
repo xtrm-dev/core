@@ -173,7 +173,7 @@ describe('a receipt has a hard budget (CORE-2607)', () => {
             const file = path.join(bin, 'sb');
             writeFileSync(file, '#!/bin/sh\nexit 0\n');
             chmodSync(file, 0o755);
-            expect(runReceipt(['provenance', 'attach', 'CORE-2607'], { PATH: bin }, { timeoutMs: 200 })).toEqual({ ok: true });
+            expect(runReceipt(['provenance', 'attach', 'CORE-2607'], { PATH: bin }, { timeoutMs: 200 })).toEqual({ ok: true, stdout: '' });
         } finally {
             rmSync(bin, { recursive: true, force: true });
         }
