@@ -35,7 +35,7 @@ that is missing stops the script with its name.
 |---|---|---|---|
 | Audit | `scripts/run-audit.sh`, `scripts/facts.py`, `scripts/aggregate.py` | `AGENTRUN_PI_ROOT`, `JIRA_SITE`, `PM_OPERATOR_EMAIL`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`, `PM_REPO_SLUG`, `custom_fields`, `terminal_statuses` | `JIRA_TOKEN_FILE` (default `~/.secrets/atlassian-api-token.txt`), `PM_REPO_DIR` (default: current directory, or `--repo`), `PM_STATE_DIR` (default `~/.local/state`; receipts in `<state>/board-audit`), `PM_AUDIT_MODEL`, `blocked_statuses` (default `["Blocked"]`), `window_keys`, `plan_predecessors`, `day_predecessors`, `halt_band_utc`, `stale_pr_control` |
 | Readiness | `scripts/readiness/run-readiness.sh`, `readiness_facts.py`, `aggregate_readiness.py` | `AGENTRUN_PI_ROOT`, `READINESS_OUT`, the Jira settings of `project-management/scripts/jira.py`, `PM_JIRA_PROJECT`, `PM_JIRA_EPIC`, `PM_SB_PREFIX`, `PM_SB_PROJECT_ID`, `PM_REPO_SLUG`, `PM_REPO_NAME`, `PM_PR_SINCE`, `custom_fields`, `terminal_statuses` | `READINESS_METHOD2`, `readiness_extra_epics`, `other_repos`, `readiness_controls` (without it the selftest proves nothing and says SKIP) |
-| Cycle | `scripts/cycle/hygiene_cycle.py` | the Jira settings of `jira.py`, `PM_JIRA_PROJECT`, `PM_EPIC`, `PM_REPO_SLUG`, `PM_LANE_DIR` (writes `CYCLE-HYGIENE.json` there), `custom_fields`, `done_statuses`, `active_statuses` | none. `--check-names` needs no setting |
+| Cycle | `scripts/cycle/hygiene_cycle.py` | the Jira settings of `jira.py`, `PM_JIRA_PROJECT`, `PM_EPIC`, `PM_REPO_SLUG`, `PM_LANE_DIR` (writes `CYCLE-HYGIENE.json` there), `custom_fields`, `done_statuses`, `open_statuses` | none. `--check-names` needs no setting |
 | Lane | `scripts/lane/*` | see [`setup-lane.md`](setup-lane.md) | |
 
 Run `readiness_facts.py` and `run-readiness.sh` from inside the `PM_REPO_DIR` checkout: the git facts
@@ -62,7 +62,7 @@ are read from the current directory.
 | `custom_fields` | `{"start_date", "window_start", "window_end"}`: Jira custom field ids |
 | `terminal_statuses` | statuses that close a window (facts S0, readiness `not_applicable`), in rubric order |
 | `blocked_statuses` | statuses that mean Blocked (facts S5) |
-| `done_statuses`, `active_statuses` | drift verdicts in the cycle: a closure needs a done status, a merged PR a done or active one |
+| `done_statuses`, `open_statuses` | drift verdicts in the cycle: a closure needs a done status, a merged PR a done or active one |
 | `window_keys` | the pinned sample rows `run-audit.sh` reads when no day is given |
 | `plan_predecessors`, `day_predecessors` | declared window order: `{key: [keys]}` and `{"YYYY-MM-DD": {key: [keys]}}` |
 | `halt_band_utc` | `["HH:MM", "HH:MM"]`: the only band an ingestor window may use (default `21:17`-`21:55`) |
@@ -99,7 +99,7 @@ Placeholder values. Replace each one; do not commit the result.
   "terminal_statuses": ["Done", "Won't Do", "Cancelled", "Closed"],
   "blocked_statuses": ["Blocked"],
   "done_statuses": ["Done", "Won't Do", "Cancelled"],
-  "active_statuses": ["To Do", "In Progress", "Waiting Production", "In Review"],
+  "open_statuses": ["To Do", "In Progress", "Waiting Production", "In Review"],
   "window_keys": ["PROJ-10", "PROJ-11"],
   "plan_predecessors": {"PROJ-11": ["PROJ-10"]},
   "day_predecessors": {"2026-01-15": {"PROJ-11": ["PROJ-10"]}},

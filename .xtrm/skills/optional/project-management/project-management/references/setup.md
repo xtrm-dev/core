@@ -69,6 +69,7 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_TRANSITIONS` | `transitions` | `{status name: "id"}` | the board's transition ids, from a live read (`jira.md`) | doc, BA |
 | `PM_DONE_STATUSES` | `done_statuses` | `[name]` | status names that mean done | PM (TX-07 fallback), BA, TK |
 | `PM_ACTIVE_STATUSES` | `active_statuses` | `[name]` | status names that mean being worked | BA, TK |
+| `PM_OPEN_STATUSES` | `open_statuses` | `[name]` | every not-done status an open window may hold (hygiene cycle) | BA |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |
 | `PM_DEFERRED_STATUS` | `deferred_status` | name | status for deferred rows | BA (lane) |
 | `PM_PARKED_STATUSES` | `parked_statuses` | `[name]` | statuses the cycle excludes as parked | BA (lane) |
@@ -123,6 +124,7 @@ Example with placeholder values (every key used by the three skills; replace eac
   },
   "done_statuses": ["Done", "Done with Follow-up"],
   "active_statuses": ["In Progress", "In Review"],
+  "open_statuses": ["To Do", "In Progress", "In Review", "Waiting Production"],
   "terminal_statuses": ["Done", "Done with Follow-up", "Won't Do"],
   "production_statuses": ["Done", "Waiting Production"],
   "entity_options": {"Coordinator": "10020"},

@@ -55,13 +55,13 @@ _CF = pm_config.get_data("PM_CUSTOM_FIELDS", {})
 CF_WIN_START = _CF.get("window_start", "customfield_window_start")
 KEY_RE = re.escape(PROJECT) + r"-\d+"
 DONE_STATUSES = set(pm_config.get_data("PM_DONE_STATUSES", []))
-ACTIVE_STATUSES = set(pm_config.get_data("PM_ACTIVE_STATUSES", []))
+ACTIVE_STATUSES = set(pm_config.get_data("PM_OPEN_STATUSES", []))
 
 
 def require_settings():
     for name in ("PM_JIRA_PROJECT", "PM_EPIC", "PM_REPO_SLUG", "PM_LANE_DIR"):
         pm_config.get(name, required=True)
-    for name in ("PM_CUSTOM_FIELDS", "PM_DONE_STATUSES", "PM_ACTIVE_STATUSES"):
+    for name in ("PM_CUSTOM_FIELDS", "PM_DONE_STATUSES", "PM_OPEN_STATUSES"):
         pm_config.get_data(name, required=True)
 
 

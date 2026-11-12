@@ -49,6 +49,7 @@ SETTINGS = [
     ("PM_KNOWN_REPOS", True, (), (PM,), "repo names a <repo>#<n> may link"),
     ("PM_DONE_STATUSES", True, (), (PM, BA, TK), "board status names that mean done"),
     ("PM_ACTIVE_STATUSES", True, (BA,), (PM, TK), "board status names that mean being worked"),
+    ("PM_OPEN_STATUSES", True, (BA,), (), "not-done status names the hygiene cycle accepts on an open window"),
     ("PM_TERMINAL_STATUSES", True, (), (PM, BA, TK), "board status names that end a row"),
     ("PM_PRODUCTION_STATUSES", True, (), (PM,), "statuses that claim production (TX-07)"),
     ("PM_TRANSITIONS", True, (), (PM, BA), "status name -> transition id"),
