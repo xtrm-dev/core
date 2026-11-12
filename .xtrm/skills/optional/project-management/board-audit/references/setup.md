@@ -63,6 +63,7 @@ are read from the current directory.
 | `terminal_statuses` | statuses that close a window (facts S0, readiness `not_applicable`), in rubric order |
 | `blocked_statuses` | statuses that mean Blocked (facts S5) |
 | `done_statuses`, `open_statuses` | drift verdicts in the cycle: a closure needs a done status, a merged PR a done or active one |
+| `o1w_pinned_control` (`PM_O1W_PINNED_CONTROL`) | optional Jira key the hygiene cycle pins as the O1w positive control; a PASS then proves the query, auth and field mapping |
 | `window_keys` | the pinned sample rows `run-audit.sh` reads when no day is given |
 | `plan_predecessors`, `day_predecessors` | declared window order: `{key: [keys]}` and `{"YYYY-MM-DD": {key: [keys]}}` |
 | `halt_band_utc` | `["HH:MM", "HH:MM"]`: the only band an ingestor window may use (default `21:17`-`21:55`) |

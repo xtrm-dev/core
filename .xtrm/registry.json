@@ -801,7 +801,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/references/setup.md": {
-          "hash": "aa9078e84612e600efea09394e60bcbd273ee481c0a592b0faf6fd35f1066749",
+          "hash": "0914cc76037786c062c7323ed95b4426ac4179bf799b5b24a9a6042152ff7025",
           "version": "0.15.3"
         },
         "project-management/board-audit/references/verification.md": {
@@ -825,7 +825,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/cycle/hygiene_cycle.py": {
-          "hash": "abec183639c51ea330cba035bb1204336721f5c184571e591f116810024efb4e",
+          "hash": "4fb81e72343a9d110cecf3cf13517b9eadd201ecd1193edb969ea5bbd31c6375",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/facts.py": {

@@ -57,6 +57,14 @@ KEY_RE = re.escape(PROJECT) + r"-\d+"
 DONE_STATUSES = set(pm_config.get_data("PM_DONE_STATUSES", []))
 ACTIVE_STATUSES = set(pm_config.get_data("PM_OPEN_STATUSES", []))
 
+# O1w's positive control is PINNED, not taken from the predicate's own result set. Derived from the
+# result set, a zero result made the control unexercised, so a real zero and a broken predicate looked
+# identical. Pinned, a PASS proves the JQL, the auth and the field mapping answer YES to a row the rule
+# must accept; if the pinned row leaves the queue (re-dated out of overdue, closed), the control FAILS
+# loudly instead of quietly reverting to unprovable, and the live fallback keeps the number honest until
+# the pin is moved. Optional: unset, the control comes from the live result set.
+O1W_PINNED_CONTROL = pm_config.get("PM_O1W_PINNED_CONTROL")
+
 
 def require_settings():
     for name in ("PM_JIRA_PROJECT", "PM_EPIC", "PM_REPO_SLUG", "PM_LANE_DIR"):
@@ -213,9 +221,13 @@ def controls():
     st, rows = jql(f"project = {PROJECT} AND labels = window AND status = Blocked AND duedate < now()", ["key"])
     negO = rows[0]["key"] if rows else None
     st2, rows2 = jql(PREDS["O1w"], ["key"])
-    posO = rows2[0]["key"] if rows2 else None
+    pin = O1W_PINNED_CONTROL if O1W_PINNED_CONTROL and by_key(O1W_PINNED_CONTROL, PREDS["O1w"])[1] == 1 else None
+    posO = pin or (rows2[0]["key"] if rows2 else None)
     out["O1w"] = {
-        "positive": {"key": posO, "expect": 1, "got": by_key(posO, PREDS["O1w"])[1] if posO else None},
+        "positive": {"key": posO, "expect": 1, "got": by_key(posO, PREDS["O1w"])[1] if posO else None,
+                     "why": ("pinned control" if pin else f"pinned {O1W_PINNED_CONTROL} no longer matches, fell back to the live result set"
+                             if O1W_PINNED_CONTROL else "live result set (no pinned control set)")
+                            if posO else f"no positive control: pinned {O1W_PINNED_CONTROL} no longer matches and the result set is empty"},
         "negative": {"key": negO, "expect": 0, "got": by_key(negO, PREDS["O1w"])[1] if negO else None,
                      "why": "Blocked is not workable, so an overdue Blocked window must not match O1w"},
     }
