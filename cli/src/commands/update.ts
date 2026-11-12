@@ -21,6 +21,7 @@ import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
 import { resolveMainProjectRoot } from '../utils/repo-root.js';
+import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
 import { stageMigrationChanges } from '../utils/git-staging.js';
 
@@ -117,6 +118,16 @@ async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, op
         await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
         await reconcileGlobalClaudeHooks();
         await reconcileGlobalPiHooks();
+    }
+    // Refresh a stale installed gh shim (CORE-2633): xt update detects it and
+    // reinstalls; doctor passes afterwards. Fail-open: never block the update.
+    try {
+        const status = ghShimStatus({ home: process.env.HOME });
+        if (status.installed && !status.current) {
+            installGhShim({ home: process.env.HOME });
+        }
+    } catch (error) {
+        // ignore
     }
     if (shouldUseGlobalSkills(repoRoot)) {
         await printSkillsMigrationNudge(repoRoot);
