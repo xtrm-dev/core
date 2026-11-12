@@ -744,7 +744,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - The mod is a standalone plugin directory that the xtrm Claude plugin (step 12, CORE-2391) adopts unchanged. Nothing is merged into that plugin before step 12.
 
 > **Ruling · 11-11 · operator, via CORE-2629**
-> - skill-suggest in the Claude plugin baseline: operator decision pending (CORE-2629 §3.6).
+> - skill-suggest@xtrm is in the Claude plugin baseline that xt init installs and xt update reconciles (Ruling · 11-11 · operator).
 
 ### Step 12c — Substrate recall: one search over project memory
 
