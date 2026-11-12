@@ -64,3 +64,48 @@ describe('HOME is resolved lazily (CORE-2630)', () => {
     expect(await fs.pathExists(path.join(firstHome, '.config', 'xtrm-cli-nodejs', 'config.json'))).toBe(true);
   });
 });
+
+
+import { resolveConfCwd } from '../core/context.js';
+
+describe('resolveConfCwd matches env-paths (CORE-2630 review)', () => {
+  let previousHome: string | undefined;
+  let previousXdg: string | undefined;
+
+  beforeEach(() => {
+    previousHome = process.env.HOME;
+    previousXdg = process.env.XDG_CONFIG_HOME;
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+  });
+
+  it('agrees with env-paths on the current platform', async () => {
+    // env-paths is the reference implementation conf uses. Our resolver must
+    // produce the same directory so macOS users keep their existing store.
+    const { default: envPaths } = await import('env-paths');
+    const expected = envPaths('xtrm-cli', { suffix: 'nodejs' }).config;
+    expect(resolveConfCwd()).toBe(expected);
+  });
+
+  it('honours XDG_CONFIG_HOME on Linux without trimming', () => {
+    if (process.platform !== 'linux') return;
+    const xdg = '/tmp/xdg-test-value';
+    process.env.XDG_CONFIG_HOME = xdg;
+    expect(resolveConfCwd()).toBe(path.join(xdg, 'xtrm-cli-nodejs'));
+    // No trim: whitespace is preserved.
+    process.env.XDG_CONFIG_HOME = '  /tmp/spaces  ';
+    expect(resolveConfCwd()).toBe(path.join('  /tmp/spaces  ', 'xtrm-cli-nodejs'));
+  });
+
+  it('ignores XDG_CONFIG_HOME on darwin', () => {
+    if (process.platform !== 'darwin') return;
+    process.env.XDG_CONFIG_HOME = '/tmp/should-be-ignored';
+    const home = os.homedir();
+    expect(resolveConfCwd()).toBe(path.join(home, 'Library', 'Preferences', 'xtrm-cli-nodejs'));
+  });
+});

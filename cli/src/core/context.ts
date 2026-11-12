@@ -31,16 +31,25 @@ let config: Conf<ConfigShape> | null = null;
 let configKey: string | null = null;
 
 function configIdentity(): string {
+    // Align with resolveConfCwd and env-paths semantics: XDG_CONFIG_HOME is
+    // used verbatim (no trim) so a value with surrounding whitespace is treated
+    // as set, matching env-paths on Linux.
     return `${process.env.XDG_CONFIG_HOME ?? ''}\u0000${os.homedir()}`;
 }
 
 // CORE-2630: pass `cwd` explicitly so Conf does not fall back to env-paths,
 // which caches os.homedir() at module load and freezes the store location.
 // Resolve the config dir from the current HOME/XDG on every cache miss.
-function resolveConfCwd(): string {
-    const xdg = process.env.XDG_CONFIG_HOME;
+// CORE-2630: mirror env-paths so macOS users keep their existing store.
+// env-paths on darwin uses ~/Library/Preferences/<name> and ignores
+// XDG_CONFIG_HOME entirely; on Linux it uses XDG_CONFIG_HOME or ~/.config.
+export function resolveConfCwd(): string {
     const home = os.homedir();
-    const base = xdg && xdg.trim() ? xdg : path.join(home, '.config');
+    if (process.platform === 'darwin') {
+        return path.join(home, 'Library', 'Preferences', 'xtrm-cli-nodejs');
+    }
+    const xdg = process.env.XDG_CONFIG_HOME;
+    const base = xdg ? xdg : path.join(home, '.config');
     return path.join(base, 'xtrm-cli-nodejs');
 }
 

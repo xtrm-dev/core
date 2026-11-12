@@ -10,6 +10,12 @@ import dotenv from 'dotenv';
 // CORE-2630: resolve these from HOME on every call. Module-load constants
 // froze the target at import time, so a process that changes HOME afterwards
 // (a test, a wrapper, sudo) kept writing to the original home.
+//
+// XDG_CONFIG_HOME is deliberately NOT honoured here. env-manager stores MCP
+// server environment variables (~/.config/jaggers-agent-tools/.env), which is a
+// tool-specific, well-known location rather than generic application config;
+// env-paths/XDG semantics do not apply. Changing it would relocate existing
+// .env files and break setups that rely on the fixed path.
 function resolveConfigDir(): string {
     return path.join(os.homedir(), '.config', 'jaggers-agent-tools');
 }

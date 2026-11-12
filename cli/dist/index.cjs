@@ -67341,9 +67341,12 @@ function configIdentity() {
   return `${process.env.XDG_CONFIG_HOME ?? ""}\0${import_os4.default.homedir()}`;
 }
 function resolveConfCwd() {
-  const xdg = process.env.XDG_CONFIG_HOME;
   const home = import_os4.default.homedir();
-  const base = xdg && xdg.trim() ? xdg : import_path11.default.join(home, ".config");
+  if (process.platform === "darwin") {
+    return import_path11.default.join(home, "Library", "Preferences", "xtrm-cli-nodejs");
+  }
+  const xdg = process.env.XDG_CONFIG_HOME;
+  const base = xdg ? xdg : import_path11.default.join(home, ".config");
   return import_path11.default.join(base, "xtrm-cli-nodejs");
 }
 function getConfig() {
