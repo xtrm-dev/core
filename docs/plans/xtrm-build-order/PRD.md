@@ -628,7 +628,7 @@ Folded in: **XT-106** Beads removal across machines
 
 Goal: `xt init` brings a fresh machine to a verified ready state and `xt update` brings an existing one to latest, both from one release manifest with exact pins. The release also ships PR recording and the link gate.
 
-**Ruling · 11-11 · one setup surface.** Every component built or planned in this plan is installed by `xt init`, updated by `xt update` and checked by `xt doctor`, from one manifest. That covers the git hooks (6b), the scheduled `sb links sync` (26), the Claude route switch (step 10), the Substrate CLI and plugins, the gh shim and gate mode (15), and skill packs. Step 17 owns the install story and doctor checks; CORE-2629 is the gap analysis against this Phase, and names what no step owns yet.
+**Ruling · 11-11 · one setup surface.** Every component built or planned in this plan is installed by `xt init`, updated by `xt update` and checked by `xt doctor`, from one manifest. That covers the git hooks (6b), the scheduled `sb links sync` (26), the Claude route switch (step 10), the Substrate CLI and plugins, the gh shim and gate mode (15), and skill packs. Step 17 owns the install story and doctor checks; CORE-2629 is the gap analysis against this Phase (Phase 2 · XT-114), and names what no step owns yet.
 
 ### Step 9 — Install runtimes before Substrate enrollment
 
@@ -787,7 +787,7 @@ Folded in: **XT-181** coordination hooks in the roster · **XT-186** context-mod
 > - Delivered is not deployed. Live use needs an `sb` deploy: the `sb` on the operator PC is 0.2.6, which predates these verbs, so the shim warns once and skips until then. The epic `XTRM-725` stays open for that.
 
 > **Status · 11-11 · automation**
-> - Automation is the rule: the opener writes `created_from` at PR open, so no agent types a link. The gh shim (CORE-2607) does this today and fails open with one warning.
+> - Automation is the rule: the opener writes `created_from` at PR open, so no agent types a link. The gh shim (CORE-2607) runs today but links nothing on a fresh Issue: it calls `provenance attach` without dispatch and allocate, so every such PR fails with `no_receipt` and is never linked (CORE-2631, fix in progress, worker pi152-core). Only CORE-2622 has a link.
 > - Verified: only CORE-2622 (core #921) has a link row; PRs opened today (core #922, #923, #924, xtrm #335, #364, #365, #367) have none and read `gate_no_evidence`. XTRM-752 scopes the root cause.
 > - Live use needs an sb deploy: the operator PC runs 0.2.6, which predates these verbs, so the shim warns and skips until then (XTRM-725 stays open for that).
 > - Installed by xt: the gh shim is installed by xt init and updated by xt update; the gate mode is set there (CORE-2629 where no step owns it).
@@ -1179,7 +1179,7 @@ Folded in: **XT-10** abandoned worktrees · **XT-174** per-activation scratch
 
 > **Status · 11-11 · automation**
 > - Automation is the rule: a scheduled reconciler repairs missed PRs and records state; manual `sb links sync` is a repair tool. Today it runs only when called; no timer schedules it.
-> - Verified: `sb links sync` (XTRM-728) exists and is one-shot over conditional gh reads; nothing schedules it on the server. XTRM-752 scopes the gap.
+> - Verified: `sb links sync` (XTRM-728) exists and is one-shot over conditional gh reads; nothing schedules it on the server. The opener's failure on fresh Issues (CORE-2631) is why the reconciler matters now. XTRM-752 scopes the gap.
 > - Next: schedule `sb links sync` on the server and serve the consumers in steps 27 and 34.
 > - Installed by xt: the schedule and its service unit are installed by xt init and updated by xt update (CORE-2629).
 
