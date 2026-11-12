@@ -837,3 +837,54 @@ describe('xtrm update', () => {
     expect(syncGlobalPromptsMock).toHaveBeenCalledWith({ dryRun: true });
   });
 });
+
+vi.mock('../core/gh-shim.js', () => ({
+  ghShimStatus: vi.fn(),
+  installGhShim: vi.fn(),
+}));
+
+describe('CORE-2633 gh shim refresh in update', () => {
+  it('reinstalls a stale shim and leaves a current one alone', async () => {
+    const { runUserScopeMaintenance } = await import('../commands/update.js');
+    const { ghShimStatus, installGhShim } = await import('../core/gh-shim.js');
+    const ghShimStatusMock = ghShimStatus as any;
+    const installGhShimMock = installGhShim as any;
+
+    fs.ensureDirSync('/tmp/pkg');
+    fs.writeJsonSync('/tmp/pkg/package.json', { version: '0.0.0' });
+    resolvePackageRootMock.mockReturnValue('/tmp/pkg');
+    planSubstrateMigrationMock.mockResolvedValue({ needed: false });
+    runDependencyMaintenanceMock.mockResolvedValue({});
+    ensureServiceSkillsMock.mockResolvedValue(undefined);
+    reconcileProjectClaudeHooksMock.mockResolvedValue(undefined);
+    ensureGlobalSkillsBootstrappedMock.mockResolvedValue(undefined);
+    ensureGlobalHooksBootstrappedMock.mockResolvedValue(undefined);
+    reconcileGlobalClaudeHooksMock.mockResolvedValue(undefined);
+    reconcileGlobalPiHooksMock.mockResolvedValue(undefined);
+    logBootstrapTriggerMock.mockResolvedValue(undefined);
+    ensureUserAgentsSkillsSymlinkMock.mockResolvedValue(undefined);
+    ensureAgentsSkillsSymlinkMock.mockResolvedValue(undefined);
+    syncGlobalPromptsMock.mockResolvedValue(undefined);
+    printGlobalPromptSyncSummaryMock.mockResolvedValue(undefined);
+    runPiStartupSmokeCheckMock.mockResolvedValue(undefined);
+    checkDriftMock.mockResolvedValue({});
+
+    // stale
+    ghShimStatusMock.mockReturnValue({ installed: true, current: false });
+    installGhShimMock.mockReturnValue({ ok: true });
+    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    expect(installGhShimMock).toHaveBeenCalled();
+
+    // current
+    installGhShimMock.mockClear();
+    ghShimStatusMock.mockReturnValue({ installed: true, current: true });
+    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    expect(installGhShimMock).not.toHaveBeenCalled();
+
+    // non-shim (not installed) never overwritten
+    installGhShimMock.mockClear();
+    ghShimStatusMock.mockReturnValue({ installed: false, current: false });
+    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    expect(installGhShimMock).not.toHaveBeenCalled();
+  });
+});

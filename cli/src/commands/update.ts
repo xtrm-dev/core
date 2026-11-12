@@ -105,7 +105,7 @@ async function printSkillsMigrationNudge(repoRoot: string): Promise<void> {
  * under a repo, so none of it can reach a `.beads` board. Extracted so the
  * blocked-repo path can run it without touching repo-scoped state.
  */
-async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, opts: UpdateOpts): Promise<void> {
+export async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, opts: UpdateOpts): Promise<void> {
     const pkgJson = await fs.readJson(path.join(packageRoot, 'package.json')) as { version?: string };
     await logBootstrapTrigger({
         command: 'update',

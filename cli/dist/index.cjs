@@ -84439,6 +84439,13 @@ async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
     await reconcileGlobalClaudeHooks();
     await reconcileGlobalPiHooks();
   }
+  try {
+    const status2 = ghShimStatus({ home: process.env.HOME });
+    if (status2.installed && !status2.current) {
+      installGhShim({ home: process.env.HOME });
+    }
+  } catch (error51) {
+  }
   if (shouldUseGlobalSkills(repoRoot)) {
     await printSkillsMigrationNudge(repoRoot);
   }
