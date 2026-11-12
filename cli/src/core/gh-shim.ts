@@ -17,7 +17,10 @@
  *                         pinned to the reviewed head, reviewer App token)
  *   gh pr merge ...    -> `xt identity merge-check` first, then the real gh with
  *                         --match-head-commit, then a github-merge Journal ref
- *   gh pr close        -> refused for the reviewer role
+ *   gh pr edit|merge|close|reopen|ready|lock|unlock|update-branch|revert,
+ *   gh issue close|reopen|edit|…  -> refused for the reviewer role, and so is
+ *                         every route outside the read allowlist: one choke
+ *                         point decides, before any route can run (CORE-2626)
  *
  * An operator process (no holder, no role) always reaches the real gh: the shim
  * changes nothing outside an agent tree. The shim never prints or stores a
@@ -25,6 +28,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { API_GROUP, GROUP_ROUTES, READ_GROUPS, WRITE_GROUPS } from './gh-shim-routes.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -110,6 +114,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MARKER = '${GH_SHIM_FINGERPRINT}';
+// CORE-2626: the classification every restricted-role decision reads, inlined
+// from cli/src/core/gh-shim-routes.ts so the running shim cannot drift from the
+// table the parity test checks.
+const GROUP_ROUTES = ${JSON.stringify(GROUP_ROUTES)};
+const READ_GROUPS = ${JSON.stringify(READ_GROUPS)};
+const WRITE_GROUPS = ${JSON.stringify(WRITE_GROUPS)};
+const API_GROUP = ${JSON.stringify(API_GROUP)};
 const REAL_GH = ${JSON.stringify(realGh ?? '')};
 const SELF = (() => { try { return fs.realpathSync(__filename); } catch { return __filename; } })();
 
@@ -282,7 +293,12 @@ function resolvedRole() {
   if (answer.status === 0) {
     try {
       const parsed = JSON.parse(answer.stdout);
-      if (parsed && (parsed.role === null || typeof parsed.role === 'string')) return parsed.role;
+      if (parsed && typeof parsed.role === 'string') return parsed.role;
+      // CORE-2626 finding 3: a role name the map does not know resolves to null,
+      // and the credential path already fails closed for it. Reading null as
+      // "unrestricted" made a typo the widest role in the shim, so it is
+      // restricted here too. A holder-only session (no XTRM_ROLE) stays as it was.
+      if (parsed && parsed.role === null) return raw ? RESTRICTED_WHEN_UNRESOLVED : null;
     } catch (error) { /* fall through to the fail-closed branch */ }
   }
   // A failed lookup with a role set fails closed: restricted, not operator.
@@ -390,6 +406,72 @@ function findVerb(args) {
   return { verb: undefined, index: -1, repo };
 }
 
+/**
+ * The first positional argument, skipping global flags and the values of -R and
+ * --repo in every spelling gh accepts.
+ */
+function firstPositional(args) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '-R' || arg === '--repo') { i += 1; continue; }
+    if (arg.indexOf('--repo=') === 0 || arg.indexOf('-R=') === 0) continue;
+    if (arg.indexOf('-R') === 0 && arg.length > 2) continue;
+    if (arg.charAt(0) === '-') continue;
+    return { index: i, value: arg };
+  }
+  return { index: -1, value: '' };
+}
+
+/** The positional after the command group, with the same flag rules. */
+function subcommand(args) {
+  const first = firstPositional(args);
+  if (first.index < 0) return '';
+  for (let i = first.index + 1; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '-R' || arg === '--repo') { i += 1; continue; }
+    if (arg.indexOf('--repo=') === 0 || arg.indexOf('-R=') === 0) continue;
+    if (arg.indexOf('-R') === 0 && arg.length > 2) continue;
+    if (arg.charAt(0) === '-') continue;
+    return arg;
+  }
+  return '';
+}
+
+/**
+ * CORE-2626: what this argv may do for a restricted role. Read only where the
+ * table says read; anything unclassified — a user alias, an extension, a group
+ * gh adds later — is a write, so it is refused instead of passed.
+ */
+function routeClass(args) {
+  const group = firstPositional(args).value;
+  if (!group) return 'read';
+  if (group === API_GROUP) return 'read';
+  if (READ_GROUPS.indexOf(group) >= 0) return 'read';
+  if (WRITE_GROUPS.indexOf(group) >= 0) return 'write';
+  const table = GROUP_ROUTES[group];
+  if (!table) return 'write';
+  const sub = subcommand(args);
+  return Object.prototype.hasOwnProperty.call(table, sub) ? table[sub] : 'write';
+}
+
+/** The one refusal every route a restricted role may not take gets. */
+function restrictedRefusal(args) {
+  const group = firstPositional(args).value;
+  const sub = subcommand(args);
+  if (group === 'pr' && sub === 'merge') return 'the reviewer role may not merge; ask the worker or coordinator';
+  if (group === 'pr' && (sub === 'edit' || sub === 'close' || sub === 'reopen' || sub === 'ready')) {
+    return 'the reviewer role may not change PR state (gh pr ' + sub + ')';
+  }
+  // An unknown first token is an alias or an extension: show only the token, not
+  // the argument after it as if it were a subcommand.
+  const known = GROUP_ROUTES[group] || READ_GROUPS.indexOf(group) >= 0 || WRITE_GROUPS.indexOf(group) >= 0;
+  const shown = known && sub ? group + ' ' + sub : group;
+  return 'the reviewer role may only read through this shim (refused: gh ' + shown
+    + '); it may read pr view|list|diff|checks|status|checkout|comment|review, issue view|list|comment|status,'
+    + ' api GET, repo view, auth status, run view|list, and create pull requests.'
+    + ' The shim is a guardrail: GitHub-side rules are the binding control';
+}
+
 function main() {
   const args = process.argv.slice(2);
   const real = findRealGh();
@@ -404,8 +486,18 @@ function main() {
     return roleCache;
   };
 
+  const group = firstPositional(args).value;
+  // CORE-2626: ONE choke point, before any route can exit through pass(). A read
+  // route never pays the role lookup (CORE-2528 batch 5); a write route resolves
+  // the role once, and a restricted role is refused here however the action is
+  // spelled: pr edit, issue close <PR#>, pr lock, an alias, an extension.
+  const route = routeClass(args);
+  if (route === 'write' && isRestricted(roleOf())) die(restrictedRefusal(args));
+
   // CORE-2607: a create happens for any agent role; the link is not a permission.
-  if (verb === 'create') createAndLink(real, args);
+  // gh pr new is gh's built-in alias for create, so it takes the same path
+  // (CORE-2626 finding 4).
+  if (verb === 'create' || verb === 'new') createAndLink(real, args);
 
   // CORE-2622: a pr edit sets the same body, so it gets the same refusal.
   // An edit that carries no body never reaches the marker parser's work.
@@ -481,8 +573,8 @@ function main() {
     die('the reviewer role may not change PR state (gh pr ' + verb + ')');
   }
 
-  if (args[0] === 'api' && isRestricted(roleOf())) {
-    const verdict = reviewerApiVerdict(args.slice(1));
+  if (group === API_GROUP && isRestricted(roleOf())) {
+    const verdict = reviewerApiVerdict(args.slice(firstPositional(args).index + 1));
     if (verdict) die(verdict);
   }
 
