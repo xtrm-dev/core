@@ -1111,7 +1111,7 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
   // A tool may frame its JSON: GitNexus puts a `[GitNexus]` line before it and
   // a `---` hint after it (the hint itself can hold braces, `process/{name}`).
   const body = joined.trim()
-    .replace(/^\[[^\]\n]*\][ \t]*\n/, "")
+    .replace(/^\[[^\]\n]*\][ \t\r]*\n/, "")
     .split(/\n+---\s*\n/)[0]!
     .trim();
   // Specialist and Substrate payloads carry no readable outcome on a folded
@@ -1189,7 +1189,7 @@ function specialistDuration(durationMs: number): string {
 function parsedResultObject(resultTexts: string[]): Record<string, unknown> | undefined {
   if (resultTexts.length === 0) return undefined;
   const body = resultTexts.join("\n").trim()
-    .replace(/^\[[^\]\n]*\][ \t]*\n/, "")
+    .replace(/^\[[^\]\n]*\][ \t\r]*\n/, "")
     .split(/\n+---\s*\n/)[0]!
     .trim();
   try {

@@ -70,6 +70,7 @@ function matchesGitignore(relativePath: string, patterns: string[]): boolean {
 
         if (p.includes('*')) {
             // Simple glob: convert * to [^/]* for filename patterns
+            // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
             const escaped = p.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
             const regex = new RegExp('^' + escaped.replace(/\*/g, '[^/]*') + '$');
             if (regex.test(normalized) || regex.test(basename)) return true;

@@ -74968,6 +74968,7 @@ function mergeHooksObject(existingHooks, incomingHooks) {
 function deepMergeWithProtection(original, updates, currentPath = "", opts = {}) {
   const result = { ...original };
   for (const [key, value] of Object.entries(updates)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
     const keyPath = currentPath ? `${currentPath}.${key}` : key;
     if (key === "hooks" && typeof value === "object" && value !== null && typeof original[key] === "object" && original[key] !== null) {
       result[key] = opts.pruneHooks ? replaceHooksObject(original[key], value) : mergeHooksObject(original[key], value);

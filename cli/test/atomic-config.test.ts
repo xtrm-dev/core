@@ -136,3 +136,14 @@ describe('deepMergeWithProtection (hooks merge behavior) — matcher dedup', () 
         expect(wrappers[0].matcher).toContain('MultiEdit');
     });
 });
+
+describe('deepMergeWithProtection prototype pollution guard', () => {
+    it('refuses __proto__/constructor/prototype keys', () => {
+        const local = {};
+        const incoming = JSON.parse('{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"prototype":{"polluted":true},"safe":{"x":1}}');
+        const merged = deepMergeWithProtection(local, incoming);
+        expect(({} as any).polluted).toBeUndefined();
+        expect(merged.safe).toEqual({ x: 1 });
+        expect(Object.prototype.hasOwnProperty.call(merged, '__proto__')).toBe(false);
+    });
+});
