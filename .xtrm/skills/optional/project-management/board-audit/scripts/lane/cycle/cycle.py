@@ -93,6 +93,25 @@ DEEP_SEEN = f"{LANE}/deep-dup-seen.json"
 DEEP_MAX_PER_CYCLE = 8
 DEEP_TIMEOUT_S = 420
 
+# Check 14 (unrowed done work). The memory lives in the LANE dir beside the batch files, not in the
+# cycle subdir: `unrowed.json` is what a coordinator reads to see what was already proposed.
+UNROWED_STATE = os.path.join(lanecfg.lane(), "unrowed.json")
+UNROWED_MAX_PER_CYCLE = 60   # blocks per batch file; the COUNT is never capped
+UNROWED_REPROPOSE_DAYS = 7   # proposed once, then silent unless still unrowed after this many days
+# Rolling horizon for the batch AND for unrowed_done (coordinator ruling 2026-11-13). The first live
+# reading was 1145 unrowed refs under the programme epic - the whole programme's history, so a constant
+# number carried no information after the first cycle. A ref is in the window only when its FINISH TIME
+# is within this many hours: the newest of (a) the timestamp of its newest journal entry of kind
+# `result` and (b) the mergedAt of a merged PR that carries the ref. A ref with neither time source has
+# no finish time and cannot be in the window. unrowed_backlog reports the whole-scope total with NO
+# time filter and never yields a proposal.
+UNROWED_WINDOW_HOURS = 24
+# "Shipped nothing" for the PROPOSAL's reasoning only: docs, tests, service knowledge, tooling that runs
+# from a checkout. Such work still needs a row, but a row that opens and closes in the same breath.
+SHIPPED_NOTHING_RE = re.compile(
+    r"\bdocs?\b|\breadme\b|service[- ]knowledge|\brunbook\b|\btests?\b|\btest[- ]only\b"
+    r"|\btooling\b|\bskill\b|\bchangelog\b|\btypo\b|read-?only", re.IGNORECASE)
+
 # Drift accounting the coordinator ordered on 2026-11-04 (see the d/e lines in check_status_drift).
 DRIFT_PARENTS = f"{LANE}/drift-parents.json"
 THEME_EPICS = set(lanecfg.data("PM_THEME_EPICS", []))
@@ -2770,6 +2789,376 @@ def check_staleness(out, counts):
         out.append("  - rows whose newest comment is the operator's: **0** — every operator comment is answered")
 
 
+def unrowed_rows():
+    """(rows, why) - every Jira row of this project with the labels it carries.
+
+    ONE paged JQL for the whole check (maxResults 100, follow nextPageToken), and the status comes
+    from the same call when it is asked for. No status filter: a row closed as Completata still means
+    the work was recorded, so a Done row counts as rowed. Two attempts, never more - the lane runs
+    every 15 minutes and must not hammer the API.
+    """
+    rows, why, token = [], None, None
+    for _attempt in (1, 2):
+        rows, token, why = [], None, None
+        while True:
+            body = {"jql": f"project = {PROJECT} ORDER BY key", "maxResults": 100,
+                    "fields": ["key", "labels", "summary"]}
+            if token:
+                body["nextPageToken"] = token
+            try:
+                st, d = jira.call("POST", "/rest/api/3/search/jql", body)
+            except Exception as exc:  # noqa: BLE001 - a reset or timeout is a failed read, not a zero
+                why = exc.__class__.__name__
+                break
+            if st != 200 or not isinstance(d, dict):
+                why = f"HTTP {st}"
+                break
+            rows.extend(d.get("issues") or [])
+            token = d.get("nextPageToken")
+            if d.get("isLast") or not token:
+                why = None
+                break
+        if why is None:
+            return rows, None
+    return [], why or "unknown"
+
+
+PR_REF_RE = re.compile(SB_RE + r"-\d{4,}", re.IGNORECASE)
+
+
+def unrowed_prs():
+    """(merged PRs, why) - ONE `gh pr list`, the only GitHub read this check is allowed."""
+    why = "unknown"
+    for _attempt in (1, 2):
+        try:
+            res = gh(["pr", "list", "--state", "merged", "--limit", "200", "--json",
+                      "headRefName,title,number,mergeCommit,mergedAt"])
+        except Exception as exc:  # noqa: BLE001 - a timeout is a failed read, not an empty merge list
+            why = exc.__class__.__name__
+            continue
+        if isinstance(res, list):
+            return res, None
+        why = str(res)[:120]
+    return [], why
+
+
+def pr_branch_refs(pr):
+    """The refs a merged PR's BRANCH names. Title refs are cross-references too often to bind work."""
+    return {m.upper() for m in PR_REF_RE.findall(str(pr.get("headRefName") or ""))}
+
+
+def unrowed_issues():
+    """(issues, why) - one `sb issue list` for the whole project; the locator carries the hierarchy."""
+    why = "unknown"
+    for _attempt in (1, 2):
+        try:
+            p = subprocess.run([lanecfg.sb_bin(), "issue", "list", "--project", SB_PROJECT_ID, "--json"],
+                               capture_output=True, text=True, timeout=180)
+        except Exception as exc:  # noqa: BLE001
+            why = exc.__class__.__name__
+            continue
+        if p.returncode != 0:
+            why = ((p.stderr or p.stdout or "").strip()[:120]) or f"rc={p.returncode}"
+            continue
+        try:
+            d = json.loads(p.stdout)
+        except ValueError:
+            why = "non-JSON output"
+            continue
+        if not d.get("ok") or not isinstance(d.get("data"), list):
+            why = str(d.get("error") or "ok=false")[:120]
+            continue
+        return d["data"], None
+    return [], why
+
+
+def _epoch_ms(stamp):
+    """epoch milliseconds from an ISO-8601 timestamp (a merged PR's mergedAt), or None.
+
+    The journal's own created_at is already an INTEGER of epoch milliseconds (state.db), so both time
+    sources are compared in that unit and a text cut-off can never silently match nothing.
+    """
+    if not stamp:
+        return None
+    try:
+        return int(datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).timestamp() * 1000)
+    except (TypeError, ValueError):
+        return None
+
+
+def unrowed_results():
+    """({ref: result}, why) - the newest journal RESULT per issue, from ONE local state.db read.
+
+    Deliberately not `sb journal latest <ref>` per ref: the candidate set is over a thousand finished
+    refs and this leg runs every 15 minutes, so a CLI spawn per ref is the cost bound the check was
+    given. It is the same table `sb journal latest --kind result` reads (substrate_state() above reads
+    it the same way), so the evidence is identical and the read is one query. `created_at` comes back
+    with the row because it is one of the two finish-time sources the 24-hour window is built from.
+    """
+    try:
+        with state_db_readonly() as con:
+            raw = list(con.execute(
+                "select i.human_number, j.sequence, j.created_at, j.result_json, j.semantic_json, "
+                "j.mechanical_json "
+                "from issue_journal j join issues i on i.id = j.issue_id "
+                "where j.kind = 'result' and i.project_id = ? and j.sequence = "
+                "(select max(k.sequence) from issue_journal k where k.issue_id = j.issue_id "
+                "and k.kind = 'result')", (SB_PROJECT_ID,)))
+    except (sqlite3.Error, OSError) as exc:
+        return {}, f"{exc.__class__.__name__}: {exc}"[:160]
+    out = {}
+    for number, seq, created_ms, res, sem, mech in raw:
+        summary = ""
+        for blob in (res, sem):
+            try:
+                d = json.loads(blob) if blob else None
+            except ValueError:
+                d = None
+            if isinstance(d, dict):
+                summary = re.sub(r"\s+", " ", str(d.get("summary") or "")).strip()
+                if summary:
+                    break
+        out[f"{SB}-{number}"] = {"sequence": seq, "at_ms": created_ms if isinstance(created_ms, int) else None,
+                                 "summary": summary or "(mechanical-only)"}
+    return out, None
+
+
+def unrowed_proposal(ref, entry, row_refs):
+    """(kind, why) - what to do about one missing row. A PROPOSAL; nothing is ever written here.
+
+    attach-to-existing-row when another ref on the SAME BRANCH (the work's own name, not a title
+    cross-reference) already carries a row: that row covers the same shipped change, and a second row
+    would split one delivery into two. Otherwise create-and-close, with the reasoning naming whether
+    the change shipped nothing (docs/tests/tooling that runs from a checkout) or needs its own row.
+    """
+    pr = entry.get("pr")
+    siblings = sorted(r for r in (entry.get("branch_refs") or set()) if r != ref and r in row_refs)
+    if siblings:
+        s = siblings[0]
+        return ("attach-to-existing-row",
+                f"{row_refs[s]} (substrate:{s}) covers the same merge: PR #{pr[0]} is named for "
+                f"{', '.join(siblings)}, so a second row would split one delivery")
+    text = " ".join((ref, entry.get("title") or "", str(entry.get("locator") or "")))
+    if pr:
+        text += " " + str(entry.get("pr_title") or "")
+    if SHIPPED_NOTHING_RE.search(text):
+        return ("create-and-close",
+                "the change ships nothing to production (docs, tests, service knowledge, read-only "
+                "analysis, tooling that runs from a checkout); it still needs a row, one that opens "
+                "and closes together")
+    return ("create-and-close",
+            "no row covers this merge and no row shares its branch; the work needs its own row")
+
+
+def check_unrowed_done(out, counts):
+    """Check 14: work that FINISHED in Substrate and whose Jira row was never created.
+
+    WHY (2026-11-13): MMD-4765, MMD-4749, MMD-4684 and MMD-4734 all finished and shipped with no row
+    on the board, and each one was found by a human reading a merge. Every other check here reads rows
+    that EXIST, so a row that never existed is invisible to all of them. This leg reads the other
+    direction: Substrate finished work, then asks the board whether it was ever mirrored.
+
+    PROPOSES, never performs: at most one batch file per cycle, one paged JQL, one gh read, one
+    `sb issue list`, one local state.db read. No Jira write, no row created or moved, ever.
+
+    SCOPE (coordinator ruling 2026-11-13): EVERY issue in project prj_mmd, not only the descendants of
+    the programme epic - MMD-4755 lives under MMD-2200 and a parent filter hid it. Issues in other
+    Substrate projects stay out because `sb issue list --project` never returns them.
+
+    WINDOW (same ruling): the batch and `unrowed_done` cover only refs whose FINISH TIME is inside the
+    last UNROWED_WINDOW_HOURS hours. FINISH TIME is defined as the NEWEST of (a) the timestamp of the
+    issue's newest journal entry of kind `result` (the local state.db read) and (b) the PR's `mergedAt`
+    for a merged PR that carries the ref. A ref with neither time source has no finish time and cannot
+    be in the window. `unrowed_backlog` is the whole-scope total with NO time filter and never yields
+    a proposal: the batch is only ever built from the window.
+
+    DEDUPE (the MMD-4809 scar): a check re-proposed the same closed row every night for twelve days.
+    So the memory (`UNROWED_STATE`) records each ref once, and an IN-WINDOW ref is proposed again only
+    when it is STILL unrowed after UNROWED_REPROPOSE_DAYS. The count is a different question from the
+    batch and never reads the memory: `unrowed_done` is the true in-window total.
+
+    A failed read is READ-FAILED in BOTH fields, never 0: a read that did not happen must not look like
+    a clean board.
+    """
+    out.append("\n## 14. Finished work with no Jira row (proposal only; this leg never writes a row)\n")
+    rows, row_why = unrowed_rows()
+    prs, pr_why = unrowed_prs()
+    issues, iss_why = unrowed_issues()
+    results, res_why = unrowed_results()
+    errors = [("row read failed", row_why), ("pr read failed", pr_why),
+              ("issue read failed", iss_why), ("result read failed", res_why)]
+    errors = [(what, why) for what, why in errors if why]
+    if errors:
+        for what, why in errors:
+            out.append(f"- UNROWED-GATE-ERROR {what} for {why}")
+        out.append("- **a failed read must never look like a clean board**: `unrowed_done=READ-FAILED` "
+                   "and `unrowed_backlog=READ-FAILED`, and no batch is written from a partial read")
+        counts["unrowed_done"] = "READ-FAILED"
+        counts["unrowed_backlog"] = "READ-FAILED"
+        counts["unrowed_proposed"] = 0
+        return
+
+    row_refs = {}
+    for i in rows:
+        for lab in (i.get("fields") or {}).get("labels") or []:
+            if str(lab).lower().startswith("substrate:"):
+                row_refs.setdefault(str(lab).split(":", 1)[1].upper(), i.get("key"))
+    pr_by_ref, pr_title = {}, {}
+    for p in prs:
+        mc = (p.get("mergeCommit") or {}).get("oid") or ""
+        for ref in pr_branch_refs(p):
+            cur = pr_by_ref.get(ref)
+            if cur is None or (p.get("number") or 0) > cur[0]:
+                pr_by_ref[ref] = (p.get("number"), mc, p.get("mergedAt") or "")
+                pr_title[ref] = p.get("title") or ""
+
+    done, unrowed = [], []
+    for i in issues:
+        ref = str(i.get("humanRef") or "")
+        if i.get("lifecycleState") != "done" or not ref:
+            continue
+        done.append(i)
+        base = ref.split(".", 1)[0]
+        # A hierarchical ref resolves by TRIMMING to its base ref; a row under ANY status counts,
+        # because a closed row means the work was recorded.
+        if ref.upper() in row_refs or base.upper() in row_refs:
+            continue
+        unrowed.append(i)
+
+    now = datetime.now(timezone.utc)
+    horizon_ms = int((now - timedelta(hours=UNROWED_WINDOW_HOURS)).timestamp() * 1000)
+    evidence, backlog = [], []
+    for i in unrowed:
+        ref = str(i.get("humanRef"))
+        base = ref.split(".", 1)[0]
+        pr = pr_by_ref.get(ref.upper()) or pr_by_ref.get(base.upper())
+        res = results.get(ref)
+        if not pr and not res:
+            continue        # finished by lifecycle alone: not finished by this check's evidence rule
+        # FINISH TIME: the newest of the newest journal `result` timestamp and a merged PR's mergedAt.
+        # A ref with neither time source cannot be in the window (it still counts in the backlog).
+        stamps = [res.get("at_ms") if res else None, _epoch_ms(pr[2]) if pr else None]
+        stamps = [s for s in stamps if isinstance(s, int)]
+        finish_ms = max(stamps) if stamps else None
+        entry = {"ref": ref, "title": str(i.get("title") or ""),
+                 "locator": str(i.get("locator") or ""),
+                 "state": str(i.get("lifecycleState") or ""),
+                 "pr": pr, "pr_title": pr_title.get(ref.upper()) or pr_title.get(base.upper()) or "",
+                 "branch_refs": {ref} | {r for r, v in pr_by_ref.items()
+                                         if pr and v[0] == pr[0]},
+                 "result": res, "finish_ms": finish_ms}
+        backlog.append(entry)
+        if finish_ms is not None and finish_ms >= horizon_ms:
+            evidence.append(entry)
+    evidence.sort(key=lambda e: int(re.sub(r"\D", "", e["ref"]) or 0), reverse=True)
+    total = len(evidence)
+    counts["unrowed_done"] = total          # in-window total: never filtered by the memory below
+    counts["unrowed_backlog"] = len(backlog)  # whole scope, NO time filter; never proposed from
+    counts["unrowed_rows_read"] = len(rows)
+    counts["unrowed_prs_read"] = len(prs)
+    counts["unrowed_done_project"] = len(done)
+    counts["unrowed_no_evidence"] = len(unrowed) - len(backlog)
+
+    memory, mem_why = {}, None
+    try:
+        raw = json.load(open(UNROWED_STATE, encoding="utf-8"))
+        memory = raw.get("refs") if isinstance(raw, dict) else None
+        if not isinstance(memory, dict):
+            raise ValueError("refs is not an object")
+    except FileNotFoundError:
+        memory = {}
+    except (ValueError, OSError) as exc:
+        memory, mem_why = {}, f"{exc.__class__.__name__}: {exc}"[:120]
+    if mem_why:
+        # Proposing everything again is the MMD-4809 failure; proposing nothing is silent. Say which.
+        out.append(f"- UNROWED-GATE-ERROR memory unreadable for {mem_why}")
+        out.append("- no proposal this cycle: the memory decides what was already proposed, and a "
+                   "re-proposal of every ref is the defect this file exists to prevent")
+        counts["unrowed_proposed"] = 0
+        return
+
+    today = datetime.now(timezone.utc).date()
+    due, held = [], 0
+    for e in evidence:
+        rec = memory.get(e["ref"])
+        if isinstance(rec, dict):
+            try:
+                prev = datetime.strptime(str(rec.get("proposed") or ""), "%Y-%m-%d").date()
+            except ValueError:
+                prev = None
+            if prev is not None and (today - prev).days < UNROWED_REPROPOSE_DAYS:
+                held += 1
+                continue
+        due.append(e)
+    batch, over_cap = due[:UNROWED_MAX_PER_CYCLE], max(0, len(due) - UNROWED_MAX_PER_CYCLE)
+
+    if batch:
+        written = []
+        for e in batch:
+            kind, why = unrowed_proposal(e["ref"], e, row_refs)
+            e["kind"], e["why"] = kind, why
+            written.append(e)
+        batch = written
+
+    out.append(f"- Substrate issues read: **{len(issues)}** in one `sb issue list` ({SB_PROJECT_ID}); "
+               f"done in that project: **{len(done)}** (whole project, not only the programme epic)")
+    out.append(f"- one paged JQL read **{len(rows)}** row(s), carrying {len(row_refs)} distinct substrate "
+               f"label(s); one `gh pr list` read **{len(prs)}** merged PR(s); one local state.db read gave "
+               f"the newest journal result per issue")
+    out.append(f"- **{UNROWED_WINDOW_HOURS}-hour window** (finish time = newest of the newest journal "
+               f"`result` timestamp and a merged PR's `mergedAt`), finished and NO row for the ref or its "
+               f"base ref: **{total}** (counts key `unrowed_done` - the batch is built only from this)")
+    out.append(f"- **backlog, whole scope, no time filter**: **{len(backlog)}** unrowed (counts key "
+               f"`unrowed_backlog` - this number never yields a proposal)")
+    out.append(f"- finished but with neither a merged PR nor a journal result, so not counted: "
+               f"**{len(unrowed) - len(backlog)}**")
+    out.append(f"- proposed this cycle: **{len(batch)}** (cap {UNROWED_MAX_PER_CYCLE}) · "
+               f"held by the once-per-{UNROWED_REPROPOSE_DAYS}-days memory: **{held}** · "
+               f"over the cap, next cycle: **{over_cap}**")
+    out.append(f"- memory `{UNROWED_STATE}`: {len(memory)} ref(s) recorded before this cycle")
+    out.append("- searched for every ref below: `substrate:<ref>` (and `substrate:<base ref>` when the "
+               "ref is hierarchical) across every row and every status; a Done/Completata row counts "
+               "as rowed")
+    out.append("- this leg PROPOSES ONLY: no Jira write, no row created, moved or closed")
+    if batch:
+        out.append("\n### Proposals (for a coordinator to act on; nothing was written)\n")
+        for e in batch:
+            out.append(f"- {e['ref']} | {e['state']} | {e['locator']} | {e['title'][:88]}")
+            if e["pr"]:
+                n, mc, at = e["pr"]
+                out.append(f"  - finished by: PR #{n} merged {at or '-'}, merge commit {(mc or '-')[:12]}"
+                           + (f" | {e['pr_title'][:70]}" if e["pr_title"] else ""))
+            if e["result"]:
+                out.append(f"  - finished by: journal result seq {e['result']['sequence']} | "
+                           f"{(e['result'].get('summary') or '')[:100]}")
+            base = e["ref"].split(".", 1)[0]
+            looked = f"`substrate:{e['ref']}`" + (f" and `substrate:{base}`" if base != e["ref"] else "")
+            out.append(f"  - searched: {looked} over all {len(rows)} row(s) - no row carries it")
+            out.append(f"  - PROPOSAL: {e['kind']} - {e['why']}")
+    elif due:
+        out.append("- nothing is due for a proposal this cycle")
+
+    for e in batch:
+        prev = memory.get(e["ref"]) if isinstance(memory.get(e["ref"]), dict) else {}
+        memory[e["ref"]] = {"first": prev.get("first") or today.isoformat(),
+                             "proposed": today.isoformat(), "proposal": e["kind"],
+                             "locator": e["locator"]}
+    counts["unrowed_proposed"] = len(batch)
+    counts["unrowed_held"] = held
+    counts["unrowed_over_cap"] = over_cap
+    if batch:
+        tmp = UNROWED_STATE + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"note": "ref -> first/last proposal; an in-window ref is re-proposed only when still "
+                                   f"unrowed {UNROWED_REPROPOSE_DAYS} days after its last proposal",
+                           "refs": memory}, fh, indent=1, sort_keys=True)
+            os.replace(tmp, UNROWED_STATE)
+        except OSError as exc:
+            # A memory that did not persist would re-propose these refs next cycle: say so loudly.
+            out.append(f"- UNROWED-GATE-ERROR memory write failed for {exc.__class__.__name__}: {exc}")
+
+
 def main():
     started = datetime.now(timezone.utc)
     cpu0 = resource.getrusage(resource.RUSAGE_SELF)
@@ -2788,6 +3177,7 @@ def main():
     check_slot_label(lines, counts)
     check_window_no_slot(lines, counts)
     check_staleness(lines, counts)
+    check_unrowed_done(lines, counts)
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
     # WHY CPU IS RECORDED: the load gate (load1 <= 11, coordinator rule) decides whether this cycle may
     # run, but the only cost figure on record was wall time (15s, CYCLE-0921Z) - and wall time on a

@@ -94,7 +94,8 @@ Restates rules 28, 36, 37 and `references/build-coordinator.md`; adds no rule. O
       - Per coordinator: 3 own worker windows plus 1 board helper, 2 subagents, 1 test run. Specialists count.
       - The cap counts every live agent process (idle sessions included), not issues; `agents_host` counts the whole host. Over a cap: refuse, reap
         first.
-      - While operator row q-night-builders is open: host cap 12 between 22:00 and 12:00Z, journaled; the operator's answer replaces this line.
+      - Host cap (operator, 2026-11-13, replaces q-night-builders): up to 18 live agent processes at any hour while the memory gate holds
+        (PSI full avg10 <= 10, MemAvailable >= 4 GB) in the same command as the launch; the load1 <= 15 launch gate still applies.
    - **2.4** Put the preflight line in the launch journal entry. Reap a worker with no journal entry 2 h after its handoff.
       - Incident 2026-10-23 22:30Z: 15 claude, 12 pi, a Paseo daemon: `user-1000.slice` over `memory.high` (14 GiB), load 125, PSI full 77%.
 3. **Save context and tokens.**
@@ -160,6 +161,9 @@ the old items 1-13 were that summary, so the rules start at 14.
    - It copies state and never judges; it counts toward the 2-subagent cap.
 15. **Pending operator items are Tabellone `questions` rows** (operator, 2026-10-28): doc `<coordinator name>`, rows `{id, ref, by, q, rec, why}`.
    - Refresh a row when 5 turns pass after the operator's ask without follow-up; remove it once answered.
+   - Enforced by `hooks/operator-questions.py` (XTRM-763): after N operator-silent turns (`operator_question_turns`, default 5) a Stop reminder names the
+     open question and one command, `scripts/pm_question.py add|refresh|close --ref <ref> --q <text> --rec <text>`: it writes the Substrate blocker/decision
+     AND the row. Cron prompts: start them with `[cron` so they do not count as operator turns.
    - One row per question: never replace a row that holds another open question (11-04).
 16. **Worker audits and research become review pages** (operator, 2026-10-28; here.now, operator 2026-10-31): skill `here-now`, never a Claude
     artifact; the project's visual style skill.

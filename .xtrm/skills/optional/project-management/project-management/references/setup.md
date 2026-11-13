@@ -118,6 +118,9 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_DEPLOY_DIR` | `deploy_dir` | the project's deploy workspace (AgentRun pilot set) | doc | `~/deploy/proj` |
 | `PM_TIMEZONE` | `timezone` | IANA zone the window fields are written in | BA, TK, doc | `Europe/Paris` |
 | `PM_CI_WORKFLOW` | `ci_workflow` | CI workflow file of the delivery repo | BA | `ci.yml` |
+| `PM_OPERATOR_QUESTION_TURNS` | `operator_question_turns` | operator-silent turns before the operator-question reminder (default `5`, `0` = hook off). The hook acts only for a session whose cwd is inside `repo_dir`/`match_dirs`, or with `PM_PROJECT` set; addressing names come from `operator_names`/`operator_handle` | hook | `5` |
+| `PM_COORDINATOR_PATTERN` | `coordinator_pattern` | regex a coordinator's session name matches (default `-coord(-[0-9]{1,2})?$`) | hook | `-coord(-[0-9]{1,2})?$` |
+| `PM_QUESTION_OWNER` | `question_owner` | Tabellone `questions/<owner>` doc of this session (default: from the session name and `tabellone_owner_addr`) | hook, CLI | `proj-coord` |
 | `PM_CONFIG` | (none) | path of the config file itself | optional | `~/.config/xtrm/project-management.json` |
 
 ### Structured (JSON)
@@ -133,6 +136,8 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`) | PM, BA (lane) |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |
+| `PM_OPERATOR_INJECTED_PATTERNS` | `operator_injected_patterns` | `[regex]` | extra prompts that are not the operator (your cron prompt prefix); built-in: cross-session, task-notification, delivery notice, system notification, Stop-hook feedback, goal check-ins, `[cron` | hook |
+| `PM_OPERATOR_QUESTION_REFS` | `operator_question_refs` | `[ref]` | Substrate refs whose `for=operator` blockers the hook watches (default `[epic]`) | hook |
 | `PM_DEFERRED_STATUS` | `deferred_status` | name | status for deferred rows | BA (lane) |
 | `PM_PARKED_STATUSES` | `parked_statuses` | `[name]` | statuses the cycle excludes as parked | BA (lane) |
 | `PM_TERMINAL_STATUSES` | `terminal_statuses` | `[name]` | status names that end a row (done, won't do, cancelled) | BA, TK |

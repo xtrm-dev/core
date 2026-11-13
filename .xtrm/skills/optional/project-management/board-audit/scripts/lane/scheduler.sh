@@ -5,6 +5,8 @@
 # HEAVY nightly queue watch 15 min, operator-channel router 5 min (this lane is the only router/filter).
 # Settings: board-audit/references/setup-lane.md.
 set -u
+# Sourced by mistake? Refuse before any side effect: `return` exists only inside a sourced file.
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && { echo "refuse: do not source" >&2; return 1 2>/dev/null || exit 1; }
 PMCFG="$(cd "$(dirname "$0")" && pwd)/../../../project-management/scripts/pm_config.py"
 # Resolve the project once; every child script then reads the same one.
 PM_PROJECT=${PM_PROJECT:-$(python3 "$PMCFG" project)} || exit 1; export PM_PROJECT
@@ -13,6 +15,9 @@ SCRIPTS=$(cd "$(dirname "$0")" && pwd)
 TAB_UNIT=${PM_TABELLONE_UNIT:-$(python3 "$PMCFG" get PM_TABELLONE_UNIT tabellone-sync.service)}
 EV=$LANE/events.log
 ST=$LANE/sched.state
+# One instance per lane: a second scheduler would double every pass and race the state file.
+exec 9>"$LANE/scheduler.lock"
+flock -n 9 || { echo "refuse: another scheduler holds the lock" >&2; exit 1; }
 touch "$EV"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$EV"; }
@@ -29,6 +34,14 @@ due=0
       case "$k" in cycle|deploy|tabellone|wp|tabhash|heavy|route) printf -v "$k" '%s' "${v:-0}";; esac
     done < "$ST"
   fi
+}
+# Read one saved key back out of the state file, the way load() reads it; empty when absent.
+get() {
+  local k v
+  [ -f "$ST" ] || return 0
+  while IFS='=' read -r k v; do
+    if [ "$k" = "$1" ]; then printf '%s' "${v:-}"; return 0; fi
+  done < "$ST"
 }
 
 run_cycle() {

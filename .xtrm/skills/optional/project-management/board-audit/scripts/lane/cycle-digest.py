@@ -18,7 +18,7 @@ NO_DATES, OVERDUE, NEXT48 = (str(_F[r]["id"]) for r in ("open_without_dates", "o
 KEY_RE = lanecfg.jira_key_re()
 KEYS = (f"{NO_DATES}_window", OVERDUE, NEXT48, "no_slot", "fold_orphans", "fold_stale", "fold_dateless", "gate_escalations",
         "drift", "unmirrored_prod_contracts", "pr_links_missing", "pr_no_window", "new_comments",
-        "new_tickets", "control_failures", "control_gaps")
+        "new_tickets", "control_failures", "control_gaps", "unrowed_done", "unrowed_backlog")
 SECTIONS = {
     "comments": ("## 5. Comment watch", "## 6."),
     "newtickets": ("## 7. New tickets", "## 8."),
@@ -27,6 +27,7 @@ SECTIONS = {
     "drift": ("## 3. Finished-not-closed", "## 4."),
     "prlinks": ("## 4. PR-link top-up", "## 5."),
     "unmirrored": ("## 8. Production contracts", "## Counts"),
+    "unrowed": ("## 14. Finished work with no Jira row", "## Counts"),
 }
 HDR = re.compile(r"^\s*\(\s*\d+\s+rows?\)|\*\*" + NO_DATES + r"|^- \*\*(" + OVERDUE + "|" + NEXT48 + ")", re.M)
 
@@ -89,6 +90,20 @@ def main(path):
         p = f"{LANE}/NEWTICKET-{hhmm}Z.md"
         open(p, "w").write(body)
         print(f"NEWTICKET {stamp} n={c['new_tickets']} thin={c.get('new_tickets_thin')} file={p}")
+    # Finished work with no row: a PROPOSAL batch, never an action on the board. `unrowed_done` is the
+    # 24-hour window the batch is built from; `unrowed_backlog` is the whole-scope total with no time
+    # filter and never yields a proposal. Both are written even when every ref is held by the memory;
+    # the file exists only when there is something new to act on.
+    for line in text.splitlines():
+        if "UNROWED-GATE-ERROR" in line:
+            print(f"UNROWED-GATE-ERROR {stamp} {line.lstrip('- ').split('UNROWED-GATE-ERROR ', 1)[-1][:200]}")
+    if c.get("unrowed_proposed"):
+        body = f"# Finished work with no Jira row {stamp}\n\n{section(text, 'unrowed')}\n"
+        p = f"{LANE}/UNROWED-{hhmm}Z.md"
+        open(p, "w").write(body)
+        print(f"UNROWED {stamp} n={c['unrowed_proposed']} unrowed_done={c.get('unrowed_done')} "
+              f"unrowed_backlog={c.get('unrowed_backlog')} held={c.get('unrowed_held')} "
+              f"over_cap={c.get('unrowed_over_cap')} file={p}")
     if c.get("control_gaps"):
         # A steady gap is a fact about the board, not an event: report it once, and again only when the
         # gap itself changes. Otherwise one empty control pole wakes the coordinator every 15 minutes.

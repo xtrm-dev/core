@@ -24,6 +24,8 @@ m = re.search(r'## Counts\s*```\s*(\{.*?\n\})\s*```', txt, re.S)
 c = json.loads(m.group(1)) if m else {}
 keys = (f"{no_dates}_window", overdue, next48, "no_slot", "fold_orphans", "drift", "unmirrored_prod_contracts",
         "pr_links_missing", "pr_no_window", "new_comments", "new_tickets", "control_failures",
+        # unrowed_done last: the digest appends it to the same CYCLE line, so both printers agree
+        "unrowed_done", "unrowed_backlog",
         # the two label/slot pair counts, so they are filterable and visible in the one-line digest
         # (lead ruling 2026-11-06: "put the count in your cycle report")
         "slot_no_label", "window_no_slot", "window_no_slot_tracked")

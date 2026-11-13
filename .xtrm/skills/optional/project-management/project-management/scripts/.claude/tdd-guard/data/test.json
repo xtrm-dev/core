@@ -1,0 +1,89 @@
+{
+  "testModules": [
+    {
+      "moduleId": "test_pm_question.py",
+      "tests": [
+        {
+          "name": "test_add_writes_blocker_and_row_once",
+          "fullName": "test_pm_question.py::test_add_writes_blocker_and_row_once",
+          "state": "passed"
+        },
+        {
+          "name": "test_add_keeps_other_rows",
+          "fullName": "test_pm_question.py::test_add_keeps_other_rows",
+          "state": "passed"
+        },
+        {
+          "name": "test_refresh_restamps_and_needs_a_row",
+          "fullName": "test_pm_question.py::test_refresh_restamps_and_needs_a_row",
+          "state": "passed"
+        },
+        {
+          "name": "test_close_writes_decision_and_removes_row",
+          "fullName": "test_pm_question.py::test_close_writes_decision_and_removes_row",
+          "state": "passed"
+        },
+        {
+          "name": "test_dry_run_writes_nothing",
+          "fullName": "test_pm_question.py::test_dry_run_writes_nothing",
+          "state": "passed"
+        },
+        {
+          "name": "test_owner_resolution",
+          "fullName": "test_pm_question.py::test_owner_resolution",
+          "state": "passed"
+        },
+        {
+          "name": "test_add_requires_fields",
+          "fullName": "test_pm_question.py::test_add_requires_fields",
+          "state": "passed"
+        },
+        {
+          "name": "test_read_rows_caches_for_five_minutes",
+          "fullName": "test_pm_question.py::test_read_rows_caches_for_five_minutes",
+          "state": "passed"
+        },
+        {
+          "name": "test_tail_is_used_for_journal_reads",
+          "fullName": "test_pm_question.py::test_tail_is_used_for_journal_reads",
+          "state": "passed"
+        },
+        {
+          "name": "test_placeholders_are_rejected",
+          "fullName": "test_pm_question.py::test_placeholders_are_rejected",
+          "state": "passed"
+        },
+        {
+          "name": "test_id_collision_with_another_question_is_refused",
+          "fullName": "test_pm_question.py::test_id_collision_with_another_question_is_refused",
+          "state": "passed"
+        },
+        {
+          "name": "test_add_and_close_drop_the_caches",
+          "fullName": "test_pm_question.py::test_add_and_close_drop_the_caches",
+          "state": "passed"
+        },
+        {
+          "name": "test_oversize_doc_fails_before_the_journal_write",
+          "fullName": "test_pm_question.py::test_oversize_doc_fails_before_the_journal_write",
+          "state": "passed"
+        },
+        {
+          "name": "test_hn_find_pages_and_sends_the_key_only_in_the_header",
+          "fullName": "test_pm_question.py::test_hn_find_pages_and_sends_the_key_only_in_the_header",
+          "state": "passed"
+        },
+        {
+          "name": "test_hn_write_posts_new_patches_existing_and_caps_size",
+          "fullName": "test_pm_question.py::test_hn_write_posts_new_patches_existing_and_caps_size",
+          "state": "passed"
+        },
+        {
+          "name": "test_hn_error_body_never_leaks_the_key",
+          "fullName": "test_pm_question.py::test_hn_error_body_never_leaks_the_key",
+          "state": "passed"
+        }
+      ]
+    }
+  ]
+}
