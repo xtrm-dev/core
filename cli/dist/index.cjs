@@ -80539,7 +80539,7 @@ function parseFrontmatter(content) {
     if (key) fm[key] = value;
   }
   const afterFrontmatter = content.slice(match[0].length).replace(/^\r?\n/, "");
-  const stripped = afterFrontmatter.replace(/<!--[\s\S]*?(?:-->|--!>|$)|<!--|-->/g, "").trimStart();
+  const stripped = afterFrontmatter.replace(/<!--[\s\S]*?(?:-->|--!>|$)|<!--|--!?>/g, "").trimStart();
   const firstPara = stripped.split(/\r?\n\r?\n/)[0].replace(/\r?\n/g, " ").trim();
   if (firstPara && !firstPara.startsWith("#")) {
     fm.summary = firstPara.slice(0, 120);
