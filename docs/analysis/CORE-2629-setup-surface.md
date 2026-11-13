@@ -23,7 +23,7 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 | Substrate enrollment + sb init | Step 3 (done), Step 9 | done | init.ts phase 3.5a/3.5b; runSbInitForProject. |
 | Project bootstrap (gitnexus index, CLAUDE.md/AGENTS.md headers, service hooks) | Step 17 CORE-2383 | partial | runProjectBootstrap called; dry run lists. |
 | Dependency maintenance (sb doctor, gitnexus freshness) | Step 18 | partial | runDependencyMaintenance called. |
-| prepare-commit-msg trailer hook (step 6b) | Step 6b CORE-2570 / XTRM-684 | NOT COVERED (missing) | No prepare-commit-msg installed in any repo: core, specialists and xtrm all lack one in both `.githooks/` and the default `.git/hooks/`. CORE-2570 is the Issue that installs it (rev 2, section 7 resolution 1 makes it default); it is not implemented yet, so no xt command installs it and there is no call site in init.ts/update.ts. |
+| prepare-commit-msg trailer hook (step 6b) | Step 6b CORE-2570 / XTRM-684 | NOT COVERED (missing) | No prepare-commit-msg installed in any repo: core, specialists and xtrm all lack one in both `.githooks/` and the default `.git/hooks/`. CORE-2570 is the Issue that installs it (§7 resolution 1 of this document, from the operator ruling of 2026-11-11, makes it default); it is not implemented yet, so no xt command installs it and there is no call site in init.ts/update.ts. |
 | sb links sync scheduler (reconciler, xtrm #345) | Step 14 (delivered) / Step 26 | NOT COVERED (missing) | `sb links sync` verb exists in substrate 0.3.1; no cron/systemd timer on server or PC schedules it. Server has xt-worktree-reap timer only. |
 | Claude route switch (claude_bridge block in ~/.config/specialists/user.json) | SPECIALISTS-4442 (not a core Issue) | NOT COVERED (missing) | No installer in core; .xtrm does not write it; docs say opt-in. |
 | pi-claude-bridge package | CORE-2591 (DONE) | covered (done) | MANAGED_PACKAGES contains it; xt init/update reconcile it. |
@@ -41,7 +41,7 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 
 Only four components are truly uncovered by any existing step. Proposed amendments to existing steps (which step, which sentence), not new designs:
 
-1. prepare-commit-msg trailer hook (step 6b / CORE-2570): amend CORE-2570's NON-GOALS/CONSTRAINTS sentence "No automatic install by xt update --apply until the operator approves" -> add an opt-in `xt init --hooks` / `xt hooks install-trailers` invoked explicitly, plus a doctor check `prepare-commit-msg trailer installed` (warn, not error) so the gap is visible. Conflict: operator approval ruling; ask before flipping default.
+1. prepare-commit-msg trailer hook (step 6b / CORE-2570): **settled by §7 resolution 1 (operator ruling of 2026-11-11) — `xt init` and `xt update` chain the hook by default, there is no opt-in flag, and `xt doctor` warns when it is missing.** No amendment is needed beyond that ruling.
 
 2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init` on Linux and a cron line on macOS, with `xt doctor` reporting timer presence. Ask: server-side only or also PC? (Operator note: server runs it; PC uses remote sb.)
 
