@@ -17,6 +17,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripTagMarkup } from "../../tests/strip-tag-markup.ts";
 
 const { default: intercomExtension, resolveIntercomCard } = await import("./index.ts");
 const sendmessage = await import("./sendmessage.ts");
@@ -47,7 +48,7 @@ function tagTheme(mode: string) {
 function visible(lines: string | string[]): string[] {
   const all = Array.isArray(lines) ? lines : lines.split("\n");
   // eslint-disable-next-line no-control-regex
-  return all.map((l) => l.replace(/<[^>]+>/g, "").replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""));
+  return all.map((l) => stripTagMarkup(l).replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""));
 }
 
 /** Full fake Pi surface: everything intercomExtension touches at registration. */

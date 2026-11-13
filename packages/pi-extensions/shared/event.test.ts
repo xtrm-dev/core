@@ -30,6 +30,7 @@ import {
   type EventDetails,
   type EventTheme,
 } from "./event.ts";
+import { stripTagMarkup } from "../tests/strip-tag-markup.ts";
 
 /** Fake themes: tagged strings, light and dark tag differently. */
 function fakeTheme(mode: "light" | "dark"): EventTheme {
@@ -46,10 +47,8 @@ const dark = fakeTheme("dark");
 function visible(lines: string | string[]): string[] {
   const all = Array.isArray(lines) ? lines : lines.split("\n");
   return all.map((l) =>
-    l
-      .replace(/<[^>]+>/g, "")
-      // eslint-disable-next-line no-control-regex
-      .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""),
+    // eslint-disable-next-line no-control-regex
+    stripTagMarkup(l).replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""),
   );
 }
 

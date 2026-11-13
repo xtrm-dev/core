@@ -250,6 +250,15 @@ function bounded(value: unknown, max = 1024): string | undefined {
 
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
+/** Drop trailing slashes, then one `.git` suffix. String scans, not regexes:
+ *  the remote URL is library input (CodeQL js/polynomial-redos, CORE-2694). */
+function trimRepositorySuffix(repoPath: string): string {
+  let end = repoPath.length;
+  while (end > 0 && repoPath[end - 1] === "/") end--;
+  const trimmed = repoPath.slice(0, end);
+  return trimmed.endsWith(".git") ? trimmed.slice(0, -4) : trimmed;
+}
+
 /**
  * `owner/name` of a git remote URL (scp-like `git@host:owner/name.git`, or ssh/https/git URLs), without host,
  * scheme or credentials. Local paths and file:// remotes have no owner and return undefined.
@@ -271,7 +280,7 @@ export function repositoryFromRemote(url: string): string | undefined {
     if (!scp) return undefined;
     repoPath = scp[2];
   }
-  const segments = repoPath.replace(/\/+$/, "").replace(/\.git$/, "").split("/").filter((part) => part.length > 0);
+  const segments = trimRepositorySuffix(repoPath).split("/").filter((part) => part.length > 0);
   if (segments.length < 2 || !segments.every((part) => REPOSITORY_SEGMENT.test(part) && part !== "." && part !== "..")) return undefined;
   const name = segments.join("/");
   return name.length <= 512 ? name : undefined;

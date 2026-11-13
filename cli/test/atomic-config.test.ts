@@ -147,3 +147,21 @@ describe('deepMergeWithProtection prototype pollution guard', () => {
         expect(Object.prototype.hasOwnProperty.call(merged, '__proto__')).toBe(false);
     });
 });
+
+// CORE-2694: alert 50 pointed at a write in setNestedValue, which had no
+// callers and was not exported — dead code closed the alert without changing
+// the shipped sink. The function is deleted; the live merge path is covered
+// here behaviourally, including a __proto__ payload.
+describe('prototype-pollution refusal on the live merge path (CORE-2694)', () => {
+    it('never creates a prototype key, directly or in a nested payload', () => {
+        const before = JSON.parse('{"a":{"b":{"c":1}}}');
+        const merged = deepMergeWithProtection(
+            before,
+            JSON.parse('{"__proto__":{"polluted":true},"a":{"b":{"__proto__":{"polluted":true},"d":2}}}'),
+        );
+        expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+        expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+        expect(merged.a.b.d).toBe(2);
+        expect(merged.a.b.c).toBe(1);
+    });
+});

@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { INTERCOM_MESSAGE_TYPE } from "./index.ts";
+import { stripTagMarkup } from "../../tests/strip-tag-markup.ts";
 
 const { default: intercomExtension } = await import("./index.ts");
 
@@ -43,7 +44,7 @@ function tagTheme(mode: string) {
 
 function visible(text: string | string[]): string[] {
   const lines = Array.isArray(text) ? text : text.split("\n");
-  return lines.map((l) => l.replace(/<[^>]+>/g, ""));
+  return lines.map(stripTagMarkup);
 }
 
 describe("intercom card rendering through the shared module (CORE-2438 I7)", () => {

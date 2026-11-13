@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,18 +12,20 @@ import { resolveMainProjectRoot } from '../utils/repo-root.js';
 
 let mainRepo = '';
 
-function git(cwd: string, args: string): void {
-  execSync(`git ${args}`, { cwd, stdio: 'pipe' });
+function git(cwd: string, argv: string[]): void {
+  // argv, not a shell string: the temp-dir path is data, never shell syntax
+  // (CodeQL js/shell-command-injection-from-environment, CORE-2694).
+  execFileSync('git', argv, { cwd, stdio: 'pipe' });
 }
 
 beforeEach(() => {
   mainRepo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-6ofgm-')));
-  git(mainRepo, 'init -q -b main');
-  git(mainRepo, 'config user.email test@test');
-  git(mainRepo, 'config user.name test');
+  git(mainRepo, ['init', '-q', '-b', 'main']);
+  git(mainRepo, ['config', 'user.email', 'test@test']);
+  git(mainRepo, ['config', 'user.name', 'test']);
   fs.writeFileSync(path.join(mainRepo, 'README.md'), 'seed\n');
-  git(mainRepo, 'add README.md');
-  git(mainRepo, 'commit -q -m seed');
+  git(mainRepo, ['add', 'README.md']);
+  git(mainRepo, ['commit', '-q', '-m', 'seed']);
 });
 
 afterEach(() => {
@@ -38,7 +40,7 @@ describe('resolveMainProjectRoot', () => {
   it('returns the main checkout root when called from a linked worktree (xtrm-6ofgm regression)', () => {
     const worktreePath = path.join(mainRepo, '.xtrm', 'worktrees', 'test-wt');
     fs.ensureDirSync(path.dirname(worktreePath));
-    git(mainRepo, `worktree add ${worktreePath} -b feature/wt`);
+    git(mainRepo, ['worktree', 'add', worktreePath, '-b', 'feature/wt']);
     const resolved = resolveMainProjectRoot(worktreePath);
     expect(resolved).toBe(mainRepo);
   });
@@ -46,7 +48,7 @@ describe('resolveMainProjectRoot', () => {
   it('returns the main checkout root when called from a nested subdirectory of a worktree', () => {
     const worktreePath = path.join(mainRepo, '.xtrm', 'worktrees', 'nested-wt');
     fs.ensureDirSync(path.dirname(worktreePath));
-    git(mainRepo, `worktree add ${worktreePath} -b feature/x`);
+    git(mainRepo, ['worktree', 'add', worktreePath, '-b', 'feature/x']);
     const nestedDir = path.join(worktreePath, 'pkg', 'src');
     fs.ensureDirSync(nestedDir);
     const resolved = resolveMainProjectRoot(nestedDir);
