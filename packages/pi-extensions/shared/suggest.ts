@@ -822,7 +822,7 @@ export interface SuggestionCard {
 
 /** Trailing period stripped: descriptions end sentences, the facts trailer must not stutter. */
 export function stripEndPeriod(s: string): string {
-  return s.replace(/\.+$/, "");
+  return s.replace(/\.{1,1000}$/, "");
 }
 
 export function formatSuggestionCard(c: SuggestionCard, accent: CardAccent = SUBSTRATE_ACCENT): string {

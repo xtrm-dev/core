@@ -104,7 +104,7 @@ function outputSizeExtra(outputFile: string): string {
  * stripped, newlines collapsed to spaces, length bounded. A probe label
  * carrying an OSC title or a CSI clear must arrive as inert text.
  */
-const OSC_PATTERN = "\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)";
+const OSC_PATTERN = "\x1b][^\x07\x1b]*(?:\x07|\x1b\\\\)";
 
 /** C1 controls (U+0080-U+009F), including the single-char CSI U+009B. */
 const C1_PATTERN = "[\u0080-\u009f]";

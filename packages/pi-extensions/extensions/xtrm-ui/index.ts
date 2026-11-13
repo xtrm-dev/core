@@ -450,9 +450,9 @@ export function fitThinkingRowToWidth(row: string, availableWidth: number | unde
 	const recapRaw = row.slice(recapStartRaw);
 	const budget = width - recapStartVisible;
 	if (budget < 8) return truncateToWidth(row, width);
-	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]*m)+/)?.[0] ?? "";
-	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]*m)+$/)?.[0] ?? "";
-	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]*m)+$/g, "").trimEnd(), budget) + colorSuffix;
+	const colorPrefix = recapRaw.match(/^(\x1b\[[0-9;?]{0,20}m){1,50}/)?.[0] ?? "";
+	const colorSuffix = recapRaw.match(/(\x1b\[[0-9;?]{0,20}m){1,50}$/)?.[0] ?? "";
+	return head + colorPrefix + truncateClause(stripAnsi(recapRaw).replace(/(\x1b\[[0-9;?]{0,20}m){1,50}$/g, "").trimEnd(), budget) + colorSuffix;
 }
 
 function maybeFileUrlToPath(value: string): string {
@@ -1111,7 +1111,7 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
   // A tool may frame its JSON: GitNexus puts a `[GitNexus]` line before it and
   // a `---` hint after it (the hint itself can hold braces, `process/{name}`).
   const body = joined.trim()
-    .replace(/^\[[^\]\n]*\]\s*\n/, "")
+    .replace(/^\[[^\]\n]*\][ \t]*\n/, "")
     .split(/\n+---\s*\n/)[0]!
     .trim();
   // Specialist and Substrate payloads carry no readable outcome on a folded
@@ -1189,7 +1189,7 @@ function specialistDuration(durationMs: number): string {
 function parsedResultObject(resultTexts: string[]): Record<string, unknown> | undefined {
   if (resultTexts.length === 0) return undefined;
   const body = resultTexts.join("\n").trim()
-    .replace(/^\[[^\]\n]*\]\s*\n/, "")
+    .replace(/^\[[^\]\n]*\][ \t]*\n/, "")
     .split(/\n+---\s*\n/)[0]!
     .trim();
   try {
@@ -1720,7 +1720,7 @@ export function boldMarkdownHeadings(markdown: string): string {
 				return line;
 			}
 			if (inFence) return line;
-			const match = line.match(/^(#{1,6}\s+)(.*)$/);
+			const match = line.match(/^(#{1,6}\s+)([^\n]*)$/);
 			if (!match || match[2].trim() === "" || match[2].includes("\x1b[1m")) return line;
 			// Headings carry weight rather than brightness; the theme owns the
 			// escape so a no-color terminal degrades to plain text.
@@ -2553,7 +2553,7 @@ const SETUP_PREFIXES = [
   new RegExp(String.raw`^\s*(?:source|\.)\s+${SHELL_WORD}(?:\s+${SHELL_WORD})*?${SHELL_SEP}`),
   /^\s*nice(?:\s+-n\s*-?\d+|\s+-\S+)*\s+/,
   /^\s*ionice(?:\s+-[cnp]\s*\d+|\s+-\S+)*\s+/,
-  /^\s*timeout(?:\s+-[ks]\s+\S+|\s+-\S+)*\s+\d[\d.]*[smhd]?\s+/,
+  /^\s*timeout(?:\s+-[ks]\s+\S+|\s+-\S+){0,20}\s+\d[\d.]*[smhd]?\s+/,
 ];
 
 /**
@@ -2608,7 +2608,7 @@ export function externalHiddenLines(toolName: string | undefined, args: Record<s
 
 export function ultraBashSubject(command: string): string {
   const first = stripSetupPrefix(command).split("\n")[0] ?? "";
-  return shortenCommand(first.replace(/\s*(&&|\|\|)\s*$/, ""));
+  return shortenCommand(first.replace(/\s{0,100}(&&|\|\|)\s{0,100}$/, ""));
 }
 
 /** Ultra verb for shell calls: the full phrase, not bare `Ran`. */

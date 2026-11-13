@@ -133,7 +133,7 @@ export function isControlNudge(prompt: string): boolean {
  * intercom marker. On the labelled replay these were a third of the false fires.
  */
 export function isPeerRelay(prompt: string): boolean {
-  return /^\s*(?:\[cross-agent message\b|Coordinator\b|From\s+\S+|[\w.-]*coord[\w.-]*\s*(?:->|→|:)|\S+\s*(?:->|→)\s*\S+\s*:)/i.test(prompt);
+  return /^\s{0,100}(?:\[cross-agent message\b|Coordinator\b|From\s+\S+|[\w.-]{0,64}coord[\w.-]{0,64}\s*(?:->|→|:)|\S+\s*(?:->|→)\s*\S+\s*:)/i.test(prompt);
 }
 
 // CORE-2534: rows queue in memory and are appended asynchronously.

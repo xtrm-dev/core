@@ -41,7 +41,7 @@ export function parseFrontmatter(content: string): Frontmatter | null {
     // Extract summary: first non-empty paragraph after the closing --- block,
     // skipping HTML comment blocks (e.g. <!-- INDEX: ... --> from sync-docs)
     const afterFrontmatter = content.slice(match[0].length).replace(/^\r?\n/, '');
-    const stripped = afterFrontmatter.replace(/<!--[\s\S]*?-->/g, '').trimStart();
+    const stripped = afterFrontmatter.replace(/<!--[\s\S]*?(?:-->|$)|<!--|-->/g, '').trimStart();
     const firstPara = stripped.split(/\r?\n\r?\n/)[0].replace(/\r?\n/g, ' ').trim();
     if (firstPara && !firstPara.startsWith('#')) {
         fm.summary = firstPara.slice(0, 120);
@@ -70,7 +70,8 @@ function matchesGitignore(relativePath: string, patterns: string[]): boolean {
 
         if (p.includes('*')) {
             // Simple glob: convert * to [^/]* for filename patterns
-            const regex = new RegExp('^' + p.replace(/\./g, '\\.').replace(/\*/g, '[^/]*') + '$');
+            const escaped = p.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp('^' + escaped.replace(/\*/g, '[^/]*') + '$');
             if (regex.test(normalized) || regex.test(basename)) return true;
         } else {
             // Exact, prefix, or segment match

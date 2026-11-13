@@ -291,7 +291,7 @@ describe("R7 exact-name resolution (CORE-2435 I4, MMD-2538: ref/uds/prefix arms)
     ] as any;
     expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(/ambiguous session "agent"/);
     for (const id of ["sess-dup-1", "sess-dup-2", "claude-dup-3", "sess-other-4"]) {
-      expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(new RegExp(id.replace(/-/g, "-")));
+      expect(() => roster.resolveRosterTarget(four, "agent")).toThrow(new RegExp(id));
     }
     // ...but each is still reachable by its own full session id.
     expect(roster.resolveRosterTarget(four, "sess-dup-1")).toMatchObject({ target: { sessionId: "sess-dup-1" } });
