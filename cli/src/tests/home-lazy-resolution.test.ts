@@ -66,7 +66,49 @@ describe('HOME is resolved lazily (CORE-2630)', () => {
 });
 
 
-import { resolveConfCwd } from '../core/context.js';
+import { resolveConfCwd, resolveConfProjectDir } from '../core/context.js';
+
+describe('the config resolver matches env-paths on every platform (CORE-2630 review)', () => {
+    // The reviewer's durable requirement: ONE resolver decides the store
+    // directory, and it mirrors env-paths for darwin, win32 and linux. The
+    // platform branch is what keeps a macOS or Windows store in place; the
+    // previous Linux-only code silently relocated it.
+    let previousHome: string | undefined;
+    let previousXdg: string | undefined;
+    let previousAppData: string | undefined;
+
+    beforeEach(() => {
+      previousHome = process.env.HOME;
+      previousXdg = process.env.XDG_CONFIG_HOME;
+      previousAppData = process.env.APPDATA;
+    });
+
+    afterEach(() => {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousXdg;
+      if (previousAppData === undefined) delete process.env.APPDATA;
+      else process.env.APPDATA = previousAppData;
+    });
+
+    it('agrees with env-paths on the current platform', async () => {
+      const { default: envPaths } = await import('env-paths');
+      expect(resolveConfProjectDir()).toBe(envPaths('xtrm-cli', { suffix: 'nodejs' }).config);
+    });
+
+    it('treats an empty XDG_CONFIG_HOME as unset, as env-paths does', async () => {
+      if (process.platform !== 'linux') return;
+      process.env.XDG_CONFIG_HOME = '';
+      const { default: envPaths } = await import('env-paths');
+      expect(resolveConfProjectDir()).toBe(envPaths('xtrm-cli', { suffix: 'nodejs' }).config);
+      expect(resolveConfProjectDir()).toBe(path.join(os.homedir(), '.config', 'xtrm-cli-nodejs'));
+    });
+
+    it('keeps the store file name config.json under the resolved directory', () => {
+      expect(path.join(resolveConfCwd(), 'config.json')).toBe(path.join(resolveConfProjectDir(), 'config.json'));
+    });
+  });
 
 describe('resolveConfCwd matches env-paths (CORE-2630 review)', () => {
   let previousHome: string | undefined;

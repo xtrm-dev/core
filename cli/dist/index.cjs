@@ -67337,17 +67337,24 @@ var Conf = class {
 init_kleur();
 var config2 = null;
 var configKey = null;
-function configIdentity() {
-  return `${process.env.XDG_CONFIG_HOME ?? ""}\0${import_os4.default.homedir()}`;
-}
-function resolveConfCwd() {
+function resolveConfProjectDir() {
+  const name = "xtrm-cli-nodejs";
   const home = import_os4.default.homedir();
   if (process.platform === "darwin") {
-    return import_path11.default.join(home, "Library", "Preferences", "xtrm-cli-nodejs");
+    return import_path11.default.join(home, "Library", "Preferences", name);
   }
-  const xdg = process.env.XDG_CONFIG_HOME;
-  const base = xdg ? xdg : import_path11.default.join(home, ".config");
-  return import_path11.default.join(base, "xtrm-cli-nodejs");
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || import_path11.default.join(home, "AppData", "Roaming");
+    return import_path11.default.join(appData, name, "Config");
+  }
+  const base = process.env.XDG_CONFIG_HOME || import_path11.default.join(home, ".config");
+  return import_path11.default.join(base, name);
+}
+function resolveConfCwd() {
+  return resolveConfProjectDir();
+}
+function configIdentity() {
+  return resolveConfProjectDir();
 }
 function getConfig() {
   const key = configIdentity();
@@ -67366,9 +67373,7 @@ function getConfig() {
 }
 function defaultConfigFilePresent() {
   try {
-    if (process.platform === "win32") return true;
-    const dir = process.platform === "darwin" ? import_path11.default.join(import_os4.default.homedir(), "Library", "Preferences", "xtrm-cli-nodejs") : import_path11.default.join(process.env.XDG_CONFIG_HOME ?? import_path11.default.join(import_os4.default.homedir(), ".config"), "xtrm-cli-nodejs");
-    return import_fs_extra29.default.pathExistsSync(import_path11.default.join(dir, "config.json"));
+    return import_fs_extra29.default.pathExistsSync(import_path11.default.join(resolveConfProjectDir(), "config.json"));
   } catch {
     return true;
   }

@@ -30,27 +30,45 @@ type ConfigShape = {
 let config: Conf<ConfigShape> | null = null;
 let configKey: string | null = null;
 
-function configIdentity(): string {
-    // Align with resolveConfCwd and env-paths semantics: XDG_CONFIG_HOME is
-    // used verbatim (no trim) so a value with surrounding whitespace is treated
-    // as set, matching env-paths on Linux.
-    return `${process.env.XDG_CONFIG_HOME ?? ''}\u0000${os.homedir()}`;
+/**
+ * CORE-2630: the per-project config directory, mirroring `env-paths` exactly for
+ * every platform. This is the single source of truth: the Conf store path, the
+ * read-only existence check and the cache identity all derive from it, so they
+ * cannot disagree (review finding: three copies drifted, and the win32 base —
+ * %APPDATA%/xtrm-cli-nodejs/Config — was missing entirely).
+ *
+ * env-paths computes its home from `os.homedir()` at module load; resolving here
+ * on every call is what makes a later HOME/XDG change take effect.
+ */
+export function resolveConfProjectDir(): string {
+    const name = 'xtrm-cli-nodejs';
+    const home = os.homedir();
+    if (process.platform === 'darwin') {
+        return path.join(home, 'Library', 'Preferences', name);
+    }
+    if (process.platform === 'win32') {
+        // env-paths: APPDATA || ~/AppData/Roaming, then <appData>/<name>/Config.
+        const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+        return path.join(appData, name, 'Config');
+    }
+    // env-paths uses `||`, so an empty XDG_CONFIG_HOME falls back to ~/.config.
+    const base = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
+    return path.join(base, name);
 }
 
 // CORE-2630: pass `cwd` explicitly so Conf does not fall back to env-paths,
 // which caches os.homedir() at module load and freezes the store location.
-// Resolve the config dir from the current HOME/XDG on every cache miss.
-// CORE-2630: mirror env-paths so macOS users keep their existing store.
-// env-paths on darwin uses ~/Library/Preferences/<name> and ignores
-// XDG_CONFIG_HOME entirely; on Linux it uses XDG_CONFIG_HOME or ~/.config.
 export function resolveConfCwd(): string {
-    const home = os.homedir();
-    if (process.platform === 'darwin') {
-        return path.join(home, 'Library', 'Preferences', 'xtrm-cli-nodejs');
-    }
-    const xdg = process.env.XDG_CONFIG_HOME;
-    const base = xdg ? xdg : path.join(home, '.config');
-    return path.join(base, 'xtrm-cli-nodejs');
+    return resolveConfProjectDir();
+}
+
+/**
+ * The cache key. Derived from the resolved directory rather than from raw env
+ * vars, so every input that moves the store (HOME, XDG_CONFIG_HOME, APPDATA,
+ * platform base) also invalidates the cached instance.
+ */
+function configIdentity(): string {
+    return resolveConfProjectDir();
 }
 
 function getConfig(): Conf<ConfigShape> {
@@ -70,18 +88,16 @@ function getConfig(): Conf<ConfigShape> {
 }
 
 /**
- * Default Conf store path without instantiating Conf — constructing it
- * writes the file on first access, which would turn every read-only path
- * (preflight, dry-run, fail-closed gates) into a HOME mutation.
- * Unknown platforms fail open (assume present → old behavior).
+ * Whether the Conf store exists, checked without instantiating Conf —
+ * constructing it writes the file on first access, which would turn every
+ * read-only path (preflight, dry-run, fail-closed gates) into a HOME mutation.
+ * CORE-2630: uses the same resolver as the store itself, so the check can never
+ * look at a different directory than the write. A filesystem error still fails
+ * open (assume present → old behavior).
  */
 function defaultConfigFilePresent(): boolean {
     try {
-        if (process.platform === 'win32') return true;
-        const dir = process.platform === 'darwin'
-            ? path.join(os.homedir(), 'Library', 'Preferences', 'xtrm-cli-nodejs')
-            : path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'), 'xtrm-cli-nodejs');
-        return fs.pathExistsSync(path.join(dir, 'config.json'));
+        return fs.pathExistsSync(path.join(resolveConfProjectDir(), 'config.json'));
     } catch {
         return true;
     }
