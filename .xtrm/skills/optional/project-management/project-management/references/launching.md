@@ -84,8 +84,8 @@ specialists and consult the advisor.
    with `kill-pane` by id when the issue closes.
 
 Another role (`--role executor`) is not a worker: on Claude it MUST pass `--model sonnet|opus` or the session dies at turn 1, and its prompt carries
-the rule-37 line. A bounded read or test run needs a specialist, not a window. A PR review follows SKILL.md rule 44: the `pr-reviewer` specialist (Claude
-through `claude-bridge`) or `xt claude --role pr-reviewer --model sonnet|opus`.
+the rule-37 line. A bounded read or test run needs a specialist, not a window. A PR review follows SKILL.md rule 44: `xt claude --role pr-reviewer --model
+sonnet|opus`, the native `reviewer` subagent in PR mode, or the `pr-reviewer` specialist through `claude-bridge`.
 
 ### When --window refuses
 

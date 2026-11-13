@@ -21,8 +21,11 @@ Deliberately no alarm for "no new comment": that is the healthy state and an ala
 import os
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
+
+import json
 
 import lanecfg
 import route_target  # project-management/scripts, on sys.path via lanecfg
@@ -34,6 +37,12 @@ WATCHDOG = lanecfg.get("PM_LANE_WATCHDOG")
 EV = os.path.join(LANE, "events.log")
 PENDING = os.path.join(LANE, "outbox-pending")
 OUTBOX = os.path.join(LANE, "pending-routes.jsonl")
+# Per-route alarm memory. Without it this check re-alarmed every undelivered record on every pass: 26 routes
+# restated every 2 minutes for 26 hours, so the one alarm that mattered was unreadable inside its repetition.
+# A route alarms once when it first ages past SEND_S, again only at RENOTIFY_S, and an unchanged backlog
+# publishes one aggregate per CHANGED set instead of one line per record per pass.
+ROUTE_ALARM_STATE = os.path.join(LANE, "route-alarms.json")
+RENOTIFY_S = 6 * 3600
 STALE_S = 900          # ROUTE-PASS lands every 300 s; 900 is three missed passes
 SEND_S = 600           # board-audit: an emitted body unconfirmed after 10 minutes is residue
 CHECK_S = 120
@@ -47,6 +56,24 @@ def stamp():
 def alarm(msg):
     with open(EV, "a", encoding="utf-8") as fh:
         fh.write(f"{stamp()} ALARM {msg}\n")
+
+
+def load_route_alarms():
+    try:
+        with open(ROUTE_ALARM_STATE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return dict(data) if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:  # noqa: BLE001 - a corrupt alarm memory must not silence the check
+        return {}
+
+
+def save_route_alarms(state):
+    tmp = ROUTE_ALARM_STATE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, sort_keys=True)
+    os.replace(tmp, ROUTE_ALARM_STATE)
 
 
 def read_lines():
@@ -143,6 +170,7 @@ def check():
         except Exception as exc:  # noqa: BLE001
             alarm(f"SEND-UNCONFIRMED cannot read the outbox ({exc.__class__.__name__}) — the check is blind")
             recs = []
+        live = []
         for rec in recs:
             if rec.get("delivered"):
                 continue
@@ -153,8 +181,30 @@ def check():
                 ts = None
             age = (datetime.now(timezone.utc) - ts).total_seconds() if ts else SEND_S + 1
             if age > SEND_S:
-                alarm(f"ROUTE-UNDELIVERED {rec.get('id')} on {rec.get('key')} waited {int(age)}s "
-                      f"without being forwarded: {str(rec.get('text') or '')[:80]!r}")
+                live.append((rec.get("id"), rec.get("key"), int(age), str(rec.get("text") or "")[:80]))
+        seen = load_route_alarms()
+        now_s = datetime.now(timezone.utc).timestamp()
+        fresh = []
+        for rid, key, age, text in live:
+            prev = seen.get(rid)
+            if prev is None or now_s - float(prev) >= RENOTIFY_S:
+                fresh.append((rid, key, age, text))
+                seen[rid] = now_s
+        for rid, key, age, text in fresh:
+            alarm(f"ROUTE-UNDELIVERED {rid} on {key} waited {age}s without being forwarded: {text!r}")
+        if live and not fresh:
+            # The signature carries the SET of ids and never an age: ages grow every pass, so an age in the
+            # signature would change it every two minutes and re-alarm exactly as the per-record lines did.
+            sig = f"{len(live)}|" + ",".join(sorted(r[0] for r in live))
+            if seen.get("_signature") != sig:
+                seen["_signature"] = sig
+                oldest = max(live, key=lambda r: r[2])
+                alarm(f"ROUTE-BACKLOG {len(live)} undelivered, none new since the last pass; "
+                      f"oldest {oldest[0]} on {oldest[1]} waited {oldest[2]}s")
+        live_ids = {r[0] for r in live}
+        for rid in [k for k in seen if k != "_signature" and k not in live_ids]:
+            seen.pop(rid, None)
+        save_route_alarms(seen)
     n = watcher_count()
     if n == 0:
         alarm("WATCHER-COUNT 0 tails on events.log: nobody is reading this log")
@@ -191,6 +241,10 @@ def check():
 
 
 if __name__ == "__main__":
+    if "--once" in sys.argv[1:]:
+        # one pass, no loop: the only way to prove the checks and their alarm memory in a test lane
+        check()
+        raise SystemExit(0)
     alarm("DEADMAN-START checks every %ds, stale limit %ds" % (CHECK_S, STALE_S))
     while True:
         try:

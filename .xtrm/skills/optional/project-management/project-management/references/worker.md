@@ -61,7 +61,7 @@ the only guard against cross-repository writes (project rule 32). Report the ref
 ## Worker lifecycle: prefer bounded, kill on done (operator 2026-11-01)
 
 - Shape first. A bounded task (quant ruling, audit, investigation, one-file fix) goes to a
-  specialist (`specialist_dispatch`) or a native subagent; a PR review follows SKILL.md rule 44 (the `pr-reviewer` specialist on Claude, or `xt claude --role pr-reviewer`).
+  specialist (`specialist_dispatch`) or a native subagent; a PR review follows SKILL.md rule 44 (three Claude paths; never an `xt pi` worker or a non-Claude model).
   Use an interactive pane only for long-lived ownership (a lead, the board helper, a watcher, a multi-hour
   executor) or when the operator asks to guide it.
 - Every launch prompt ends with: "When your result is journaled and reported, stop: release your

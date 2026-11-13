@@ -127,7 +127,7 @@ is a lead; there is no separate build mode.
 4. **Do Jira hygiene every cycle** (`manager.md` §12).
 5. **Run the wind-down** when the operator ends the day (`manager.md` §13).
 6. **Workers, leads and the manager MUST delegate heavy and critical work** to specialists (operator, 2026-10-29).
-   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44 (the `pr-reviewer` specialist on Claude, or `xt claude --role pr-reviewer`).
+   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44 (three Claude paths).
    - Before a production-impacting, data-meaning or irreversible decision: native subagents and the advisor. A builder may coordinate both within the
      cap.
    - The lead launches the rule-44 review for every PR, never the builder whose PR it is.
@@ -337,13 +337,13 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
    - Incident 11-05: one window slotted with a database mirror OFF and a crashing parity script; another with an unverified C5; a
      write-mode roll check broke 18 roots for 41 h; CI runners refused for hours before anyone looked.
    - Look-ahead for the next 48 h: rule 45.
-44. **Reviews run on a Claude model as the `pr-reviewer` role** (operator 2026-11-06: small models are not reliable reviewers; seq 2885, 3023;
-    the specialist path allowed 2026-11-13 with `claude-bridge`): the `pr-reviewer` specialist (`specialist_list` shows a `claude-bridge/`
-    model; `model_override` for Opus) or `xt claude --role pr-reviewer --model opus|sonnet`. Opus for HIGH/CRITICAL, data-meaning, production or
-    schema PRs. Merge-ready needs an `xtrm-reviewer[bot]` review at the head with the OCR section "Ledger check: exit 0" (both post via the shim).
-   - Never a native subagent, an `xt pi` worker or a non-Claude model.
+44. **Reviews run on Claude as `pr-reviewer`** (operator 2026-11-06, seq 2885, 3023; three paths allowed 2026-11-13), any of: `xt claude --role
+    pr-reviewer --model opus|sonnet`; the native `reviewer` subagent in PR review mode (it sets `XTRM_ROLE=reviewer` on every `gh` call, so the
+    shim posts as the reviewer bot); the `pr-reviewer` specialist through `claude-bridge` (`model_override` for Opus). Opus for HIGH/CRITICAL,
+    data-meaning, production or schema PRs. Merge-ready needs an `xtrm-reviewer[bot]` review at the head with "Ledger check: exit 0".
+   - Never an `xt pi` worker, a non-Claude model, or a `gh pr comment` verdict (a comment pins no head).
    - The lead launches the review; the builder never reviews its own PR.
-   - A second opinion is a second rule-44 review (either path), never a `seconder`.
+   - A second opinion is a second rule-44 review (any path), never a `seconder`.
 45. **Window look-ahead: rule 43 extended** (operator, 2026-11-06: the precondition checks found missing items and nobody tried to land them early).
     At each day boundary and at 12:00Z the manager runs the rule-43 precondition check for every window in the next 48 h (the board helper
     lists them).
@@ -389,7 +389,7 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
      | unknown cause | `debugger` first, then the chain of its scrutiny; a regression test is mandatory |
      | CRITICAL or sensitive (migrations, secrets, auth, MCP or agent config) | `security-deep`: `security-auditor` before and after the build, `seconder`, `test-engineer`, `obligations-scanner`, Claude review |
      | risky decision (production, data, irreversible) | `overthinker` (premortem) plus the `advisor` agent for the final call |
-   - The review follows rule 44 (`xt claude --role pr-reviewer` or the `pr-reviewer` specialist on Claude). Specialists run on Claude models
+   - The review follows rule 44 (any of its three Claude paths). Specialists run on Claude models
      through `claude-bridge` since 2026-11-13: a step that needs Claude may now be a specialist (set it in the bridge allow list).
    - The lead does not attest a build contract whose VALIDATION does not name the chain. The merge-ready record lists the activation id of each
      step, or the scrutiny reason for a skipped step.

@@ -853,7 +853,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/deadman.py": {
-          "hash": "8f1e7cc8adfb2f9419c36382aaba56b9e437636447c1ce47263edaae1537a0c6",
+          "hash": "e1bd39ce5be30c0a37150c60826eb551766e6796f477c4f498a9f7176b03d2d4",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/deep-dup-probe.py": {
@@ -1013,15 +1013,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "584a7b096a4aa16d4da9c677146e10ed88f50f370abbd6952db24d6905d19cf1",
+          "hash": "2bb38534038ecaed1580a107a4bfe06fea2a5165a2869e8ac716c61c000359ff",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "1449808071145fabd5a18ea8d33e01d99decd5482dcfec9546a71c86f6e96404",
+          "hash": "760d3b3b34bcef10ea46d8ddb59ea3bd0fa34ed9bb95912b260d44dd629adf8c",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "644dc1c23a177e01228f7affce1201fbcd30a02cc0004a460d4966c99a94d07c",
+          "hash": "be07e45434eaa5d338ce4f98d5a837fbf17005bd715c349836ced91070a1f594",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1041,7 +1041,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/worker.md": {
-          "hash": "734da4c8b338081b2f76fe4a3cc247733fff0f74133e1a28aa0679131dab15ad",
+          "hash": "ec0b720a0a94b380b7e699a6d0fd4e89309815468ac682d089335684556e33b9",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/jira.py": {
@@ -1077,7 +1077,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "831c26afa9c45188a5f43b54a1f15bd58177b229658107aff40015f773a334ca",
+          "hash": "94e80db5d4658175ac49f20921cb8ba606416b7e88e0bfc2f49961e1ba33fd5a",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {
