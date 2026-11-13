@@ -21,6 +21,33 @@ import { spawnSync } from 'node:child_process';
 export const XTRM_SESSION_ID_VAR = 'XTRM_SESSION_ID';
 export const XTRM_SESSION_NAME_VAR = 'XTRM_SESSION_NAME';
 
+/**
+ * Environment variables that carry a worker's OWN runtime session id, in
+ * precedence order (CORE-2639): the Pi session id, the Claude Code session id,
+ * the Codex session id.
+ */
+export const WORKER_SESSION_ID_VARS = ['PI_SESSION_ID', 'CLAUDE_SESSION_ID', 'CODEX_SESSION_ID'] as const;
+
+/** A tmux session id as `XTRM_SESSION_ID` carries it (`$1`, `$7`): never a worker. */
+const TMUX_SESSION_ID = /^\$\d+$/;
+
+/**
+ * The worker's own runtime session id, or null when the environment carries none.
+ *
+ * Provenance dispatch binds execution lineage to a session, and a tmux session id
+ * names every window in that session at once, so passing one would attribute the
+ * binding to a group (CORE-2619 for the marker's `run=`, CORE-2639 for the
+ * binding row). A tmux-shaped value is therefore refused here rather than
+ * forwarded: the caller then omits the flag and sb keeps its own fallback.
+ */
+export function resolveWorkerSessionId(env: NodeJS.ProcessEnv = process.env): string | null {
+    for (const key of WORKER_SESSION_ID_VARS) {
+        const value = (env[key] ?? '').trim();
+        if (value && !TMUX_SESSION_ID.test(value)) return value;
+    }
+    return null;
+}
+
 export interface TmuxSessionIdentity {
     sessionId?: string | null;
     sessionName?: string | null;
