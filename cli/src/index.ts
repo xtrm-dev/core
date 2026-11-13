@@ -33,6 +33,7 @@ import { createUpdateCommand } from './commands/update.js';
 import { createReleaseCommand } from './commands/release.js';
 import { createSpecCommand } from './commands/spec.js';
 import { createMigrateCommand } from './commands/migrate.js';
+import { createHooksCommand } from './commands/hooks.js';
 import { createVersionCommand } from './commands/version.js';
 import { createTopologyCommand } from './commands/topology.js';
 import { createHostCommand } from './commands/host.js';
@@ -92,6 +93,7 @@ program.addCommand(createUpdateCommand());
 program.addCommand(createReleaseCommand());
 program.addCommand(createSpecCommand());
 program.addCommand(createMigrateCommand());
+program.addCommand(createHooksCommand());
 program.addCommand(createVersionCommand());
 program.addCommand(createHelpCommand());
 

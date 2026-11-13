@@ -16,6 +16,7 @@ import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-ident
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
+import { setWorktreeIssue } from '../core/trailer-hooks.js';
 import {
     buildDetachedLaunchOutcome,
     checkStructuredLaunchPaths,
@@ -3282,6 +3283,15 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // Normalize parent's core.hooksPath to absolute if it's still the bd
     // relative default — safety net for older bd installs (see xtrm-2s44).
     normalizeParentHooksPath(mainRepoRoot);
+
+    // CORE-2570: write xtrm.issue worktree binding when an Issue is bound.
+    const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
+    if (boundIssue) {
+        const binding = setWorktreeIssue(worktreePath, boundIssue);
+        // Fail-open: a missing binding must not block the launch, but it must
+        // not be invisible either.
+        if (!binding.ok) console.error(kleur.yellow(`  ⚠ xtrm.issue binding not written: ${binding.error}`));
+    }
 
     // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
     // its DB via git common-dir discovery (shared-server mode + absolute

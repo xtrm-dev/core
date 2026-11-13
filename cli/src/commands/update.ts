@@ -20,6 +20,7 @@ import { migrationBlockedReason, planSubstrateMigration, substrateMigrationTrans
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
+import { installTrailerHook } from '../core/trailer-hooks.js';
 import { resolveMainProjectRoot } from '../utils/repo-root.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
@@ -39,6 +40,8 @@ interface RepoUpdateResult {
         /** Present when the repo is in the beads→Substrate transition (CORE-2343). */
         transition?: SubstrateTransition;
     };
+    /** CORE-2570: the trailer-hook chain's outcome, human or failure note. */
+    trailerHook?: string;
     piRuntime?: {
         changed: boolean;
         failed: string[];
@@ -282,6 +285,22 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
         // reconciliation explicit and idempotent.
         const hookSync = await reconcileProjectClaudeHooks(repoRoot, { dryRun: false });
 
+        // Trailer hook chaining (CORE-2570): install by default. Reported, never
+        // swallowed: an unresolved entry leaves the chain off and must be visible.
+        let trailerNote: string | null = null;
+        try {
+            const tr = await installTrailerHook(repoRoot);
+            if (tr.changed) trailerNote = 'chained the Substrate prepare-commit-msg hook';
+            else if (tr.reason === 'substrate-hook-unresolved') {
+                trailerNote = 'trailer hook not installed: substrate prepare-commit-msg not found (set XTRM_SUBSTRATE_DIR)';
+            }
+        } catch (error) {
+            trailerNote = `trailer hook install failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        // stdout is the --json channel too: emit the note only in human mode and
+        // carry it in the result envelope instead.
+        if (trailerNote && !opts.json) console.log(kleur.dim(`  • ${trailerNote}`));
+
         if (runtimeFailed.length > 0) {
             return {
                 repo: repoRoot,
@@ -290,6 +309,7 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
                 maintenance: maintenancePlan,
                 migration: migrationSummary,
                 piRuntime: piRuntimeResult,
+            trailerHook: trailerNote ?? undefined,
             };
         }
 
@@ -300,6 +320,7 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
                 maintenance: maintenancePlan,
                 migration: migrationSummary,
                 piRuntime: piRuntimeResult,
+            trailerHook: trailerNote ?? undefined,
             };
         }
 
@@ -326,6 +347,7 @@ async function updateRepo(repoRoot: string, opts: UpdateOpts): Promise<RepoUpdat
             maintenance,
             migration: migrationSummary,
             piRuntime: piRuntimeResult,
+            trailerHook: trailerNote ?? undefined,
         };
     } catch (error) {
         return {
