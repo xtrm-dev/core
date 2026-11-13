@@ -64485,18 +64485,21 @@ function installGhShim(deps = {}) {
   const realGh2 = findRealGh(deps);
   const warnings = [];
   if (!realGh2) {
-    return { ok: false, path: file2, realGh: null, reason: "no real gh on PATH (only the xtrm shim, if any)", warnings };
+    return { ok: false, path: file2, realGh: null, reason: "no real gh on PATH (only the xtrm shim, if any)", warnings, pathOrderWarned: false };
   }
   const exists = deps.exists ?? ((f) => (0, import_node_fs3.existsSync)(f));
   if (exists(file2) && !isShimFile(deps, file2)) {
-    return { ok: false, path: file2, realGh: realGh2, reason: `${file2} exists and is not the xtrm shim; move it aside first`, warnings };
+    return { ok: false, path: file2, realGh: realGh2, reason: `${file2} exists and is not the xtrm shim; move it aside first`, warnings, pathOrderWarned: false };
   }
   const ordered = pathOrder(deps, file2, realGh2);
-  if (!ordered) warnings.push(`${import_node_path15.default.dirname(file2)} comes after ${import_node_path15.default.dirname(realGh2)} on PATH; the shim will not be used`);
+  if (!ordered) warnings.push(pathOrderWarning(file2, realGh2));
   (0, import_node_fs3.mkdirSync)(import_node_path15.default.dirname(file2), { recursive: true });
   (0, import_node_fs3.writeFileSync)(file2, ghShimSource(realGh2), { mode: 493 });
   (0, import_node_fs3.chmodSync)(file2, 493);
-  return { ok: true, path: file2, realGh: realGh2, warnings };
+  return { ok: true, path: file2, realGh: realGh2, warnings, pathOrderWarned: !ordered };
+}
+function pathOrderWarning(shim, realGh2) {
+  return `${import_node_path15.default.dirname(shim)} comes after ${import_node_path15.default.dirname(realGh2)} on PATH; the shim will not be used`;
 }
 function pathOrder(deps, shim, realGh2) {
   const env3 = deps.env ?? process.env;
@@ -84438,6 +84441,26 @@ async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
     await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
     await reconcileGlobalClaudeHooks();
     await reconcileGlobalPiHooks();
+  }
+  try {
+    const status2 = ghShimStatus({ home: process.env.HOME });
+    let installWarnedOrdering = false;
+    if (opts.apply && status2.installed && !status2.current) {
+      const shim = installGhShim({ home: process.env.HOME });
+      installWarnedOrdering = shim.pathOrderWarned;
+      if (!shim.ok) {
+        console.log(kleur_default.yellow(`  gh shim: not refreshed (${shim.reason ?? "unknown reason"})`));
+      } else {
+        for (const warning of shim.warnings) console.log(kleur_default.yellow(`  gh shim: ${warning}`));
+      }
+    }
+    const shimDir = import_node_path60.default.dirname(status2.path);
+    const onPath = (process.env.PATH ?? "").split(import_node_path60.default.delimiter).includes(shimDir);
+    if (status2.installed && status2.realGh !== null && !status2.pathOrderOk && !installWarnedOrdering) {
+      console.log(kleur_default.yellow(onPath ? `  gh shim: ${shimDir} comes after the real gh on PATH \u2014 the shim will not be used` : `  gh shim: ${shimDir} is not on PATH \u2014 the shim will not be used`));
+    }
+  } catch (error62) {
+    console.log(kleur_default.yellow(`  gh shim: refresh failed (${error62 instanceof Error ? error62.message : String(error62)})`));
   }
   if (shouldUseGlobalSkills(repoRoot)) {
     await printSkillsMigrationNudge(repoRoot);

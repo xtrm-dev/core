@@ -593,6 +593,8 @@ export interface InstallResult {
     realGh: string | null;
     reason?: string;
     warnings: string[];
+    /** True when the ordering warning was emitted, so callers can suppress a duplicate. */
+    pathOrderWarned: boolean;
 }
 
 /** Install (or refresh) the shim. Refuses to overwrite a foreign `gh`. */
@@ -601,18 +603,26 @@ export function installGhShim(deps: ShimDeps = {}): InstallResult {
     const realGh = findRealGh(deps);
     const warnings: string[] = [];
     if (!realGh) {
-        return { ok: false, path: file, realGh: null, reason: 'no real gh on PATH (only the xtrm shim, if any)', warnings };
+        return { ok: false, path: file, realGh: null, reason: 'no real gh on PATH (only the xtrm shim, if any)', warnings, pathOrderWarned: false };
     }
     const exists = deps.exists ?? ((f: string) => existsSync(f));
     if (exists(file) && !isShimFile(deps, file)) {
-        return { ok: false, path: file, realGh, reason: `${file} exists and is not the xtrm shim; move it aside first`, warnings };
+        return { ok: false, path: file, realGh, reason: `${file} exists and is not the xtrm shim; move it aside first`, warnings, pathOrderWarned: false };
     }
     const ordered = pathOrder(deps, file, realGh);
-    if (!ordered) warnings.push(`${path.dirname(file)} comes after ${path.dirname(realGh)} on PATH; the shim will not be used`);
+    if (!ordered) warnings.push(pathOrderWarning(file, realGh));
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, ghShimSource(realGh), { mode: 0o755 });
     chmodSync(file, 0o755);
-    return { ok: true, path: file, realGh, warnings };
+    return { ok: true, path: file, realGh, warnings, pathOrderWarned: !ordered };
+}
+
+/**
+ * The ordering warning, in one place: `xt update` suppresses its own line with
+ * `isPathOrderWarning`, so a copy edit here cannot silently double the report.
+ */
+export function pathOrderWarning(shim: string, realGh: string): string {
+    return `${path.dirname(shim)} comes after ${path.dirname(realGh)} on PATH; the shim will not be used`;
 }
 
 function pathOrder(deps: ShimDeps, shim: string, realGh: string): boolean {

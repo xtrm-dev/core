@@ -21,6 +21,7 @@ import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { ensureAgentsSkillsSymlink, ensureUserAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { reconcileProjectClaudeHooks } from '../core/claude-runtime-sync.js';
 import { resolveMainProjectRoot } from '../utils/repo-root.js';
+import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
 import { stageMigrationChanges } from '../utils/git-staging.js';
 
@@ -104,7 +105,7 @@ async function printSkillsMigrationNudge(repoRoot: string): Promise<void> {
  * under a repo, so none of it can reach a `.beads` board. Extracted so the
  * blocked-repo path can run it without touching repo-scoped state.
  */
-async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, opts: UpdateOpts): Promise<void> {
+export async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, opts: UpdateOpts): Promise<void> {
     const pkgJson = await fs.readJson(path.join(packageRoot, 'package.json')) as { version?: string };
     await logBootstrapTrigger({
         command: 'update',
@@ -117,6 +118,38 @@ async function runUserScopeMaintenance(packageRoot: string, repoRoot: string, op
         await ensureGlobalHooksBootstrapped(packageRoot, opts.force ? { force: true } : {});
         await reconcileGlobalClaudeHooks();
         await reconcileGlobalPiHooks();
+    }
+    // Refresh a stale installed gh shim (CORE-2633): xt update detects it and
+    // reinstalls; doctor passes afterwards. Fail-open: never block the update,
+    // but never hide the outcome either — a stale shim that stays stale is a
+    // finding the operator must see, not a silent no-op.
+    try {
+        const status = ghShimStatus({ home: process.env.HOME });
+        // The refresh is a write, so it is apply-gated here as well as at every
+        // call site: a future dry-run caller must not rewrite ~/.local/bin/gh.
+        let installWarnedOrdering = false;
+        if (opts.apply && status.installed && !status.current) {
+            const shim = installGhShim({ home: process.env.HOME });
+            installWarnedOrdering = shim.pathOrderWarned;
+            if (!shim.ok) {
+                console.log(kleur.yellow(`  gh shim: not refreshed (${shim.reason ?? 'unknown reason'})`));
+            } else {
+                for (const warning of shim.warnings) console.log(kleur.yellow(`  gh shim: ${warning}`));
+            }
+        }
+        // Reinstalling cannot fix a PATH that does not resolve to the shim, and the
+        // cause decides the words: the directory may be missing from PATH entirely,
+        // or it may sit after the real gh. Nothing is printed for the "no real gh"
+        // case — the refusal above already explains it.
+        const shimDir = path.dirname(status.path);
+        const onPath = (process.env.PATH ?? '').split(path.delimiter).includes(shimDir);
+        if (status.installed && status.realGh !== null && !status.pathOrderOk && !installWarnedOrdering) {
+            console.log(kleur.yellow(onPath
+                ? `  gh shim: ${shimDir} comes after the real gh on PATH — the shim will not be used`
+                : `  gh shim: ${shimDir} is not on PATH — the shim will not be used`));
+        }
+    } catch (error) {
+        console.log(kleur.yellow(`  gh shim: refresh failed (${error instanceof Error ? error.message : String(error)})`));
     }
     if (shouldUseGlobalSkills(repoRoot)) {
         await printSkillsMigrationNudge(repoRoot);
