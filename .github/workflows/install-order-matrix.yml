@@ -11,6 +11,12 @@ name: Install order matrix
 on:
   workflow_dispatch:
 
+# Least privilege: operator-triggered installer matrix. It installs third-party
+# packages globally and runs the packed tarball's postinstall logic, so keep the
+# GITHUB_TOKEN read-only.
+permissions:
+  contents: read
+
 jobs:
   matrix:
     runs-on: ubuntu-latest
@@ -39,9 +45,9 @@ jobs:
 
       # Bun is required by @jaggerxtrm/specialists (sp shebang).
       - name: Use Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: "1.4.4"
 
       - name: Pack xtrm-tools
         run: |

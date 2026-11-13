@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+# Workflow default is least privilege. The `publish` job widens it for npm
+# trusted publishing (id-token: write); every other job stays read-only.
+permissions:
+  contents: read
+
 jobs:
   resolve_ref:
     runs-on: ubuntu-latest

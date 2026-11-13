@@ -47,6 +47,12 @@ on:
         default: ""
         type: string
 
+# Least privilege: this workflow checks out input-supplied specialists and
+# xtmux refs and runs their packaging scripts. A read-only token keeps those
+# checkouts unprivileged (no cache poisoning surface).
+permissions:
+  contents: read
+
 jobs:
   integration_suite:
     runs-on: ubuntu-latest
@@ -68,9 +74,9 @@ jobs:
       # Bun is required by @jaggerxtrm/specialists and @jaggerxtrm/xtmux
       # (bun shebang). Suite B runs the xtmux binary, so it must be executable.
       - name: Use Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: "1.4.4"
 
       # tmux is preinstalled on ubuntu-latest; ensure it explicitly so Suite B's
       # private-server lifecycle never depends on the image.
