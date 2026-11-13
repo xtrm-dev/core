@@ -77,13 +77,29 @@ jobs:
 
       - name: Ensure npm >= 11.5.1 (trusted publishing requires it)
         shell: bash
+        env:
+          # Pinned, not @latest: this runs in the one job holding the
+          # provenance token (id-token: write), so a moving target with network
+          # access would let an unreviewed npm release reach the publish path.
+          # 11.21.2 is the newest npm 11 line; npm 12 requires node >= 24.15.0
+          # and this job runs node-version 24.x, so npm 11 is the safe ceiling.
+          # Move this pin when the node floor moves.
+          NPM_TARGET_VERSION: "11.21.2"
         run: |
+          set -euo pipefail
           npm_version="$(npm --version)"
-          echo "npm version: $npm_version"
+          echo "npm version: $npm_version (target ${NPM_TARGET_VERSION}, floor 11.5.1)"
           if [ "$(printf '%s\n' 11.5.1 "$npm_version" | sort -V | head -1)" != "11.5.1" ]; then
-            echo "npm $npm_version is older than 11.5.1; upgrading"
-            npm install -g npm@latest
+            echo "npm $npm_version is older than 11.5.1; upgrading to ${NPM_TARGET_VERSION}"
+            npm install -g "npm@${NPM_TARGET_VERSION}"
             echo "npm after upgrade: $(npm --version)"
+          fi
+          # Fail loudly rather than publishing with an npm that cannot do
+          # trusted publishing.
+          installed="$(npm --version)"
+          if [ "$(printf '%s\n' 11.5.1 "$installed" | sort -V | head -1)" != "11.5.1" ]; then
+            echo "::error::npm $installed is below the trusted-publishing floor 11.5.1" >&2
+            exit 1
           fi
 
       - name: Install dependencies
