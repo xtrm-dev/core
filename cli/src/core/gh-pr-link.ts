@@ -303,12 +303,12 @@ export interface GhPrLinkDeps extends ReceiptProjectDeps {
     cwd?: string;
     readFile?: (file: string) => string;
     runGit?: RunGit;
-    /** The receipt runner; tests inject a fake so no real store is touched. */
+    /**
+     * Runs every `sb` call this module makes — the attach, the claim read, the
+     * recovery dispatch/allocate and the retry. Tests inject a fake so no real
+     * store is touched and can route on the argv.
+     */
     runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
-    /** The dispatch runner; defaults to the same runner as attach. */
-    runDispatch?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
-    /** The allocate runner; defaults to the same runner as attach. */
-    runAllocate?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
 }
 
 export interface GhPrLinkResult {
@@ -374,12 +374,20 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
     }
     const run = deps.runAttach ?? defaultAttach;
-    const runDispatch = deps.runDispatch ?? run;
-    const runAllocate = deps.runAllocate ?? run;
     // One deadline for the pair: the whole post-create step, not each receipt,
     // is what must stay inside the budget.
     const deadline = Date.now() + ATTACH_TIMEOUT_MS;
     const budget = (): number => Math.max(250, deadline - Date.now());
+    // CORE-2631 review: recovery adds up to four calls (show, dispatch,
+    // allocate, retry). With only the per-call floor those floors can outlive the
+    // deadline and run into the shim's own LINK_TIMEOUT_MS (6000), which SIGKILLs
+    // this process mid-sequence. Reserve a tail so the shim always gets control
+    // back, and give up honestly when nothing is left.
+    const RECOVERY_TAIL_MS = 1_000;
+    const recoveryBudget = (): number => {
+        const left = deadline - RECOVERY_TAIL_MS - Date.now();
+        return left > 0 ? left : 0;
+    };
 
     const attachArgv = withReceiptProject(['provenance', 'attach', ref, 'pr', pr.canonical], project);
     const t1 = run(attachArgv, env, budget());
@@ -399,32 +407,61 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
                 warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || 'sb gave no reason')}`,
             };
         }
+        const outOfTime = (): GhPrLinkResult => ({
+            attached: false,
+            ref,
+            canonical: pr.canonical,
+            argv: attachArgv,
+            warning: `created ${pr.canonical}, but the Substrate link to ${ref} ran out of time before it could recover; run sb provenance dispatch ${ref}, then sb provenance allocate ${ref}, then re-link`,
+        });
+        if (recoveryBudget() <= 0) return outOfTime();
+
         // CORE-2631 review (pr-reviewer): decide --participant from the Issue's
-        // claim state, not from env.SUBSTRATE_HOLDER (which every agent process
-        // has, even for unclaimed Issues). One read via the existing runner.
-        let holder: string | null = null;
+        // claim state, not from env.SUBSTRATE_HOLDER alone (every agent process has
+        // that variable, even for an unclaimed Issue). One read via the runner.
+        // The VALUE stays the session's own holder: echoing the observed holder
+        // would pass sb's anti-steal check by construction and attribute this
+        // session's work to whoever holds the claim. When the two differ, the flag
+        // is omitted and sb refuses with its own message — one honest warning.
+        let claimHolder: string | null = null;
+        let claimActivation: string | null = null;
         const showArgv = ['issue', 'show', ref, '--json'];
-        const showResult = run(showArgv, env, budget());
+        const showResult = run(showArgv, env, recoveryBudget());
         if (showResult.ok && showResult.stdout) {
-            try {
-                const parsed = JSON.parse(showResult.stdout) as { claim?: { holder?: string | null; releasedAt?: string | null } | null };
-                const claim = parsed?.claim;
-                if (claim && claim.holder && !claim.releasedAt) {
-                    holder = claim.holder;
+            // Tolerant parse: sb may print a non-JSON preamble, and a strict
+            // parse would read a live-held Issue as unclaimed.
+            const start = showResult.stdout.indexOf('{');
+            if (start >= 0) {
+                try {
+                    const parsed = JSON.parse(showResult.stdout.slice(start)) as {
+                        claim?: { holder?: string | null; activationId?: string | null; releasedAt?: string | null } | null;
+                    };
+                    const claim = parsed?.claim;
+                    if (claim && claim.holder && !claim.releasedAt) {
+                        claimHolder = claim.holder;
+                        claimActivation = claim.activationId ?? null;
+                    }
+                } catch {
+                    // Unparseable: treat as unclaimed (omit --participant).
                 }
-            } catch {
-                // Unparseable show output: treat as unclaimed (omit --participant).
             }
         }
+        const ownHolder = (env.SUBSTRATE_HOLDER ?? '').trim();
+
         // Dispatch: create the execution binding. --participant is required when
         // the issue is live-held (anti-steal); omit it when unclaimed.
         const dispatchArgs = ['provenance', 'dispatch', ref];
-        if (holder) dispatchArgs.push('--participant', holder);
+        if (claimHolder && ownHolder && ownHolder === claimHolder) {
+            dispatchArgs.push('--participant', ownHolder);
+            // sb compares holder AND activation, so a claim carrying an
+            // activation rejects a participant without one.
+            if (claimActivation) dispatchArgs.push('--activation', claimActivation);
+        }
         // --workspace is only meaningful when cwd is known; the shim always sets
         // it, but tests may omit it.
         if (deps.cwd) dispatchArgs.push('--workspace', cwd);
         const dispatchArgv = withReceiptProject(dispatchArgs, project);
-        const td = runDispatch(dispatchArgv, env, budget());
+        const td = run(dispatchArgv, env, recoveryBudget());
         if (!td.ok) {
             return {
                 attached: false,
@@ -436,7 +473,7 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         }
         // Allocate: create the receipt from the binding.
         const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
-        const ta = runAllocate(allocateArgv, env, budget());
+        const ta = run(allocateArgv, env, recoveryBudget());
         if (!ta.ok) {
             return {
                 attached: false,
@@ -447,7 +484,7 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
             };
         }
         // Retry attach once.
-        const t1b = run(attachArgv, env, budget());
+        const t1b = run(attachArgv, env, recoveryBudget());
         if (!t1b.ok) {
             return {
                 attached: false,

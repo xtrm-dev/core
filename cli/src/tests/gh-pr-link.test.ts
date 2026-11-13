@@ -454,6 +454,8 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         commitsOk?: boolean;
         held?: boolean;            // whether the issue is live-held
         holder?: string;           // holder name when held
+        activationId?: string | null; // activation on the live claim
+        env?: NodeJS.ProcessEnv;   // the process env the linker sees
     } = {}) {
         const calls: { kind: string; argv: string[] }[] = [];
         const { runGit } = gitFake({
@@ -467,7 +469,7 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         const holderName = overrides.holder ?? 'pi152-core';
         const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
             cwd: '/repo',
-            env: {},
+            env: overrides.env ?? {},
             runGit,
             runSb,
             readFile: () => { throw new Error('no file'); },
@@ -476,7 +478,12 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
                 calls.push({ kind, argv: [...args] });
                 if (kind === 'show') {
                     if (isHeld) {
-                        return { ok: true, stdout: JSON.stringify({ claim: { holder: holderName, releasedAt: null } }) };
+                        return {
+                            ok: true,
+                            stdout: JSON.stringify({
+                                claim: { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null },
+                            }),
+                        };
                     }
                     return { ok: true, stdout: JSON.stringify({ claim: null }) };
                 }
@@ -498,9 +505,6 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
                 return { ok: true, stdout: '' };
             },
         });
-        // Actually, runDispatch and runAllocate default to run (runAttach mock).
-        // The mock above handles dispatch/allocate by kind, so we don't need
-        // separate runners. Remove the bogus overrides.
         return { result, calls };
     }
 
@@ -526,11 +530,12 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         expect(attaches[0].argv).toEqual(attaches[1].argv);
     });
 
-    it('passes --participant with the holder when the issue is live-held', () => {
+    it('passes --participant with the session holder when the issue is live-held by it', () => {
         const { result, calls } = recoveryDeps({
             attachErrors: ['no_receipt: no receipt for this issue'],
             held: true,
             holder: 'pi152-core',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
         });
         expect(result.attached).toBe(true);
         const dispatches = calls.filter((c) => c.kind === 'dispatch');
@@ -539,15 +544,51 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         expect(dispatches[0].argv).toContain('pi152-core');
     });
 
-    it('omits --participant when the issue is unclaimed', () => {
+    // The production state CORE-2631 was filed from: the agent environment has
+    // SUBSTRATE_HOLDER set while the Issue is unclaimed. An env-based decision
+    // passes the flag here; a claim-based one must not.
+    it('omits --participant when the issue is unclaimed, even with SUBSTRATE_HOLDER set', () => {
         const { result, calls } = recoveryDeps({
             attachErrors: ['no_receipt: no receipt for this issue'],
             held: false,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
         });
         expect(result.attached).toBe(true);
         const dispatches = calls.filter((c) => c.kind === 'dispatch');
         expect(dispatches).toHaveLength(1);
         expect(dispatches[0].argv).not.toContain('--participant');
+    });
+
+    // Review finding: echoing the observed holder would pass sb's anti-steal
+    // check by construction and attribute this session's work to the claimant.
+    it('never dispatches under a holder that is not the session\'s own', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'someone-else',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: holder/activation mismatch (anti-steal)',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/anti-steal/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).not.toContain('--participant');
+        expect(dispatches[0].argv).not.toContain('someone-else');
+    });
+
+    it('passes --activation when the live claim carries one', () => {
+        const { calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            activationId: 'act:abc123',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--activation');
+        expect(dispatch?.argv).toContain('act:abc123');
     });
 
     it('does not attempt dispatch or allocate when attach fails for another reason', () => {

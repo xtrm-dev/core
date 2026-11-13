@@ -73607,10 +73607,13 @@ function linkOrWarn(stdout, argv, deps) {
     return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
   }
   const run5 = deps.runAttach ?? defaultAttach;
-  const runDispatch = deps.runDispatch ?? run5;
-  const runAllocate = deps.runAllocate ?? run5;
   const deadline = Date.now() + ATTACH_TIMEOUT_MS;
   const budget = () => Math.max(250, deadline - Date.now());
+  const RECOVERY_TAIL_MS = 1e3;
+  const recoveryBudget = () => {
+    const left = deadline - RECOVERY_TAIL_MS - Date.now();
+    return left > 0 ? left : 0;
+  };
   const attachArgv = withReceiptProject(["provenance", "attach", ref, "pr", pr.canonical], project);
   const t1 = run5(attachArgv, env3, budget());
   if (!t1.ok) {
@@ -73624,24 +73627,41 @@ function linkOrWarn(stdout, argv, deps) {
         warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || "sb gave no reason")}`
       };
     }
-    let holder = null;
+    const outOfTime = () => ({
+      attached: false,
+      ref,
+      canonical: pr.canonical,
+      argv: attachArgv,
+      warning: `created ${pr.canonical}, but the Substrate link to ${ref} ran out of time before it could recover; run sb provenance dispatch ${ref}, then sb provenance allocate ${ref}, then re-link`
+    });
+    if (recoveryBudget() <= 0) return outOfTime();
+    let claimHolder = null;
+    let claimActivation = null;
     const showArgv = ["issue", "show", ref, "--json"];
-    const showResult = run5(showArgv, env3, budget());
+    const showResult = run5(showArgv, env3, recoveryBudget());
     if (showResult.ok && showResult.stdout) {
-      try {
-        const parsed = JSON.parse(showResult.stdout);
-        const claim = parsed?.claim;
-        if (claim && claim.holder && !claim.releasedAt) {
-          holder = claim.holder;
+      const start = showResult.stdout.indexOf("{");
+      if (start >= 0) {
+        try {
+          const parsed = JSON.parse(showResult.stdout.slice(start));
+          const claim = parsed?.claim;
+          if (claim && claim.holder && !claim.releasedAt) {
+            claimHolder = claim.holder;
+            claimActivation = claim.activationId ?? null;
+          }
+        } catch {
         }
-      } catch {
       }
     }
+    const ownHolder = (env3.SUBSTRATE_HOLDER ?? "").trim();
     const dispatchArgs = ["provenance", "dispatch", ref];
-    if (holder) dispatchArgs.push("--participant", holder);
+    if (claimHolder && ownHolder && ownHolder === claimHolder) {
+      dispatchArgs.push("--participant", ownHolder);
+      if (claimActivation) dispatchArgs.push("--activation", claimActivation);
+    }
     if (deps.cwd) dispatchArgs.push("--workspace", cwd);
     const dispatchArgv = withReceiptProject(dispatchArgs, project);
-    const td = runDispatch(dispatchArgv, env3, budget());
+    const td = run5(dispatchArgv, env3, recoveryBudget());
     if (!td.ok) {
       return {
         attached: false,
@@ -73652,7 +73672,7 @@ function linkOrWarn(stdout, argv, deps) {
       };
     }
     const allocateArgv = withReceiptProject(["provenance", "allocate", ref], project);
-    const ta = runAllocate(allocateArgv, env3, budget());
+    const ta = run5(allocateArgv, env3, recoveryBudget());
     if (!ta.ok) {
       return {
         attached: false,
@@ -73662,7 +73682,7 @@ function linkOrWarn(stdout, argv, deps) {
         warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(ta.error ?? "sb gave no reason")}`
       };
     }
-    const t1b = run5(attachArgv, env3, budget());
+    const t1b = run5(attachArgv, env3, recoveryBudget());
     if (!t1b.ok) {
       return {
         attached: false,
