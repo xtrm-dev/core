@@ -20,6 +20,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
+import route_target  # noqa: E402
 
 PM, BA, TK = "project-management", "board-audit", "tabellone-keeper"
 SKILLS = (PM, BA, TK)
@@ -169,6 +170,16 @@ def main() -> int:
                 continue
             print(f"project {name} ({how})")
         problems += check_settings(chosen, a.all_settings)
+        # Routes are reported, not counted: a role may be legitimately unstaffed while you set up.
+        try:
+            live = route_target.sessions()
+            for role in sorted(route_target.roles()):
+                try:
+                    print(f"route   {role:<24} -> {route_target.resolve(role, live)['address']}")
+                except route_target.RouteError as exc:
+                    print(f"WARN    route {role}: {exc}")
+        except route_target.RouteError as exc:
+            print(f"WARN    routes not checked: {exc}")
 
     print(f"result  {'ready' if not problems else f'{problems} problem(s)'} for {', '.join(chosen)}"
           " (see project-management/references/setup.md)")

@@ -46,7 +46,7 @@ Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured 
 | `PM_LANE_HOLDER` | `lane_holder` | Substrate holder name for writes through post-guard. Default `board-lane`. | post-guard |
 | `PM_LANE_WATCHDOG` | `lane_watchdog` | Optional module with `sync(unwatched, detail) -> str`, called by deadman to publish an unwatched lane. Unset: the alarm stays in `events.log`. | deadman |
 | `PM_TABELLONE_UNIT` | `tabellone_unit` | systemd user unit of the Tabellone sync. Default `tabellone-sync.service`. | scheduler.sh |
-| `COORD_SOCK` | (env only) | Coordinator reply address printed by route-forward. | route-forward |
+| `COORD_SOCK` | (env only) | Manual override of the lead's address. Unset, route-forward resolves the `lead` role (`project-management/scripts/route_target.py`) and refuses when no single live lead exists. | route-forward |
 
 ## Structured settings (config file)
 
@@ -130,6 +130,12 @@ Example fragment (placeholder values):
 | `drift-groups.py` | `lane_dir`, `active_statuses`, `waiting_production_status`, `deferred_status`, `parked_statuses` |
 | `r46-apply.py` | Jira access only |
 | `sbtext.py` | optional `sb_bin` |
+
+## Routing
+
+`route-forward.py` prints `SEND-TO <address>`: the one live session holding the `lead` role, resolved at that moment
+(project-management/references/setup.md, "Routing roles"). `deadman.py` raises `ALARM ROUTE-TARGET lead|board_helper`
+when a role has no live session or several, so a missing lead is visible before an operator message waits on it.
 
 ## Running the lane
 

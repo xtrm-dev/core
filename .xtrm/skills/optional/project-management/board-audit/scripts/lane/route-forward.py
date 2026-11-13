@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timezone
 
 import lanecfg  # noqa: E402
+import route_target  # noqa: E402  (project-management/scripts, on sys.path via lanecfg)
 
 LANE = lanecfg.lane()
 OUTBOX = os.path.join(LANE, "pending-routes.jsonl")
@@ -52,6 +53,15 @@ def main(ids):
     if already:
         print(f"REFUSED already delivered: {already}; a second forward would double-report a decision")
         return 3
+    # The lead's address is resolved now, from the live session registry, never stored: a stored address went stale
+    # with its session (2026-11-12). COORD_SOCK still overrides by hand.
+    target = os.environ.get("COORD_SOCK")
+    if not target:
+        try:
+            target = route_target.resolve("lead")["address"]
+        except route_target.RouteError as exc:
+            print(f"REFUSED no route target: {exc}; nothing emitted and nothing marked")
+            return 4
     lines = []
     for i in ids:
         r = rows[i]
@@ -62,8 +72,7 @@ def main(ids):
         rec = {"id": i, "emitted_at": stamp(), "body": body}
         with open(os.path.join(PENDING_DIR, i.replace(":", "_") + ".json"), "w", encoding="utf-8") as fh:
             json.dump(rec, fh)
-    # the coordinator's reply address changes on every handover, so it is read from the environment
-    print("SEND-TO $XTRM_DISPATCHER_REPLY (%s)" % (os.environ.get("COORD_SOCK") or "COORD_SOCK not set"))
+    print(f"SEND-TO {target}  (SendMessage to this name)")
     print("--- BEGIN BODY (send this, then run mark-sent.py) ---")
     print(body)
     print("--- END BODY ---")

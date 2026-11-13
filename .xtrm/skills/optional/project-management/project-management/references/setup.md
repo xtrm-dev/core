@@ -69,6 +69,27 @@ Rules:
 - A flat config (no `projects` key) is one project and needs no `PM_PROJECT`; turn it into a profile when you add
   the second project.
 
+### Routing roles
+
+Messages that must reach a person-in-charge (the board helper forwarding operator comments to the lead coordinator,
+the lane's alarms) are addressed by role, never by a stored address: a stored address goes stale the day its
+session ends. The role is in the session name, set once at launch:
+
+| Role | Default pattern | Launch it as |
+|---|---|---|
+| `lead` | `*-lead-coord` | `xt claude <day>-lead-coord` (for example `thu13-lead-coord`); the next day's lead takes the next name |
+| `board_helper` | `*board-helper*` | `xt pi board-helper` (or `<project>-board-helper`) |
+
+`scripts/route_target.py <role>` resolves a role at send time against the live sessions of the xtrm agent host
+(`GET /v1/sessions`), keeps those of this project (same `repo_slug`, or cwd inside `repo_dir`/`match_dirs`), and
+prints the one match's address, the name `SendMessage` takes. No match or several is an error, never a guess;
+the lane's dead-man switch raises `ALARM ROUTE-TARGET` every pass until exactly one session holds each role.
+`python3 scripts/route_target.py --all` and `pm_check.py` print the current routes.
+
+Change the patterns per project with `route_roles` (for example while sessions launched before this convention
+still run: `{"lead": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched.
+`COORD_SOCK` in the environment still overrides the lead's address by hand.
+
 ## 3. Settings
 
 Required by: **PM** = project-management scripts (`jira.py`, `post-guard.py`, `window-lineage.py`), **BA** = board-audit, **TK** =
@@ -108,6 +129,9 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_DONE_STATUSES` | `done_statuses` | `[name]` | status names that mean done | PM (TX-07 fallback), BA, TK |
 | `PM_ACTIVE_STATUSES` | `active_statuses` | `[name]` | status names that mean being worked | BA, TK |
 | `PM_OPEN_STATUSES` | `open_statuses` | `[name]` | every not-done status an open window may hold (hygiene cycle) | BA |
+| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `lead: *-lead-coord`, `board_helper: *board-helper*`) | PM, BA (lane) |
+| `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
+| `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`) | PM, BA (lane) |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |
 | `PM_DEFERRED_STATUS` | `deferred_status` | name | status for deferred rows | BA (lane) |
 | `PM_PARKED_STATUSES` | `parked_statuses` | `[name]` | statuses the cycle excludes as parked | BA (lane) |

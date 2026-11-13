@@ -138,6 +138,8 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
   with `sb issue renew <ref>` (`references/substrate.md`, "Renew a claim"); a same-holder re-claim renews nothing. Put this in the prompt.
 - Name a worker `<story-key>-<slug>` (`PROJ-260-pi-runtime`): branch `xt/<name>`, window `claude-<name>` lower case, so the Jira key reaches
   branches, PRs and commits.
+- **Roles are in session names:** launch the lead coordinator as `<day>-lead-coord` and the board helper as `board-helper`;
+  forwards and alarms find them by name at send time (`references/setup.md`, "Routing roles"). Never hand out a socket path.
 - **Several projects in one config:** every launch, timer and lane sets `PM_PROJECT=<name>` (`references/setup.md`, "Several projects");
   the scripts stop rather than guess.
 - **Never leave a worker stale.** Each cycle check every window and act (`references/fleet.md`, "Liveness"); keep a prompt-and-silence monitor armed.

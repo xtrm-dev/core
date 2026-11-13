@@ -11,6 +11,7 @@ produces a sound. Checks, each against the record rather than against filesystem
   SCHEDULER-DEAD      the pid in the newest SCHEDULER-START line is gone, or its cwd is not this lane
   ROUTER-STALE        the newest events.log line carrying a timestamp is older than STALE_S
   SEND-UNCONFIRMED    an outbox-pending record has waited longer than SEND_S without mark-sent.py
+  ROUTE-TARGET        the lead or board_helper role resolves to no live session, or to several
   WATCHER-COUNT       zero or more than one tail on this lane's events.log (one watcher, and it advances)
   LOG-MISSING         events.log does not exist
 
@@ -23,6 +24,7 @@ import time
 from datetime import datetime, timezone
 
 import lanecfg
+import route_target  # project-management/scripts, on sys.path via lanecfg
 
 LANE = lanecfg.lane()
 # Optional publisher for the unwatched-lane fact: a module exposing sync(unwatched, detail) -> str.
@@ -155,6 +157,17 @@ def check():
         alarm("WATCHER-COUNT 0 tails on events.log: nobody is reading this log")
     elif n > 1:
         alarm(f"WATCHER-COUNT {n} tails on events.log: one watcher, not several")
+    # ROUTE-TARGET: forwarding needs exactly one live lead (and one board helper reading this log). A missing or
+    # doubled role is said here every pass, so a stale route is seen before a message waits on it.
+    try:
+        live = route_target.sessions()
+        for role in ("lead", "board_helper"):
+            try:
+                route_target.resolve(role, live)
+            except route_target.RouteError as exc:
+                alarm(f"ROUTE-TARGET {role}: {exc}")
+    except route_target.RouteError as exc:
+        alarm(f"ROUTE-TARGET cannot check: {exc}")
 
     # a correct alarm written only into the unread log is invisible (2026-11-09: 17 h with no reader),
     # so the same fact is published where the operator and the coordinator look, and cleared when a
