@@ -5,7 +5,7 @@ import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
     doctorJiraIdentity,
     jiraIdentityPaths,
@@ -25,6 +25,7 @@ fs.writeJsonSync(PM_TEST_CONFIG, {
     jira_site: 'https://example.atlassian.net', jira_token_file: '~/.secrets/atlassian-api-token.txt',
 });
 process.env.PM_CONFIG = PM_TEST_CONFIG;
+afterAll(() => fs.removeSync(PM_TEST_CONFIG));
 
 const EMAIL = 'agent@example.test';
 const TOKEN = 'tok-secret-value';
