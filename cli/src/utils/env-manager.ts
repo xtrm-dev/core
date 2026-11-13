@@ -7,9 +7,24 @@ import dotenv from 'dotenv';
 /**
  * Environment file location: ~/.config/jaggers-agent-tools/.env
  */
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'jaggers-agent-tools');
-const ENV_FILE = path.join(CONFIG_DIR, '.env');
-const ENV_EXAMPLE_FILE = path.join(CONFIG_DIR, '.env.example');
+// CORE-2630: resolve these from HOME on every call. Module-load constants
+// froze the target at import time, so a process that changes HOME afterwards
+// (a test, a wrapper, sudo) kept writing to the original home.
+//
+// XDG_CONFIG_HOME is deliberately NOT honoured here. env-manager stores MCP
+// server environment variables (~/.config/jaggers-agent-tools/.env), which is a
+// tool-specific, well-known location rather than generic application config;
+// env-paths/XDG semantics do not apply. Changing it would relocate existing
+// .env files and break setups that rely on the fixed path.
+function resolveConfigDir(): string {
+    return path.join(os.homedir(), '.config', 'jaggers-agent-tools');
+}
+function resolveEnvFile(): string {
+    return path.join(resolveConfigDir(), '.env');
+}
+function resolveEnvExampleFile(): string {
+    return path.join(resolveConfigDir(), '.env.example');
+}
 
 interface EnvVarConfig {
     description: string;
@@ -33,18 +48,18 @@ const REQUIRED_ENV_VARS: Record<string, EnvVarConfig> = {
  */
 export function ensureEnvFile(): boolean {
     // Create config directory if missing
-    if (!fs.existsSync(CONFIG_DIR)) {
-        fs.ensureDirSync(CONFIG_DIR);
-        console.log(kleur.gray(`  Created config directory: ${CONFIG_DIR}`));
+    if (!fs.existsSync(resolveConfigDir())) {
+        fs.ensureDirSync(resolveConfigDir());
+        console.log(kleur.gray(`  Created config directory: ${resolveConfigDir()}`));
     }
 
     // Create .env.example if missing
-    if (!fs.existsSync(ENV_EXAMPLE_FILE)) {
+    if (!fs.existsSync(resolveEnvExampleFile())) {
         createEnvExample();
     }
 
     // Create .env if missing
-    if (!fs.existsSync(ENV_FILE)) {
+    if (!fs.existsSync(resolveEnvFile())) {
         createEnvFile();
         return false; // File was created (user needs to fill it)
     }
@@ -69,8 +84,8 @@ function createEnvExample(): void {
         '',
     ].join('\n');
 
-    fs.writeFileSync(ENV_EXAMPLE_FILE, content);
-    console.log(kleur.gray(`  Created example file: ${ENV_EXAMPLE_FILE}`));
+    fs.writeFileSync(resolveEnvExampleFile(), content);
+    console.log(kleur.gray(`  Created example file: ${resolveEnvExampleFile()}`));
 }
 
 function createEnvFile(): void {
@@ -82,8 +97,8 @@ function createEnvFile(): void {
         '',
     ].join('\n');
 
-    fs.writeFileSync(ENV_FILE, content);
-    console.log(kleur.green(`  Created environment file: ${ENV_FILE}`));
+    fs.writeFileSync(resolveEnvFile(), content);
+    console.log(kleur.green(`  Created environment file: ${resolveEnvFile()}`));
 }
 
 /**
@@ -91,8 +106,8 @@ function createEnvFile(): void {
  * Also loads from process.env (which takes precedence)
  */
 export function loadEnvFile(): Record<string, string> {
-    if (fs.existsSync(ENV_FILE)) {
-        const envConfig = dotenv.parse(fs.readFileSync(ENV_FILE));
+    if (fs.existsSync(resolveEnvFile())) {
+        const envConfig = dotenv.parse(fs.readFileSync(resolveEnvFile()));
 
         // Merge with process.env (process.env takes precedence)
         for (const [key, value] of Object.entries(envConfig)) {
@@ -168,7 +183,7 @@ export async function handleMissingEnvVars(missing: string[]): Promise<boolean> 
     }
 
     // Persist to .env file
-    let envContent = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, 'utf8') : '';
+    let envContent = fs.existsSync(resolveEnvFile()) ? fs.readFileSync(resolveEnvFile(), 'utf8') : '';
     for (const [key, value] of Object.entries(answers)) {
         const line = `${key}=${value}`;
         const regex = new RegExp(`^${key}=.*$`, 'm');
@@ -178,16 +193,16 @@ export async function handleMissingEnvVars(missing: string[]): Promise<boolean> 
             envContent += `\n${line}\n`;
         }
     }
-    fs.writeFileSync(ENV_FILE, envContent);
-    console.log(kleur.green(`  ✓ Saved to ${ENV_FILE}`));
+    fs.writeFileSync(resolveEnvFile(), envContent);
+    console.log(kleur.green(`  ✓ Saved to ${resolveEnvFile()}`));
 
     return true;
 }
 
 export function getEnvFilePath(): string {
-    return ENV_FILE;
+    return resolveEnvFile();
 }
 
 export function getConfigDir(): string {
-    return CONFIG_DIR;
+    return resolveConfigDir();
 }
