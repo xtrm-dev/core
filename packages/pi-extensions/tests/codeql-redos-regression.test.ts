@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 // CORE-2655: ReDoS regression — each flagged regex now has a bounded/linear
-// form. Every case feeds an adversarial long input and asserts the call
-// finishes well under 100 ms with unchanged behaviour on well-formed input.
+// form. "(discriminating)" cases feed an input that is slow on the old pattern
+// (verified red pre-fix) and fast on the new one; "(linearity,
+// non-discriminating)" cases guard linear behaviour where the old pattern was
+// already linear but CodeQL-flagged. All assert <100 ms plus unchanged
+// behaviour on well-formed input.
 import {
   fitThinkingRowToWidth,
   ultraExternalPrimary,
@@ -36,7 +39,7 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(fitThinkingRowToWidth(short, 40)).toContain("Thinking...");
   });
 
-  it("xtrm-ui:1113 bracket framing stays linear on a long unbracketed run", () => {
+  it("xtrm-ui:1113 bracket framing guard (linearity, non-discriminating)", () => {
     const joined = "[" + "x".repeat(100000) + "\n{\"a\":1}";
     const { value, ms } = timed(() => ultraExternalPrimary("bash", [joined]));
     expect(ms).toBeLessThan(100);
@@ -45,14 +48,16 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(ultraExternalPrimary("bash", ["[GitNexus]\n{\"a\":1}"])).toBe("{a}");
   });
 
-  it("xtrm-ui:1191 result framing stays linear via specialist line", () => {
+  it("xtrm-ui:1191 result framing guard (linearity, non-discriminating)", () => {
     const payload = "[" + "y".repeat(100000);
     const { ms } = timed(() => buildUltraExternalLine("specialist", {}, [payload], "success", 1000));
     expect(ms).toBeLessThan(100);
   });
 
-  it("xtrm-ui:1307 trailing-whitespace strip stays linear on long lines", () => {
-    const lines = ["code line 1", "code line 2   ", "   ", "\tresult: " + "z".repeat(100000) + "   "];
+  it("xtrm-ui:1307 trailing-whitespace strip stays linear (discriminating)", () => {
+    // "a" + spaces + "b": old /\\s+$/u backtracks the space run (~580 ms at 50k);
+    // trimEnd sees the trailing "b" and returns at once.
+    const lines = ["code line 1", "code line 2   ", "a" + " ".repeat(50000) + "b", "   "];
     const { value, ms } = timed(() =>
       renderExternalToolLines(lines, 200, "external", false, "codemode", 10, "success", true, 6, "x", 2),
     );
@@ -60,7 +65,7 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(Array.isArray(value)).toBe(true);
   });
 
-  it("xtrm-ui:1723 heading match stays linear on a long hash run", () => {
+  it("xtrm-ui:1723 heading match guard (linearity, non-discriminating)", () => {
     const md = "###" + "x".repeat(100000);
     const { value, ms } = timed(() => boldMarkdownHeadings(md));
     expect(ms).toBeLessThan(100);
@@ -68,7 +73,7 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(boldMarkdownHeadings("## Real heading")).toContain("Real heading");
   });
 
-  it("xtrm-ui:2556/2569 timeout/setup prefixes stay linear on a long flag run", () => {
+  it("xtrm-ui:2556/2569 timeout/setup prefixes guard (linearity, non-discriminating)", () => {
     const cmd = "timeout " + "-x ".repeat(20000) + "5 echo hi";
     const { value, ms } = timed(() => stripSetupPrefix(cmd));
     expect(ms).toBeLessThan(100);
@@ -88,10 +93,13 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(typeof value).toBe("string");
   });
 
-  it("suggest:825 trailing-period strip stays linear on a long dot run", () => {
-    const { value, ms } = timed(() => stripEndPeriod("desc" + ".".repeat(100000)));
+  it("suggest:825 trailing-period strip stays linear (discriminating)", () => {
+    // Old /\\.+$/ backtracks over the dot run when the end anchor fails (~580 ms
+    // at 50k chars); the manual scan sees the trailing "x" and returns at once.
+    const adversarial = ".".repeat(50000) + "x";
+    const { value, ms } = timed(() => stripEndPeriod(adversarial));
     expect(ms).toBeLessThan(100);
-    expect(value).toBe("desc");
+    expect(value).toBe(adversarial);
     expect(stripEndPeriod("Ends here.")).toBe("Ends here");
   });
 
@@ -104,14 +112,18 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(repositoryFromRemote("git@github.com:org/repo.git")).toBe("org/repo");
   });
 
-  it("skill-suggest:123 control-nudge strip stays linear on punctuation run", () => {
-    const { value, ms } = timed(() => isControlNudge("go" + "!".repeat(100000)));
+  it("skill-suggest:123 control-nudge strip stays linear (discriminating)", () => {
+    // Old /[.!…]+$/ backtracks over the run when the anchor fails; the manual
+    // scan returns at once. Not a nudge either way — the point is timing.
+    const adversarial = "!".repeat(50000) + "x";
+    const { value, ms } = timed(() => isControlNudge(adversarial));
     expect(ms).toBeLessThan(100);
-    expect(value).toBe(true);
+    expect(value).toBe(false);
+    expect(isControlNudge("go!!!")).toBe(true);
     expect(isControlNudge("continue please")).toBe(true);
   });
 
-  it("skill-suggest:136 peer-relay stays linear on a long space run", () => {
+  it("skill-suggest:136 peer-relay guard (linearity, non-discriminating)", () => {
     const { value, ms } = timed(() => isPeerRelay(" ".repeat(100000) + "coord: hello"));
     expect(ms).toBeLessThan(100);
     expect(isPeerRelay("Coordinator abc: hello")).toBe(true);
