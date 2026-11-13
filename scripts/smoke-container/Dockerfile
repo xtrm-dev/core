@@ -23,7 +23,7 @@ RUN apk add --no-cache \
 # whose own `bun` bin link would otherwise overwrite this binary on every
 # `npm i -g @jaggerxtrm/xtmux`. /opt/bun/bin goes first in PATH so the musl
 # build always wins for `sp` (#!/usr/bin/env bun) and for verify.sh.
-ARG BUN_VERSION=1.3.14
+ARG BUN_VERSION=1.4.4
 ARG TARGETARCH
 RUN case "${TARGETARCH:-amd64}" in \
       amd64) bun_arch=x64 ;; \
