@@ -26,10 +26,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A registry that answers "fire" for every question set, after `delayMs`. */
 function firingRegistry(delayMs: number) {
-  return {
+  const reg = {
+    resolved: false,
     getAvailableOfType: async () => [{ id: "jev-test", provider: "typesafe" }],
     classify: async (_m: unknown, req: { questions: Record<string, { type: string; criteria?: Record<string, string> }> }) => {
       await sleep(delayMs);
+      reg.resolved = true;
       const answers: Record<string, unknown> = {};
       for (const [id, q] of Object.entries(req.questions)) {
         if (q.type === "choice") {
@@ -44,6 +46,7 @@ function firingRegistry(delayMs: number) {
       return { stopReason: "stop", answers, model: "typesafe/jev-test" };
     },
   };
+  return reg;
 }
 
 function boot(ext: (pi: never) => void) {
@@ -92,22 +95,21 @@ afterEach(async () => {
 });
 
 describe("handlers never wait for Jev", () => {
-  it("skill-suggest input and agent_end return in under 5 ms with Jev taking 2 s", async () => {
+  it("skill-suggest input and agent_end return before Jev resolves with Jev taking 2 s", async () => {
+    const reg = firingRegistry(2000);
     const { handlers } = boot(skill.default as never);
-    const ctx = { modelRegistry: firingRegistry(2000) };
-    let t = performance.now();
+    const ctx = { modelRegistry: reg };
     await handlers["input"]![0]!({ text: "follow the demo procedure for this deploy" }, ctx);
-    expect(performance.now() - t).toBeLessThan(5);
-    t = performance.now();
+    expect(reg.resolved).toBe(false);
     await handlers["agent_end"]![0]!(WORKING_TURN, ctx);
-    expect(performance.now() - t).toBeLessThan(5);
+    expect(reg.resolved).toBe(false);
   });
 
-  it("substrate-suggest agent_end returns in under 5 ms with Jev taking 2 s", async () => {
+  it("substrate-suggest agent_end returns before Jev resolves with Jev taking 2 s", async () => {
+    const reg = firingRegistry(2000);
     const { handlers } = boot(substrate.default as never);
-    const t = performance.now();
-    await handlers["agent_end"]![0]!(WORKING_TURN, { modelRegistry: firingRegistry(2000), cwd: repo });
-    expect(performance.now() - t).toBeLessThan(5);
+    await handlers["agent_end"]![0]!(WORKING_TURN, { modelRegistry: reg, cwd: repo });
+    expect(reg.resolved).toBe(false);
   });
 });
 
