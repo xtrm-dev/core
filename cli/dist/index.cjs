@@ -60542,8 +60542,19 @@ function currentTmuxSessionId() {
   });
   return r.status === 0 ? (r.stdout ?? "").trim() : "";
 }
+var SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+var SLUG_ALPHABET_SIZE = SLUG_ALPHABET.length;
+var SLUG_UNBIASED_LIMIT = 256 - 256 % SLUG_ALPHABET_SIZE;
 function randomSlug(len = 4) {
-  return Math.random().toString(36).slice(2, 2 + len);
+  const chars = [];
+  while (chars.length < len) {
+    for (const byte of (0, import_node_crypto8.randomBytes)(len * 2)) {
+      if (byte >= SLUG_UNBIASED_LIMIT) continue;
+      chars.push(SLUG_ALPHABET[byte % SLUG_ALPHABET_SIZE]);
+      if (chars.length === len) break;
+    }
+  }
+  return chars.join("");
 }
 function gitRepoRoot(cwd) {
   const r = (0, import_node_child_process6.spawnSync)("git", ["rev-parse", "--show-toplevel"], {
