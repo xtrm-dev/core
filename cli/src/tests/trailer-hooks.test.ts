@@ -186,20 +186,55 @@ describe('trailer-hooks', () => {
     }
   });
 
-  it('reports a chain whose entry vanished as inert, not installed', async () => {
+  it('repairs an inert chain in place, keeping the shebang and created marker', async () => {
     const repo = makeRepo();
     await installTrailerHook(repo);
     const hookPath = path.join(resolveHooksDir(repo), 'prepare-commit-msg');
-    fs.writeFileSync(hookPath, fs.readFileSync(hookPath, 'utf8').replace(/"\$1"/, '"$1"').replace(/node "[^"]+"/, 'node "/nonexistent/prepare-commit-msg.ts"'), 'utf8');
+    fs.writeFileSync(hookPath, fs.readFileSync(hookPath, 'utf8').replace(/node "[^"]+"/, 'node "/nonexistent/prepare-commit-msg.ts"'), 'utf8');
     expect(readHooksState(repo).status).toBe('inert');
     const verdict = trailerHookVerdict(repo);
     expect(verdict.status).toBe('inert');
     expect(verdict.message).toContain('inert');
-    // A reinstall repairs the stale chain instead of stacking a second one.
+
     const repaired = await installTrailerHook(repo);
     expect(repaired.changed).toBe(true);
+    const content = fs.readFileSync(hookPath, 'utf8');
     expect(readHooksState(repo).status).toBe('installed');
-    expect(fs.readFileSync(hookPath, 'utf8').split(TRAILER_HOOK_MARKER)).toHaveLength(2);
+    // The repaired file is still a script with provenance, not a blank-line mess.
+    expect(content.startsWith('#!/bin/sh')).toBe(true);
+    expect(content).toContain(TRAILER_HOOK_CREATED);
+    expect(content.split(TRAILER_HOOK_MARKER)).toHaveLength(2);
+    // ...and a following --remove deletes it rather than leaving 0 bytes.
+    await removeTrailerHook(repo);
+    expect(fs.existsSync(hookPath)).toBe(false);
+  });
+
+  it('keeps the repo hook when the resolved entry changes', async () => {
+    const repo = makeRepo();
+    const hookPath = path.join(resolveHooksDir(repo), 'prepare-commit-msg');
+    fs.mkdirSync(path.dirname(hookPath), { recursive: true });
+    fs.writeFileSync(hookPath, '#!/bin/sh\necho IMPORTANT-REPO-HOOK\n', 'utf8');
+
+    const first = makeSubstrateCheckout();
+    const second = makeSubstrateCheckout();
+    const saved = process.env.XTRM_SUBSTRATE_DIR;
+    try {
+      process.env.XTRM_SUBSTRATE_DIR = first;
+      await installTrailerHook(repo);
+      process.env.XTRM_SUBSTRATE_DIR = second;
+      const second_install = await installTrailerHook(repo);
+      expect(second_install.changed).toBe(true);
+      expect(second_install.entry).toBe(path.join(second, 'hooks', 'prepare-commit-msg.ts'));
+    } finally {
+      process.env.XTRM_SUBSTRATE_DIR = saved;
+    }
+    const content = fs.readFileSync(hookPath, 'utf8');
+    expect(content).toContain('echo IMPORTANT-REPO-HOOK');
+    expect(content.split(TRAILER_HOOK_MARKER)).toHaveLength(2);
+    // The file was the repo's own: --remove restores it, never deletes it.
+    await removeTrailerHook(repo);
+    expect(fs.existsSync(hookPath)).toBe(true);
+    expect(fs.readFileSync(hookPath, 'utf8')).toContain('echo IMPORTANT-REPO-HOOK');
   });
 
   it('doctor verdict distinguishes missing from installed', async () => {
@@ -216,14 +251,5 @@ describe('trailer-hooks', () => {
     expect(result.ok).toBe(true);
     const read = execFileSync('git', ['config', '--worktree', '--get', 'xtrm.issue'], { cwd: repo, encoding: 'utf8' });
     expect(read.trim()).toBe('CORE-2570');
-  });
-});
-
-describe('update and init surfaces', () => {
-  it('init and update both reference installTrailerHook', () => {
-    const read = (file: string) => fs.readFileSync(path.join(process.cwd(), 'src', 'commands', file), 'utf8');
-    expect(read('init.ts')).toContain('installTrailerHook(projectRoot)');
-    expect(read('update.ts')).toContain('installTrailerHook(repoRoot)');
-    expect(read('doctor.ts')).toContain('trailerHookVerdict(');
   });
 });

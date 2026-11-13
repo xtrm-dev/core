@@ -88,17 +88,49 @@ export function readHooksState(repoRoot: string): { status: TrailerHookStatus; h
     } catch {
         return { status: 'missing', hookPath, entry: null };
     }
-    if (!content.includes(TRAILER_HOOK_MARKER)) return { status: 'missing', hookPath, entry: null };
-    // The marker alone is not enough: the call it guards must name a file that
-    // exists, or the chain is inert and swallowing every trailer.
-    const call = content.split('\n').find((line) => line.startsWith('node "') && line.includes('prepare-commit-msg'));
-    if (!call) return { status: 'inert', hookPath, entry: null };
-    const entry = call.slice('node "'.length, call.indexOf('"', 'node "'.length));
+    // Anchor on THIS module's block: an operator's own `node "..." prepare-commit-msg`
+    // line earlier in the hook must not decide installed vs inert.
+    const block = chainBlockAt(content);
+    if (!block) return { status: 'missing', hookPath, entry: null };
+    if (!block.call) return { status: 'inert', hookPath, entry: null };
     try {
-        return fs.existsSync(entry) ? { status: 'installed', hookPath, entry } : { status: 'inert', hookPath, entry };
+        return fs.existsSync(block.call) ? { status: 'installed', hookPath, entry: block.call } : { status: 'inert', hookPath, entry: block.call };
     } catch {
-        return { status: 'inert', hookPath, entry };
+        return { status: 'inert', hookPath, entry: block.call };
     }
+}
+
+/** The chain block inside `content`: its created flag and the entry it calls. */
+function chainBlockAt(content: string): { created: boolean; call: string | null } | null {
+    const lines = content.split('\n');
+    const start = lines.indexOf(TRAILER_HOOK_MARKER);
+    if (start === -1) return null;
+    const created = lines[start + 1] === TRAILER_HOOK_CREATED;
+    const callLine = lines[start + (created ? 2 : 1)] ?? '';
+    if (!callLine.startsWith('node "')) return { created, call: null };
+    const close = callLine.indexOf('"', 'node "'.length);
+    return close === -1 ? { created, call: null } : { created, call: callLine.slice('node "'.length, close) };
+}
+
+/** Strip the module's block, keeping every other byte. Pure, so tests can pin it. */
+export function stripChainFrom(content: string): { body: string; createdByUs: boolean } {
+    const lines = content.split('\n');
+    const kept: string[] = [];
+    let createdByUs = false;
+    for (let i = 0; i < lines.length; i += 1) {
+        if (lines[i] === TRAILER_HOOK_MARKER) {
+            if (lines[i + 1] === TRAILER_HOOK_CREATED) {
+                createdByUs = true;
+                i += 1;
+            }
+            if ((lines[i + 1] ?? '').startsWith('node "')) i += 1;
+            // The blank separator this module writes before the marker.
+            if (kept.length > 0 && kept[kept.length - 1] === '') kept.pop();
+            continue;
+        }
+        kept.push(lines[i]);
+    }
+    return { body: kept.join('\n'), createdByUs };
 }
 
 export function isTrailerHookInstalled(repoRoot: string): boolean {
@@ -113,6 +145,12 @@ export interface InstallOutcome {
     entry: string | null;
 }
 
+/**
+ * Install is always strip-then-append on an existing file. Writing a fresh
+ * `#!/bin/sh` header over one would discard the repo's own hook whenever the
+ * resolved entry changes (an upgrade from `hooks/*.ts` to `dist/hooks/*.js`,
+ * or one session with `XTRM_SUBSTRATE_DIR` set and the next without).
+ */
 export async function installTrailerHook(repoRoot: string): Promise<InstallOutcome> {
     const hookPath = hookPathFor(repoRoot);
     const entry = resolveSubstrateHookEntry();
@@ -124,53 +162,19 @@ export async function installTrailerHook(repoRoot: string): Promise<InstallOutco
     if (state.status === 'installed' && state.entry === entry) {
         return { changed: false, reason: 'already-installed', hookPath, entry };
     }
-    if (state.status === 'inert') {
-        // A stale or unresolvable chain: strip the old block, then append the
-        // resolved one, keeping any repo content that sits around it.
-        await stripChain(hookPath);
-    } else if (state.status === 'missing' && fs.existsSync(hookPath)) {
-        // A repo hook with no chain yet: append, never overwrite.
-        await fs.appendFile(hookPath, chainBlock(entry, false), 'utf8');
-        await fs.chmod(hookPath, 0o755).catch(() => undefined);
-        return { changed: true, reason: 'installed', hookPath, entry };
-    } else {
+    if (!fs.existsSync(hookPath)) {
         await fs.ensureDir(path.dirname(hookPath));
         await fs.writeFile(hookPath, `#!/bin/sh\n${chainBlock(entry, true)}`, 'utf8');
         await fs.chmod(hookPath, 0o755).catch(() => undefined);
         return { changed: true, reason: 'installed', hookPath, entry };
     }
-    await fs.appendFile(hookPath, chainBlock(entry, false), 'utf8');
+    // Every non-already-installed state (missing chain, inert chain, chain with a
+    // different entry) goes through the same in-place repair.
+    const { body, createdByUs } = stripChainFrom(await fs.readFile(hookPath, 'utf8'));
+    const base = body.trim() === '' ? '#!/bin/sh\n' : body.endsWith('\n') ? body : `${body}\n`;
+    await fs.writeFile(hookPath, `${base}${chainBlock(entry, createdByUs)}`, 'utf8');
     await fs.chmod(hookPath, 0o755).catch(() => undefined);
     return { changed: true, reason: 'installed', hookPath, entry };
-}
-
-/** Remove the chain block in place, leaving everything around it untouched. */
-async function stripChain(hookPath: string): Promise<void> {
-    const content = await fs.readFile(hookPath, 'utf8');
-    const lines = content.split('\n');
-    const kept: string[] = [];
-    let createdByUs = false;
-    for (let i = 0; i < lines.length; i += 1) {
-        if (lines[i] === TRAILER_HOOK_MARKER) {
-            if (lines[i + 1] === TRAILER_HOOK_CREATED) {
-                createdByUs = true;
-                i += 1;
-            }
-            // Drop the call line that follows the marker.
-            if ((lines[i + 1] ?? '').startsWith('node "')) i += 1;
-            // And the blank separator this module wrote before the marker.
-            if (kept.length > 0 && kept[kept.length - 1] === '') kept.pop();
-            continue;
-        }
-        kept.push(lines[i]);
-    }
-    const body = kept.join('\n');
-    const onlyShebang = body.trim() === '#!/bin/sh' || body.trim() === '';
-    if (createdByUs && onlyShebang) {
-        await fs.remove(hookPath);
-        return;
-    }
-    await fs.writeFile(hookPath, body, 'utf8');
 }
 
 export async function removeTrailerHook(repoRoot: string): Promise<{ changed: boolean; reason: string }> {
@@ -178,7 +182,13 @@ export async function removeTrailerHook(repoRoot: string): Promise<{ changed: bo
     if (status === 'missing') return { changed: false, reason: 'not installed' };
     // Always strip the block: a snapshot restore would discard edits the
     // operator made to their own hook while the chain was in place.
-    await stripChain(hookPath);
+    const { body, createdByUs } = stripChainFrom(await fs.readFile(hookPath, 'utf8'));
+    if (createdByUs && (body.trim() === '#!/bin/sh' || body.trim() === '')) {
+        // This module created the file; removing the chain removes the file.
+        await fs.remove(hookPath);
+    } else {
+        await fs.writeFile(hookPath, body, 'utf8');
+    }
     return { changed: true, reason: 'removed' };
 }
 
@@ -190,7 +200,7 @@ export function trailerHookVerdict(repoRoot: string): { status: TrailerHookStatu
     const { status, hookPath, entry } = readHooksState(repoRoot);
     if (status === 'installed') return { status, message: `Substrate trailer hook installed (${hookPath})` };
     if (status === 'inert') {
-        return { status, message: `Substrate trailer hook is inert (${hookPath} calls ${entry ?? 'nothing'}); run: xt hooks install-trailers` };
+        return { status, message: `Substrate trailer hook is inert: it calls ${entry ?? 'nothing'}, which does not exist (${hookPath}); run: xt hooks install-trailers` };
     }
     return { status, message: `Substrate trailer hook missing in ${resolveHooksDir(repoRoot)}; run: xt hooks install-trailers` };
 }

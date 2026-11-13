@@ -816,7 +816,7 @@ export function createDoctorCommand(): Command {
       // CORE-2570: trailer hook presence
       const trailer = trailerHookVerdict(cwd);
       if (trailer.status === 'installed') ok(trailer.message);
-      else warn(`${trailer.message}${trailer.status === 'inert' ? ' (present but inert: the call names no file)' : ''}`);
+      else warn(trailer.message);
       renderCatB(catB);
 
       section('Updates');

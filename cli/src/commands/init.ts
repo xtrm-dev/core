@@ -996,8 +996,13 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         const tr = await installTrailerHook(projectRoot);
         if (tr.changed) console.log(kleur.dim('  • chained Substrate prepare-commit-msg into repo hooks'));
         else if (tr.reason === 'substrate-hook-unresolved') {
-            console.log(kleur.yellow('  ⚠ trailer hook not installed: substrate prepare-commit-msg not found'));
-            console.log(kleur.dim('    set XTRM_SUBSTRATE_DIR to a substrate checkout; `xt hooks install-trailers` retries'));
+            // Same loudness as the explicit command: init is where the chain is
+            // supposed to switch on, so a silent warning here hides the gap.
+            console.log(kleur.yellow('  ✗ trailer hook NOT installed: no substrate prepare-commit-msg entry found'));
+            console.log(kleur.dim('    a release that ships hooks/ is required, or set XTRM_SUBSTRATE_DIR to a checkout;'));
+            console.log(kleur.dim('    `xt hooks install-trailers` retries, `xt doctor` reports it'));
+            // Exit stays 0: init's contract pins a clean exit, and the hook is a
+            // warning surface here, not a gate (the explicit command exits 1).
         }
     } catch (e) {
         console.log(kleur.yellow(`  ⚠ trailer hook install failed: ${e instanceof Error ? e.message : String(e)}`));

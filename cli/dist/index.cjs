@@ -59311,45 +59311,26 @@ function readHooksState(repoRoot) {
   } catch {
     return { status: "missing", hookPath, entry: null };
   }
-  if (!content.includes(TRAILER_HOOK_MARKER)) return { status: "missing", hookPath, entry: null };
-  const call = content.split("\n").find((line) => line.startsWith('node "') && line.includes("prepare-commit-msg"));
-  if (!call) return { status: "inert", hookPath, entry: null };
-  const entry = call.slice('node "'.length, call.indexOf('"', 'node "'.length));
+  const block = chainBlockAt(content);
+  if (!block) return { status: "missing", hookPath, entry: null };
+  if (!block.call) return { status: "inert", hookPath, entry: null };
   try {
-    return import_fs_extra15.default.existsSync(entry) ? { status: "installed", hookPath, entry } : { status: "inert", hookPath, entry };
+    return import_fs_extra15.default.existsSync(block.call) ? { status: "installed", hookPath, entry: block.call } : { status: "inert", hookPath, entry: block.call };
   } catch {
-    return { status: "inert", hookPath, entry };
+    return { status: "inert", hookPath, entry: block.call };
   }
 }
-async function installTrailerHook(repoRoot) {
-  const hookPath = hookPathFor(repoRoot);
-  const entry = resolveSubstrateHookEntry();
-  if (!entry) {
-    return { changed: false, reason: "substrate-hook-unresolved", hookPath, entry: null };
-  }
-  const state = readHooksState(repoRoot);
-  if (state.status === "installed" && state.entry === entry) {
-    return { changed: false, reason: "already-installed", hookPath, entry };
-  }
-  if (state.status === "inert") {
-    await stripChain(hookPath);
-  } else if (state.status === "missing" && import_fs_extra15.default.existsSync(hookPath)) {
-    await import_fs_extra15.default.appendFile(hookPath, chainBlock(entry, false), "utf8");
-    await import_fs_extra15.default.chmod(hookPath, 493).catch(() => void 0);
-    return { changed: true, reason: "installed", hookPath, entry };
-  } else {
-    await import_fs_extra15.default.ensureDir(import_node_path20.default.dirname(hookPath));
-    await import_fs_extra15.default.writeFile(hookPath, `#!/bin/sh
-${chainBlock(entry, true)}`, "utf8");
-    await import_fs_extra15.default.chmod(hookPath, 493).catch(() => void 0);
-    return { changed: true, reason: "installed", hookPath, entry };
-  }
-  await import_fs_extra15.default.appendFile(hookPath, chainBlock(entry, false), "utf8");
-  await import_fs_extra15.default.chmod(hookPath, 493).catch(() => void 0);
-  return { changed: true, reason: "installed", hookPath, entry };
+function chainBlockAt(content) {
+  const lines = content.split("\n");
+  const start = lines.indexOf(TRAILER_HOOK_MARKER);
+  if (start === -1) return null;
+  const created = lines[start + 1] === TRAILER_HOOK_CREATED;
+  const callLine = lines[start + (created ? 2 : 1)] ?? "";
+  if (!callLine.startsWith('node "')) return { created, call: null };
+  const close = callLine.indexOf('"', 'node "'.length);
+  return close === -1 ? { created, call: null } : { created, call: callLine.slice('node "'.length, close) };
 }
-async function stripChain(hookPath) {
-  const content = await import_fs_extra15.default.readFile(hookPath, "utf8");
+function stripChainFrom(content) {
   const lines = content.split("\n");
   const kept = [];
   let createdByUs = false;
@@ -59365,25 +59346,48 @@ async function stripChain(hookPath) {
     }
     kept.push(lines[i]);
   }
-  const body = kept.join("\n");
-  const onlyShebang = body.trim() === "#!/bin/sh" || body.trim() === "";
-  if (createdByUs && onlyShebang) {
-    await import_fs_extra15.default.remove(hookPath);
-    return;
+  return { body: kept.join("\n"), createdByUs };
+}
+async function installTrailerHook(repoRoot) {
+  const hookPath = hookPathFor(repoRoot);
+  const entry = resolveSubstrateHookEntry();
+  if (!entry) {
+    return { changed: false, reason: "substrate-hook-unresolved", hookPath, entry: null };
   }
-  await import_fs_extra15.default.writeFile(hookPath, body, "utf8");
+  const state = readHooksState(repoRoot);
+  if (state.status === "installed" && state.entry === entry) {
+    return { changed: false, reason: "already-installed", hookPath, entry };
+  }
+  if (!import_fs_extra15.default.existsSync(hookPath)) {
+    await import_fs_extra15.default.ensureDir(import_node_path20.default.dirname(hookPath));
+    await import_fs_extra15.default.writeFile(hookPath, `#!/bin/sh
+${chainBlock(entry, true)}`, "utf8");
+    await import_fs_extra15.default.chmod(hookPath, 493).catch(() => void 0);
+    return { changed: true, reason: "installed", hookPath, entry };
+  }
+  const { body, createdByUs } = stripChainFrom(await import_fs_extra15.default.readFile(hookPath, "utf8"));
+  const base = body.trim() === "" ? "#!/bin/sh\n" : body.endsWith("\n") ? body : `${body}
+`;
+  await import_fs_extra15.default.writeFile(hookPath, `${base}${chainBlock(entry, createdByUs)}`, "utf8");
+  await import_fs_extra15.default.chmod(hookPath, 493).catch(() => void 0);
+  return { changed: true, reason: "installed", hookPath, entry };
 }
 async function removeTrailerHook(repoRoot) {
   const { status: status2, hookPath } = readHooksState(repoRoot);
   if (status2 === "missing") return { changed: false, reason: "not installed" };
-  await stripChain(hookPath);
+  const { body, createdByUs } = stripChainFrom(await import_fs_extra15.default.readFile(hookPath, "utf8"));
+  if (createdByUs && (body.trim() === "#!/bin/sh" || body.trim() === "")) {
+    await import_fs_extra15.default.remove(hookPath);
+  } else {
+    await import_fs_extra15.default.writeFile(hookPath, body, "utf8");
+  }
   return { changed: true, reason: "removed" };
 }
 function trailerHookVerdict(repoRoot) {
   const { status: status2, hookPath, entry } = readHooksState(repoRoot);
   if (status2 === "installed") return { status: status2, message: `Substrate trailer hook installed (${hookPath})` };
   if (status2 === "inert") {
-    return { status: status2, message: `Substrate trailer hook is inert (${hookPath} calls ${entry ?? "nothing"}); run: xt hooks install-trailers` };
+    return { status: status2, message: `Substrate trailer hook is inert: it calls ${entry ?? "nothing"}, which does not exist (${hookPath}); run: xt hooks install-trailers` };
   }
   return { status: status2, message: `Substrate trailer hook missing in ${resolveHooksDir(repoRoot)}; run: xt hooks install-trailers` };
 }
@@ -68368,8 +68372,9 @@ async function runProjectInit(opts = {}) {
     const tr = await installTrailerHook(projectRoot);
     if (tr.changed) console.log(kleur_default.dim("  \u2022 chained Substrate prepare-commit-msg into repo hooks"));
     else if (tr.reason === "substrate-hook-unresolved") {
-      console.log(kleur_default.yellow("  \u26A0 trailer hook not installed: substrate prepare-commit-msg not found"));
-      console.log(kleur_default.dim("    set XTRM_SUBSTRATE_DIR to a substrate checkout; `xt hooks install-trailers` retries"));
+      console.log(kleur_default.yellow("  \u2717 trailer hook NOT installed: no substrate prepare-commit-msg entry found"));
+      console.log(kleur_default.dim("    a release that ships hooks/ is required, or set XTRM_SUBSTRATE_DIR to a checkout;"));
+      console.log(kleur_default.dim("    `xt hooks install-trailers` retries, `xt doctor` reports it"));
     }
   } catch (e) {
     console.log(kleur_default.yellow(`  \u26A0 trailer hook install failed: ${e instanceof Error ? e.message : String(e)}`));
@@ -77438,7 +77443,7 @@ ${kleur_default.bold("xt doctor")}
     renderLegacyMigration(legacyMigration);
     const trailer = trailerHookVerdict(cwd);
     if (trailer.status === "installed") ok(trailer.message);
-    else warn(`${trailer.message}${trailer.status === "inert" ? " (present but inert: the call names no file)" : ""}`);
+    else warn(trailer.message);
     renderCatB(catB);
     section2("Updates");
     const summary2 = updatesSummary(updateStatuses);
