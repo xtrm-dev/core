@@ -46,7 +46,7 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 
 ### Dispatch a builder (worker role)
 
-One fresh worker per Substrate issue (SKILL.md rules 37, 39; MMD-3200, operator 2026-10-31); it reads `references/workers.md` first and may coordinate
+One fresh worker per Substrate issue (SKILL.md rules 37, 39; MMD-3200, operator 2026-10-31); it reads `references/worker.md` first and may coordinate
 specialists and consult the advisor.
 1. **Contract** (the issue is the prompt; a restart resumes from `sb issue resume <ref>`; no `briefs/` folder):
    `sb issue create --project <id> --title <t> --kind task --parent <ref> --scrutiny LOW|MEDIUM|HIGH|CRITICAL --contract <file>`; `validation` is

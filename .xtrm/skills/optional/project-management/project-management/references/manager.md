@@ -80,7 +80,7 @@ ahead of the host clock (2026-10-28).
 
 ### 6a. Specialists first, stale checkout, last word
 
-- The coordinator has the last word on the work (`build-coordinator.md` §1); when unclear, apply the advisor rule at the top of SKILL.md before acting.
+- The coordinator has the last word on the work (`lead.md` §1); when unclear, apply the advisor rule at the top of SKILL.md before acting.
 - Work the dead hours outside the repo's quiet windows (read them from the repo's DEPLOY.md; the first project's were 23:00-05:45Z CDT, 00:00-05:45Z CST), memory gate first. Plan build work for
   the dead time: write the contract early, attest it, dispatch when the slot is free; do not wait for the operator to ask.
 - `git fetch origin` before reading files; branch every change from `origin/master`. A change ends on `master` via a PR merged with
@@ -110,7 +110,7 @@ ahead of the host clock (2026-10-28).
 
 ## 9. Progress artifact
 
-The Tabellone is db-backed (SKILL.md items 14, 15; §12): one Italian artifact per day with diagrams; refresh every 6 h and after each promotion or
+The Status board is db-backed (SKILL.md items 14, 15; §12): one Italian artifact per day with diagrams; refresh every 6 h and after each promotion or
 deploy cluster, "Aggiornato alle HH:MMZ".
 
 ## 10. Cleanup
@@ -118,14 +118,14 @@ deploy cluster, "Aggiornato alle HH:MMZ".
 - Never delete scratch without approval: a helper lists candidates in batches (safe / check / keep) and the operator approves each. Run a deletion
   script from a file (a shell command line containing the paths self-matches `/proc/*/cmdline`).
 - Limit `find` sweeps to the approved paths: an age filter alone deleted 30 unlisted files from `/tmp` on 2026-10-22.
-- Reaping panes: `references/fleet.md`, "Reaping"; skip your own pane's window. No `xt update --apply` or `xt clean` while the core prune path is
+- Reaping panes: `references/launching.md`, "Reaping"; skip your own pane's window. No `xt update --apply` or `xt clean` while the core prune path is
   unsafe (it deleted ten skill directories on 2026-10-21 without a log).
 
 ## 11. Checklist before handoff
 
 Open windows and panes; monitors and crons with prompts (every recurring prompt or scheduled trigger with its text; one naming a retired tool or file
 is stale: tell the operator, who owns it); live activations (settle or stop); pending replies; stale assumptions corrected; next single action; claim
-state; goal file refreshed. A full handover follows `references/coordinator-transition.md`.
+state; goal file refreshed. A full handover follows `references/handover.md`.
 
 ## 12. Jira hygiene and background rules (operator, 2026-10-23)
 
@@ -141,7 +141,7 @@ never republished; a host-load Monitor reporting high/ok transitions only.
 
 1. Brief each worker in one message: stop new work, push WIP to its own branch, write one handoff entry (mark operator questions "truly needed" or
    not), release the claim, reply.
-2. After the reply reap the pane by id (`references/fleet.md`, "Reaping"), skipping your own.
+2. After the reply reap the pane by id (`references/launching.md`, "Reaping"), skipping your own.
 3. Verify every worktree: head pushed to `origin`, no tracked changes except `.xtrm/session-meta.json`; for each branch `b`,
    `git rev-list --count origin/b..b` and `git rev-list --count b..origin/b` are both 0.
 4. Push a diverged branch to a NEW name; never force-push.
@@ -152,7 +152,7 @@ never republished; a host-load Monitor reporting high/ok transitions only.
 
 - zsh: `$R:path` applies the `:r` modifier; write `git show "${R}:path"`.
 - zsh `set -- $H` does not split: run merge scripts under `bash -c` with `read -r head base <<<"$H"` (11-04).
-- The refread gate blocks merges and dispatch until coordinator-operations.md, fleet.md and build-coordinator.md are Read in full in this
+- The refread gate blocks merges and dispatch until manager.md, launching.md and lead.md are Read in full in this
   session; a Read before a compaction does not count after it (11-04).
 - `gh pr edit --base` fails (Projects classic deprecation): `gh api -X PATCH repos/<o>/<r>/pulls/N -f base=<branch>` (11-04).
 - Never probe an env var by a remembered name: grep the constant in the code and pair the probe with a positive control (11-04).

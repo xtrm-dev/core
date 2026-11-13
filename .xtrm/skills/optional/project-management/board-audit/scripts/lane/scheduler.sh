@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Board helper lane loops. One process owns every due-time; each pass appends event lines to
 # events.log, which the session monitor tails. Durations: cycle/comment/report 15 min (a+b), deploy
-# snapshot 15 min, tabellone health 30 min (d), Waiting Production audit 60 min and on any deploy move (e),
+# snapshot 15 min, status_board health 30 min (d), Waiting Production audit 60 min and on any deploy move (e),
 # HEAVY nightly queue watch 15 min, operator-channel router 5 min (this lane is the only router/filter).
 # Settings: board-audit/references/setup-lane.md.
 set -u
@@ -12,7 +12,7 @@ PMCFG="$(cd "$(dirname "$0")" && pwd)/../../../project-management/scripts/pm_con
 PM_PROJECT=${PM_PROJECT:-$(python3 "$PMCFG" project)} || exit 1; export PM_PROJECT
 LANE=${PM_LANE_DIR:-$(python3 "$PMCFG" get PM_LANE_DIR)} || exit 1
 SCRIPTS=$(cd "$(dirname "$0")" && pwd)
-TAB_UNIT=${PM_TABELLONE_UNIT:-$(python3 "$PMCFG" get PM_TABELLONE_UNIT tabellone-sync.service)}
+TAB_UNIT=${PM_STATUS_BOARD_UNIT:-$(python3 "$PMCFG" get PM_STATUS_BOARD_UNIT status-board-sync.service)}
 EV=$LANE/events.log
 ST=$LANE/sched.state
 # One instance per lane: a second scheduler would double every pass and race the state file.
@@ -24,14 +24,14 @@ log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$EV"; }
 # State is one key per line, always rewritten whole: the first version wrote one space-separated line and
 # `sed` collapsed it, which silently lost every other key (a state file is an interface - board-audit
 # references/lane-automation.md).
-save() { printf 'cycle=%s\ndeploy=%s\ntabellone=%s\nwp=%s\ntabhash=%s\nheavy=%s\nroute=%s\n' \
-         "$cycle" "$deploy" "$tabellone" "$wp" "$tabhash" "$heavy" "$route" > "$ST.tmp" && mv "$ST.tmp" "$ST"; }
+save() { printf 'cycle=%s\ndeploy=%s\nstatus_board=%s\nwp=%s\ntabhash=%s\nheavy=%s\nroute=%s\n' \
+         "$cycle" "$deploy" "$status_board" "$wp" "$tabhash" "$heavy" "$route" > "$ST.tmp" && mv "$ST.tmp" "$ST"; }
 load() {
-  cycle=0; deploy=0; tabellone=0; wp=0; tabhash=-; heavy=0; route=0
+  cycle=0; deploy=0; status_board=0; wp=0; tabhash=-; heavy=0; route=0
 due=0
   if [ -f "$ST" ]; then
     while IFS='=' read -r k v; do
-      case "$k" in cycle|deploy|tabellone|wp|tabhash|heavy|route) printf -v "$k" '%s' "${v:-0}";; esac
+      case "$k" in cycle|deploy|status_board|wp|tabhash|heavy|route) printf -v "$k" '%s' "${v:-0}";; esac
     done < "$ST"
   fi
 }
@@ -116,8 +116,8 @@ run_tab() {
   if [ "$hash" != "$(get tabhash)" ]; then
     tabhash="$hash"; save
     case "$st" in
-      *Result=success*|*ActiveState=active*|*LoadState=not-found*) log "TABELLONE-OK $st";;
-      *) log "TABELLONE-FAIL $st";;
+      *Result=success*|*ActiveState=active*|*LoadState=not-found*) log "STATUS-BOARD-OK $st";;
+      *) log "STATUS-BOARD-FAIL $st";;
     esac
   fi
 }
@@ -139,6 +139,6 @@ while :; do
   now=$(date +%s)
   if (( now - due >= 3600 )); then due=$now; save; run_due; fi
   now=$(date +%s)
-  if (( now - tabellone >= 1800 )); then tabellone=$now; save; run_tab; fi
+  if (( now - status_board >= 1800 )); then status_board=$now; save; run_tab; fi
   sleep 60
 done

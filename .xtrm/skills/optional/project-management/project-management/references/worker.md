@@ -22,7 +22,7 @@ specialists). The coordinator part is in SKILL.md.
    - No full local suite or full `make ci-light`: targeted tests; the hosted Light gate on the pushed head is the gate.
 8. Quote a window's or ticket's vehicle (commit, PR, image) only from that row's own description or a gh/git read, never a summary or neighbouring row
    (2026-10-31).
-9. If you are the build-coordinator lane, also read `references/build-coordinator.md`.
+9. If you are the build-coordinator lane, also read `references/lead.md`.
 10. When your contract names a specialist in VALIDATION, dispatch it and put its activation id in your result; without it the result is partial. On
     2026-11-01 six builders loaded the worker role and used no specialist.
 
@@ -39,7 +39,7 @@ through your lane to the coordinator (with no lane, send it to the coordinator d
 3. Record the comment id the board helper returns in your journal and report.
 4. No tag for routine progress, technical choices you can make, or twice for one matter.
 
-The coordinator also keeps a Tabellone `questions` row (SKILL.md rule 15) with the ticket and artifact links.
+The coordinator also keeps a Status board `questions` row (SKILL.md rule 15) with the ticket and artifact links.
 
 ## 3. Artifacts
 

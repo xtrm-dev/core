@@ -136,7 +136,7 @@ board.
 ## Continuous helper cycle (xt pi board helper)
 
 One `xt pi` worker per coordinator runs this cycle (Muse Spark or the pi default; one process, no
-Claude, no subagents). Launch syntax: `project-management/references/fleet.md`, "Dispatch
+Claude, no subagents). Launch syntax: `project-management/references/launching.md`, "Dispatch
 surface". Jira calls go through `project-management/scripts/jira.py`. Writes follow steps 2-3
 above unless the coordinator has allowed a class of mechanical fixes in writing on the helper's issue.
 
@@ -201,7 +201,7 @@ One lane is the router: the only reader of the operator's inbound channels and t
 and the coordinator, who stops reading the inboxes — a decision this lane fails to forward is a decision
 nobody sees. Instrument: `route-watch.py` (MMD-3017, 2026-11-01), every 300 s, one cursor per channel,
 printing the trigger it matched on every line so a misroute can be argued with instead of guessed at.
-Channels: `~/.cache/xtrm-bot-watch/inbox.jsonl` and the Tabellone answers file its sync writes.
+Channels: `~/.cache/xtrm-bot-watch/inbox.jsonl` and the Status board answers file its sync writes.
 
 **Forward AT ONCE** when the comment needs a decision: a GO or approval, a refusal, a halt, an explicit
 question, a production or window matter, a secret or access matter, or a substantive answer with no other

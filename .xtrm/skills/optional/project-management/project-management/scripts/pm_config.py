@@ -1,4 +1,4 @@
-"""Instance settings for the project-management pack (project-management, board-audit, tabellone-keeper).
+"""Instance settings for the project-management pack (project-management, board-audit, status-board-keeper).
 
 Nothing instance-specific lives in the pack. Every script reads it here, in this order:
 1. the environment variable (``PM_*`` or ``JIRA_*``, names in references/setup.md);
@@ -148,7 +148,7 @@ def path(name: str, default: str | None = None, *, required: bool = False) -> pa
 
 
 def skill_dir(skill: str) -> pathlib.Path:
-    """Directory of a sibling skill in this pack (``board-audit``, ``tabellone-keeper``, ``project-management``)."""
+    """Directory of a sibling skill in this pack (``board-audit``, ``status-board-keeper``, ``project-management``)."""
     return PACK_ROOT / skill
 
 

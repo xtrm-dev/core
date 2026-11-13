@@ -605,7 +605,7 @@ def main():
         if shape:
             print(f"REFUSED [SC-03] the body would contain something shaped like a credential ({shape[0]}, "
                   f"{shape[1]} characters, value not printed). A Jira comment is visible to every reader of the "
-                  "board and cannot be un-shared. Rule: fleet.md:97-103 and jira.py:1-16. Do: remove the value, "
+                  "board and cannot be un-shared. Rule: launching.md:97-103 and jira.py:1-16. Do: remove the value, "
                   "describe it instead, and if the value was already posted, report it to the coordinator as an "
                   "incident rather than editing quietly.")
             return 4

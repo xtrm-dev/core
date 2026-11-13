@@ -2,7 +2,7 @@
 """Operator-question reminder for coordinator sessions (project-management rule 15, XTRM-763).
 
 A coordinator asks the operator a question in chat and forgets it: rule 15 says a pending
-operator item is a Tabellone ``questions`` row, refreshed when N turns pass without an answer.
+operator item is a Status board ``questions`` row, refreshed when N turns pass without an answer.
 This hook enforces it:
 
   UserPromptSubmit  classify the prompt. A real operator turn stamps the time, resets the silent-turn
@@ -10,7 +10,7 @@ This hook enforces it:
                     task notifications, cron prompts, goal check-ins, Stop-hook nudges) change nothing.
                     No network, no subprocess.
   Stop              count one silent turn. When N have passed and an operator question is open with no
-                    current Tabellone row, emit ONE reminder (decision=block reason, the only Stop output
+                    current Status board row, emit ONE reminder (decision=block reason, the only Stop output
                     the model sees) naming the question and the exact ``pm_question.py`` command.
                     Once per question per N turns. ``stop_hook_active`` true emits nothing (no loop).
 
@@ -337,7 +337,7 @@ def close_hint(q: dict) -> str:
 
 
 def build_reminder(items: list[tuple[dict, str]], owner: str, turns: int, ref_default: str, more: int = 0) -> str:
-    lines = ["[operator-questions] %d turns without an operator reply. Open question(s) with no current Tabellone row "
+    lines = ["[operator-questions] %d turns without an operator reply. Open question(s) with no current Status board row "
              "(doc questions/%s, rule 15):" % (turns, owner)]
     for n, (q, status) in enumerate(items, 1):
         verb = "refresh the stale row" if status == "stale" else "file the row"

@@ -51,7 +51,7 @@ Record each lesson as a `finding` or `decision` on the epic; draft under `~/.cac
 1. Outgoing opens the incoming pane in its own window with `join-pane`, never a new session.
 2. Panes die by id (never `kill-window` or `$TMUX_PANE`); the incoming reaps the outgoing pane after the final handoff and an empty CronList.
 3. Outgoing tells every peer the successor's name; address by messaging name; when a name is "not reachable", use the peer's socket `uds:/run/user/1000/cc-socks/<pid>.sock` (11-04).
-4. After send-keys into a Claude pane send `C-m` and check the input line is empty (`references/fleet.md`, "Liveness").
+4. After send-keys into a Claude pane send `C-m` and check the input line is empty (`references/launching.md`, "Liveness").
 
 ## 6. First hour and dead time (incoming)
 

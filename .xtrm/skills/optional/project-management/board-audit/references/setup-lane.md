@@ -13,7 +13,7 @@ Resolution order for every setting:
 3. The default in the script, if there is one.
 
 A required setting that is missing stops the script with its name. The shell scripts (`scheduler.sh`,
-`cycle-run.sh`) read `PM_LANE_DIR` and `PM_TABELLONE_UNIT` from the environment only.
+`cycle-run.sh`) read `PM_LANE_DIR` and `PM_STATUS_BOARD_UNIT` from the environment only.
 
 Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured as described in
 `project-management/references/setup.md`.
@@ -35,17 +35,17 @@ Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured 
 | `PM_CI_WORKFLOW` | `ci_workflow` | Name of the nightly CI workflow. | heavy-stuck |
 | `PM_OPERATOR_ACCOUNT_ID` | `operator_account_id` | Operator's Jira account id. | router, cycle |
 | `PM_OPERATOR_NAME` | `operator_name` | Operator's Jira display name. | router |
-| `PM_JIRA_LABEL` | `jira_label` | Project label; used only to build a default `tabellone_jql`. | cycle |
+| `PM_JIRA_LABEL` | `jira_label` | Project label; used only to build a default `status_board_jql`. | cycle |
 | `PM_CUTOFF` | `cutoff` | Project cut-off, `YYYY-MM-DD HH:MM` (UTC). Rows and merges before it are ignored. | cycle |
-| `PM_TABELLONE_JQL` | `tabellone_jql` | JQL of the Tabellone filter, verbatim. | cycle |
+| `PM_STATUS_BOARD_JQL` | `status_board_jql` | JQL of the Status board filter, verbatim. | cycle |
 | `PM_PROD_PATH_REGEX` | `prod_path_regex` | Regex of repository paths and service names whose change is a production change (check 8). Default: generic schema/compose markers only. | cycle |
 | `PM_EXCEPTIONS_EPIC` | `exceptions_epic` | Jira key whose comments record the no-window exceptions. Unset: no exceptions. | cycle |
 | `PM_CONTAINER_PREFIX` | `container_prefix` | Common container-name prefix, stripped when a journal entry is matched. | deploy-check |
 | `PM_BOT_INBOX` | `bot_inbox` | JSONL inbox of operator comments that mention the bot. | route-watch |
-| `PM_ANSWERS_INBOX` | `answers_inbox` | JSONL inbox of Tabellone answers. | route-watch |
+| `PM_ANSWERS_INBOX` | `answers_inbox` | JSONL inbox of Status board answers. | route-watch |
 | `PM_LANE_HOLDER` | `lane_holder` | Substrate holder name for writes through post-guard. Default `board-lane`. | post-guard |
 | `PM_LANE_WATCHDOG` | `lane_watchdog` | Optional module with `sync(unwatched, detail) -> str`, called by deadman to publish an unwatched lane. Unset: the alarm stays in `events.log`. | deadman |
-| `PM_TABELLONE_UNIT` | `tabellone_unit` | systemd user unit of the Tabellone sync. Default `tabellone-sync.service`. | scheduler.sh |
+| `PM_STATUS_BOARD_UNIT` | `status_board_unit` | systemd user unit of the Status board sync. Default `status-board-sync.service`. | scheduler.sh |
 | `COORD_SOCK` | (env only) | Manual override of the lead's address. Unset, route-forward resolves the `lead` role (`project-management/scripts/route_target.py`) and refuses when no single live lead exists. | route-forward |
 
 ## Structured settings (config file)
@@ -86,7 +86,7 @@ Example fragment (placeholder values):
   "operator_account_id": "000000000000000000000000",
   "operator_name": "Example Operator",
   "cutoff": "2026-01-05 09:00",
-  "tabellone_jql": "project = PROJ AND (labels = proj-project OR labels = window) AND statusCategory != Done",
+  "status_board_jql": "project = PROJ AND (labels = proj-project OR labels = window) AND statusCategory != Done",
   "custom_fields": {"window_start": "customfield_10001", "window_end": "customfield_10002", "start_date": "customfield_10003"},
   "waiting_production_status": "Waiting Production",
   "active_statuses": ["To Do", "In Progress"],
@@ -103,7 +103,7 @@ Example fragment (placeholder values):
   "wp_known_binding": ["PROJ-3", 42],
   "route_control_cases": [["PROJ-4", "10001", "decision", "operator question still open"]],
   "bot_inbox": "~/.local/state/xtrm-bot-watch/inbox.jsonl",
-  "answers_inbox": "~/.local/state/tabellone/answers-inbox.jsonl",
+  "answers_inbox": "~/.local/state/status-board/answers-inbox.jsonl",
   "sb_snapshot": "~/.local/state/board-lane/sb-all.json"
 }
 ```
@@ -161,7 +161,7 @@ As a systemd user template, one instance per project (`systemctl --user enable -
 # ~/.config/systemd/user/board-lane@.service
 [Service]
 Environment=PM_PROJECT=%i
-Environment=PM_TABELLONE_UNIT=tabellone-sync@%i.service
+Environment=PM_STATUS_BOARD_UNIT=status-board-sync@%i.service
 WorkingDirectory=%h/.local/state/pm/%i/lane
 ExecStart=<pack>/board-audit/scripts/lane/scheduler.sh
 Restart=on-failure

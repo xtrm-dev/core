@@ -51,7 +51,7 @@ Author with `/agentrun-author` (inspect before run; never run what does not insp
 
 Author with `/agentrun-author`; inspect before run; reuse `run-v3.mjs` / `lib.mjs`; the code sandbox has no `Date`. Jev single-label verdicts wobble
 on multi-flag items: keep code flags in the evidence and never let the judge override an empty check silently. A board run is fan-out: keep
-concurrency within `references/fleet.md` "Limits and health" and gate it on memory like any dispatch.
+concurrency within `references/launching.md` "Limits and health" and gate it on memory like any dispatch.
 
 ## Session 2026-10-19 (2r0c) recipes — the most complete audit run to date
 

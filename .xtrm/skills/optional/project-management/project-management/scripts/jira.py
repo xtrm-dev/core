@@ -500,7 +500,7 @@ def call(method, path, body=None):
             return _refuse(400, 'SC-03', f'the body to write to {route} contains something shaped like a credential '
                                        f'({shape[0]}, {shape[1]} characters, value not printed). A Jira field or '
                                        'comment is visible to every reader of the board and cannot be un-shared. '
-                                       'Rule: fleet.md:97-103 and jira.py:1-16. Do: remove the value, describe it '
+                                       'Rule: launching.md:97-103 and jira.py:1-16. Do: remove the value, describe it '
                                        'instead, and if the value was already posted, report it to the '
                                        'coordinator as an incident rather than editing quietly.')
     if method in ('POST', 'PUT') and re.fullmatch(r'/rest/api/3/issue/[^/]+/comment(/[^/]+)?', route):
@@ -614,7 +614,7 @@ def _move(key, tid, name, evidence=None):
                                        'merged on master, or being promoted to stable, says nothing about the image '
                                        'that serves traffic; the running image SHA is the only authority, and a '
                                        'ticket may be called done while its change is not live. Rule: '
-                                       'waiting-production-audit.md:8-11 and 32-41, coordinator-operations.md:50-55. '
+                                       'waiting-production-audit.md:8-11 and 32-41, manager.md:50-55. '
                                        'Do: read the running image SHA and the merge commit, paste both values into '
                                        'the comment, and pass them as JIRA_DEPLOY_EVIDENCE (or the evidence '
                                        'argument) so this check sees them.')

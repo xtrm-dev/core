@@ -939,9 +939,9 @@ NO_WINDOW_EXCEPTIONS = {int(n): tuple(v)
 # from a fix. A row leaves this map the moment its holder lands, and A1 then reports it again if it is
 # stale. Config key expected_open: {"<jira-key>": "<reason>"}.
 EXPECTED_OPEN = lanecfg.data("PM_EXPECTED_OPEN", {}) or {}
-# The Tabellone filter's JQL, verbatim (config key tabellone_jql). The cycle evaluates the JQL instead of
+# The Status board filter's JQL, verbatim (config key status_board_jql). The cycle evaluates the JQL instead of
 # GET /filter/<id> because a saved filter private to the operator account returns 404 to the agent token.
-TABELLONE_JQL = lanecfg.get("PM_TABELLONE_JQL") or (
+STATUS_BOARD_JQL = lanecfg.get("PM_STATUS_BOARD_JQL") or (
     f'project = {PROJECT} AND (labels = {lanecfg.get("PM_JIRA_LABEL", "window")} OR labels = window) '
     f'AND created >= "{CUTOFF}" AND statusCategory != Done')
 # Board status names (config key statuses).
@@ -1101,10 +1101,10 @@ def check_status_drift(out, counts):
         counts["drift"] = "instrument failed"
         counts["drift_merged"] = "instrument failed"
         return
-    board_raw, board_ok = jql(TABELLONE_JQL, fields=["key"], limit=1000)
+    board_raw, board_ok = jql(STATUS_BOARD_JQL, fields=["key"], limit=1000)
     board_keys = {i["key"] for i in board_raw}
-    out.append(f"- Tabellone scope (the Tabellone filter's JQL, evaluated here): **{len(board_keys)} rows**"
-               if board_ok else "- **instrument failed** (Tabellone scope) — the in/out split is unknown")
+    out.append(f"- Status board scope (the Status board filter's JQL, evaluated here): **{len(board_keys)} rows**"
+               if board_ok else "- **instrument failed** (Status board scope) — the in/out split is unknown")
 
     strong = {}
     for p in sorted(dev, key=lambda x: x.get("mergedAt") or ""):
@@ -1192,7 +1192,7 @@ def check_status_drift(out, counts):
                if r["key"] in DRIFT_EXCLUDE_EPICS else
                f"story on open umbrella ref {DRIFT_EXCLUDE_UMBRELLAS[r['key']]}"
                if r["key"] in DRIFT_EXCLUDE_UMBRELLAS else
-               f"outside the Tabellone filter, umbrella ref {DRIFT_EXCLUDE_OUTSIDE[r['key']]}"
+               f"outside the Status board filter, umbrella ref {DRIFT_EXCLUDE_OUTSIDE[r['key']]}"
                if r["key"] in DRIFT_EXCLUDE_OUTSIDE else None)
         opens = refs_open(r) if exc else None
         if exc and opens is not False:
@@ -1240,7 +1240,7 @@ def check_status_drift(out, counts):
                f"ref closed, row not Done) and **A2 waiting promotion {len(queue)}** (merged into master, "
                f"merge commit not yet on origin/stable, row already Waiting Production - queueing, NOT a "
                f"defect). Tiers: {tier_n('strong')} strong, {tier_n('weak')} weak, "
-               f"{tier_n('shared-ref')} shared-ref; {len(in_board)} inside the Tabellone filter, "
+               f"{tier_n('shared-ref')} shared-ref; {len(in_board)} inside the Status board filter, "
                f"{len(hits) - len(in_board)} outside it")
     for key, jstatus, tier, klass, why in hits[:25]:
         out.append(f"  - {key} is `{jstatus}` [{tier}, {klass}] — {why}")
@@ -2343,7 +2343,7 @@ def check_unmirrored_contracts(out, counts):
     WHY THIS EXISTS (coordinator ruling 2026-10-28): the cycle counted only the reverse
     direction - a Substrate ref on a merged PR with no Jira row - so a READY contract that changes
     config, schema or serving and has no window row was invisible to every check, including the
-    Tabellone filter. One contract sat READY, rev 2, with an operator decision, and with no
+    Status board filter. One contract sat READY, rev 2, with an operator decision, and with no
     Jira row at all. The coordinator narrowed the 38-unmirrored finding to this class: worker tasks,
     smoke tests, pr-reviewer evals and lane issues stay in Substrate only, by rule.
 
@@ -2601,9 +2601,9 @@ def check_slot_label(out, counts):
     """Rows that carry a slot but not the `window` label — and FIX them in this cycle.
 
     WHY (lead-approved 2026-11-05): a slot is a scheduling fact; the `window`
-    label is what makes that fact visible to every label-filtered instrument (the tabellone keeper's
+    label is what makes that fact visible to every label-filtered instrument (the status_board keeper's
     assert, this cycle's window count, the staleness list, the wp-audit). Three times on 2026-11-05 a
-    row got a slot and no label — the tabellone streak row, the composer window, and
+    row got a slot and no label — the status_board streak row, the composer window, and
     three rows I wrote myself and which kept the keeper failing for ~55 minutes. The
     write path never enforced the pair, so nothing noticed until a dashboard went red.
 

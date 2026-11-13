@@ -24,7 +24,7 @@ OPERATOR = lanecfg.operator_name()
 CASES = [tuple(c) for c in lanecfg.data("PM_ROUTE_CONTROL_CASES", required=True)]
 
 # Negative cases are classified from their stored body; an empty body carrying answer: yes is the
-# Tabellone shape and never reaches Jira, so it is passed to the classifier directly.
+# Status board shape and never reaches Jira, so it is passed to the classifier directly.
 NEGATIVE_LITERAL = [
     ("", "yes", "info", "empty body + answer:yes is an ack, not a decision"),
     ("ok.", None, "info", "bare ack"),

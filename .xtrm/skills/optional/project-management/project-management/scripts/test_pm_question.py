@@ -29,7 +29,7 @@ class FakeHn:
 @pytest.fixture
 def fake(tmp_path, monkeypatch):
     cfg = tmp_path / "pm.json"
-    cfg.write_text(json.dumps({"state_dir": str(tmp_path / "state"), "tabellone_site": "s"}))
+    cfg.write_text(json.dumps({"state_dir": str(tmp_path / "state"), "status_board_site": "s"}))
     monkeypatch.setenv("PM_CONFIG", str(cfg))
     monkeypatch.setenv("SUBSTRATE_HOLDER", "p-xt-claude-alpha-coord")
     monkeypatch.delenv("PM_QUESTION_OWNER", raising=False)
@@ -178,8 +178,8 @@ class FakeResp:
 def hn(fake, monkeypatch, tmp_path):
     key = tmp_path / "key"
     key.write_text("SECRETKEY123\n")
-    monkeypatch.setenv("PM_TABELLONE_KEY_FILE", str(key))
-    monkeypatch.setenv("PM_TABELLONE_SITE", "site-x")
+    monkeypatch.setenv("PM_STATUS_BOARD_KEY_FILE", str(key))
+    monkeypatch.setenv("PM_STATUS_BOARD_SITE", "site-x")
     pm_config._RAW = pm_config._CACHE = None
     monkeypatch.setattr(pq, "Hn", REAL_HN)
     calls, pages = [], {}

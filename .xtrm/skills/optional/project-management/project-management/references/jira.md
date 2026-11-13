@@ -208,7 +208,7 @@ Every board reorganisation or mutation batch is recorded durably, not only in la
 - **Record:** one Substrate batch issue per reorganisation; its `result` entry lists every change: key, field, before, after, reason.
 - **Jira:** each touched ticket gets label `jira-batch:<sb-ref>`; one JQL (`labels = "jira-batch:<sb-ref>"`) lists the batch; Jira's history holds the
   field diffs.
-- **Tabellone "Modifiche Jira":** a derived view only; the keeper writes one doc per batch in `jirabatches`: `{ref, at, by, count, jql, plain_it}`.
+- **Status board "Modifiche Jira":** a derived view only; the keeper writes one doc per batch in `jirabatches`: `{ref, at, by, count, jql, plain_it}`.
   The board helper applies the label in the same write, on the coordinator's word.
 
 ## Write guards and checked verbs (MMD-3546 Phase 2)

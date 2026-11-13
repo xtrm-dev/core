@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the project-management pack setup: tools on PATH, settings, token file.
 
-Usage: pm_check.py [--skill project-management|board-audit|tabellone-keeper|all] [--project NAME|all] [--all-settings]
+Usage: pm_check.py [--skill project-management|board-audit|status-board-keeper|all] [--project NAME|all] [--all-settings]
 
 Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING. Values are
 not printed, so the output is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
 import route_target  # noqa: E402
 
-PM, BA, TK = "project-management", "board-audit", "tabellone-keeper"
+PM, BA, TK = "project-management", "board-audit", "status-board-keeper"
 SKILLS = (PM, BA, TK)
 
 # (name, structured, required_by, optional_for, meaning)
@@ -46,8 +46,8 @@ SETTINGS = [
     ("PM_JIRA_BOARD_ID", False, (), (PM, BA), "Jira agile board id"),
     ("PM_SB_PROJECT_ID", False, (), (PM, BA), "Substrate project id (default prj_<prefix>)"),
     ("PM_DEPLOY_DIR", False, (), (PM,), "project deploy workspace"),
-    ("PM_TABELLONE_SITE", False, (TK,), (), "here.now site slug of the progress artifact"),
-    ("PM_TABELLONE_SELF_ISSUE", False, (TK,), (), "Substrate issue the Tabellone sync runs under"),
+    ("PM_STATUS_BOARD_SITE", False, (TK,), (), "here.now site slug of the progress artifact"),
+    ("PM_STATUS_BOARD_SELF_ISSUE", False, (TK,), (), "Substrate issue the Status board sync runs under"),
     ("PM_KNOWN_REPOS", True, (), (PM,), "repo names a <repo>#<n> may link"),
     ("PM_DONE_STATUSES", True, (), (PM, BA, TK), "board status names that mean done"),
     ("PM_ACTIVE_STATUSES", True, (BA,), (PM, TK), "board status names that mean being worked"),
@@ -64,7 +64,7 @@ SETTINGS = [
 ]
 TOOLS = ("sb", "xt", "gh", "tmux", "python3")
 # Per-project state that two projects must never share: they would overwrite each other.
-UNIQUE_KEYS = ("lane_dir", "state_dir", "tabellone_state_dir", "tabellone_site")
+UNIQUE_KEYS = ("lane_dir", "state_dir", "status_board_state_dir", "status_board_site")
 
 
 def source(name: str, structured: bool):

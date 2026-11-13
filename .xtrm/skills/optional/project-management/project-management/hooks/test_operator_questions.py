@@ -27,7 +27,7 @@ QUESTION = "Vuoi che proceda con il merge della PR 12 prima della finestra?"
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     cfg = tmp_path / "pm.json"
-    cfg.write_text(json.dumps({"state_dir": str(tmp_path / "state"), "tabellone_site": "site-x", "epic": "EP-1",
+    cfg.write_text(json.dumps({"state_dir": str(tmp_path / "state"), "status_board_site": "site-x", "epic": "EP-1",
                                "operator_question_turns": 5}))
     for k in ("PM_PROJECT", "XTRM_ROLE", "PM_STATE_DIR", "PM_OPERATOR_QUESTION_TURNS", "PM_QUESTION_OWNER"):
         monkeypatch.setenv(k, "_")   # so monkeypatch restores the original (absent) value after a test sets it directly
@@ -282,7 +282,7 @@ def test_end_to_end_synthetic_session(env):
     e = {"PM_CONFIG": str(cfg), "SUBSTRATE_HOLDER": IDENT, "PM_OPERATOR_QUESTION_TURNS": "5"}
     e.pop("PM_PROJECT", None)
     tpath = env / "t.jsonl"
-    # warm the Tabellone doc cache with "no row yet" so the run needs no network
+    # warm the Status board doc cache with "no row yet" so the run needs no network
     cache = pm_question.state_root() / ("doc-%s.json" % OWNER)
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"at": time.time(), "rows": [], "updatedAt": ""}))
@@ -352,7 +352,7 @@ def test_failed_read_is_cached_for_five_minutes(env):
 
 def test_missing_site_setting_does_not_lose_the_counter(env, monkeypatch):
     cfg = json.loads(pathlib.Path(os.environ["PM_CONFIG"]).read_text())
-    cfg.pop("tabellone_site")
+    cfg.pop("status_board_site")
     pathlib.Path(os.environ["PM_CONFIG"]).write_text(json.dumps(cfg))
     pm_config._RAW = pm_config._CACHE = None
     assert run_stops(5, fetch=None) == [None] * 5       # real Hn(): pm_config exits, read fails open

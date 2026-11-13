@@ -1,6 +1,6 @@
 # Build-coordinator lane
 
-Read when you are the build lane (the "PR lane"), or launch, resume or work with one, with `references/workers.md`. SKILL.md rule 28 says when a lane
+Read when you are the build lane (the "PR lane"), or launch, resume or work with one, with `references/worker.md`. SKILL.md rule 28 says when a lane
 exists (operator, 2026-10-31).
 
 ## 1. Who owns what
@@ -18,7 +18,7 @@ not what is written down.
 2. Jira and Substrate links are real; no two PRs or windows share a code path unlinked.
 3. Readiness: open findings, red CI, stale bases, unanswered quant gates.
 4. Each contract's premise still holds against current code, production and later rulings.
-5. Each window's vehicle (commit, PR, image) exists and reaches `stable` first; quote it only from the window's row or a `gh`/`git` read (workers.md
+5. Each window's vehicle (commit, PR, image) exists and reaches `stable` first; quote it only from the window's row or a `gh`/`git` read (worker.md
    1.8).
 6. Builder count, model each (rule 29), start order.
 
@@ -66,7 +66,7 @@ after that agreement; every launch counts toward the coordinator's caps.
 
 Name it `<lane issue>-build-coord` (`MMD-3012-build-coord`; operator, 2026-10-31), not `pr-lane` or `pr-coord`: it plans order, audits and chooses
 builders. Branch `xt/<lane issue>-build-coord`; session and holder names match. Every lane launch prompt and resume line says: "Read
-~/.xtrm/skills/optional/project-management/project-management/references/workers.md and references/build-coordinator.md first." The lane issue's SCOPE
+~/.xtrm/skills/optional/project-management/project-management/references/worker.md and references/lead.md first." The lane issue's SCOPE
 includes the section 2 audit.
 
 ## Why (2026-10-31, MMD-3012)

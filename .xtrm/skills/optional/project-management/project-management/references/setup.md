@@ -1,12 +1,12 @@
 # Setup: the project-management pack
 
-This is the canonical setup reference for the whole pack (`project-management`, `board-audit`, `tabellone-keeper`). The pack holds no instance
+This is the canonical setup reference for the whole pack (`project-management`, `board-audit`, `status-board-keeper`). The pack holds no instance
 data. Every value that names a Jira tenant, a project, a repository, a person or a host path is a **setting**. Do this setup once per project host,
 then run `scripts/pm_check.py`.
 
 Skill-specific details extend this file:
 - `board-audit/references/setup.md` (board audit and sequencing) and `board-audit/references/setup-lane.md` (the board helper lane scripts).
-- `tabellone-keeper/references/setup.md` (the progress artifact and its sync).
+- `status-board-keeper/references/setup.md` (the progress artifact and its sync).
 
 ## 1. What the pack needs
 
@@ -61,7 +61,7 @@ A script picks its project in this order, and never guesses:
 Rules:
 - Every coordinator launch, timer, cron line and lane scheduler sets `PM_PROJECT` explicitly. Do not rely on the
   directory for anything that runs outside the repo (the lane runs in its lane dir).
-- Each project has its own `lane_dir`, `state_dir`, `tabellone_state_dir` and `tabellone_site`. `pm_check.py`
+- Each project has its own `lane_dir`, `state_dir`, `status_board_state_dir` and `status_board_site`. `pm_check.py`
   reports a `CLASH` when two projects share one: their runs would overwrite each other.
 - Check all of them with `python3 scripts/pm_check.py --project all`; one with `--project <name>`.
 - Shell scripts read a setting with `python3 scripts/pm_config.py get NAME [DEFAULT]`, and the chosen project with
@@ -93,7 +93,7 @@ still run: `{"lead": "*wed11-coord", "board_helper": "*r8ux"}`), and set them ba
 ## 3. Settings
 
 Required by: **PM** = project-management scripts (`jira.py`, `post-guard.py`, `window-lineage.py`), **BA** = board-audit, **TK** =
-tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no script needs it).
+status-board-keeper. "doc" = named in the doctrine text only (an agent reads it; no script needs it).
 
 ### Scalars
 
@@ -120,7 +120,7 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_CI_WORKFLOW` | `ci_workflow` | CI workflow file of the delivery repo | BA | `ci.yml` |
 | `PM_OPERATOR_QUESTION_TURNS` | `operator_question_turns` | operator-silent turns before the operator-question reminder (default `5`, `0` = hook off). The hook acts only for a session whose cwd is inside `repo_dir`/`match_dirs`, or with `PM_PROJECT` set; addressing names come from `operator_names`/`operator_handle` | hook | `5` |
 | `PM_COORDINATOR_PATTERN` | `coordinator_pattern` | regex a coordinator's session name matches (default `-coord(-[0-9]{1,2})?$`) | hook | `-coord(-[0-9]{1,2})?$` |
-| `PM_QUESTION_OWNER` | `question_owner` | Tabellone `questions/<owner>` doc of this session (default: from the session name and `tabellone_owner_addr`) | hook, CLI | `proj-coord` |
+| `PM_QUESTION_OWNER` | `question_owner` | Status board `questions/<owner>` doc of this session (default: from the session name and `status_board_owner_addr`) | hook, CLI | `proj-coord` |
 | `PM_CONFIG` | (none) | path of the config file itself | optional | `~/.config/xtrm/project-management.json` |
 
 ### Structured (JSON)
@@ -146,7 +146,7 @@ tabellone-keeper. "doc" = named in the doctrine text only (an agent reads it; no
 | `PM_HYGIENE_FILTERS` | `hygiene_filters` | `{role: {"id", "name"}}` | saved Jira filters the board helper runs (roles `open_without_dates`, `overdue`, `next_48h`) | doc, BA (lane) |
 | `PM_KNOWN_REPOS` | `known_repos` | `[repo name]` | repos a `<repo>#<n>` in a comment may link (added to the sibling checkouts of `PM_REPO_DIR`) | PM |
 
-The other skills add their own keys (for example `waiting_production_status`, `deferred_status`, `parked_statuses`, `operator_names`, `window_keys`, `halt_band_utc`, the `tabellone_*` keys); their
+The other skills add their own keys (for example `waiting_production_status`, `deferred_status`, `parked_statuses`, `operator_names`, `window_keys`, `halt_band_utc`, the `status_board_*` keys); their
 setup files list them.
 
 ## 4. The config file
@@ -200,24 +200,24 @@ Example with placeholder values (every key used by the three skills; replace eac
                       "next_48h": {"id": "10003", "name": "PROJ · Next 48 hours"}},
   "known_repos": ["infra", "docs"],
 
-  "_extensions": "--- keys below are owned by board-audit/references/setup.md, setup-lane.md and tabellone-keeper/references/setup.md ---",
+  "_extensions": "--- keys below are owned by board-audit/references/setup.md, setup-lane.md and status-board-keeper/references/setup.md ---",
   "waiting_production_status": "Waiting Production",
   "deferred_status": "Deferred",
   "parked_statuses": ["Deferred"],
   "operator_names": ["Jane Operator"],
-  "tabellone_site": "example-slug",
-  "tabellone_self_issue": "PRJ-101"
+  "status_board_site": "example-slug",
+  "status_board_self_issue": "PRJ-101"
 }
 ```
 
-<!-- EXTENSION POINT: board-audit and tabellone-keeper setup files may document further keys here or in their own file. Keep this example
+<!-- EXTENSION POINT: board-audit and status-board-keeper setup files may document further keys here or in their own file. Keep this example
      in step with them: one key, one meaning, one owner. -->
 
 ## 5. Secrets
 
 - The Jira API token lives in one file outside every repository (for example `~/.secrets/atlassian-api-token.txt`), mode `600`, owned by the
   operator account. `JIRA_TOKEN_FILE` names it; the config file never contains the token.
-- The here.now owner key of the Tabellone follows the same rule (`tabellone-keeper/references/setup.md`).
+- The here.now owner key of the Status board follows the same rule (`status-board-keeper/references/setup.md`).
 - `jira.py` reads the token on first use and never prints it; its SC-03 guard refuses a write whose body looks like a credential.
 - An agent identity (`xt jira setup`) keeps its own token file; explicit `JIRA_EMAIL` / `JIRA_TOKEN_FILE` in the environment win over both
   identities.

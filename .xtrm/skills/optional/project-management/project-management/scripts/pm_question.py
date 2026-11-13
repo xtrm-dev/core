@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""pm-question: one call files an operator question in Substrate AND on the Tabellone (XTRM-763).
+"""pm-question: one call files an operator question in Substrate AND on the Status board (XTRM-763).
 
     pm_question.py add     --ref <ref> --q <text> --rec <text> [--why <text>] [--url <u>] [--id <qid>] [--owner <doc>]
     pm_question.py refresh --q <text> | --id <qid> [--rec ..] [--why ..] [--owner <doc>]
     pm_question.py close   --ref <ref> --q <text> | --id <qid> [--answer <text>] [--owner <doc>]
 
 add      journal entry kind=blocker on <ref> (semantic {for: operator, qid, q, rec, why}) and the
-         row {id, ref, by, q, rec, why, at} in Tabellone doc questions/<owner> (rule 15).
+         row {id, ref, by, q, rec, why, at} in Status board doc questions/<owner> (rule 15).
 refresh  re-stamps the row ``at`` (and q/rec/why when given). Needs no journal write.
 close    journal entry kind=decision (semantic {answers: qid, answer}) and removes the row.
 
 The row id is ``qid_of(q)`` (hash of the text) unless --id is given; the Stop hook
 (hooks/operator-questions.py) uses the same function, so the command it prints files the same row it looked for.
-Settings come from pm_config (PM_TABELLONE_SITE, PM_TABELLONE_KEY_FILE, PM_STATE_DIR); the key is never printed.
+Settings come from pm_config (PM_STATUS_BOARD_SITE, PM_STATUS_BOARD_KEY_FILE, PM_STATE_DIR); the key is never printed.
 No Jira writes: the @operator Jira comment stays the board helper's job.
 """
 from __future__ import annotations
@@ -70,15 +70,15 @@ def state_root() -> pathlib.Path:
 
 
 def owner_of(ident: str) -> str:
-    """Tabellone doc name (``questions/<owner>``) of a coordinator session name.
+    """Status board doc name (``questions/<owner>``) of a coordinator session name.
 
-    Order: PM_QUESTION_OWNER; the longest ``tabellone_owner_addr`` key the session name ends with;
+    Order: PM_QUESTION_OWNER; the longest ``status_board_owner_addr`` key the session name ends with;
     the trailing ``<word>-coord[-N]``; else the session name itself.
     """
     explicit = pm_config.get("PM_QUESTION_OWNER")
     if explicit:
         return str(explicit)
-    keys = [k for k in (pm_config.get_data("PM_TABELLONE_OWNER_ADDR", {}) or {}) if ident.endswith(k)]
+    keys = [k for k in (pm_config.get_data("PM_STATUS_BOARD_OWNER_ADDR", {}) or {}) if ident.endswith(k)]
     if keys:
         return max(keys, key=len)
     m = re.search(r"([^-]+-coord(?:-\d+)?)$", ident)
@@ -87,12 +87,12 @@ def owner_of(ident: str) -> str:
 
 # ---------------------------------------------------------------- here.now data API
 class Hn:
-    """Minimal here.now data-docs client; mirrors tabellone_sync.hn_call/hn_list (read path and row writes)."""
+    """Minimal here.now data-docs client; mirrors status_board_sync.hn_call/hn_list (read path and row writes)."""
 
     def __init__(self, tries=3, timeout=20):
         self.tries, self.timeout = tries, timeout
-        self.site = pm_config.get("PM_TABELLONE_SITE", required=True)
-        self.key_file = os.path.expanduser(pm_config.get("PM_TABELLONE_KEY_FILE", "~/.herenow/credentials"))
+        self.site = pm_config.get("PM_STATUS_BOARD_SITE", required=True)
+        self.key_file = os.path.expanduser(pm_config.get("PM_STATUS_BOARD_KEY_FILE", "~/.herenow/credentials"))
         self.base = "https://here.now/api/v1/publishes/%s/data/docs" % self.site
         self._key = None
 
@@ -344,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--url", help="link to the artifact")
         s.add_argument("--id", help="row id (default: hash of --q)")
         s.add_argument("--answer", help="close: the operator's answer")
-        s.add_argument("--owner", help="Tabellone doc owner (default: this session's coordinator name)")
+        s.add_argument("--owner", help="Status board doc owner (default: this session's coordinator name)")
         s.add_argument("--dry-run", action="store_true", help="read only; print what would be written")
     return p
 

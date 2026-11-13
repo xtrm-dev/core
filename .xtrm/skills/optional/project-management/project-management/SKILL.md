@@ -20,21 +20,21 @@ index:
     - {id: continuity, title: "5. Continuity", when: "Compaction, resume, day-boundary handoff, coordinator hooks, bili"}
     - {id: modes, title: "Modes", when: "Choosing Light vs Full"}
     - {id: pitfalls, title: "Pitfalls", when: "Before fan-out, Jira creates, approvals"}
-    - {id: operations, title: "Daily operations (added 2026-10-22)", when: "Rules 14-50 (48-50 are the slim way); item 1 summarises coordinator-operations.md"}
+    - {id: operations, title: "Daily operations (added 2026-10-22)", when: "Rules 14-50 (48-50 are the slim way); item 1 summarises manager.md"}
   paths:
     - {path: references/continuity.md, when: "Compaction, resume, day-boundary handoff, coordinator hooks", see: [continuity]}
     - {path: references/project-start.md, when: "Starting a project; creating epics, themes, stories, sprints", see: [shape, start]}
     - {path: references/setup.md, when: "First-time setup of the pack: tools, settings, config file, secrets, pm_check.py", see: [start]}
-    - {path: references/workers.md, when: "Every worker, at launch and after every compaction", see: [fleet]}
-    - {path: references/build-coordinator.md, when: "Launching, resuming or acting as the build-coordinator lane", see: [roles, operations]}
+    - {path: references/worker.md, when: "Every worker, at launch and after every compaction", see: [fleet]}
+    - {path: references/lead.md, when: "Launching, resuming or acting as the build-coordinator lane", see: [roles, operations]}
     - {path: references/substrate.md, when: "Contract, issue, journal command syntax", see: [start, run, continuity]}
     - {path: references/jira.md, when: "Jira fields, windows, ticket description, batch log, transition ids", see: [shape, run]}
-    - {path: references/fleet.md, when: "Launch syntax, liveness, reaping, specialists, limits", see: [fleet]}
+    - {path: references/launching.md, when: "Launch syntax, liveness, reaping, specialists, limits", see: [fleet]}
     - {path: references/worked-example.md, when: "Full worked pass before acting", see: [start]}
     - {path: scripts/jira.py, when: "Jira REST calls", see: [run]}
-    - {path: references/coordinator-operations.md, when: "Rhythm, crons, production windows, operator talk, wind-down", see: [operations, run, fleet]}
+    - {path: references/manager.md, when: "Rhythm, crons, production windows, operator talk, wind-down", see: [operations, run, fleet]}
     - {path: references/agentrun.md, when: "Board-scale audit; read the STATUS box first", see: [run]}
-    - {path: references/coordinator-transition.md, when: "Handover to a successor, in order", see: [continuity]}
+    - {path: references/handover.md, when: "Handover to a successor, in order", see: [continuity]}
 ---
 
 # Project coordination
@@ -51,29 +51,29 @@ names and paths are settings (env var or `~/.config/xtrm/project-management.json
 
 ## Who does what
 
-Restates rules 28, 36, 37 and `references/build-coordinator.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
+Restates rules 28, 36, 37 and `references/lead.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
 
 | Role | Owns | Does not |
 |---|---|---|
 | **Coordinator** (Opus) | GOs (merge, window, promotion), calendar, merges, escalations, lane order, advisor and quant rulings, operator channel (rules 15, 36). Answers a lane proposal within one hourly cycle or 60 min; silence is not agreement. | Launch builders, write fix lists, relay reviews, tail operator inboxes. Asks for proposals, not status. |
 | **Build lane** (`xt claude`, Sonnet high, `<lane issue>-build-coord`) | Build order inside its batch, builder launches within caps, review of every PR by rule 44 (Claude only) and test dispatch, fix lists, PR readiness (merge-ready record), hand-offs, reaping. Opens each batch with the no-trust audit. | Merge, write Jira, hand over a PR it believes is not ready. |
-| **Board helper** (`xt pi`, skill `board-audit`) | The only Jira writer (a worker's `@operator` comment too, rule 36), only on the coordinator's word, with before/after re-reads. The only router of the operator's Jira comments and Tabellone answers. | Mutate Jira on its own; let other agents write Jira or read the operator inbox. |
+| **Board helper** (`xt pi`, skill `board-audit`) | The only Jira writer (a worker's `@operator` comment too, rule 36), only on the coordinator's word, with before/after re-reads. The only router of the operator's Jira comments and Status board answers. | Mutate Jira on its own; let other agents write Jira or read the operator inbox. |
 
 ## Read-when index (references are NOT loaded with this skill; open what the trigger names)
 
 
-- After every compaction and before any launch: `fleet.md` "Specialists and AgentRun", "Limits and health"; before a window, cron or report:
-  `coordinator-operations.md` §1, §3, §6, §6a, §11.
-- Production window, operator talk, cleanup, wind-down: `coordinator-operations.md` §4, §5, §8, §10, §12, §13. Handover: `coordinator-transition.md`.
+- After every compaction and before any launch: `launching.md` "Specialists and AgentRun", "Limits and health"; before a window, cron or report:
+  `manager.md` §1, §3, §6, §6a, §11.
+- Production window, operator talk, cleanup, wind-down: `manager.md` §4, §5, §8, §10, §12, §13. Handover: `handover.md`.
   Board-scale audit: `agentrun.md`.
-- The lane: `build-coordinator.md`. Progress artifact each cycle: skill `tabellone-keeper`. New project: `project-start.md`, `worked-example.md`.
+- The lane: `lead.md`. Progress artifact each cycle: skill `status-board-keeper`. New project: `project-start.md`, `worked-example.md`.
 - Before a merge, a close or a link repair: `substrate.md` "Merges: the review at the exact head", "Links and the close gate".
 
 ## 3. Workers (fleet)
 
 **Mandatory fleet rules (operator, 2026-10-23: they were ignored).** Re-read this section and "Daily operations" after every compaction and every 4 h.
 
-1. **Check the worker shape before every launch** (syntax: `references/fleet.md`, "Dispatch surface").
+1. **Check the worker shape before every launch** (syntax: `references/launching.md`, "Dispatch surface").
    - `xt pi`: light, continuous work (board helper, watchers, timers, host health). Default `commandcode/deepseek/deepseek-v4.1-flash`; never Muse
      Spark, it stops mid-task (operator, 2026-10-30).
    - Specialists (`specialist_dispatch`, attested issue): bounded heavy work (heavy reads, test runs, audits, investigations; never reviews, rule 44) of ANY role in
@@ -106,13 +106,13 @@ Restates rules 28, 36, 37 and `references/build-coordinator.md`; adds no rule. O
      issue on the same files. The worker writes its `result`, runs `/compact`, claims the next issue and continues; a fresh warm-up per
      issue cost more than the work on small follow-ups. Different files or a different service still get a fresh worker.
      Guards: the coordinator or lane assigns the next issue (the worker never picks it); one claim at a time, the done report on the old
-     issue is sent before the new claim; after `/compact` the worker re-reads workers.md and the new contract and journals
+     issue is sent before the new claim; after `/compact` the worker re-reads worker.md and the new contract and journals
      `continues-from <old ref>`; at most 3 issues or the 60% context line per worker, then a fresh one; the PR reviewer checks the diff
      against the new contract's SCOPE.
    - A coordinator compacts, it does not rotate by context percentage (operator, 2026-10-31): rule 35 and `references/continuity.md`.
    - Routine Opus steps at effort low; rules in skills, not CLAUDE.md; disable unused MCP servers; subagent only to isolate large output.
-4. **Do Jira hygiene every cycle** (`coordinator-operations.md` §12).
-5. **Run the wind-down** when the operator ends the day (`coordinator-operations.md` §13).
+4. **Do Jira hygiene every cycle** (`manager.md` §12).
+5. **Run the wind-down** when the operator ends the day (`manager.md` §13).
 6. **Workers and coordinators MUST delegate heavy and critical work** to specialists (operator, 2026-10-29).
    - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44, never a specialist.
    - Before a production-impacting, data-meaning or irreversible decision: native subagents and the advisor. A builder may coordinate both within the
@@ -129,7 +129,7 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
 - Launch `xt pi <name> --window` from the MAIN checkout, then `tmux join-pane -d -s <pane> -t <target>` and `tmux select-layout tiled`.
 - **Reaping.** When its issue closes with a result, or it is `done` and collected: confirm the `result` entry, then `tmux kill-pane -t <pane-id>`;
   never `kill-window`, it can close the coordinator.
-- Every handoff lists each live pane's reap condition and the open windows (`references/fleet.md`, "Reaping").
+- Every handoff lists each live pane's reap condition and the open windows (`references/launching.md`, "Reaping").
 - **Superseding a coordinator:** collect a full report to a file and a handoff entry, take over every live duty, journal the takeover list, then
   `kill-pane` its panes one by one.
 - **Dispatcher identity.** `xt` exports `XTRM_DISPATCHER_NAME` and `XTRM_DISPATCHER_ADDRESS`; the prompt still says "report with `SendMessage` and
@@ -143,23 +143,23 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
   forwards and alarms find them by name at send time (`references/setup.md`, "Routing roles"). Never hand out a socket path.
 - **Several projects in one config:** every launch, timer and lane sets `PM_PROJECT=<name>` (`references/setup.md`, "Several projects");
   the scripts stop rather than guess.
-- **Never leave a worker stale.** Each cycle check every window and act (`references/fleet.md`, "Liveness"); keep a prompt-and-silence monitor armed.
+- **Never leave a worker stale.** Each cycle check every window and act (`references/launching.md`, "Liveness"); keep a prompt-and-silence monitor armed.
 - The operator answers destructive or privileged prompts. Quota 429: pause dispatch, tell the operator in one line (rule 30). At 25-30% Pi worker
   context: `/compact` once, then a fresh worker (rule 3).
 
 ## Daily operations (added 2026-10-22)
 
-Read `references/coordinator-operations.md` before the first production window. The rules below hold, each learned from a failure or an operator ruling;
+Read `references/manager.md` before the first production window. The rules below hold, each learned from a failure or an operator ruling;
 where an older rule is heavier, rules 48-50 win.
 
 Rhythm, journal discipline, crons, production windows, Jira windows, workers and specialists, monitoring, operator talk, progress artifact, cleanup and
-the handoff checklist live in `references/coordinator-operations.md` §1-§13 (daily report 22:17Z, claim renewal every 2 h, close sweep hourly, rule 47);
+the handoff checklist live in `references/manager.md` §1-§13 (daily report 22:17Z, claim renewal every 2 h, close sweep hourly, rule 47);
 the old items 1-13 were that summary, so the rules start at 14.
 
-14. **Progress keeper** (operator, 2026-10-26): each hourly cycle one Haiku subagent with skill `tabellone-keeper` and the cycle's verified facts
+14. **Progress keeper** (operator, 2026-10-26): each hourly cycle one Haiku subagent with skill `status-board-keeper` and the cycle's verified facts
     updates `workers`, `schedule`, `followups` via ArtifactData, never a republish.
    - It copies state and never judges; it counts toward the 2-subagent cap.
-15. **Pending operator items are Tabellone `questions` rows** (operator, 2026-10-28): doc `<coordinator name>`, rows `{id, ref, by, q, rec, why}`.
+15. **Pending operator items are Status board `questions` rows** (operator, 2026-10-28): doc `<coordinator name>`, rows `{id, ref, by, q, rec, why}`.
    - Refresh a row when 5 turns pass after the operator's ask without follow-up; remove it once answered.
    - Enforced by `hooks/operator-questions.py` (XTRM-763): after N operator-silent turns (`operator_question_turns`, default 5) a Stop reminder names the
      open question and one command, `scripts/pm_question.py add|refresh|close --ref <ref> --q <text> --rec <text>`: it writes the Substrate blocker/decision
@@ -211,7 +211,7 @@ the old items 1-13 were that summary, so the rules start at 14.
    - A deploy-watcher or production-monitor specialist watches from the reopen to +60 min; the plan names the executor and attribution order.
 28. **More than 3 builders live: one build lane** owns launches, reviews (rule 44), merge-readiness and hand-offs; the coordinator rules only on GOs, windows,
     escalations.
-   - It works by `references/build-coordinator.md` (operator, 2026-10-31); every builder launch states model and effort; every lane prompt and resume
+   - It works by `references/lead.md` (operator, 2026-10-31); every builder launch states model and effort; every lane prompt and resume
      line names that file.
 29. **The coordinator is Opus, with advisor and quant rulings; all else is Sonnet or pi, except reviews (rule 44):** lane Sonnet high, builders Sonnet or `xt pi` by rule 40, reviews
     on Claude only (rule 44), Jira writer, board helper and light fixes on `xt pi`.
@@ -256,12 +256,12 @@ the old items 1-13 were that summary, so the rules start at 14.
     (`scripts/jira.py comment` turns it into a notifying mention), posted only by the board helper.
    - A worker sends the text through its lane (none: the coordinator); on the coordinator's word the board helper posts it (sun01-coord, 2026-11-01).
    - Plain words: what and why, recommendation first, links to every artifact. The coordinator also keeps the `questions` row (rule 15). Worker rule:
-     `references/workers.md` section 2.
+     `references/worker.md` section 2.
 37. **Every dispatch points the worker to its rules** (operator, 2026-10-30): each launch prompt, specialist contract and post-compaction resume line
-    names `project-management` and `references/workers.md`, or a worker reports nowhere and tags nobody.
-   - Launch with `--role worker` (`xt claude|pi <name> --window --role worker --bead <ref>`; MMD-3200; `references/fleet.md`, "Dispatch a builder
+    names `project-management` and `references/worker.md`, or a worker reports nowhere and tags nobody.
+   - Launch with `--role worker` (`xt claude|pi <name> --window --role worker --bead <ref>`; MMD-3200; `references/launching.md`, "Dispatch a builder
      (worker role)"): attested contract is the prompt.
-   - Other roles get this prompt line: "Load project-management and read references/workers.md first; you may coordinate specialists
+   - Other roles get this prompt line: "Load project-management and read references/worker.md first; you may coordinate specialists
      (/specialists:using-specialists) and consult the advisor."
 38. **Providers are interchangeable** (operator, 2026-10-30, c15942: "when one stops working, we just switch it"): on quota, 401 or stalls
     switch to a working one, journal it, do not ask or park. Default commandcode DeepSeek V4.1 Flash; opencode-go unused.
@@ -305,9 +305,9 @@ the old items 1-13 were that summary, so the rules start at 14.
      Substrate issues and Jira windows on the same service (board helper read) do not supersede or reorder this window.
    - Put the four answers in the GO entry. A GO without them is not a GO. gh or sb failure prints UNKNOWN, never zero.
    - The script once printed a false 0 open PRs (glob bug MMD-3928, 11-04): pass a literal `--paths`, or answer (c) with `gh`.
-42. **Lessons of 2026-11-04.** Shell and tool traps: `references/coordinator-operations.md` §14.
+42. **Lessons of 2026-11-04.** Shell and tool traps: `references/manager.md` §14.
    - Cooperation is a rule (operator): the coordinator, build lane, board helper and lane coordinators decide together, propose with evidence
-     and answer within the hour; within 20 min of a window the coordinator decides alone and records (`references/build-coordinator.md` §4).
+     and answer within the hour; within 20 min of a window the coordinator decides alone and records (`references/lead.md` §4).
    - A faster or better way toward the project goal changes the schedule: do it, journal the decision, order the board to match the same
      day; never wait for a successor.
    - Never hand over a stale board: apply every ruling to the Jira windows and Substrate issues before the handoff entry.
@@ -477,7 +477,7 @@ Compaction, resume, day-boundary handoff, coordinator hooks: `references/continu
 ## Pitfalls
 
 - **Fan-out can lock the host:** parallel subagents running test suites swap-stormed the VPS for 4 h on 2026-10-18. Targeted tests only (rules 2.2,
-  2.3; `references/fleet.md`, "Limits and health").
+  2.3; `references/launching.md`, "Limits and health").
 - A scripted Jira create has no import side effects and must not duplicate: search label `substrate:<ref>` AND the exact summary first, comparing the
   summary as an exact string after the read (one ref can serve two themes).
 - Write operator-facing Jira text in plain words: what changes, who runs it, when (UTC). Never relay a privileged approval between sessions. Answer
@@ -494,5 +494,5 @@ Starting a project, step by step: `references/project-start.md`.
 
 ## References
 
-`references/setup.md` (first-time setup) · `continuity.md` · `project-start.md` · `references/substrate.md` · `jira.md` · `fleet.md` · `worked-example.md` · `agentrun.md` · `scripts/jira.py` · `scripts/pm_check.py`. The frontmatter `index` maps paragraphs
+`references/setup.md` (first-time setup) · `continuity.md` · `project-start.md` · `references/substrate.md` · `jira.md` · `launching.md` · `worked-example.md` · `agentrun.md` · `scripts/jira.py` · `scripts/pm_check.py`. The frontmatter `index` maps paragraphs
 and paths to read triggers.

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Tabellone auto-sync (upstream MMD-3173). Stdlib only.
+"""Status board auto-sync (upstream MMD-3173). Stdlib only.
 
 Instance settings come from pm_config (env, then the pack config file); names are in
 ../references/setup.md and ../../project-management/references/setup.md.
 
 Every run (systemd --user timer, 5 min) does four mechanical jobs against the
-here.now Site $PM_TABELLONE_SITE (data API, key in $PM_TABELLONE_KEY_FILE):
+here.now Site $PM_STATUS_BOARD_SITE (data API, key in $PM_STATUS_BOARD_KEY_FILE):
 
 (a) The operator's 'waiting for me' list (MMD-3291; rule replaced 11-01 by the
     operator's ruling, MMD-3353 delta): ONLY the ticket's latest comment counts.
@@ -18,7 +18,7 @@ here.now Site $PM_TABELLONE_SITE (data API, key in $PM_TABELLONE_KEY_FILE):
     row per waiting ticket {id: w-<key>-<qualifying commentId>, ref, q, rec, why,
     at}, so a Jira filter on op-waiting is the live list. This run is the only
     label writer; the questions/operator-mentions doc is retired (deleted once,
-    after its content is written to $TABELLONE_STATE_DIR/retired-*.json).
+    after its content is written to $STATUS_BOARD_STATE_DIR/retired-*.json).
 
 (b) Workers view: every workers/<name> doc is rewritten from live state.
     tmux list-panes -a gives name (pane title match), where (pane id) and
@@ -48,14 +48,14 @@ here.now Site $PM_TABELLONE_SITE (data API, key in $PM_TABELLONE_KEY_FILE):
 (c) Answer routing: every answers/* row with an 'at' newer than last routed
     is appended to answers-inbox.jsonl and delivered once to the coordinator
     that owns the row (questions/<owner> doc -> owner name -> pane address from
-    PM_TABELLONE_OWNER_ADDR; unknown -> PM_TABELLONE_FALLBACK_OWNER).
+    PM_STATUS_BOARD_OWNER_ADDR; unknown -> PM_STATUS_BOARD_FALLBACK_OWNER).
     FILE-ONLY owners (FILE_ONLY_OWNERS) are never typed into: the inbox line
     IS the delivery, because typing into a Claude pane corrupts the input the
     operator is tailing (coordinator ruling 2026-10-30). Other owners
     get `xtmux message-send`, falling back to tmux send-keys ONLY on a pi pane
     (a Claude pane is never typed into, whatever the fallback).
     Message: question id, answer, comment, time. Seed: answers since
-    PM_TABELLONE_ANSWER_SEED_AT only (empty: all answers).
+    PM_STATUS_BOARD_ANSWER_SEED_AT only (empty: all answers).
 
 (f) Run assertions (MMD-3382), read-only, after every write and the read-back:
     each Jira window row placed for today..today+7 must have a kind=window event
@@ -73,15 +73,15 @@ here.now Site $PM_TABELLONE_SITE (data API, key in $PM_TABELLONE_KEY_FILE):
     publishes only. ASSERT-COUNT is the one summary line per run. A crash in
     the check prints ASSERT-ERROR and exit 1; the writes are already done.
     Keyed on ref and write times, never on rendered text. --dry runs the same
-    check on the planned view. Tests: test_tabellone_sync.py.
+    check on the planned view. Tests: test_status_board_sync.py.
 
 Never touches questions/* rows other than its own docs, answers/*, notes/*,
 status/*, lanes/*, board/*, proposals/*, schedule/*, followups/*.
 The Jira token and the here.now key are never printed.
 
-Usage: tabellone_sync.py --dry   (plan only, no writes, no delivery)
-       tabellone_sync.py         (write, then read-back verify)
-State: $TABELLONE_STATE_DIR/state.json (default $PM_STATE_DIR/tabellone/) (routed answer ids, last run, waiting backfill flag).
+Usage: status_board_sync.py --dry   (plan only, no writes, no delivery)
+       status_board_sync.py         (write, then read-back verify)
+State: $STATUS_BOARD_STATE_DIR/state.json (default $PM_STATE_DIR/status_board/) (routed answer ids, last run, waiting backfill flag).
 """
 import base64
 import importlib.util
@@ -113,24 +113,24 @@ KEY_ALT = "|".join(re.escape(x) for x in [JIRA_PROJECT, SB_PREFIX] + EXTRA_REF_P
 OPERATOR_ACCOUNT = pm_config.get("PM_OPERATOR_ACCOUNT_ID", "")
 OPERATOR_HANDLE = pm_config.get("PM_OPERATOR_HANDLE", "operator")
 REPO_NAME = pm_config.get("PM_REPO_NAME", required=True)
-SITE = pm_config.get("PM_TABELLONE_SITE", required=True)
-HN_KEY_FILE = os.path.expanduser(pm_config.get("PM_TABELLONE_KEY_FILE", "~/.herenow/credentials"))
+SITE = pm_config.get("PM_STATUS_BOARD_SITE", required=True)
+HN_KEY_FILE = os.path.expanduser(pm_config.get("PM_STATUS_BOARD_KEY_FILE", "~/.herenow/credentials"))
 HERE = "https://here.now/api/v1/publishes/%s/data/docs" % SITE
 MAX_BYTES = 16 * 1024
-BY = "tabellone-sync"
-SELF_ISSUE = pm_config.get("PM_TABELLONE_SELF_ISSUE", required=True)  # Substrate issue the sync runs under
-SELF_NAME = "%s-tabellone-sync" % SELF_ISSUE
+BY = "status-board-sync"
+SELF_ISSUE = pm_config.get("PM_STATUS_BOARD_SELF_ISSUE", required=True)  # Substrate issue the sync runs under
+SELF_NAME = "%s-status-board-sync" % SELF_ISSUE
 PM_STATE_ROOT = os.path.expanduser(pm_config.get("PM_STATE_DIR", "~/.xtrm/product/%s" % REPO_NAME))
-STATE_DIR = os.path.expanduser(os.environ.get("TABELLONE_STATE_DIR")
-                               or pm_config.get("PM_TABELLONE_STATE_DIR", os.path.join(PM_STATE_ROOT, "tabellone")))
+STATE_DIR = os.path.expanduser(os.environ.get("STATUS_BOARD_STATE_DIR")
+                               or pm_config.get("PM_STATUS_BOARD_STATE_DIR", os.path.join(PM_STATE_ROOT, "status_board")))
 BOT_WATCH_DIR = os.path.expanduser(os.environ.get("XTRM_BOT_WATCH_DIR", os.path.join(PM_STATE_ROOT, "xtrm-bot-watch")))
 INBOX = os.path.join(STATE_DIR, "answers-inbox.jsonl")
-ANSWER_SEED_AT = pm_config.get("PM_TABELLONE_ANSWER_SEED_AT", "")
+ANSWER_SEED_AT = pm_config.get("PM_STATUS_BOARD_ANSWER_SEED_AT", "")
 # questions/<owner> name -> pane address (xt session name) that receives routed answers
-OWNER_ADDR = dict(pm_config.get_data("PM_TABELLONE_OWNER_ADDR", {}))
-FALLBACK_OWNER = pm_config.get("PM_TABELLONE_FALLBACK_OWNER", "")
+OWNER_ADDR = dict(pm_config.get_data("PM_STATUS_BOARD_OWNER_ADDR", {}))
+FALLBACK_OWNER = pm_config.get("PM_STATUS_BOARD_FALLBACK_OWNER", "")
 # owners whose answers are delivered by the inbox line alone, with no keystrokes
-FILE_ONLY_OWNERS = set(pm_config.get_data("PM_TABELLONE_FILE_ONLY_OWNERS", []))
+FILE_ONLY_OWNERS = set(pm_config.get_data("PM_STATUS_BOARD_FILE_ONLY_OWNERS", []))
 PI_GLYPH = "\u03c0"   # pi pane titles start with pi; Claude panes use the asterisk glyph
 CACHEDIR = STATE_DIR
 STATE_FILE = os.path.join(CACHEDIR, "state.json")
@@ -139,7 +139,7 @@ TMUX = "/usr/bin/tmux"
 JIRA_MOD = str(pm_config.jira_py())
 GH = "/usr/bin/gh"
 GH_REPO = pm_config.get("PM_REPO_SLUG", required=True)
-PR_SRC = "tabellone-sync"
+PR_SRC = "status-board-sync"
 PR_REF_RE = re.compile(r"^PR[- ]?#?(\d+)$")
 PR_KEY_RE = re.compile(r"_PR-(\d+)$")
 
@@ -234,7 +234,7 @@ def mem_gate():
 # ---------------------------------------------------------------- here.now api
 def hn_call(method, url, body=None, idem=None, tries=4):
     headers = {"Authorization": "Bearer " + read_hn_key(),
-               "User-Agent": "tabellone-sync/%s" % SELF_ISSUE.lower(),
+               "User-Agent": "status-board-sync/%s" % SELF_ISSUE.lower(),
                "Accept": "application/json"}
     data = None
     if body is not None:
@@ -541,7 +541,7 @@ def waiting_of(comments):
 
 
 def waiting_row(key, hit):
-    """One Tabellone row for a waiting ticket. `by` stays empty on purpose: the page
+    """One Status board row for a waiting ticket. `by` stays empty on purpose: the page
     reads a row's `by` as a deadline, so the author belongs in `rec`."""
     body = hit["comment"].get("body") or {}
     by = holder_of(body) or (hit["comment"].get("author") or {}).get("displayName") or "unknown"
@@ -578,7 +578,7 @@ def build_waiting(mod, live, state):
     questions/operator-waiting with exactly one row per such ticket."""
     ops = []
     # A live label write and the retirement of the old doc unlock only when the file
-    # $TABELLONE_STATE_DIR/waiting-armed exists (MMD-3291: the first live run waits for a
+    # $STATUS_BOARD_STATE_DIR/waiting-armed exists (MMD-3291: the first live run waits for a
     # --dry diff the coordinator has read). Until then every timer run only plans.
     armed = (not DRY) and os.path.exists(ARM_FILE)
     backfill = not state.get("waiting_backfill_done")
@@ -797,7 +797,7 @@ def build_workers(live):
         pid, _ = by_pane[self_path]
         life, exp = sb_show(SELF_ISSUE)
         doc = {"name": SELF_NAME, "kind": "pi", "runtime": "xt pi",
-               "issue": SELF_ISSUE, "task": "Tabellone auto-sync (5-min timer).",
+               "issue": SELF_ISSUE, "task": "Status board auto-sync (5-min timer).",
                "status": "live", "where": pid, "ctxPct": pane_ctx(pid),
                "claimUntil": claim_iso(exp), "reportsTo": FALLBACK_OWNER or None,
                "order": 99, "milestone": "sync live", "milestoneAt": NOW,
@@ -1101,7 +1101,7 @@ def jira_slot(value):
 CUSTOM_FIELDS = dict(pm_config.get_data("PM_CUSTOM_FIELDS", {}))
 # Jira status name -> page status, applied before the category map
 STATUS_OVERRIDES = dict(pm_config.get_data(
-    "PM_TABELLONE_STATUS_OVERRIDES", {"Deferred": "blocked", "Won't Do": "blocked", "Won't do": "blocked"}))
+    "PM_STATUS_BOARD_STATUS_OVERRIDES", {"Deferred": "blocked", "Won't Do": "blocked", "Won't do": "blocked"}))
 
 
 def load_profile(mod):
@@ -1455,7 +1455,7 @@ def route_answers(live, state):
     print("answers fresh since %s: %d" % (ANSWER_SEED_AT, len(fresh)))
     n = 0
     for qid, owner, at, doc in fresh:
-        text = ("Tabellone answer %s -> owner %s: answer=%r comment=%r at=%s by=%s" %
+        text = ("Status board answer %s -> owner %s: answer=%r comment=%r at=%s by=%s" %
                 (qid, owner, doc.get("answer"), (doc.get("comment") or "")[:200],
                  at, doc.get("by")))
         if DRY:

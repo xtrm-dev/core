@@ -8,7 +8,7 @@ in the cycle report. Acks on rows already handled ("ok", "yes") are never forwar
 
 Channels (settings in board-audit/references/setup-lane.md):
   PM_BOT_INBOX       operator comments that mention the bot (written by the xtrm-bot watcher)
-  PM_ANSWERS_INBOX   Tabellone answers (written by tabellone_sync.py)
+  PM_ANSWERS_INBOX   Status board answers (written by status_board_sync.py)
 
 The classifier is explicit and prints the trigger it matched, so a misroute is auditable by the person who
 receives it. It errs toward DECISION: a comment forwarded that did not need to be costs one message, a
@@ -60,7 +60,7 @@ def mentions_bot(text):
 
 
 def classify(text, answer=None, author_id=None, author=None):
-    """(decision|info, trigger). An explicit answer field from the Tabellone counts as a decision only when
+    """(decision|info, trigger). An explicit answer field from the Status board counts as a decision only when
     it is not a bare yes: a 'yes' that answers a question already handled is an ack."""
     t = (text or "").strip()
     if answer is not None:

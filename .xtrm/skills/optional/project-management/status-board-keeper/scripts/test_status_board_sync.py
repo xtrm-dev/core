@@ -1,6 +1,6 @@
-"""Regression tests for the MMD-3382 run assertions in tabellone_sync.py.
+"""Regression tests for the MMD-3382 run assertions in status_board_sync.py.
 
-Run: python3 -m unittest skills/optional/project-management/tabellone-keeper/scripts/test_tabellone_sync.py
+Run: python3 -m unittest skills/optional/project-management/status-board-keeper/scripts/test_status_board_sync.py
 Payloads use the live schedule/<date> doc shape (events keyed e_<HHMM>_<KEY>, created_by
 sync-jira, kind window) and the here.now record updatedAt. No network, no Jira, no here.now.
 
@@ -19,13 +19,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Neutral instance settings, set before the module import reads them; PM_CONFIG points at
 # a missing file so the operator's own config never leaks into the test.
 os.environ.update({
-    "PM_CONFIG": os.path.join(tempfile.gettempdir(), "tabellone-test-no-config.json"),
+    "PM_CONFIG": os.path.join(tempfile.gettempdir(), "status_board-test-no-config.json"),
     "PM_JIRA_PROJECT": "PROJ", "PM_SB_PREFIX": "TASK", "JIRA_SITE": "https://example.atlassian.net",
     "PM_REPO_NAME": "example-repo", "PM_REPO_SLUG": "example-org/example-repo",
-    "PM_TABELLONE_SITE": "example-site", "PM_TABELLONE_SELF_ISSUE": "TASK-1",
-    "TABELLONE_STATE_DIR": os.path.join(tempfile.gettempdir(), "tabellone-test-state"),
+    "PM_STATUS_BOARD_SITE": "example-site", "PM_STATUS_BOARD_SELF_ISSUE": "TASK-1",
+    "STATUS_BOARD_STATE_DIR": os.path.join(tempfile.gettempdir(), "status_board-test-state"),
 })
-spec = importlib.util.spec_from_file_location("tabellone_sync", os.path.join(HERE, "tabellone_sync.py"))
+spec = importlib.util.spec_from_file_location("status_board_sync", os.path.join(HERE, "status_board_sync.py"))
 ts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ts)
 
@@ -51,7 +51,7 @@ def event(key, at, end=None, **kw):
 def day_doc(day, *evs, updated="2026-11-01T05:43Z"):
     return {"date": day,
             "events": {"e_%s_%s" % (e["at"][11:13] + e["at"][14:16], e["ref"]): e for e in evs},
-            "updatedAt": updated, "updatedBy": "tabellone-sync"}
+            "updatedAt": updated, "updatedBy": "status-board-sync"}
 
 
 def row(key, day, at, end=None, updated="2026-11-01T05:00:00.000+0000"):

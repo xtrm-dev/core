@@ -7,7 +7,7 @@ Moved from SKILL.md section "5. Continuity". Read after every compaction, before
 - Compact 2-3 times a day at a quiet point, never within 20 min of a window: write a checkpoint `handoff` first
   (`sb journal append <epic> --kind handoff`), compact, re-arm `/goal`.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
-  Handoff: `references/coordinator-transition.md`.
+  Handoff: `references/handover.md`.
 - Resume: `sb issue resume <epic>`. Set `SUBSTRATE_ISSUE_REF` to the epic; bind the worktree with `echo <epic> > .substrate-issue` (in
   `.git/info/exclude`); keep a long-TTL claim for the edit gate.
 - **Coordinator-only hooks** (operator, 2026-10-31) fire when `XTRM_ROLE=coordinator`; any other value means not a coordinator. Unset:
