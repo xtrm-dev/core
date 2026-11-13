@@ -267,7 +267,7 @@ export function repositoryFromRemote(url: string): string | undefined {
     }
   } else {
     // scp-like syntax: [user@]host:path. A colon after a slash means a local path.
-    const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(remote);
+    const scp = /^(?:[^@/\s]{1,256}@)?([^:/\s]{1,256}):(.{1,1024})$/.exec(remote);
     if (!scp) return undefined;
     repoPath = scp[2];
   }

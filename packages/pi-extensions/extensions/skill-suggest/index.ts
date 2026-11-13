@@ -120,7 +120,12 @@ const COOLDOWN_MIN = 30;
  * PR checks" still gets evaluated.
  */
 export function isControlNudge(prompt: string): boolean {
-  const t = prompt.trim().toLowerCase().replace(/[.!\u2026]+$/, "").replace(/\s+/g, " ");
+  // Linear trailing-punctuation strip (CORE-2655): manual scan keeps the
+  // exact /[.!\u2026]+$/// semantics with no backtracking surface.
+  let t = prompt.trim().toLowerCase().replace(/\s+/g, " ");
+  let end = t.length;
+  while (end > 0 && (t[end - 1] === "." || t[end - 1] === "!" || t[end - 1] === "\u2026")) end--;
+  if (end !== t.length) t = t.slice(0, end);
   if (t.split(" ").length > 3) return false;
   return /^(continue|cont|go on|go ahead|proceed|carry on|keep going|next|yes|yep|yeah|ok|okay|k|do it|go|thanks|thank you|ty|nice|cool|perfect|great)( please| pls| now| then| on)?$/.test(t);
 }
@@ -133,7 +138,7 @@ export function isControlNudge(prompt: string): boolean {
  * intercom marker. On the labelled replay these were a third of the false fires.
  */
 export function isPeerRelay(prompt: string): boolean {
-  return /^\s*(?:\[cross-agent message\b|Coordinator\b|From\s+\S+|[\w.-]*coord[\w.-]*\s*(?:->|→|:)|\S+\s*(?:->|→)\s*\S+\s*:)/i.test(prompt);
+  return /^\s{0,100}(?:\[cross-agent message\b|Coordinator\b|From\s+\S{1,128}|[\w.-]{0,64}coord[\w.-]{0,64}\s{0,100}(?:->|→|:)|\S{1,128}\s{0,100}(?:->|→)\s{0,100}\S{1,128}\s{0,100}:)/i.test(prompt);
 }
 
 // CORE-2534: rows queue in memory and are appended asynchronously.

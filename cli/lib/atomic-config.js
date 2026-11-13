@@ -25,8 +25,15 @@ const PROTECTED_KEYS = [
 /**
  * Get a nested value from an object using dot notation path
  */
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isDangerousKey(key) {
+  return DANGEROUS_KEYS.has(key);
+}
+
 function getNestedValue(obj, path) {
   return path.split('.').reduce((current, key) => {
+    if (isDangerousKey(key)) return undefined;
     return current && current[key] !== undefined ? current[key] : undefined;
   }, obj);
 }
@@ -36,8 +43,11 @@ function getNestedValue(obj, path) {
  */
 function setNestedValue(obj, path, value) {
   const keys = path.split('.');
+  for (const key of keys) {
+    if (isDangerousKey(key)) return; // refuse prototype-pollution keys
+  }
   let current = obj;
-  
+
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
     if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
@@ -45,7 +55,7 @@ function setNestedValue(obj, path, value) {
     }
     current = current[key];
   }
-  
+
   current[keys[keys.length - 1]] = value;
 }
 
@@ -74,6 +84,7 @@ export function deepMergeWithProtection(original, updates, currentPath = '') {
   const result = { ...original };
 
   for (const [key, value] of Object.entries(updates)) {
+    if (isDangerousKey(key)) continue;
     const keyPath = currentPath ? `${currentPath}.${key}` : key;
 
     // If this specific value is protected and exists locally, skip it

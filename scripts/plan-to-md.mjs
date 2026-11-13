@@ -182,7 +182,7 @@ function plainText(node) {
 }
 
 function escapeCell(text) {
-  return text.replace(/\|/g, '\\|').replace(/\n+/g, ' ');
+  return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n+/g, ' ');
 }
 
 function renderTable(table) {
