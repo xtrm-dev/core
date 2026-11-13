@@ -71,7 +71,8 @@ moves and closes from the board helper.
 - The lead picks per batch the count (rule 2.3), model and effort (rule 29) and order, and launches within its cap; past the cap it asks the manager.
 - Each launch runs the preflight (rule 2; line on the worker's issue) and gets a fresh worker (rule 3). Syntax: `references/launching.md`,
   "Dispatch a builder (worker role)".
-- The lead launches the review of every PR (rule 44): `xt claude --role pr-reviewer --model sonnet|opus`; Opus for HIGH/CRITICAL, data-meaning,
+- The lead launches the review of every PR (rule 44): the `pr-reviewer` specialist (Claude through the bridge) or
+  `xt claude --role pr-reviewer --model sonnet|opus`; Opus for HIGH/CRITICAL, data-meaning,
   production or schema PRs. `test-engineer` (specialist) by scrutiny.
 - Each contract names in VALIDATION its specialist chain (rule 52) and wants the activation ids in the result. A contract listing only deliverables
   got no specialist use (2026-11-01: six of six).

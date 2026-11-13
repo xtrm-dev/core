@@ -74,7 +74,7 @@ ahead of the host clock (2026-10-28).
 - Never use beads or `bd` (legacy Dolt workspace); `bead_id` in tool output is a compatibility alias.
 - Roles:
   - quant-methodologist: ONLY an Agent subagent, Opus for rulings, Sonnet otherwise; never the specialist plugin (small models).
-  - Reviews: SKILL.md rule 44, only `xt claude --role pr-reviewer`; the owning lead launches them. A critical production verification (not a PR
+  - Reviews: SKILL.md rule 44 (the `pr-reviewer` specialist on Claude, or `xt claude --role pr-reviewer`); the owning lead launches them. A critical production verification (not a PR
     review) stays a specialist.
 - Board audit pair (workflow v3 + fact script + majority aggregator), measured 2026-10-22: skill `board-audit`, `scripts/` (`run-audit.sh`;
   `facts.py --selftest` is the correctness gate; `aggregate.py` the stability measure). 3 runs: 0 verdict flips between approve and reject (2

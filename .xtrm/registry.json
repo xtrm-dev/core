@@ -997,15 +997,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "354b8612c78efab80c2de53ab6a78c76a35098b973d80c25102d7005179fb7e9",
+          "hash": "c9e8ebbd049d8edca4110265261a1caad6f328bd4559a4f2861fafae21a64cfd",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "fc00f00fa1ef84d2153e1b17ab54a6603b837c0daa6955e7fab0052702451d01",
+          "hash": "8c5150fed2fdf7252c3060e060ceafd6d2b6ae1b3811e245998531a0059d2828",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "0948da9cafb86f838fee53c790124baf07e11bac01f3d9ac4c223606d48cb85d",
+          "hash": "de0da35427c4bf9c2f6634c1c0c5a772bd704fc41e2fea2f5a2359e9b2c4ba89",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1025,7 +1025,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/worker.md": {
-          "hash": "21f0dc562da06bedb459bc3cd384adbc9b7d021529892388c4a483d6bcc45db3",
+          "hash": "0d7fab1b699438eb3d3baca3bfc7421952c76e2efd6b2a2d4d0d075b10b2f1e0",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/jira.py": {
@@ -1057,7 +1057,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "6d6da2df22d88e844570b9b64f8425c44bab5c76d5bbb4bcb8ce28dfb9ecdc76",
+          "hash": "fc530b8e859cd95540e877bff2709af4d1fd8c98f4268de9bb6692bfe27a12db",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {

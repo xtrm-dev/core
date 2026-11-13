@@ -87,7 +87,7 @@ build lane is a lead; there is no separate build mode.
 1. **Check the worker shape before every launch** (syntax: `references/launching.md`, "Dispatch surface").
    - `xt pi`: light, continuous work (board helper, watchers, timers, host health). Default `commandcode/deepseek/deepseek-v4.1-flash`; never Muse
      Spark, it stops mid-task (operator, 2026-10-30).
-   - Specialists (`specialist_dispatch`, attested issue): bounded heavy work (heavy reads, test runs, audits, investigations; never reviews, rule 44) of ANY role in
+   - Specialists (`specialist_dispatch`, attested issue): bounded heavy work (heavy reads, test runs, audits, investigations, and reviews by rule 44) of ANY role in
      `specialist_list`, never `xt claude` panes, the manager or a lead.
    - `xt claude`: only critical work, heavy building, or `gh`, push, docker with long ownership (operator, 2026-10-28); else `xt pi`, which the
      operator can talk to.
@@ -127,10 +127,10 @@ build lane is a lead; there is no separate build mode.
 4. **Do Jira hygiene every cycle** (`manager.md` §12).
 5. **Run the wind-down** when the operator ends the day (`manager.md` §13).
 6. **Workers, leads and the manager MUST delegate heavy and critical work** to specialists (operator, 2026-10-29).
-   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44, never a specialist.
+   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44 (the `pr-reviewer` specialist on Claude, or `xt claude --role pr-reviewer`).
    - Before a production-impacting, data-meaning or irreversible decision: native subagents and the advisor. A builder may coordinate both within the
      cap.
-   - The lead launches the rule-44 review (`xt claude --role pr-reviewer`) for every PR, never the builder whose PR it is.
+   - The lead launches the rule-44 review for every PR, never the builder whose PR it is.
 
 The worker shapes of rule 1 are interim; XT-132 decides the final one. A long owned job needing no network, `gh` or tmux is a specialist; the same
 judgment over many items is an AgentRun workflow (`references/agentrun.md`), never per-item API loops.
@@ -274,7 +274,7 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
 38. **Providers are interchangeable** (operator, 2026-10-30, c15942: "when one stops working, we just switch it"): on quota, 401 or stalls
     switch to a working one, journal it, do not ask or park. Default commandcode DeepSeek V4.1 Flash; opencode-go unused.
 39. **Token economy** (operator, 2026-10-30 20:15Z: "we're wasting a lot of tokens"), binding for all:
-   - Every launch prompt loads the specialists skill; heavy reads, test runs and investigations go to specialists; reviews follow rule 44, never a specialist.
+   - Every launch prompt loads the specialists skill; heavy reads, test runs and investigations go to specialists; reviews follow rule 44.
    - Chat output is minimal ASD-STE100: state, decision, next step. Operator items go to Jira comments.
    - One script per step, filtered in the script, returning counts and matching lines. Peer messages: one fact per line, pointers not pastes.
 40. **Report by journal, message by exception** (operator, 2026-11-04: 13% of the weekly budget used by 09:00Z on day 1; every message wakes
@@ -337,12 +337,13 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
    - Incident 11-05: one window slotted with a database mirror OFF and a crashing parity script; another with an unverified C5; a
      write-mode roll check broke 18 roots for 41 h; CI runners refused for hours before anyone looked.
    - Look-ahead for the next 48 h: rule 45.
-44. **Reviews run only as `xt claude --role pr-reviewer`** (operator, 2026-11-06: small models are not reliable reviewers; narrowed by seq 2885
-    and 3023). `--model opus` for HIGH/CRITICAL scrutiny, data-meaning, production or schema PRs; `--model sonnet` otherwise. Merge-ready needs an
-    `xtrm-reviewer[bot]` review at the head whose body holds the OCR section "Ledger check: exit 0".
-   - Never a native subagent, an `xt pi` worker, a `specialist_dispatch` or a non-Claude model.
+44. **Reviews run on a Claude model as the `pr-reviewer` role** (operator 2026-11-06: small models are not reliable reviewers; seq 2885, 3023;
+    the specialist path allowed 2026-11-13 with `claude-bridge`): the `pr-reviewer` specialist (`specialist_list` shows a `claude-bridge/`
+    model; `model_override` for Opus) or `xt claude --role pr-reviewer --model opus|sonnet`. Opus for HIGH/CRITICAL, data-meaning, production or
+    schema PRs. Merge-ready needs an `xtrm-reviewer[bot]` review at the head with the OCR section "Ledger check: exit 0" (both post via the shim).
+   - Never a native subagent, an `xt pi` worker or a non-Claude model.
    - The lead launches the review; the builder never reviews its own PR.
-   - A second opinion is a second rule-44 review, never a `seconder`.
+   - A second opinion is a second rule-44 review (either path), never a `seconder`.
 45. **Window look-ahead: rule 43 extended** (operator, 2026-11-06: the precondition checks found missing items and nobody tried to land them early).
     At each day boundary and at 12:00Z the manager runs the rule-43 precondition check for every window in the next 48 h (the board helper
     lists them).
@@ -388,8 +389,8 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
      | unknown cause | `debugger` first, then the chain of its scrutiny; a regression test is mandatory |
      | CRITICAL or sensitive (migrations, secrets, auth, MCP or agent config) | `security-deep`: `security-auditor` before and after the build, `seconder`, `test-engineer`, `obligations-scanner`, Claude review |
      | risky decision (production, data, irreversible) | `overthinker` (premortem) plus the `advisor` agent for the final call |
-   - The review is always `xt claude --role pr-reviewer` (rule 44). The other steps are specialists until specialists can run on Claude models;
-     then they move there.
+   - The review follows rule 44 (`xt claude --role pr-reviewer` or the `pr-reviewer` specialist on Claude). Specialists run on Claude models
+     through `claude-bridge` since 2026-11-13: a step that needs Claude may now be a specialist (set it in the bridge allow list).
    - The lead does not attest a build contract whose VALIDATION does not name the chain. The merge-ready record lists the activation id of each
      step, or the scrutiny reason for a skipped step.
    - The daily report counts dispatches per role; `seconder`, `test-engineer`, `overthinker` or `obligations-scanner` at 0 for a week is a finding.
