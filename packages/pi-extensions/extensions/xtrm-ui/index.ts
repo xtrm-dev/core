@@ -1099,6 +1099,47 @@ function subjectText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/** Offset just past a leading `[GitNexus]`-style framing line, or 0 when the
+ *  text carries no such header. String scan: the input is arbitrary tool
+ *  output, so a backtracking pattern here is a ReDoS surface (CORE-2694). */
+function afterBracketHeader(text: string): number {
+  if (!text.startsWith("[")) return 0;
+  const close = text.indexOf("]");
+  const newline = text.indexOf("\n");
+  // No newline: the whole text is the bracket line, which is content here.
+  if (close < 0 || newline < 0 || close > newline) return 0;
+  // Framing only when nothing but blanks follows the closing bracket.
+  if (text.slice(close + 1, newline).trim() !== "") return 0;
+  return newline + 1;
+}
+
+/** `---`, `----`, `---   ` on a line of its own: the trailing hint marker a
+ *  framed tool result appends (the hint itself can hold braces). */
+function isHintSeparator(line: string): boolean {
+  let i = 0;
+  while (i < line.length && line.charCodeAt(i) === 0x2d) i++;
+  if (i < 3) return false;
+  for (; i < line.length; i++) {
+    const c = line.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0d) return false;
+  }
+  return true;
+}
+
+/** Strip a tool's result framing: a leading `[bracket]` line and everything
+ *  from the first `---` hint separator on. Linear string scans only. */
+function stripToolFraming(text: string): string {
+  const trimmed = text.trim();
+  const body = trimmed.slice(afterBracketHeader(trimmed));
+  const lines = body.split("\n");
+  // A separator needs a line before and after it; a body opening with `---`
+  // is content, exactly as the previous newline-anchored split treated it.
+  for (let i = 1; i < lines.length - 1; i++) {
+    if (isHintSeparator(lines[i]!)) return lines.slice(0, i).join("\n").trim();
+  }
+  return body.trim();
+}
+
 export function ultraExternalPrimary(toolName: string | undefined, resultTexts: string[]): string | undefined {
   if (resultTexts.length === 0) return undefined;
   const joined = resultTexts.join("\n");
@@ -1109,11 +1150,8 @@ export function ultraExternalPrimary(toolName: string | undefined, resultTexts: 
   // JSON results pretty-print with a bare `{` first line: summarize the
   // shape instead (`{a, b, +1}`, `[N items]`).
   // A tool may frame its JSON: GitNexus puts a `[GitNexus]` line before it and
-  // a `---` hint after it (the hint itself can hold braces, `process/{name}`).
-  const body = joined.trim()
-    .replace(/^\[[^\]\n]*\][ \t\r]*\n/, "")
-    .split(/\n+---\s*\n/)[0]!
-    .trim();
+  // a `---` hint after it.
+  const body = stripToolFraming(joined);
   // Specialist and Substrate payloads carry no readable outcome on a folded
   // row; a `{status, issue_ref, +N}` key list says nothing. Their subjects
   // come from args, and specialist rows render their own line below.
@@ -1188,10 +1226,7 @@ function specialistDuration(durationMs: number): string {
 
 function parsedResultObject(resultTexts: string[]): Record<string, unknown> | undefined {
   if (resultTexts.length === 0) return undefined;
-  const body = resultTexts.join("\n").trim()
-    .replace(/^\[[^\]\n]*\][ \t\r]*\n/, "")
-    .split(/\n+---\s*\n/)[0]!
-    .trim();
+  const body = stripToolFraming(resultTexts.join("\n"));
   try {
     const value = JSON.parse(body);
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;

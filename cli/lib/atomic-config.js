@@ -43,20 +43,22 @@ function getNestedValue(obj, path) {
  */
 function setNestedValue(obj, path, value) {
   const keys = path.split('.');
-  for (const key of keys) {
-    if (isDangerousKey(key)) return; // refuse prototype-pollution keys
-  }
   let current = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
+    if (isDangerousKey(key)) return; // refuse prototype-pollution keys
     if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
       current[key] = {};
     }
     current = current[key];
   }
 
-  current[keys[keys.length - 1]] = value;
+  // The guard sits on the written key itself, not only on an earlier pass over
+  // the path: CodeQL js/prototype-pollution-utility tracks the write site.
+  const last = keys[keys.length - 1];
+  if (last === '__proto__' || last === 'constructor' || last === 'prototype') return;
+  current[last] = value;
 }
 
 /**

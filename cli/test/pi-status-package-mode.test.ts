@@ -10,6 +10,13 @@ const CLI_BIN = path.join(__dirname, '../dist/index.cjs');
 const CLI_ROOT = path.dirname(path.dirname(CLI_BIN));
 const PKG = 'npm:@jaggerxtrm/pi-extensions';
 
+/** Escape every regex metacharacter, backslash included: a partial escape
+ *  class still interpolates raw regex syntax (CodeQL
+ *  js/incomplete-sanitization, CORE-2694). */
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 let tempHome = '';
 let stubBin = '';
 
@@ -64,6 +71,6 @@ describe('xt pi status — global package mode without mirrors (xtrm-xnymw, Code
         expect(combined).toMatch(/Scope:\s+global \(package mode\)/);
         // Registration line confirms the global entry is what the diagnostic
         // now bases extension health on.
-        expect(combined).toMatch(new RegExp(`Registration:\\s+${PKG.replace(/[.@/]/g, '\\$&')} \\(global\\)`));
+        expect(combined).toMatch(new RegExp(`Registration:\\s+${escapeRegExp(PKG)} \\(global\\)`));
     });
 });

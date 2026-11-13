@@ -18,6 +18,7 @@ import {
 import { stripEndPeriod } from "../shared/suggest.ts";
 import { repositoryFromRemote } from "../extensions/xtrm-agent-host/index.ts";
 import { isControlNudge, isPeerRelay } from "../extensions/skill-suggest/index.ts";
+import { numberReadText } from "../extensions/read-line-numbers/index.ts";
 
 function timed<T>(fn: () => T): { value: T; ms: number } {
   const start = performance.now();
@@ -131,5 +132,45 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(value).toBe(false);
     expect(isPeerRelay("Coordinator abc: hello")).toBe(true);
     expect(isPeerRelay("a -> b: hi")).toBe(true);
+  });
+
+  it("xtrm-ui:1113/1191 framing scan stays linear and keeps its rules (CORE-2694)", () => {
+    // Unclosed bracket header plus a dash run: the old /^\[[^\]\n]*\][ \t\r]*\n/
+    // and /\n+---\s*\n/ scanned it as one repeated-`\n` blob.
+    const adversarial = "[" + "z".repeat(200000) + "\n" + "-".repeat(200000) + "\n";
+    const { ms } = timed(() => ultraExternalPrimary("bash", [adversarial]));
+    expect(ms).toBeLessThan(100);
+    const payload = "{\"a\":1}" + "\n".repeat(200000) + "---\n";
+    const second = timed(() => ultraExternalPrimary("bash", [payload]));
+    expect(second.ms).toBeLessThan(100);
+    // Behaviour: header line and trailing `---` hint are still stripped.
+    expect(ultraExternalPrimary("bash", ["[GitNexus]\n{\"a\":1}\n---\nhint {x}"])).toBe("{a}");
+    // A body that opens with `---` is content, never a separator: a split
+    // there would leave an empty body and no primary at all.
+    expect(ultraExternalPrimary("bash", ["---\n{\"a\":1}"])).toBe("{\"a\":1}");
+  });
+
+  it("read-line-numbers:39 notice match stays linear (CORE-2694)", () => {
+    const adversarial = "[Showing lines " + "0".repeat(200000) + "\nbody line";
+    const { value, ms } = timed(() => numberReadText(adversarial, 1, false));
+    expect(ms).toBeLessThan(100);
+    expect(value).toContain("1 | [Showing lines ");
+    // Behaviour: the three Pi notices are still recognised verbatim.
+    expect(numberReadText("foo\nbar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]", 1, true))
+      .toBe("1 | foo\n2 | bar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]");
+    expect(numberReadText("foo\n\n\n\n[3 more lines in file. Use offset=4 to continue.]", 1, false))
+      .toBe("1 | foo\n2 | \n3 | \n\n[3 more lines in file. Use offset=4 to continue.]");
+    const banner = "[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' /a/b.txt | head -c 51200]";
+    expect(numberReadText(banner, 1, false)).toBe(banner);
+  });
+
+  it("agent-host:274 trailing-slash trim stays linear (CORE-2694)", () => {
+    const adversarial = "https://github.com/org/repo" + "/".repeat(200000);
+    const { value, ms } = timed(() => repositoryFromRemote(adversarial));
+    expect(ms).toBeLessThan(100);
+    expect(value).toBe("org/repo");
+    // Behaviour: trailing slashes and one .git suffix are still dropped.
+    expect(repositoryFromRemote("https://github.com/org/repo.git")).toBe("org/repo");
+    expect(repositoryFromRemote("git@github.com:org/repo.git/")).toBe("org/repo");
   });
 });

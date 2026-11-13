@@ -48,6 +48,9 @@ function visible(lines: string | string[]): string[] {
   return all.map((l) =>
     l
       .replace(/<[^>]+>/g, "")
+      // A second pass drops any `<` the tag scan left behind, so no partial tag
+      // survives (CodeQL js/incomplete-multi-character-sanitization).
+      .replace(/</g, "")
       // eslint-disable-next-line no-control-regex
       .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""),
   );

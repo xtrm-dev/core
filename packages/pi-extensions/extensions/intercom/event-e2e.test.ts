@@ -47,7 +47,7 @@ function tagTheme(mode: string) {
 function visible(lines: string | string[]): string[] {
   const all = Array.isArray(lines) ? lines : lines.split("\n");
   // eslint-disable-next-line no-control-regex
-  return all.map((l) => l.replace(/<[^>]+>/g, "").replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""));
+  return all.map((l) => l.replace(/<[^>]+>/g, "").replace(/</g, "").replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, ""));
 }
 
 /** Full fake Pi surface: everything intercomExtension touches at registration. */

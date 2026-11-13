@@ -43,7 +43,9 @@ function tagTheme(mode: string) {
 
 function visible(text: string | string[]): string[] {
   const lines = Array.isArray(text) ? text : text.split("\n");
-  return lines.map((l) => l.replace(/<[^>]+>/g, ""));
+  // Second pass drops any `<` the tag scan left behind: the result can never
+  // carry a partial tag (CodeQL js/incomplete-multi-character-sanitization).
+  return lines.map((l) => l.replace(/<[^>]+>/g, "").replace(/</g, ""));
 }
 
 describe("intercom card rendering through the shared module (CORE-2438 I7)", () => {

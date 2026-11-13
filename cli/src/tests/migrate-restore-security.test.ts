@@ -16,14 +16,17 @@ import fs from 'fs-extra';
 import path from 'node:path';
 import os from 'node:os';
 import zlib from 'node:zlib';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const CLI_PATH = path.join(__dirname, '../../dist/index.cjs');
 
 function runCli(args: string[], cwd?: string): { stdout: string; stderr: string; exitCode: number | null } {
   try {
+    // argv, not a shell string: every argument here is a test-supplied path,
+    // so it must never reach a shell (CodeQL
+    // js/shell-command-injection-from-environment, CORE-2694).
     // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
-    const result = execSync(`node ${CLI_PATH} ${args.join(' ')}`, {
+    const result = execFileSync('node', [CLI_PATH, ...args], {
       cwd,
       encoding: 'utf8',
       stdio: 'pipe',
