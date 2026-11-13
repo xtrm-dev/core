@@ -28,7 +28,8 @@ string compare client-side for idempotency.
   the expected old parent, post-read the new one.
 - Epic create: project + issuetype + summary (+ sprint id, labels). Sprint ids
   are board-local — read them live, never assume.
-- Comments: `POST .../comment {"body": adf(text)}`; verify by re-reading the
+- Comments: only through `post-guard.py <key> <text-file> --run <WORD> [--mention-first]`
+  (`jira.py` refuses a direct comment POST); verify by re-reading the
   comment id you were given, never by reading "the newest comment" (ordering
   puts the newest first, so the last element is the oldest). Read newest-first
   with `orderBy=-created` (lesson: ascending pages misled a cycle report).
@@ -37,16 +38,17 @@ string compare client-side for idempotency.
   cannot catch this one (ISSUE-368, 2026-10-26).
 - PR-link timeline (operator rule): every PR mapped to a ticket gets its link
   posted as a Jira comment (number, branch, merge state); check the PR
-  references the ticket back, report gaps to the coordinator. Mechanics below.
+  references the ticket back, report gaps to the owning lead (the manager when the ticket has no
+  workstream parent). Mechanics below.
 - `scripts/jira.py` prints `HTTP <st>` then JSON capped at 6000 chars: skip the
   first line when parsing, prefer single-issue GETs / `maxResults=1` for
   comment reads.
 - JQL `status = "<name>"` can return 0 rows for a live display name; use the
   status id or `statusCategory` for counts.
-- Same-name status trap: two `Completata` objects existed (10137 carries the
-  rows, 10139 does not) — verify which id the rows carry before excluding.
+- Same-name status trap: two done-status objects with one display name existed
+  (10137 carries the rows, 10139 does not) — verify which id the rows carry before excluding.
 - Shared Jira account: the author field cannot attribute a change to a person;
-  peer attribution is coordinator-stated, record it as such.
+  peer attribution is manager-stated, record it as such.
 - Links: `POST /rest/api/3/issueLink {"type": {"name": "Relates"},
   "inwardIssue": {"key": A}, "outwardIssue": {"key": B}}`.
 - Blocks link: inwardIssue = the blocker, outwardIssue = the blocked; re-read both rows; a script that sees the wrong direction stops (fail-closed helper `blocks_link.py` in `$PM_LANE_DIR`; two wrong-direction slips on 2026-10-30).
@@ -104,7 +106,7 @@ re-derive it.
 
 **Optional rows:** where a prose comment already records the same merge with its merge commit (for
 example a DONE comment naming both the PR and the back-merge), a second formal link is optional —
-propose it as optional and let the coordinator choose.
+propose it as optional and let the orderer choose.
 
 **Backlog and top-up batches** are proposed, never posted blind: one row per `PR | mirror | state |
 link-comment present/MISSING | evidence`, sample-checked live on at least 3 rows before proposing.
@@ -116,8 +118,8 @@ confirm the returned comment id carries the SHA.
 Windows: the two slot fields (ids in config `custom_fields`, see `project-management/references/jira.md`) carry full
 timestamps with an offset, start/due are plain dates, and all four are set together. The offset is per date, not per project (+0200 CEST until
 2026-10-25, +0100 CET after, in `$PM_TIMEZONE`): compute it with zoneinfo, write the offset the slot
-requires, and report UTC in the comment. A Friday slot that claims the CME halt
-cannot run at all — CME closes for the weekend at 21:00Z.
+requires, and report UTC in the comment. A slot inside the halt band (config `window_bands`) on a
+day the venue is closed cannot run at all: check the venue calendar for the slot's date, not only the band.
 
 **Never print a stored timestamp truncated and label it Z.** the window-start field (`custom_fields.window_start`) comes back as
 `2026-10-27T08:00:00.000+0100`; slicing 19 characters yields `08:00` and reporting it as `08:00Z` shifts the
@@ -127,17 +129,18 @@ exactly this reason). Convert with zoneinfo before it reaches any report, ledger
 
 ## Substrate lane
 
-`sb issue claim <ref> --holder <name> --ttl-ms 3600000` (re-claim at
-checkpoints), `sb journal append <ref> --kind <k> --semantic '<json>'`,
+`sb issue claim <ref> --holder <name> --ttl-ms 3600000` (`sb issue renew <ref>` at
+checkpoints; a new claim only after the lease expired), `sb journal append <ref> --kind <k> --semantic '<json>'`,
 `sb issue resume <ref>` after context pressure. Settlement is evidence, not
 closure.
 
 ## Transport and watch mechanics
 
 - On agent-registry failure, retry `SendMessage` once before reporting the
-  flap; the report file + journal entry are the durable channel. Address a peer by its session **name**,
-  never by the `uds:` socket path: the socket form fails with the same registry error while the name form
-  delivers in the same second (three refusals on 2026-10-26, every retry by name succeeded).
+  flap; the journal entry is the durable channel. Address a peer by role or session **name**
+  (`project-management/scripts/route_target.py manager|board_helper`, `--team` for the roster), never by a
+  transport path: a path goes stale when its session ends, while the name resolves to the live session
+  (three refusals on 2026-10-26, every retry by name succeeded).
 - Change-only monitors run in <=30 min legs (tool cap), re-armed each cycle;
   a curl failure prints no line (silent), so every cycle re-checks the
   watched comments directly.

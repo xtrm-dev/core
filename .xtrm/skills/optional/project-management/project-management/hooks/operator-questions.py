@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator-question reminder for coordinator sessions (project-management rule 15, XTRM-763).
+"""Operator-question reminder for coordinator sessions, the manager and the leads (project-management rule 15, XTRM-763).
 
 A coordinator asks the operator a question in chat and forgets it: rule 15 says a pending
 operator item is a Status board ``questions`` row, refreshed when N turns pass without an answer.
@@ -11,7 +11,9 @@ This hook enforces it:
                     No network, no subprocess.
   Stop              count one silent turn. When N have passed and an operator question is open with no
                     current Status board row, emit ONE reminder (decision=block reason, the only Stop output
-                    the model sees) naming the question and the exact ``pm_question.py`` command.
+                    the model sees) naming the question, the exact ``pm_question.py`` command, and the
+                    hand-off to the board helper: one ``@operator`` Jira comment per open question (exact
+                    text + ticket key), which the board helper posts with ``post-guard.py --mention-first``.
                     Once per question per N turns. ``stop_hook_active`` true emits nothing (no loop).
 
 Open questions come from (a) Substrate journal blockers with ``for=operator`` and no later decision that
@@ -19,7 +21,9 @@ references them, on the refs in ``operator_question_refs`` (default: ``epic``); 
 assistant message (a direct question to the operator, or an A/B/C choice block; Italian or English).
 
 Config (pm_config, ~/.config/xtrm/project-management.json): ``operator_question_turns`` (default 5, 0 = off),
-``coordinator_pattern`` (default ``-coord(-[0-9]{1,2})?$``), ``operator_injected_patterns`` (extra regexes for
+``coordinator_pattern`` (default ``-(?:manager|lead|coord)(?:-[0-9]{1,2})?$``: the manager, the leads, and a
+legacy ``-coord`` session, each with an optional ``-<n>`` suffix; ``XTRM_ROLE`` manager|lead|coordinator also
+qualifies; the board helper and workers are not gated), ``operator_injected_patterns`` (extra regexes for
 injected prompts, e.g. your cron prompt prefix), ``operator_question_refs``.
 Non-coordinator sessions and sessions outside a configured project are untouched. Every internal error fails
 open (exit 0, no output) and is appended to $PM_STATE_DIR/operator-questions/errors.log.
@@ -40,7 +44,10 @@ import pm_config  # noqa: E402
 import pm_question  # noqa: E402
 
 DEFAULT_TURNS = 5
-DEFAULT_COORD_PATTERN = r"-coord(-[0-9]{1,2})?$"
+# Same gate as the other hooks: a name ending -manager, -lead or the legacy -coord, each with an optional -<n>
+# (1-2 digit) suffix. The board helper and workers are not gated.
+DEFAULT_COORD_PATTERN = r"-(?:manager|lead|coord)(?:-[0-9]{1,2})?$"
+COORDINATOR_ROLES = ("coordinator", "manager", "lead")
 MAX_REPORTED = 3
 Q_CAP = 300
 
@@ -191,7 +198,7 @@ def session_ident(cwd: str) -> str:
 def is_coordinator(ident: str) -> bool:
     role = os.environ.get("XTRM_ROLE", "")
     if role:
-        return role == "coordinator"
+        return role in COORDINATOR_ROLES
     pattern = str(pm_config.get("PM_COORDINATOR_PATTERN", DEFAULT_COORD_PATTERN))
     try:
         return bool(re.search(pattern, ident))
@@ -336,15 +343,24 @@ def close_hint(q: dict) -> str:
         SCRIPTS / "pm_question.py", q["qid"], shlex.quote(q["ref"]))
 
 
+def jira_hint(q: dict, ref_default: str) -> str:
+    """The board-helper hand-off for one question: exact text and the ticket it goes on."""
+    ref = q.get("ref") or ref_default or "<issue-ref>"
+    return ("\n   Jira: hand the board helper an @operator comment for the Jira ticket of %s (give its key), exact text: %s"
+            % (ref, json.dumps(q["q"], ensure_ascii=False)))
+
+
 def build_reminder(items: list[tuple[dict, str]], owner: str, turns: int, ref_default: str, more: int = 0) -> str:
     lines = ["[operator-questions] %d turns without an operator reply. Open question(s) with no current Status board row "
              "(doc questions/%s, rule 15):" % (turns, owner)]
     for n, (q, status) in enumerate(items, 1):
         verb = "refresh the stale row" if status == "stale" else "file the row"
-        lines.append("%d. %s  (id %s)\n   %s: %s%s" % (n, q["q"], q["qid"], verb, command_for(q, status, ref_default),
-                                                      close_hint(q)))
+        lines.append("%d. %s  (id %s)\n   %s: %s%s%s" % (n, q["q"], q["qid"], verb, command_for(q, status, ref_default),
+                                                        jira_hint(q, ref_default), close_hint(q)))
     if more:
         lines.append("(+%d more open question(s); they are reminded after the next %d turns.)" % (more, turns))
+    lines.append("For each open question, also send the board helper the @operator Jira comment above (exact text and "
+                 "ticket key); the board helper alone posts it, with post-guard.py --mention-first.")
     lines.append("Run it once (fill in any <placeholder>), then continue your task. If the question is no longer open, "
                  "ignore this: it repeats at most once per %d turns." % turns)
     return "\n".join(lines)

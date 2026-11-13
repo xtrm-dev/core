@@ -12,7 +12,7 @@ scripts read a plain JSON list of integers. `set(dict)` yields `{'ids'}`; `int('
 is False; the loader raised nothing and returned an empty set, so the watch reported the lane's own
 comments as foreign and three cycles were spent re-arming.
 
-- Before changing the shape of any file under `~/.cache/<lane>/`, grep for its readers and read the
+- Before changing the shape of any file under `$PM_LANE_DIR/`, grep for its readers and read the
   loader, not just the writer.
 - Normalise at the boundary (`{int(x) for x in raw}`) so either shape works.
 - A file that cannot be parsed must print a warning and never return an empty collection: an empty
@@ -74,15 +74,15 @@ the gap three times (15109, 15110, 15117). A second, subtler failure came from v
 `signed` was checked with `json.dumps(body)`, and ADF serialises the em-dash as `\u2014`, so a
 comment that did carry the lane signature was reported as unsigned.
 
-- One write helper that stamps a lane signature, POSTs, and records the returned comment id before
-  returning. The signature also lets the watch's text filter catch a lane comment whose id has not
+- One write helper (`post-guard.py`) that stamps a lane signature, POSTs, and records the returned
+  comment id before returning. The signature also lets the watch's text filter catch a lane comment whose id has not
   reached the ledger yet.
 - Verbatim relayed text is the one exception: post it unsigned, rely on the atomic ledger write, and
-  say in the comment that the text is the coordinator's verbatim.
+  say in the comment that the text is the orderer's verbatim.
 - Assert on parsed content, never on serialised bytes: flatten the ADF to text first, then compare —
   and treat a `hardBreak` node as a newline while flattening. Without it every multi-line relay reports a
   false mismatch (2026-10-26: the first comparison said `False` on text that had posted character-identical).
-- Verbatim relay: write the coordinator's text to a file, post from the file, read back by the returned id,
+- Verbatim relay: write the orderer's text to a file, post from the file, read back by the returned id,
   compare byte-for-byte (both lengths and characters), and report the id with both lengths. A read-back by
   "newest comment" is not a read-back: ordering puts newest first.
 
@@ -126,17 +126,17 @@ void. Both readings are wrong and neither announces itself.
 
 The durable form names a role and carries a check the reader can execute:
 
-- Name the owning object, not the person: the claim holder of the coordinator issue, and require that claim to
+- Name the owning object, not the person: the claim holder of the manager's issue, and require that claim to
   be **live**. A holder whose claim has lapsed is not an authority, so the reader escalates instead of
   publishing — the case a name-only gate silently gets wrong, in the same shape as reading an empty caller
   set as an all-clear.
 - Carry the role's validity window and the executed check **with its timestamp**. A value copied at handover
-  time is already wrong: the coordinator claim moved 69 → 72 generations inside one night.
+  time is already wrong: the manager's claim moved 69 → 72 generations inside one night.
 - Write the state the gate certifies into the file, not only the prohibition. "NOT PUBLISHED, verified
   <when> by <how>" lets a reader verify instead of trust.
 
-Worked instance 2026-10-27: a grains HOLD marker required "mon-coord's word plus confirmation" after that
-coordinator handed the board over and stopped. The marker was amended to name the current coordinator with its
-uds address, to date and reason the authority change inside the file, and to carry the hold's own verified
-state. Reader-executable check: `sb issue show <coordinator issue> --json` → `.data.claim.holder` plus a
-future `expiresAt`, and the coordinator's uds socket present under `/run/user/1000/cc-socks/`.
+Worked instance 2026-10-27: a HOLD marker required "mon-coord's word plus confirmation" after that
+session handed the board over and stopped. The marker was amended to name the role (the manager) instead of
+a session, to date and reason the authority change inside the file, and to carry the hold's own verified
+state. Reader-executable check: `sb issue show <manager issue> --json` → `.data.claim.holder` plus a
+future `expiresAt`, and `project-management/scripts/route_target.py manager` resolving to that live session.

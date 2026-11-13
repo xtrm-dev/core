@@ -13,7 +13,9 @@ Resolution order for every setting:
 3. The default in the script, if there is one.
 
 A required setting that is missing stops the script with its name. The shell scripts (`scheduler.sh`,
-`cycle-run.sh`) read `PM_LANE_DIR` and `PM_STATUS_BOARD_UNIT` from the environment only.
+`cycle-run.sh`) follow the same order: an exported `PM_PROJECT`, `PM_LANE_DIR` or `PM_STATUS_BOARD_UNIT` wins,
+else they ask `pm_config.py` (`project`, `get PM_LANE_DIR`, `get PM_STATUS_BOARD_UNIT status-board-sync.service`),
+so a value in the config file works for them too.
 
 Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured as described in
 `project-management/references/setup.md`.
@@ -34,19 +36,19 @@ Jira access (`JIRA_SITE`, `JIRA_TOKEN_FILE`, `PM_OPERATOR_EMAIL`) is configured 
 | `PM_EPIC` | `epic` | Project epic ref in Substrate (journal read by deploy-check; ignored as a row ref by the drift check). | cycle, deploy-check |
 | `PM_CI_WORKFLOW` | `ci_workflow` | Name of the nightly CI workflow. | heavy-stuck |
 | `PM_OPERATOR_ACCOUNT_ID` | `operator_account_id` | Operator's Jira account id. | router, cycle |
-| `PM_OPERATOR_NAME` | `operator_name` | Operator's Jira display name. | router |
+| `PM_OPERATOR_NAME` | `operator_name` | Operator's Jira display name (how `operator_names`, `operator_name` and `operator_handle` relate: project-management/references/setup.md). | router |
 | `PM_JIRA_LABEL` | `jira_label` | Project label; used only to build a default `status_board_jql`. | cycle |
 | `PM_CUTOFF` | `cutoff` | Project cut-off, `YYYY-MM-DD HH:MM` (UTC). Rows and merges before it are ignored. | cycle |
 | `PM_STATUS_BOARD_JQL` | `status_board_jql` | JQL of the Status board filter, verbatim. | cycle |
 | `PM_PROD_PATH_REGEX` | `prod_path_regex` | Regex of repository paths and service names whose change is a production change (check 8). Default: generic schema/compose markers only. | cycle |
 | `PM_EXCEPTIONS_EPIC` | `exceptions_epic` | Jira key whose comments record the no-window exceptions. Unset: no exceptions. | cycle |
 | `PM_CONTAINER_PREFIX` | `container_prefix` | Common container-name prefix, stripped when a journal entry is matched. | deploy-check |
-| `PM_BOT_INBOX` | `bot_inbox` | JSONL inbox of operator comments that mention the bot. | route-watch |
-| `PM_ANSWERS_INBOX` | `answers_inbox` | JSONL inbox of Status board answers. | route-watch |
+| `PM_BOT_INBOX` | `bot_inbox` | JSONL inbox of operator comments that mention the bot, written by the bot watcher; its `config.json` (the bot account id) sits in the same directory. One path for every reader: the router reads the inbox, `status_board_sync.py` the config beside it. Default `<state_dir>/xtrm-bot-watch/inbox.jsonl`. | route-watch, status_board_sync |
+| `PM_ANSWERS_INBOX` | `answers_inbox` | JSONL inbox of Status board answers: `status_board_sync.py` appends, the router reads. Default `<status_board_state_dir>/answers-inbox.jsonl`; set it only to move both ends. | route-watch, status_board_sync |
 | `PM_LANE_HOLDER` | `lane_holder` | Substrate holder name for writes through post-guard. Default `board-lane`. | post-guard |
 | `PM_LANE_WATCHDOG` | `lane_watchdog` | Optional module with `sync(unwatched, detail) -> str`, called by deadman to publish an unwatched lane. Unset: the alarm stays in `events.log`. | deadman |
 | `PM_STATUS_BOARD_UNIT` | `status_board_unit` | systemd user unit of the Status board sync. Default `status-board-sync.service`. | scheduler.sh |
-| `COORD_SOCK` | (env only) | Manual override of the lead's address. Unset, route-forward resolves the `lead` role (`project-management/scripts/route_target.py`) and refuses when no single live lead exists. | route-forward |
+| `PM_ROUTE_ROLES`, `PM_AGENT_HOST_INFO`, `PM_MATCH_DIRS` | `route_roles`, `agent_host_info`, `match_dirs` | Routing roles and the live-session registry (project-management/references/setup.md, "Routing roles"). | route-forward, deadman |
 
 ## Structured settings (config file)
 
@@ -75,10 +77,10 @@ Example fragment (placeholder values):
 
 ```json
 {
-  "lane_dir": "~/.local/state/board-lane",
-  "repo_dir": "~/src/example-service",
-  "repo_slug": "example-org/example-service",
-  "repo_name": "example-service",
+  "lane_dir": "~/.local/state/pm/example/lane",
+  "repo_dir": "~/projects/example-repo",
+  "repo_slug": "example-org/example-repo",
+  "repo_name": "example-repo",
   "jira_project": "PROJ",
   "sb_prefix": "SB",
   "epic": "SB-100",
@@ -99,12 +101,11 @@ Example fragment (placeholder values):
   "cycle_controls": {"readonly_control_ref": "SB-200", "lane_control_ref": "SB-201",
                      "deep_probe_control": "SB-202", "deep_probe_control_expect": "PROJ-2"},
   "container_paths": [{"prefixes": ["api/"], "containers": ["svc-api"]},
-                      {"prefixes": ["workers/"], "match": "ingest", "containers": ["svc-ingestor"]}],
+                      {"prefixes": ["workers/"], "match": "feed", "containers": ["svc-feed"]}],
   "wp_known_binding": ["PROJ-3", 42],
   "route_control_cases": [["PROJ-4", "10001", "decision", "operator question still open"]],
-  "bot_inbox": "~/.local/state/xtrm-bot-watch/inbox.jsonl",
-  "answers_inbox": "~/.local/state/status-board/answers-inbox.jsonl",
-  "sb_snapshot": "~/.local/state/board-lane/sb-all.json"
+  "bot_inbox": "~/.local/state/pm/example/xtrm-bot-watch/inbox.jsonl",
+  "sb_snapshot": "~/.local/state/pm/example/lane/sb-all.json"
 }
 ```
 
@@ -121,7 +122,7 @@ Example fragment (placeholder values):
 | `due-check.py` | `lane_dir`, `jira_project`, `custom_fields` |
 | `route-watch.py` | `lane_dir`, `bot_inbox`, `answers_inbox`, `operator_account_id`, `operator_name` |
 | `route-jira.py` | as route-watch, plus `jira_project`; optional `operator_names` |
-| `route-backlog.py`, `route-forward.py`, `mark-routed.py`, `mark-sent.py`, `oneshot.py`, `deadman.py` | `lane_dir` (deadman: optional `lane_watchdog`) |
+| `route-backlog.py`, `route-forward.py`, `mark-routed.py`, `mark-sent.py`, `oneshot.py`, `deadman.py` | `lane_dir`; route-forward and deadman also reach the agent host (`agent_host_info`, `route_roles`); deadman: optional `lane_watchdog` |
 | `route-controls.py` | as route-watch, plus `route_control_cases` |
 | `post-guard.py` | `lane_dir`; optional `lane_holder` |
 | `dup-probe.py` | `jira_project` |
@@ -133,9 +134,13 @@ Example fragment (placeholder values):
 
 ## Routing
 
-`route-forward.py` prints `SEND-TO <address>`: the one live session holding the `lead` role, resolved at that moment
-(project-management/references/setup.md, "Routing roles"). `deadman.py` raises `ALARM ROUTE-TARGET lead|board_helper`
-when a role has no live session or several, so a missing lead is visible before an operator message waits on it.
+The board helper alone decides where an operator comment goes. `route-forward.py <id>[,<id>...]` prints
+`SEND-TO <address>` with a default: the one live session holding the `manager` role, resolved at that moment
+(project-management/references/setup.md, "Routing roles"). `route-forward.py <ids> --to <name>` prints a named live
+session instead (a lead, by session name or worktree address); it refuses a name with no single live session. There
+is no environment override (the former `COORD_SOCK` is removed). `deadman.py` raises
+`ALARM ROUTE-TARGET manager|board_helper` when either role has no live session or several, so a missing manager is
+visible before an operator message waits on it. Leads are not checked: several live leads are normal.
 
 ## Running the lane
 

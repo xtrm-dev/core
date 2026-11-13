@@ -3,14 +3,15 @@ name: board-audit
 description: >
   Run Jira board audits and mutation batches for one project's board
   (instance settings in references/setup.md) the wed-board way: snapshot live state, propose row-by-row with
-  evidence, apply strictly on the coordinator's word with before/after
-  re-reads, verify, and journal with --semantic. Use for board cleanups,
-  window scheduling, theme restructures, and pre-window precondition checks —
-  in interactive sessions and as the injected skill of board-audit roles.
-  Also the skill of the continuous xt pi board helper and of the ROUTER: the
-  one lane that reads the operator's inbound channels, forwards decisions, and
-  writes every comment through a single guarded path.
-version: 1.6.0
+  evidence, apply strictly on the orderer's word (the owning lead, or the
+  manager) with before/after re-reads, verify, and journal with --semantic.
+  Use for board cleanups, window scheduling, theme restructures, and
+  pre-window precondition checks — in interactive sessions and as the injected
+  skill of board-audit roles. Also the skill of the board helper (`board-helper`,
+  role board-audit-runner): the only Jira writer, the owner of the lane
+  processes, and the router that alone reads the operator's inbound channels,
+  decides where each comment goes, and writes every comment through one guarded path.
+version: 1.7.0
 ---
 
 # Board audit (wed-board pattern)
@@ -32,20 +33,22 @@ sample check is discarded, not applied.
 
 ## 2. Propose, do not apply
 
-Write the proposal to a scratch file (`$PM_LANE_DIR/`): one row per item —
-key | current | should be | evidence (link/seq/SHA) | action. Proposal-only is
-the default. A coordinator message relayed second-hand is not approval; only a
+Draft the proposal in `$PM_LANE_DIR/`: one row per item —
+key | current | should be | evidence (link/seq/SHA) | action. Then post it to its
+system of record (a `note` journal entry on the helper's issue, sent to the orderer
+with its seq); a draft file nobody received is not a proposal. Proposal-only is
+the default. A lead's or manager's message relayed second-hand is not approval; only a
 direct word in this task (or a `specialist_reply` answer) unlocks writes.
 
 ## 3. Apply on the word, row by row
 
 Re-read each row live BEFORE the write (status, parent, dates, labels), apply
 exactly the ruled change, re-read AFTER, report old→new with evidence. Jira
-transitions need the transition id re-read from the issue first (Done/Completata
-is usually 45, Blocked 101, Won't Do 111 — verify, never assume).
+transitions need the transition id re-read from the issue first (on the reference board
+the done status is 45, Blocked 101, Won't Do 111 — verify, never assume).
 Trap: 101 is Blocked on one Jira project but Deferred on another — read the table for the
 project you write to, then `GET .../transitions` and confirm `to.name`.
-Trap (2026-10-30): JQL `status = Completata` returns ZERO rows (quoted or not) while the rows exist; use `statusCategory = Done` plus a client-side exact-name filter, and never scope a terminal-status query by `labels = $PM_JIRA_LABEL` (closed rows drop that label). Prove every zero with a positive control.
+Trap (2026-10-30): JQL `status = <localised done status>` returned ZERO rows (quoted or not) while the rows existed; use `statusCategory = Done` plus a client-side exact-name filter, and never scope a terminal-status query by `labels = $PM_JIRA_LABEL` (closed rows drop that label). Prove every zero with a positive control.
 Trap (2026-10-30): `POST .../transitions` with `update.comment.add` returns 204 and silently drops the comment; post comments separately (`POST .../comment`) and re-read the comment list before reporting an id.
 Stop at the
 first failed check and roll back that row only.
@@ -92,9 +95,9 @@ mirrors on 2026-11-01, because they add noise. Build the body with a link-aware 
 text looks correct by eye.
 
 **Mention-first comments.** The `@operator` token must become a real ADF mention node, and some comments
-must OPEN with it. `post_comment()` always prepends the agent header, which displaces the mention from
-node 0, so for a mention-first comment build the body with `jira.adf(text)` and post it through
-`jira.call`, appending the agent tag as the last paragraph. Assert, do not assume: the text being right is
+must OPEN with it. Post them with `post-guard.py <KEY> <text-file> --run <WORD> --mention-first`: the guard
+puts exactly one mention at node 0, appends the agent tag as the last paragraph, and asserts on read-back.
+Never build the body by hand: `jira.py` refuses a comment POST outside the guard. The text being right is
 not proof the mention landed (`content[0].content[0].type == "mention"` is).
 
 Before any new check, prove one positive and one negative control
@@ -122,8 +125,8 @@ fix, session — as a first-class journal entry, not a footnote.
 
 `sb issue claim --holder <name> --ttl-ms 3600000` before edits; journal every
 applied batch, proposal, correction, and wait with `--semantic`
-(`result|note|decision|blocker|handoff`). Claim again at checkpoints; the claim
-owning the lane is the only one that edits it.
+(`result|note|decision|blocker|handoff`). `sb issue renew <ref>` at checkpoints; take a
+new claim only after the lease expired. The claim owning the lane is the only one that edits it.
 
 **Cadence.** One note per HOUR plus one on every state change — not one per 15-minute cycle. The journal is
 read by other lanes; a hundred identical counter notes a day bury the decision that mattered. A state change
@@ -133,14 +136,16 @@ means a status moved, a gate flipped, a channel delivered, a control failed.
 value, the fix and the batch, then report it. A silent fix teaches nobody and leaves two versions of the
 board.
 
-## Continuous helper cycle (xt pi board helper)
+## Continuous helper cycle (board helper)
 
-One `xt pi` worker per coordinator runs this cycle (Muse Spark or the pi default; one process, no
-Claude, no subagents). Launch syntax: `project-management/references/launching.md`, "Dispatch
-surface". Jira calls go through `project-management/scripts/jira.py`. Writes follow steps 2-3
-above unless the coordinator has allowed a class of mechanical fixes in writing on the helper's issue.
+One board helper per project (session `board-helper`, role board-audit-runner) runs this cycle as an
+`xt pi` worker (Muse Spark or the pi default; one process, no Claude, no subagents). Launch syntax:
+`project-management/references/launching.md`. It is the only Jira writer: leads order their own Jira
+moves through it, the manager orders the rest. Jira calls go through `project-management/scripts/jira.py`.
+Writes follow steps 2-3 above unless the manager has allowed a class of mechanical fixes in writing on
+the helper's issue.
 
-Every cycle (default every 30 min; the coordinator sets the interval in the helper's contract):
+Every cycle (default every 30 min; the manager sets the interval in the helper's contract):
 1. **Hygiene filters.** Run the three saved filters in config `hygiene_filters` ("Open without dates",
    "Overdue, not done", "Next 48 hours"; ids per board). Report every row with key, missing field or slot, and owner.
    The "Open without dates" filter matches every non-Done Task/Story without a due date — 100+ rows, past the 100-row page —
@@ -150,14 +155,14 @@ Every cycle (default every 30 min; the coordinator sets the interval in the help
 3. **Status drift.** For every Substrate issue closed, claimed or merged today (`sb journal`,
    `gh pr list --state merged --search "merged:>=<today>"`), read the mirrored Jira item. The status must match
    the event (`project-management/references/jira.md`, event-to-status table). Report each
-   mismatch with both states and the evidence. Fix it only when the coordinator allowed status fixes.
+   mismatch with both states and the evidence. Fix it only when the orderer allowed status fixes.
 4. **PR-link top-up.** Every PR mapped to a ticket needs its formal link comment, and merges keep
    arriving after any backfill. Each cycle: list PRs merged or opened since the last ledger stamp
    (`merged:>=` search per repo, never a `--limit` list), check each ticket's comment list for a
    comment in the `PR-link <PM_REPO_NAME>#<n> (head <sha>, <state>)` shape, and propose the missing rows.
    A passing mention in a status comment does not count (`references/batch-protocol.md`,
-   "PR-link timeline"). Post only on the coordinator's word; from 2026-10-30 sat31-coord made a
-   PR-link backfill standing authority (c), so that class needs no fresh word, only the report.
+   "PR-link timeline"). Post only on the manager's word; a PR-link backfill is standing authority (c)
+   since 2026-10-30 (sat31-coord ruling), so that class needs no fresh word, only the report.
    **Match both shapes and anywhere in the body.** The comments in use read
    `PR-link https://github.com/<org>/<repo>/pull/<n> (head <sha>, merged <ts>)`, usually behind an
    `[agent:<name> | run:<id>]` prefix, so a `startswith('PR-link <PM_REPO_NAME>#')` test reports zero on a
@@ -169,39 +174,47 @@ Every cycle (default every 30 min; the coordinator sets the interval in the help
    `labels = "prog:<project>"` scope on purpose: Jira's `updated` is answered from the search index,
    which lags, and a 30-minute window can miss a comment twice and lose it), read every comment newer than
    the cursor (`$PM_LANE_DIR/comment-cursor`), and route it: see "The router role" below. Mechanical
-   board effects are applied only within a class the coordinator allowed in writing; everything else is a
+   board effects are applied only within a class the manager allowed in writing; everything else is a
    proposal. Own PR-link timeline comments advance the cursor and are never self-flagged.
-6. **Cycle report** to the coordinator every 2 h (`SendMessage` to `$XTRM_DISPATCHER_NAME`, plus a file
-   `$PM_LANE_DIR/CYCLE-<HHMM>Z.md` stamped from `date -u` in the same command): counts per check,
-   rows needing action, fixes applied with old->new, comments needing a decision. A clean cycle is one line.
-   Between cycles, message the coordinator only for a decision, an operator comment that needs one, a defect that changes a
+6. **Cycle report** to the manager every 2 h (`SendMessage` to the session that
+   `project-management/scripts/route_target.py manager` resolves, plus a `result` journal entry on the
+   helper's issue; the lane file `$PM_LANE_DIR/CYCLE-<HHMM>Z.md`, stamped from `date -u` in the same
+   command, is state the scripts read, not the record): counts per check, rows needing action, fixes
+   applied with old->new, comments needing a decision. A clean cycle is one line.
+   Between cycles, message the manager (or the owning lead, for its workstream) only for a decision, an operator comment that needs one, a defect that changes a
    window today, a production anomaly or a data-correctness finding; write confirmations of ordered writes as ONE message per order batch (ids, re-read result), and put self-corrections
    and instrument changes in the journal and the next cycle report, not in separate messages (project-management rule 40). The
-   coordinator orders by intent; you word the Jira text in plain language unless the order says "verbatim".
+   orderer orders by intent; you word the Jira text in plain language unless the order says "verbatim".
    Journal one `note` per hour and on every state change (see step 5). Pin paths:
    cursor `$PM_LANE_DIR/comment-cursor`, reports `$PM_LANE_DIR/CYCLE-<HHMM>Z.md` —
    convergent helpers, auditable cycles.
 7. **Close sweep.** List, as one proposal batch per cycle, two populations: (a) every Substrate issue that has a
    result entry and is still open (`sb issue list --project $PM_SB_PROJECT_ID` filtered on result entries, cross-checked
    against `lifecycleState != closed`); (b) every Jira row not Done whose Substrate issue is closed (status
-   drift already detects these; re-list them here as a close proposal). Send the batch to the coordinator in
-   ONE message. The coordinator orders the closes and transitions in one word; you write nothing without that
-   word — no Jira transition, no Substrate close, no comment. This sweep is the only path by which a closed
-   Substrate issue or a result-bearing open issue reaches a Jira Done row.
+   drift already detects these; re-list them here as a close proposal). Send each lead the rows of its own
+   workstream in ONE message; send the manager only the rows with no workstream parent (operator ruling
+   2026-11-12). The lead closes its own Substrate issues and orders the Jira transitions in one word; you
+   write nothing without that word — no Jira transition, no Substrate close, no comment. This sweep is the
+   only path by which a closed Substrate issue or a result-bearing open issue reaches a Jira Done row.
 
 Rule 53 (project-management): every Jira ticket order you receive must use the /planning sections in
 plain words (PROBLEM, SUCCESS, SCOPE, NON_GOALS, CONSTRAINTS, VALIDATION, OUTPUT, SCRUTINY). When an order
-lacks one, tell the lead before acting; do not infer the missing section.
+lacks one, tell the orderer (lead or manager) before acting; do not infer the missing section.
 
-The helper never edits repos, never touches production, and never closes Substrate issues.
+The helper never edits repos, never touches production, and never closes Substrate issues. It owns the
+lane processes: it alone starts and restarts the scheduler and the dead-man switch, and it keeps exactly
+one tail on the lane's `$PM_LANE_DIR/events.log`.
 
 ## The router role (operator channels)
 
-One lane is the router: the only reader of the operator's inbound channels and the only filter between them
-and the coordinator, who stops reading the inboxes — a decision this lane fails to forward is a decision
-nobody sees. Instrument: `route-watch.py` (MMD-3017, 2026-11-01), every 300 s, one cursor per channel,
+The board helper is the router: the only reader of the operator's inbound channels, and the only one who
+decides where each operator comment goes — to the owning lead when it concerns a workstream, to the manager
+otherwise (GOs, windows, merges, rulings, staffing). Leads and the manager do not read the inboxes, so a
+decision this lane fails to forward is a decision nobody sees. Address by role or session name
+(`project-management/scripts/route_target.py manager|board_helper`, `--team` for the roster), never by a
+transport path. Instrument: `route-watch.py` (MMD-3017, 2026-11-01), every 300 s, one cursor per channel,
 printing the trigger it matched on every line so a misroute can be argued with instead of guessed at.
-Channels: `~/.cache/xtrm-bot-watch/inbox.jsonl` and the Status board answers file its sync writes.
+Channels: the bot inbox (setting `PM_BOT_INBOX`) and the Status board answers inbox (`PM_ANSWERS_INBOX`).
 
 **Forward AT ONCE** when the comment needs a decision: a GO or approval, a refusal, a halt, an explicit
 question, a production or window matter, a secret or access matter, or a substantive answer with no other
@@ -276,7 +289,8 @@ ticket to learn what this one is about has been given a pointer, not a brief.
 ### Output, per new ticket
 
 `DUPLICATE-OF / MERGE-WITH / RELATES-TO / CLEAN`, plus `THIN yes/no`, one line of evidence for each
-verdict. **Propose; do not act.** The coordinator rules on merges and closures; this lane does not
+verdict. **Propose; do not act.** The owning lead rules on merges and closures in its workstream, the
+manager on the rest; this lane does not
 close Substrate issues or merge Jira tickets. It **does** enrich thin Jira text itself, because it owns
 Jira writes — enrichment is a description edit, not a disposition.
 
@@ -292,7 +306,7 @@ Jira writes — enrichment is a description edit, not a disposition.
   expired, not unlabelled, not dateless, and its status is a legal status. Check the PR state against
   `origin/stable` and the running image, not against the ticket's status word; if the change is live, clear the
   slot and close the window with the shipped evidence (coordinator ruling 2026-10-25, ISSUE-331: #936 merged
-  10-20 and deployed in feed `e249fcbce`, slot cleared, Completata).
+  10-20 and deployed in feed `e249fcbce`, slot cleared, closed done).
 - **A ticket whose step ran but which has a later step is re-slotted, not closed.** "The work happened in
   the slot" is about the row's step, not the ticket: ISSUE-395's verifier ran inside its 08:07-08:37Z slot
   on 10-26 and one apply still waited for Tuesday's cron, so the row moved to 2026-10-27 07:17-07:47Z with
@@ -336,7 +350,7 @@ Jira writes — enrichment is a description edit, not a disposition.
   four messages and a withdrawn report; the ordering check would have caught it before the send.
 - **A cycle check that mirrors a Jira filter uses that filter's exact predicate, and every new check gets a
   positive and a negative control before its numbers are reported.** When a cycle counter duplicates a saved
-  filter (10065/10055/10056), read the filter's JQL and implement the same predicate, including its exclusions;
+  filter (config `hygiene_filters`), read the filter's JQL and implement the same predicate, including its exclusions;
   if the two disagree the cycle prints `FILTER-DISAGREEMENT` and the cycle side is presumed wrong until shown
   otherwise. Controls are not optional: the positive one must flag an item you can already see is a hit, and the
   negative one must decline an item you know is not (a folded ticket, a slot that has not ended, a file the
@@ -344,12 +358,12 @@ Jira writes — enrichment is a description edit, not a disposition.
   "none" is a measurement only after the instrument has said "yes" to a case whose answer you know. Three
   instances in two days, each fixed on the narrow side: the freeze classifier matched the rotation by subset
   rather than file-set equality; `gh()` parsed stdout as JSON so `--jq '.[].filename'` returned `[]` and every
-  PR looked file-less; the overdue check tested "past its date" where filter 10055 tests "workable and past its
+  PR looked file-less; the overdue check tested "past its date" where the saved overdue filter tests "workable and past its
   date", so a ticket folded into ISSUE-352 was reported late (ISSUE-335, 2026-10-26).
 - **Related is not a precondition.** When two artefacts touch, say which one the fix actually needs. A
   defect whose cause is a name mapping is fixed by the mapping even when the data was already present:
-  the uploaded VX history was called a precondition for MMD-2902 when the calibration only needed the
-  October-2026 closes that QuestDB already held under the `-CFE` names (sun-coord correction 2026-10-25).
+  the uploaded history was called a precondition for MMD-2902 when the calibration only needed the
+  October-2026 closes the database already held under other symbol names (sun-coord correction 2026-10-25).
   Check what the contract says the fix needs before promoting an adjacency into a dependency.
 - **One row, one writer.** Another lane may hold write access to the same board: from 2026-10-26 the operator's own
   board-cleanup agent writes Jira directly. Before every write this lane makes, re-read the row live
@@ -361,16 +375,16 @@ Jira writes — enrichment is a description edit, not a disposition.
   pick the friendlier number.
 - Status comments are plain language: what/why/evidence/UTC + ruling ref.
 - **Plain writing for humans.** Jira descriptions and comments are read by operators, not machines. Write short plain sentences. Lead with what changed and what the operator needs to do. Keep ids and SHAs to one line at the end. No bullet walls, no robotic enumeration, no "as per" or "in accordance with". Operator ruling 2026-11-01 (B379): our output read too robotic; apply this to every post from now on.
-- **Post operator comments only through `jira.py comment`.** That path converts the `@operator` token into a real
-  Jira mention node (`$PM_OPERATOR_ACCOUNT_ID`); a hand-built ADF `text` node renders `@operator` as plain text and
+- **Post operator comments only through `post-guard.py <KEY> <text-file> --run <WORD> --mention-first`.** The guard
+  converts the `@operator` token into a real Jira mention node (`$PM_OPERATOR_ACCOUNT_ID`); a hand-built ADF `text` node renders `@operator` as plain text and
   notifies nobody, so an operator request can sit unseen while the board shows it posted. On 2026-10-31 comments
   16121 (ISSUE-561) and 16102 (ISSUE-198) were posted that way: both read correctly by eye and neither carried a
-  mention. Fix in place with `PUT /rest/api/3/issue/<key>/comment/<id>` carrying the mention node as the first node,
+  mention. Fix in place with `post-guard.py <KEY> <text-file> --run <WORD> --mention-first --update <id>`,
   then re-read by id and assert `content[0].content[0].type == "mention"` with the right account id — the text being
   unchanged is not proof the mention landed.
-- Peer fact-report text on its own issue may be posted after the coordinator's
-  one-line OK (weekend-coord ruling 2026-10-24); anything else needs the
-  coordinator's direct word, never a peer relay.
+- Peer fact-report text on its own issue may be posted after the owning lead's
+  or the manager's one-line OK (weekend-coord ruling 2026-10-24); anything else
+  needs the orderer's direct word, never a peer relay.
 - Relates links are the lane between windows and themes; Epics take sprints,
   Epics have no parents.
 - Idempotency: search label + exact-summary compare before every create;
@@ -382,7 +396,8 @@ Jira writes — enrichment is a description edit, not a disposition.
   every lane's test and push gate (MMD-3017 pi V4 sweep, 2026-10-28 22:25Z). Resolve hierarchical refs
   (`MMD-2331.69.1`) to flat ids before matching Jira labels, with a positive control.
 - Never edit project repos, never touch production (no deploys, merges,
-  restarts, timers). Nothing in this skill authorizes a production change.
+  production restarts or timers; the lane's own processes are the helper's).
+  Nothing in this skill authorizes a production change.
 - One window per change, DRY first where the runbook demands it, deploy only
   inside the window's slot.
 
@@ -409,7 +424,7 @@ rules. Authoring changes go through `/agentrun-author`.
 with the Blocked-101 trap. Jira ids live in `project-management/references/jira.md`; board
 discipline (window closing, slot clearing, one plan per day) lives there too.
 
-`references/waiting-production-audit.md` — the Waiting Production audit (MMD-3180, 2026-10-30): "deployed" means the merge is an ancestor of the RUNNING export SHA of every container the PR touches (`make deploy-status`), never of `stable`; a row is WP when every build vehicle is merged and no prerequisite whose output its own step consumes has yet to run; bind a row to its governing vehicle, not to any `#n` mention.
+`references/waiting-production-audit.md` — the Waiting Production audit (MMD-3180, 2026-10-30): "deployed" means the merge is an ancestor of the RUNNING image SHA of every service the PR touches (the project's deploy-status command), never of `stable`; a row is WP when every build vehicle is merged and no prerequisite whose output its own step consumes has yet to run; bind a row to its governing vehicle, not to any `#n` mention.
 
 Judge instrument (rule for every Jev or model judge node in this skill): no node is trusted before a calibration harness passes on a held-out seed (MMD-2673), and a Jev-only verdict caps at REVIEW. MANIFEST.json lacks the model id (H20), so record `PM_AUDIT_MODEL` in the run's journal entry.
 
@@ -421,7 +436,8 @@ interfaces (read the consumer before reshaping one), prove a filter before trust
 watcher that advances its own baseline, and one write path that identifies itself. Read it before
 changing anything under `$PM_LANE_DIR/`.
 
-First-time setup (prerequisites, variables, config keys per script family): `references/setup.md`.
+First-time setup (prerequisites, variables, config keys per script family): `references/setup.md`; the lane's
+own settings and processes: `references/setup-lane.md`.
 
 Scripts: `scripts/run-audit.sh` (driver), `scripts/facts.py` (snapshot + facts + selftest),
 `scripts/aggregate.py` (odd-N majority), `scripts/check.py` (guard before committing). Workflow:
@@ -429,8 +445,9 @@ Scripts: `scripts/run-audit.sh` (driver), `scripts/facts.py` (snapshot + facts +
 
 Continuous helper (lane) scripts live in `scripts/lane/`: `scheduler.sh` (the loop, one process owns every due-time),
 `cycle-run.sh` + `cycle/cycle.py` (one read-only pass, one `CYCLE-<HHMM>Z.md`, one summary line), `wp-audit.py`,
-`route-watch.py`, `deadman.py`, `lane-watchdog.py`, `post-guard.py`, `mark-sent.py`, `route-forward.py`. These are
-durable copies; the scheduler runs from here. Per-lane state (events.log, pending-routes.jsonl, own-writes.txt,
+`route-watch.py`, `deadman.py`, `post-guard.py`, `mark-sent.py`, `route-forward.py`. These are
+durable copies; the scheduler runs from here. `deadman.py` loads an optional local watchdog module from the
+setting `PM_LANE_WATCHDOG`; none ships with the pack. Per-lane state (events.log, pending-routes.jsonl, own-writes.txt,
 CYCLE-*.md, WITHHELD-*.json) stays in `$PM_LANE_DIR/` and is not committed.
 Board hygiene and status drift with live positive/negative controls: `scripts/cycle/hygiene_cycle.py` (predicates H1-H4, O1, N1-N2, one real control pair per predicate, and a Jira-side drift sweep; `--since=<date>` replays a day to prove the instrument); predicates and control rules in `references/hygiene-predicates.md`. Code readiness of epic children (is the code built, in a PR, partial or missing): `scripts/readiness/run-readiness.sh`
 with `workflows/code-readiness-v1.json`; cookbook row and lessons in `references/agentrun.md`.

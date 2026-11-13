@@ -43,10 +43,10 @@ shape defects (no `not_applicable`, a model node transcribing verdicts), not for
 
 ```sh
 export AGENTRUN_PI_ROOT="$(npm root -g)/@parcha/agentrun-pi"
-export JIRA_EMAIL=...            # required, no default
+export PM_OPERATOR_EMAIL=...     # required, no default (setup.md)
 export JIRA_TOKEN_FILE=~/.secrets/atlassian-api-token.txt
 
-cd skills/optional/project-management/board-audit
+cd ~/.xtrm/skills/optional/project-management/board-audit
 python3 scripts/check.py                 # literals + selftest, before anything else
 ./scripts/run-audit.sh 3 2026-10-22      # snapshot -> 3 runs -> majority
 ```
@@ -63,7 +63,7 @@ python3 scripts/check.py                 # literals + selftest, before anything 
    check is discarded, not applied. The check is a 5-item list, not a feeling: oracle present?
    evidence quotes the relied-on fact? counts reconcile? snapshot younger than one hour?
    input hash recorded in the batch proposal?
-6. **Apply** row by row per the apply protocol, on the coordinator's word. The workflow never
+6. **Apply** row by row per the apply protocol, on the orderer's word (owning lead, or manager). The workflow never
    writes to Jira, Substrate or GitHub.
 
 ## The two authoring rules that decide whether a batch is worth running
@@ -78,7 +78,7 @@ python3 scripts/check.py                 # literals + selftest, before anything 
    precomputed, it belongs to S4 (is this one deploy in one slot?) and nowhere else.
 
 Both halves, stated once: a stable rubric can be stably **wrong**, so the snapshot facts are the
-thing to test, and a verdict is a claim, so no harness verdict substitutes for a coordinator's
+thing to test, and a verdict is a claim, so no harness verdict substitutes for the manager's
 Verified OK.
 
 ## Heavy Substrate context: pre-export, never live-fetch

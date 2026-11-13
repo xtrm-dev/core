@@ -266,7 +266,7 @@ STATE_DB = os.environ.get("POST_GUARD_STATE_DB") or os.path.expanduser("~/.xtrm/
 def _parenthetical(text, start):
     """The balanced parenthetical that starts at/after `start` (whitespace allowed), or None.
 
-    A title can contain parentheses of its own ("Volatility HMM on CME trade-date bars (no Sunday stubs)"), so a
+    A title can contain parentheses of its own ("Volatility model on trade-date bars (no Sunday stubs)"), so a
     naive "paren then no parens" pattern would truncate it and then refuse a correct citation. Depth-counted.
     """
     i = start

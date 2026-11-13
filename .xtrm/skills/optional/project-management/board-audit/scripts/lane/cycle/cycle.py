@@ -99,7 +99,7 @@ UNROWED_STATE = os.path.join(lanecfg.lane(), "unrowed.json")
 UNROWED_MAX_PER_CYCLE = 60   # blocks per batch file; the COUNT is never capped
 UNROWED_REPROPOSE_DAYS = 7   # proposed once, then silent unless still unrowed after this many days
 # Rolling horizon for the batch AND for unrowed_done (coordinator ruling 2026-11-13). The first live
-# reading was 1145 unrowed refs under the programme epic - the whole programme's history, so a constant
+# reading was 1145 unrowed refs under the project epic - the whole project's history, so a constant
 # number carried no information after the first cycle. A ref is in the window only when its FINISH TIME
 # is within this many hours: the newest of (a) the timestamp of its newest journal entry of kind
 # `result` and (b) the mergedAt of a merged PR that carries the ref. A ref with neither time source has
@@ -2793,7 +2793,7 @@ def unrowed_rows():
     """(rows, why) - every Jira row of this project with the labels it carries.
 
     ONE paged JQL for the whole check (maxResults 100, follow nextPageToken), and the status comes
-    from the same call when it is asked for. No status filter: a row closed as Completata still means
+    from the same call when it is asked for. No status filter: a row closed as Done (in any UI language) still means
     the work was recorded, so a Done row counts as rowed. Two attempts, never more - the lane runs
     every 15 minutes and must not hammer the API.
     """
@@ -2962,7 +2962,7 @@ def check_unrowed_done(out, counts):
     `sb issue list`, one local state.db read. No Jira write, no row created or moved, ever.
 
     SCOPE (coordinator ruling 2026-11-13): EVERY issue in project prj_mmd, not only the descendants of
-    the programme epic - MMD-4755 lives under MMD-2200 and a parent filter hid it. Issues in other
+    the project epic - MMD-4755 lives under MMD-2200 and a parent filter hid it. Issues in other
     Substrate projects stay out because `sb issue list --project` never returns them.
 
     WINDOW (same ruling): the batch and `unrowed_done` cover only refs whose FINISH TIME is inside the
@@ -3101,7 +3101,7 @@ def check_unrowed_done(out, counts):
         batch = written
 
     out.append(f"- Substrate issues read: **{len(issues)}** in one `sb issue list` ({SB_PROJECT_ID}); "
-               f"done in that project: **{len(done)}** (whole project, not only the programme epic)")
+               f"done in that project: **{len(done)}** (whole project, not only the project epic)")
     out.append(f"- one paged JQL read **{len(rows)}** row(s), carrying {len(row_refs)} distinct substrate "
                f"label(s); one `gh pr list` read **{len(prs)}** merged PR(s); one local state.db read gave "
                f"the newest journal result per issue")
@@ -3117,7 +3117,7 @@ def check_unrowed_done(out, counts):
                f"over the cap, next cycle: **{over_cap}**")
     out.append(f"- memory `{UNROWED_STATE}`: {len(memory)} ref(s) recorded before this cycle")
     out.append("- searched for every ref below: `substrate:<ref>` (and `substrate:<base ref>` when the "
-               "ref is hierarchical) across every row and every status; a Done/Completata row counts "
+               "ref is hierarchical) across every row and every status; a row in any done status counts "
                "as rowed")
     out.append("- this leg PROPOSES ONLY: no Jira write, no row created, moved or closed")
     if batch:

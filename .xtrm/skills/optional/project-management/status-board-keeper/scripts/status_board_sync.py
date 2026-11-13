@@ -18,7 +18,7 @@ here.now Site $PM_STATUS_BOARD_SITE (data API, key in $PM_STATUS_BOARD_KEY_FILE)
     row per waiting ticket {id: w-<key>-<qualifying commentId>, ref, q, rec, why,
     at}, so a Jira filter on op-waiting is the live list. This run is the only
     label writer; the questions/operator-mentions doc is retired (deleted once,
-    after its content is written to $STATUS_BOARD_STATE_DIR/retired-*.json).
+    after its content is written to $PM_STATUS_BOARD_STATE_DIR/retired-*.json).
 
 (b) Workers view: every workers/<name> doc is rewritten from live state.
     tmux list-panes -a gives name (pane title match), where (pane id) and
@@ -46,12 +46,14 @@ here.now Site $PM_STATUS_BOARD_SITE (data API, key in $PM_STATUS_BOARD_KEY_FILE)
     to an adopted row, and only to rows it created are all fields refreshed.
 
 (c) Answer routing: every answers/* row with an 'at' newer than last routed
-    is appended to answers-inbox.jsonl and delivered once to the coordinator
-    that owns the row (questions/<owner> doc -> owner name -> pane address from
-    PM_STATUS_BOARD_OWNER_ADDR; unknown -> PM_STATUS_BOARD_FALLBACK_OWNER).
-    FILE-ONLY owners (FILE_ONLY_OWNERS) are never typed into: the inbox line
+    is appended to the answers inbox (pm_config.answers_inbox(), the file the
+    lane router reads) and delivered once. The owner is the questions/<owner>
+    doc that holds the row; the target is resolved now from the live sessions
+    (route_target): the live session named <owner> (or ending in -<owner>),
+    else the one live `manager`. No stored address. Owners, roles or names
+    listed in PM_STATUS_BOARD_FILE_ONLY are never typed into: the inbox line
     IS the delivery, because typing into a Claude pane corrupts the input the
-    operator is tailing (coordinator ruling 2026-10-30). Other owners
+    operator is tailing (coordinator ruling 2026-10-30). Other targets
     get `xtmux message-send`, falling back to tmux send-keys ONLY on a pi pane
     (a Claude pane is never typed into, whatever the fallback).
     Message: question id, answer, comment, time. Seed: answers since
@@ -81,9 +83,10 @@ The Jira token and the here.now key are never printed.
 
 Usage: status_board_sync.py --dry   (plan only, no writes, no delivery)
        status_board_sync.py         (write, then read-back verify)
-State: $STATUS_BOARD_STATE_DIR/state.json (default $PM_STATE_DIR/status_board/) (routed answer ids, last run, waiting backfill flag).
+State: $PM_STATUS_BOARD_STATE_DIR/state.json (default $PM_STATE_DIR/status_board/) (routed answer ids, last run, waiting backfill flag).
 """
 import base64
+import fnmatch
 import importlib.util
 import json
 import os
@@ -102,6 +105,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "project-management" / "scripts"))
 import pm_config  # noqa: E402
+import route_target  # noqa: E402
 
 # ---- instance settings (names: ../references/setup.md)
 JIRA_PROJECT = pm_config.get("PM_JIRA_PROJECT", required=True)
@@ -120,17 +124,15 @@ MAX_BYTES = 16 * 1024
 BY = "status-board-sync"
 SELF_ISSUE = pm_config.get("PM_STATUS_BOARD_SELF_ISSUE", required=True)  # Substrate issue the sync runs under
 SELF_NAME = "%s-status-board-sync" % SELF_ISSUE
-PM_STATE_ROOT = os.path.expanduser(pm_config.get("PM_STATE_DIR", "~/.xtrm/product/%s" % REPO_NAME))
-STATE_DIR = os.path.expanduser(os.environ.get("STATUS_BOARD_STATE_DIR")
-                               or pm_config.get("PM_STATUS_BOARD_STATE_DIR", os.path.join(PM_STATE_ROOT, "status_board")))
-BOT_WATCH_DIR = os.path.expanduser(os.environ.get("XTRM_BOT_WATCH_DIR", os.path.join(PM_STATE_ROOT, "xtrm-bot-watch")))
-INBOX = os.path.join(STATE_DIR, "answers-inbox.jsonl")
+# One path per file, shared with the other scripts of the pack (pm_config): the lane router reads the same
+# answers inbox this sync appends to, and the bot watcher's config.json sits beside the bot inbox.
+STATE_DIR = str(pm_config.status_board_state_dir())
+BOT_WATCH_DIR = str(pm_config.bot_inbox().parent)
+INBOX = str(pm_config.answers_inbox())
 ANSWER_SEED_AT = pm_config.get("PM_STATUS_BOARD_ANSWER_SEED_AT", "")
-# questions/<owner> name -> pane address (xt session name) that receives routed answers
-OWNER_ADDR = dict(pm_config.get_data("PM_STATUS_BOARD_OWNER_ADDR", {}))
-FALLBACK_OWNER = pm_config.get("PM_STATUS_BOARD_FALLBACK_OWNER", "")
-# owners whose answers are delivered by the inbox line alone, with no keystrokes
-FILE_ONLY_OWNERS = set(pm_config.get_data("PM_STATUS_BOARD_FILE_ONLY_OWNERS", []))
+# Roles (manager, lead, board_helper) or session names whose answers are delivered by the inbox line alone, with no
+# keystrokes. The target of an answer is resolved at delivery time, never stored (route_target).
+FILE_ONLY = set(pm_config.get_data("PM_STATUS_BOARD_FILE_ONLY", []) or [])
 PI_GLYPH = "\u03c0"   # pi pane titles start with pi; Claude panes use the asterisk glyph
 CACHEDIR = STATE_DIR
 STATE_FILE = os.path.join(CACHEDIR, "state.json")
@@ -578,7 +580,7 @@ def build_waiting(mod, live, state):
     questions/operator-waiting with exactly one row per such ticket."""
     ops = []
     # A live label write and the retirement of the old doc unlock only when the file
-    # $STATUS_BOARD_STATE_DIR/waiting-armed exists (MMD-3291: the first live run waits for a
+    # $PM_STATUS_BOARD_STATE_DIR/waiting-armed exists (MMD-3291: the first live run waits for a
     # --dry diff the coordinator has read). Until then every timer run only plans.
     armed = (not DRY) and os.path.exists(ARM_FILE)
     backfill = not state.get("waiting_backfill_done")
@@ -799,7 +801,7 @@ def build_workers(live):
         doc = {"name": SELF_NAME, "kind": "pi", "runtime": "xt pi",
                "issue": SELF_ISSUE, "task": "Status board auto-sync (5-min timer).",
                "status": "live", "where": pid, "ctxPct": pane_ctx(pid),
-               "claimUntil": claim_iso(exp), "reportsTo": FALLBACK_OWNER or None,
+               "claimUntil": claim_iso(exp), "reportsTo": manager_address(),
                "order": 99, "milestone": "sync live", "milestoneAt": NOW,
                "updatedAt": NOW, "updatedBy": BY}
         ops.append(("POST", self_path, None, doc))
@@ -923,10 +925,51 @@ def is_pi_pane(title):
     return tok.startswith(REPO_NAME + "-xt-pi-") or tok.startswith("core-xt-pi-")
 
 
-def deliver(owner, text):
-    addr = OWNER_ADDR.get(owner, FALLBACK_OWNER)
-    if addr in FILE_ONLY_OWNERS:
+_MANAGER = []
+
+
+def manager_address():
+    """Address of the live manager, or None (host down, none or several live). Resolved once per run."""
+    if not _MANAGER:
+        try:
+            _MANAGER.append(route_target.resolve("manager")["address"])
+        except route_target.RouteError:
+            _MANAGER.append(None)
+    return _MANAGER[0]
+
+
+def answer_target(owner, live=None):
+    """(address, why) of the live session an answer goes to: the session named <owner> when it is live,
+    else the one live manager. (None, reason) when neither resolves."""
+    try:
+        live = route_target.sessions() if live is None else live
+        if owner and owner != "unknown":
+            rec = route_target.find(owner, live)
+            if rec:
+                return rec["address"], "owner"
+        return route_target.resolve("manager", live)["address"], "manager"
+    except route_target.RouteError as exc:
+        return None, str(exc)
+
+
+def file_only(owner, addr, why):
+    """True when the owner, the target's role or the target's address is listed in PM_STATUS_BOARD_FILE_ONLY."""
+    if not FILE_ONLY:
+        return False
+    if owner in FILE_ONLY or (addr and addr in FILE_ONLY) or (why == "manager" and "manager" in FILE_ONLY):
+        return True
+    if addr:
+        pats = route_target.roles()
+        return any(r in FILE_ONLY and fnmatch.fnmatch(addr, p) for r, p in pats.items())
+    return False
+
+
+def deliver(owner, text, live=None):
+    addr, why = answer_target(owner, live)
+    if file_only(owner, addr, why):
         return "file-only"
+    if not addr:
+        return "FAILED-no-route:" + why[:120]
     try:
         r = subprocess.run(["xtmux", "message-send", "--to", addr, "--text", text],
                            capture_output=True, text=True, timeout=60)
@@ -1465,6 +1508,7 @@ def route_answers(live, state):
         entry = {"qid": qid, "owner": owner, "at": at, "answer": doc.get("answer"),
                  "comment": (doc.get("comment") or "")[:500], "by": doc.get("by"),
                  "delivered": where, "run": NOW}
+        os.makedirs(os.path.dirname(INBOX), exist_ok=True)
         with open(INBOX, "a") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         done.add(qid)

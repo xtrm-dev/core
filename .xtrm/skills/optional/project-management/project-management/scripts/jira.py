@@ -18,6 +18,9 @@ usage: jira.py GET <path> | jira.py POST|PUT <path> <json-file>
        jira.py link <BLOCKER> <BLOCKED> [type]    (Blocker/Blocked named explicitly, link re-read)
        jira.py comment <KEY> <text-file>          (plain text; blank lines split paragraphs; ADF built here;
                                                    the token @operator becomes a mention of PM_OPERATOR_ACCOUNT_ID)
+       jira.py attach <KEY> <file> --board-helper (one file to the ticket, multipart; AT-01: refused without the
+                                                   flag or POST_GUARD_ACTIVE=1, because the board helper is the
+                                                   one Jira writer of operator-visible content, like comments)
 Prints the HTTP status and the JSON response; `comment` then prints `POSTED_TEXT <json string>`, the exact text posted.
 Module use: post_comment(key, text, parent_id=None) returns (status, response, posted_text); parent_id posts it
 as a threaded reply under that comment of the same ticket.
@@ -32,6 +35,8 @@ so the failure teaches the rule instead of showing a bare HTTP code. In the orde
   SC-03  a body that looks like it carries a credential is refused, and the value is never printed
   DP-02  a create whose summary or substrate label already exists is refused
   TX-07  a move to a production status (production_statuses) warns when no deployed-SHA evidence was read
+  AT-01  an attachment is sent only by the board helper (--board-helper) or inside post-guard (POST_GUARD_ACTIVE=1);
+         a text attachment that looks like it carries a credential is refused like a body (SC-03)
 Reads are unchanged: every guard runs on POST or PUT only.
 Exit status: 0 done, 1 a write was refused or failed, 3 a move reached Jira but its re-read did not prove it
 (TX-05 unverified: do not retry it). A read keeps the caller's exit status."""
@@ -554,12 +559,15 @@ def call(method, path, body=None):
 def _raw_call(method, path, body=None):
     """The unguarded request. Only call() and the guards above use it; nothing else may."""
     route = path.split('?')[0].rstrip('/')
+    # GUARD: an attachment goes only through attach() (multipart, AT-01); a JSON POST to it is never right.
+    if method == 'POST' and route.endswith('/attachments'):
+        raise RuntimeError("REFUSED: attachments go through `jira.py attach <KEY> <file> --board-helper` (AT-01).")
     # GUARD: comment POSTs must go through post-guard.py. Direct calls are refused.
     if method == 'POST' and route.endswith('/comment'):
         if os.environ.get('POST_GUARD_ACTIVE') != '1':
             # The guard ships with this skill, so every project can reach it: the earlier text named a
-            # path that existed only in one lane's cache and refused feedor, econ and infra coordinators
-            # with nothing to run (coordinator ruling 2026-11-02).
+            # path that existed only in one lane's scratch directory and refused the coordinators of three
+            # other projects with nothing to run (coordinator ruling 2026-11-02).
             raise RuntimeError(
                 "REFUSED: direct comment POST. Comments go through "
                 "~/.xtrm/skills/optional/project-management/project-management/scripts/post-guard.py "
@@ -742,9 +750,62 @@ def post_comment(key, text, parent_id=None):
     return st, out, posted
 
 
+ATTACH_MAX_BYTES = 10 * 1024 * 1024   # Jira Cloud accepts more; a larger evidence file belongs in a linked store
+
+
+def attach(key, file_path, board_helper=False):
+    """Attach one file to <key> (POST /rest/api/3/issue/<key>/attachments, multipart/form-data, field `file`,
+    header X-Atlassian-Token: no-check). Returns (status, response).
+
+    AT-01: refused unless the caller is the board helper (board_helper=True, the CLI flag --board-helper) or runs
+    inside post-guard (POST_GUARD_ACTIVE=1), the same rule that keeps every comment on one write path."""
+    if not (board_helper or os.environ.get('POST_GUARD_ACTIVE') == '1'):
+        return _refuse(400, 'AT-01', 'an attachment is operator-visible content on the ticket and cannot be '
+                                     'un-shared; only the board helper sends one. Do: hand the file path and the '
+                                     'ticket key to the board helper, who runs `jira.py attach <KEY> <file> '
+                                     '--board-helper`.')
+    path = pathlib.Path(file_path)
+    if not path.is_file():
+        return _refuse(400, 'AT-01', f'{path} is not a file')
+    data = path.read_bytes()
+    if len(data) > ATTACH_MAX_BYTES:
+        return _refuse(400, 'AT-01', f'{path.name} is {len(data)} bytes, over the {ATTACH_MAX_BYTES} byte limit')
+    try:
+        shape = secret_shape(data.decode('utf-8'))
+    except UnicodeDecodeError:
+        shape = None   # a binary file: no text scan
+    if shape:
+        return _refuse(400, 'SC-03', f'{path.name} contains something shaped like a credential ({shape[0]}, '
+                                     f'{shape[1]} characters, value not printed). Do: remove the value first.')
+    boundary = '----pm-attach-' + hashlib.sha1(data + path.name.encode()).hexdigest()[:24]
+    name = path.name.replace('"', '_').replace('\r', '_').replace('\n', '_')
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            'Content-Type: application/octet-stream\r\n\r\n').encode() + data + f'\r\n--{boundary}--\r\n'.encode()
+    req = urllib.request.Request(site() + f'/rest/api/3/issue/{key}/attachments', data=body, method='POST')
+    email, tok = creds()
+    req.add_header('Authorization', 'Basic ' + base64.b64encode(f'{email}:{tok}'.encode()).decode())
+    req.add_header('Accept', 'application/json')
+    req.add_header('X-Atlassian-Token', 'no-check')
+    req.add_header('Content-Type', f'multipart/form-data; boundary={boundary}')
+    try:
+        with urllib.request.urlopen(req) as r:
+            raw = r.read()
+            st, out = r.status, (json.loads(raw) if raw else None)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:2000]
+    if st < 300:
+        WROTE_THIS_RUN.add(key)
+    return st, out
+
+
 if __name__ == '__main__':
     m, p = sys.argv[1], sys.argv[2]
-    if m == 'transition':
+    if m == 'attach':
+        args = [a for a in sys.argv[3:] if a != '--board-helper']
+        if len(args) != 1:
+            sys.exit('usage: jira.py attach <KEY> <file> --board-helper')
+        st, out = attach(p, args[0], board_helper='--board-helper' in sys.argv[3:])
+    elif m == 'transition':
         st, out = transition(p, sys.argv[3])
     elif m == 'transition-by-id':
         st, out = transition_by_id(p, sys.argv[3])

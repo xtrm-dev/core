@@ -1,7 +1,7 @@
-# Substrate (sb) for a project coordinator
+# Substrate (sb) for the manager, leads and workers
 
-Verified against sb 0.2.6 (source: `~/dev/xtrm/packages/substrate`, `cli/sb.ts` help table and
-`docs/`). `sb help <group>` works (`sb help issue`, `sb help journal`, `sb help plan`). Per-verb help
+Verified against sb 0.2.6 (source: the substrate package's `cli/sb.ts` help table and `docs/`).
+Before a verb you have not used this session, read its group help (SKILL.md rule 55). `sb help <group>` works (`sb help issue`, `sb help journal`, `sb help plan`). Per-verb help
 (`sb help issue create`) fails in 0.2.6: read the group help. Check `sb --version` before trusting
 this page. Run `sb` inside a git checkout of the repo or pass `--project <id>`.
 
@@ -46,7 +46,9 @@ JSON
    (`--policy contract-baseline` is accepted but denies every scrutiny level.) If still draft:
    `sb --json issue show <ref>` and read `data.reasons`.
 2. `sb issue edit <ref> --contract <json> --expected-revision N` changes what the work IS: it bumps
-   the revision and needs a new attestation. Title and priority do not.
+   the revision and needs a new attestation. Title and priority do not. `--context-refs` binds a durable
+   document that defines the work (`path@sha`); it makes a new revision too, so bind at planning time
+   (`sb help issue` for the syntax).
 3. The owner claims: `sb issue claim <ref> --holder <name>`. Claim is ownership, not progress.
    A claim is a lease of about 15 minutes by default. Pass `--ttl-ms <n>` to cover the checkpoint
    interval, and renew it at every checkpoint with `sb issue renew <ref>` (below). A same-holder
@@ -93,7 +95,7 @@ The close gate reads rows, not prose. `sb issue close --outcome completed` and a
 by default (`enforce` and `off` are opt-in). A refusal names its codes: `gate_mentioned_only` (a
 mention is not delivery) and `gate_orphan_link` (a link with no live artifact). `--gate-override
 <reason>` records why the gate was passed anyway. `sb links check` shows each verdict, so a
-coordinator reads it before closing a slice and not after.
+closer reads it before closing a slice and not after.
 
 ## Merges: the review at the exact head
 
@@ -107,8 +109,8 @@ With the merge guard on, a PR merges only with the reviewer App's review at its 
   missing review, an active CHANGES_REQUESTED, or no resolvable Issue refuses the merge. A push
   after the review makes it stale: review the head you are about to merge.
 - The guard runs only when `XTRM_MERGE_GUARD` is `on`, `1`, `true` or `yes`; a launched agent gets
-  the value forwarded explicitly, so a coordinator's `off` is not silently overridden. The
-  coordinator/operator override is `XTRM_MERGE_GUARD_OVERRIDE=<reason>`, which is logged and
+  the value forwarded explicitly, so the launcher's `off` is not silently overridden. The
+  manager/operator override is `XTRM_MERGE_GUARD_OVERRIDE=<reason>`, which is logged and
   journals a decision on the Issue.
 - `xt identity setup` installs the `gh` shim and the role map; `xt identity doctor` reports their
   state. The shim refuses a `gh pr create` whose xtrm marker puts a tmux session id in `run=`

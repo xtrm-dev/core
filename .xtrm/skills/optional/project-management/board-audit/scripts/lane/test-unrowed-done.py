@@ -72,7 +72,7 @@ def ago(hours):
     return (NOW - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def row(key, *refs, status="Completata"):
+def row(key, *refs, status="Done"):
     return {"key": key, "fields": {"labels": [f"substrate:{r}" for r in refs],
                                    "status": {"name": status, "statusCategory": {"key": "done"}},
                                    "summary": f"row {key}"}}
@@ -283,7 +283,7 @@ text, counts, _ = run(
     prs=[pr(1504, "sp/sb-4755", at=ago(1))],
     issues=[issue("SB-4755", "SB-2200.17.3")], results={})
 check(14, counts["unrowed_done"] == 1 and counts["unrowed_proposed"] == 1,
-      "a ref outside the programme epic is in scope and proposed")
+      "a ref outside the project epic is in scope and proposed")
 check(14, "SB-2200.17.3" in text, "the proposal names the SB-2200 locator")
 
 # ---------------------------------------------------------------- 15: another project

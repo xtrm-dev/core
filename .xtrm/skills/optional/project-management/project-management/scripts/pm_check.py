@@ -3,8 +3,9 @@
 
 Usage: pm_check.py [--skill project-management|board-audit|status-board-keeper|all] [--project NAME|all] [--all-settings]
 
-Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING. Values are
-not printed, so the output is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
+Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING; with
+--all-settings also every optional setting the setup docs name. Then the team: every live session of the project
+by role (manager, leads, board helper, workers/other). Values are not printed, so the output is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
 The settings and the config file are described in project-management/references/setup.md; a skill that adds a
 setting adds its row to SETTINGS below and to its own setup reference.
 """
@@ -61,6 +62,57 @@ SETTINGS = [
     ("PM_WAITING_PRODUCTION_STATUS", False, (BA,), (), "status for merged, not yet in production"),
     ("PM_DEFERRED_STATUS", False, (BA,), (), "status for deferred rows"),
     ("PM_PARKED_STATUSES", True, (BA,), (), "statuses the lane cycle treats as parked"),
+    # Optional settings named in the setup docs: listed with --all-settings, never counted as missing.
+    # project-management/references/setup.md
+    ("PM_OPERATOR_NAMES", True, (), (PM, BA), "display names and first names that address the operator"),
+    ("PM_OPERATOR_HANDLE", False, (), (PM, TK), "plain-text @handle that counts as asking the operator"),
+    ("PM_ROUTE_ROLES", True, (), (PM, BA), "routing role -> session-name pattern (manager, lead, board_helper)"),
+    ("PM_MATCH_DIRS", True, (), (PM, BA, TK), "extra directories that belong to the project"),
+    ("PM_AGENT_HOST_INFO", False, (), (PM, BA), "xtrm agent host info file (default ~/.xtrm/run/agent-host.json)"),
+    ("PM_OPERATOR_QUESTION_TURNS", False, (), (PM,), "operator-silent turns before the question reminder"),
+    ("PM_COORDINATOR_PATTERN", False, (), (PM,), "regex of manager/lead session names for the question hook"),
+    ("PM_QUESTION_OWNER", False, (), (PM,), "Status board questions/<owner> doc of this session"),
+    ("PM_OPERATOR_INJECTED_PATTERNS", True, (), (PM,), "prompts that are not the operator"),
+    ("PM_OPERATOR_QUESTION_REFS", True, (), (PM,), "Substrate refs whose operator blockers the hook watches"),
+    ("PM_SB_BIN", False, (), (PM, BA, TK), "path of the sb CLI"),
+    # board-audit/references/setup.md
+    ("PM_JIRA_EPIC", False, (), (BA,), "Jira root epic of the project themes (readiness)"),
+    ("PM_PR_SINCE", False, (), (BA,), "earliest PR date of the readiness snapshot"),
+    ("PM_AUDIT_MODEL", False, (), (BA,), "provider/model of the AgentRun judge"),
+    ("PM_BLOCKED_STATUSES", True, (), (BA,), "status names that mean Blocked"),
+    ("PM_WINDOW_KEYS", True, (), (BA,), "pinned sample rows of the audit"),
+    ("PM_PLAN_PREDECESSORS", True, (), (BA,), "declared window order"),
+    ("PM_DAY_PREDECESSORS", True, (), (BA,), "declared window order per day"),
+    ("PM_WINDOW_BANDS", True, (), (BA,), "UTC bands some windows must fall inside"),
+    ("PM_STALE_PR_CONTROL", False, (), (BA,), "PR number the selftest expects to be stale"),
+    ("PM_O1W_PINNED_CONTROL", False, (), (BA,), "Jira key pinned as the hygiene O1w control"),
+    # board-audit/references/setup-lane.md
+    ("PM_SB_SNAPSHOT", False, (), (BA,), "sb issue list snapshot for the deep duplicate probe"),
+    ("PM_CUTOFF", False, (), (BA,), "project cut-off, YYYY-MM-DD HH:MM UTC"),
+    ("PM_STATUS_BOARD_JQL", False, (), (BA,), "JQL of the Status board filter"),
+    ("PM_PROD_PATH_REGEX", False, (), (BA,), "paths whose change is a production change"),
+    ("PM_EXCEPTIONS_EPIC", False, (), (BA,), "Jira key holding the no-window exceptions"),
+    ("PM_CONTAINER_PREFIX", False, (), (BA,), "container-name prefix stripped by deploy-check"),
+    ("PM_BOT_INBOX", False, (), (BA, TK), "bot inbox JSONL (default <state_dir>/xtrm-bot-watch/inbox.jsonl)"),
+    ("PM_ANSWERS_INBOX", False, (), (BA, TK), "Status board answers inbox (default <status board state>/answers-inbox.jsonl)"),
+    ("PM_LANE_HOLDER", False, (), (BA,), "Substrate holder of the lane's post-guard writes"),
+    ("PM_LANE_WATCHDOG", False, (), (BA,), "module that publishes an unwatched lane"),
+    ("PM_STATUS_BOARD_UNIT", False, (), (BA, TK), "systemd user unit of the Status board sync"),
+    ("PM_THEME_EPICS", True, (), (BA,), "theme epics (cycle re-parent count)"),
+    ("PM_EXPECTED_OPEN", True, (), (BA,), "rows expected to stay open"),
+    ("PM_CYCLE_CONTROLS", True, (), (BA,), "cycle control refs"),
+    ("PM_GATE_REPOS", True, (), (BA,), "gate label short name -> owner/repo"),
+    ("PM_CONTAINER_ALIASES", True, (), (BA,), "container -> refs or words (deploy-check)"),
+    ("PM_CONTAINER_PATHS", True, (), (BA,), "repo path prefixes -> containers (wp-audit)"),
+    ("PM_WP_KNOWN_BINDING", True, (), (BA,), "wp-audit required control"),
+    ("PM_ROUTE_CONTROL_CASES", True, (), (BA,), "real operator comments for route-controls"),
+    # status-board-keeper/references/setup.md
+    ("PM_STATUS_BOARD_KEY_FILE", False, (), (TK, PM), "here.now owner key file"),
+    ("PM_STATUS_BOARD_STATE_DIR", False, (), (TK, BA), "Status board sync state (default <state_dir>/status_board)"),
+    ("PM_STATUS_BOARD_FILE_ONLY", True, (), (TK,), "roles or session names that get answers as inbox lines only"),
+    ("PM_STATUS_BOARD_ANSWER_SEED_AT", False, (), (TK,), "route only answers at or after this stamp"),
+    ("PM_STATUS_BOARD_STATUS_OVERRIDES", True, (), (TK,), "Jira status -> page status"),
+    ("PM_EXTRA_REF_PREFIXES", True, (), (TK,), "other issue-key prefixes in event refs"),
 ]
 TOOLS = ("sb", "xt", "gh", "tmux", "python3")
 # Per-project state that two projects must never share: they would overwrite each other.
@@ -89,12 +141,12 @@ def check_settings(chosen, all_settings: bool) -> int:
         if src is None:
             if need:
                 missing += 1
-                print(f"MISSING {name:<24} required by {', '.join(need)}: {meaning}" + (f" [{err}]" if err else ""))
+                print(f"MISSING {name:<32} required by {', '.join(need)}: {meaning}" + (f" [{err}]" if err else ""))
             elif all_settings:
-                print(f"unset   {name:<24} optional: {meaning}" + (f" [{err}]" if err else ""))
+                print(f"unset   {name:<32} optional: {meaning}" + (f" [{err}]" if err else ""))
             continue
         if need or all_settings:
-            print(f"OK      {name:<24} ({src})")
+            print(f"OK      {name:<32} ({src})")
 
     token = pm_config.path("JIRA_TOKEN_FILE")
     if token is not None:
@@ -124,6 +176,24 @@ def clashes() -> int:
             else:
                 seen[value] = name
     return found
+
+
+def check_routes() -> int:
+    """Print the team (every live session of the project, by role) and the single-holder roles.
+
+    Routes are reported, not counted: a role may be legitimately unstaffed while you set up."""
+    try:
+        live = route_target.sessions()
+    except route_target.RouteError as exc:
+        print(f"WARN    routes not checked: {exc}")
+        return 0
+    route_target.print_team(route_target.team(live))
+    for role in route_target.SINGLE_ROLES:
+        try:
+            print(f"route   {role:<24} -> {route_target.resolve(role, live)['address']}")
+        except route_target.RouteError as exc:
+            print(f"WARN    route {role}: {exc}")
+    return 0
 
 
 def use_project(name: str | None) -> None:
@@ -170,16 +240,7 @@ def main() -> int:
                 continue
             print(f"project {name} ({how})")
         problems += check_settings(chosen, a.all_settings)
-        # Routes are reported, not counted: a role may be legitimately unstaffed while you set up.
-        try:
-            live = route_target.sessions()
-            for role in sorted(route_target.roles()):
-                try:
-                    print(f"route   {role:<24} -> {route_target.resolve(role, live)['address']}")
-                except route_target.RouteError as exc:
-                    print(f"WARN    route {role}: {exc}")
-        except route_target.RouteError as exc:
-            print(f"WARN    routes not checked: {exc}")
+        problems += check_routes()
 
     print(f"result  {'ready' if not problems else f'{problems} problem(s)'} for {', '.join(chosen)}"
           " (see project-management/references/setup.md)")

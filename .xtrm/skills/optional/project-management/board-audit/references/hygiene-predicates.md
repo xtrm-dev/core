@@ -1,11 +1,10 @@
 # Hygiene predicates — CANONICAL for this lane
 
 Ruling: fri30-coord, 2026-10-30 ~19:15Z — "ADOPT your documented predicates as canonical now."
-Reason: saved filters **10065** ("Open without dates"), **10055** ("Overdue, not done") and
-**10056** ("Next 48 hours") answer `404 Non puoi utilizzare il filtro selezionato` to the Jira
-credential this lane uses (deleted, or never shared). Positive control on the same endpoint and
-credential: filters 10034 `entity`, 10035 `roll-plan`, 10037 `tasks-only` return 200 with their JQL, and
-`GET /rest/api/3/filter/favourite` returns `[]`.
+Reason: the three saved filters in config `hygiene_filters` ("Open without dates", "Overdue, not done",
+"Next 48 hours") answered `404` (a localised "cannot use the selected filter") to the Jira credential this
+lane uses (deleted, or never shared). Positive control on the same endpoint and credential: other saved
+filters of the board returned 200 with their JQL, and `GET /rest/api/3/filter/favourite` returned `[]`.
 
 Cycle reports cite THIS FILE and the JQL key below. They do not carry `FILTER-UNAVAILABLE`, and the
 operator is never asked to re-share the filters. All predicates are `project = $PM_JIRA_PROJECT` (the scripts substitute the key) and are read with `GET /rest/api/3/search/jql?jql=...&maxResults=100`
@@ -40,7 +39,7 @@ Exit status 3 means a control failed.
 Superseded control, do not reuse: HC3 (`parent is EMPTY`) as H4's "negative control" was the same
 predicate as H4, so H4 = 0 was uncontrolled (caught 2026-10-31, fixed here).
 
-## H1 — windows with no due date (mirrors 10065 for the subset that is a defect)
+## H1 — windows with no due date (mirrors "Open without dates" for the subset that is a defect)
 
 ```
 project = $PM_JIRA_PROJECT AND labels = window AND statusCategory != Done
@@ -57,8 +56,8 @@ Observed 2026-10-30 19:09Z: 11 open rows (ISSUE-247, 292, 309, 315, 318, 325, 32
 project = $PM_JIRA_PROJECT AND labels = window AND (duedate is EMPTY OR <custom_fields.window_start> is EMPTY)
 ```
 The documented health check says this must return 0; it does not. Report the count and the status
-breakdown, never a per-row fix list (62 rows on 2026-10-30: Da completare 17, Blocked 12, Won't Do 9,
-Completata 8, Deferred 7, Done with Follow-up 4, Waiting Production 3, Pronto 2). Slot fields on a closed
+breakdown, never a per-row fix list (62 rows on 2026-10-30, spread over eight statuses, open and
+terminal alike). Slot fields on a closed
 window are a record unless the window never ran (`board-audit`, standing rules).
 
 ## H3 — dates in window titles
@@ -77,14 +76,14 @@ project = $PM_JIRA_PROJECT AND labels = window AND parent is EMPTY
 Observed 2026-10-31: **0** — clean. Its control is the pair described above: the mechanism demonstrably
 accepts a parentless issue, and rejects a window that has a parent.
 
-## O1w — overdue and workable windows (mirrors 10055, the high-signal subset)
+## O1w — overdue and workable windows (mirrors "Overdue, not done", the high-signal subset)
 
 ```
 project = $PM_JIRA_PROJECT AND statusCategory != Done AND status not in (Blocked, Deferred)
   AND duedate < now() AND labels = window
 ```
-`Blocked` and `Deferred` are excluded because they are not workable: filter 10055 tests "workable and past
-its date", not "past its date" (ISSUE-335 was falsely reported late by the looser predicate).
+`Blocked` and `Deferred` are excluded because they are not workable: the saved overdue filter tests
+"workable and past its date", not "past its date" (ISSUE-335 was falsely reported late by the looser predicate).
 5 rows on 2026-10-30 (ISSUE-365, 388, 457, 497, 520).
 
 ## O1b — overdue and workable, all types (context, not a defect list)
@@ -98,7 +97,7 @@ ISSUE-68); report those separately, not as window misses. O1b carries no separat
 differs from O1w only by the label restriction, and its population is reported as context. Before
 MMD-3546 this file called both rows `O1` while the script reported `O1w` and `O1b`.
 
-## N1 — next 48 hours (mirrors 10056)
+## N1 — next 48 hours (mirrors "Next 48 hours")
 
 ```
 project = $PM_JIRA_PROJECT AND labels = window AND statusCategory != Done
@@ -149,10 +148,10 @@ RECENT window; entries created after 00:00Z) and today's merged PRs
 (`gh pr list --state merged --search "merged:>=<date>"`), then reads each ticket's Jira status with
 `GET /rest/api/3/issue/<key>`. The verdict compares the two, never the event alone:
 
-- a Substrate closure whose Jira status is not in `Completata | Done with Follow-up | Won't Do | Cancelled`
-  is `MISMATCH`;
-- a merged PR whose ticket is `Blocked` or `Pronto` is `MISMATCH` (work merged, board says not started);
-- a merged PR whose ticket is `Da completare | In corso | Waiting Production | In verifica` or done is `OK`;
+- a Substrate closure whose Jira status is not in config `done_statuses` is `MISMATCH`;
+- a merged PR whose ticket is in neither `done_statuses` nor `open_statuses` (blocked, or not started) is
+  `MISMATCH` (work merged, board says not started);
+- a merged PR whose ticket is in `open_statuses` or `done_statuses` is `OK`;
 - a journal mention with no closure and no merge is `INFO`, never drift.
 
 **Never read the journal with `show` for a "today" question.** `show` returns the OLDEST entries first,
@@ -173,7 +172,8 @@ ISSUE-335 `Deferred` with merged PR #1160).
 
 
 Ticket-to-PR matching is by `<PM_JIRA_PROJECT>-\d+` in the PR title and body, so a PR that mentions many tickets can
-produce a false candidate: report `MISMATCH` rows as candidates for the coordinator, not as facts.
+produce a false candidate: report `MISMATCH` rows as candidates, not as facts, to the owning lead (the
+manager when the row has no workstream parent).
 
 Prove the instrument before trusting a quiet day: today's sweep returning nothing is a measurement only
 after `--since=<yesterday>` produces rows. On 2026-10-31 the replay of 2026-10-30 produced 17 rows

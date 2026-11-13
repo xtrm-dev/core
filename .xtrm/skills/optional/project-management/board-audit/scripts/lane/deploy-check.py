@@ -44,7 +44,7 @@ def snapshot():
     return out
 
 
-PROGRAMME_JOURNAL = lanecfg.epic()
+PROJECT_JOURNAL = lanecfg.epic()
 
 # Alias map: container name -> lower-case ticket/issue refs or words that authorise a deploy move for it.
 # A container moved by a planned night is often named in the journal by its loader and its ticket, never
@@ -60,7 +60,7 @@ CONTAINER_PREFIX = str(lanecfg.get("PM_CONTAINER_PREFIX", ""))
 def journal_context(name, window_hours=3):
     """Recent project-journal entries that mention this container, printed with the alarm.
 
-    On 2026-11-01T08:32Z an ingestor container vanished and I raised a production alarm; it was a planned
+    On 2026-11-01T08:32Z a feed container vanished and I raised a production alarm; it was a planned
     `make <service>-stop APPLY=1` for a priority pause, recorded in the project journal before it
     happened. The measurement was right and the alarm was wrong, because the context was one
     command away. A deploy move is not news until it has been checked against what the project said it
@@ -68,7 +68,7 @@ def journal_context(name, window_hours=3):
     """
     import datetime
     try:
-        p = subprocess.run([lanecfg.sb_bin(), "journal", "show", PROGRAMME_JOURNAL, "--json"], capture_output=True,
+        p = subprocess.run([lanecfg.sb_bin(), "journal", "show", PROJECT_JOURNAL, "--json"], capture_output=True,
                            text=True, timeout=90, cwd=REPO)
         items = json.loads(p.stdout)["data"]
     except Exception as exc:                                    # noqa: BLE001 - a hint must never break the check
@@ -95,7 +95,7 @@ def journal_context(name, window_hours=3):
         if named or planned:
             text = " ".join(str(blob).split())
             out.append(f"  context seq {e.get('sequence')} {at.strftime('%H:%MZ')} {e.get('kind')}: {text[:220]}")
-    return out or [f"  no {PROGRAMME_JOURNAL} entry in the last {window_hours}h mentions {name}"]
+    return out or [f"  no {PROJECT_JOURNAL} entry in the last {window_hours}h mentions {name}"]
 
 
 def main():
@@ -106,18 +106,18 @@ def main():
         prev = json.load(open(SNAP))["containers"]
     except (OSError, ValueError, KeyError):
         prev = {}
-    # COMPARE WHAT ACTUALLY MOVES. Two containers report sha=unknown (a Rust ingestor and a TimescaleDB
+    # COMPARE WHAT ACTUALLY MOVES. Two containers report sha=unknown (a feed handler and a database
     # container, local tags with no resolvable digest), so a swap of either was reported as
-    # DEPLOY-UNCHANGED: on 2026-11-05 the 22:18Z ingestor swap restarted that container at 22:19:06Z and
+    # DEPLOY-UNCHANGED: on 2026-11-05 the 22:18Z feed-handler swap restarted that container at 22:19:06Z and
     # this check printed UNCHANGED, because unknown == unknown. The `started` stamp is the fact that
     # moves for them, so it is used whenever the sha cannot answer. Same for a container appearing or
     # disappearing: the count changed 9 -> 8 on 2026-11-04 and no line ever said so.
     def key_of(v):
         # WHY the start stamp is always part of the key: a container can restart into the SAME image, and that
         # restart is the event a window verification needs. Keying on the sha alone reported
-        # DEPLOY-UNCHANGED through the 2026-11-06 22:15Z QuestDB restart, because its tag resolves to a sha
-        # that did not change; keying on "sha else started" reported the ingestor and missed QuestDB, since
-        # only the ingestor's image was unresolvable. Both halves are needed, so both are always present.
+        # DEPLOY-UNCHANGED through the 2026-11-06 22:15Z database restart, because its tag resolves to a sha
+        # that did not change; keying on "sha else started" reported the feed handler and missed the database, since
+        # only the feed handler's image was unresolvable. Both halves are needed, so both are always present.
         if not v:
             return "absent"
         sha = v.get("sha") or ""

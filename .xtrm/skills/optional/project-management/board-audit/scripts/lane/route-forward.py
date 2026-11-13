@@ -8,12 +8,18 @@ cannot drift.
 
 Shape: bash cannot send an intercom message (SendMessage is a model tool), so the pair is split where the
 boundary really is:
-  route-forward.py <id>[,<id>...]   -> prints the body to send, writes outbox-pending/<id>.json, does NOT mark
+  route-forward.py <id>[,<id>...] [--to <name>]
+                                    -> prints the body to send, writes outbox-pending/<id>.json, does NOT mark
   mark-sent.py <id>[,<id>...]       -> marks delivered=true, moves the pending record to forwarded.jsonl
 
 A pending file that is never confirmed is the visible residue, and watch.sh raises ALARM pending-send on it
 after 10 minutes. Marking without the emit is impossible (no body), and emitting without sending leaves the
 alarm armed.
+
+Target: the board helper decides where an operator comment goes. This script only prints a default, the live
+session holding the `manager` role (project-management/scripts/route_target.py), resolved now and never stored.
+`--to <name>` sends it to that live session instead (a lead, by its session name or worktree address). The old
+COORD_SOCK environment override is gone: `--to` is the one manual override.
 """
 import json
 import os
@@ -42,7 +48,7 @@ def load():
     return rows
 
 
-def main(ids):
+def main(ids, to=None):
     os.makedirs(PENDING_DIR, exist_ok=True)
     rows = {r.get("id"): r for r in load()}
     missing = [i for i in ids if i not in rows]
@@ -53,15 +59,21 @@ def main(ids):
     if already:
         print(f"REFUSED already delivered: {already}; a second forward would double-report a decision")
         return 3
-    # The lead's address is resolved now, from the live session registry, never stored: a stored address went stale
-    # with its session (2026-11-12). COORD_SOCK still overrides by hand.
-    target = os.environ.get("COORD_SOCK")
-    if not target:
-        try:
-            target = route_target.resolve("lead")["address"]
-        except route_target.RouteError as exc:
-            print(f"REFUSED no route target: {exc}; nothing emitted and nothing marked")
-            return 4
+    # The target is resolved now, from the live session registry, never stored: a stored address went stale
+    # with its session (2026-11-12).
+    try:
+        if to:
+            rec = route_target.find(to)
+            if rec is None:
+                print(f"REFUSED --to {to}: no single live session of this project has that name; nothing emitted")
+                return 4
+            target = rec["address"]
+        else:
+            target = route_target.resolve("manager")["address"]
+    except route_target.RouteError as exc:
+        print(f"REFUSED no route target: {exc}; pass --to <name> once a live session can take it. "
+              "Nothing emitted and nothing marked")
+        return 4
     lines = []
     for i in ids:
         r = rows[i]
@@ -81,7 +93,16 @@ def main(ids):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("usage: route-forward.py <id>[,<id>...]")
+    args = sys.argv[1:]
+    to = None
+    if "--to" in args:
+        i = args.index("--to")
+        if i + 1 >= len(args):
+            print("usage: route-forward.py <id>[,<id>...] [--to <name>]")
+            sys.exit(1)
+        to = args[i + 1]
+        del args[i:i + 2]
+    if len(args) != 1:
+        print("usage: route-forward.py <id>[,<id>...] [--to <name>]")
         sys.exit(1)
-    sys.exit(main([x for x in sys.argv[1].split(",") if x]))
+    sys.exit(main([x for x in args[0].split(",") if x], to))

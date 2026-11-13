@@ -12,8 +12,8 @@ identity exists.
 ## Which project
 
 Agent comments start `[agent:<holder> | run:<id>]` (`[agent:<runtime>-<worktree dir> | run:<id> | fallback]` without `SUBSTRATE_HOLDER`); agent
-creates, edits and transitions add label `actor=agent`. Labels: `area:`, `repo:`, `prog:`, `kind:`, `substrate:<REF>`. `jira.py comment` prints
-`POSTED_TEXT <json string>` (the exact text posted); as a module `post_comment(key, text)` returns `(status, response, posted_text)`. Write variables: Phase 2 section below.
+creates, edits and transitions add label `actor=agent`. Labels: `area:`, `repo:`, `prog:`, `kind:`, `substrate:<REF>`. Comments go only through
+`scripts/post-guard.py` ("Comments: post-guard.py" below); `jira.py` refuses a comment post. Write variables: Phase 2 section below.
 
 The project's board is Jira project `$PM_JIRA_PROJECT`, board id `$PM_JIRA_BOARD_ID`. When one Jira project holds several projects, separate
 them with label `prog:<project>`; a second Jira project (for example one for tooling) is configured alike and read the same way.
@@ -83,7 +83,7 @@ matchers accept the old `$PM_REPO_NAME#<n>` form until old comments are rewritte
 ## Sprints
 
 - Weekly, with name, dates, goal ("PROJ Sprint 2 - build in shadow", 2026-10-15..10-21). A Story sits in the sprint where it will finish; at close,
-  open Stories carry over and the coordinator journals a `milestone`. The `/goal` horizon is the current sprint.
+  open Stories carry over and the manager journals a `milestone`. The `/goal` horizon is the current sprint.
 - Create: `POST /rest/agile/1.0/sprint` `{"name":..., "originBoardId":<$PM_JIRA_BOARD_ID>, "startDate":..., "endDate":..., "goal":...}`. Move:
   `POST /rest/agile/1.0/sprint/<id>/issue` `{"issues": ["<KEY>"]}`. Read an issue's sprint: field `custom_fields.sprint`.
 
@@ -92,14 +92,14 @@ matchers accept the old `$PM_REPO_NAME#<n>` form until old comments are rewritte
 Statuses and transitions differ per board and change: never rely on a status list in a skill. Before the first Jira write of a project build a
 profile with `jira.py GET`:
 - issue types `/rest/api/3/project/<KEY>`; statuses `/rest/api/3/project/<KEY>/statuses`, matched by `statusCategory.key` (`new`, `indeterminate`,
-  `done`) because names are localised (an Italian UI shows Da completare, In corso, Completato). Store the names in the config: `done_statuses`,
+  `done`) because names are localised (a localised UI shows its own names for to-do, in progress and done). Store the names in the config: `done_statuses`,
   `active_statuses`, `terminal_statuses`.
 - allowed moves `/rest/api/3/issue/<K>/transitions` (read the target `to.name`); columns `/rest/agile/1.0/board/<id>/configuration`; sprints
   `/rest/agile/1.0/board/<id>/sprint`; fields `/rest/api/3/field`; labels `/rest/api/3/label`.
 - dev panel (where the board has one) `/rest/dev-status/latest/issue/summary?issueId=<id>` (internal, worked 2026-10-15); layout JQL
   `parent = <Epic> ORDER BY key`.
 
-**Pick statuses by meaning** (the event-to-status table). Substrate is the only status driver; until `sb jira` exists the coordinator orders each move
+**Pick statuses by meaning** (the event-to-status table). Substrate is the only status driver; until `sb jira` exists the owning lead or the manager orders each move
 on the day of the event and the board helper writes it, choosing the board status that means this (category breaks ties):
 
 | Substrate event | The board status should mean | Category |
@@ -148,7 +148,7 @@ Jira is the only calendar (operator, 2026-10-16): no Google Calendar events, no 
   reported in UTC), Start date `<start_date>` and `duedate`. The calendar reads only
   Start date and `duedate`: without them the window is invisible;
 - Entity `<entity>` = who acts (Keeper or Coordinator, Coordinator = the option id in `entity_options.Coordinator` only; Human for an operator step); kept current by the
-  keeper if the project has one, else the coordinator, written by the board helper;
+  keeper if the project has one, else the manager, written by the board helper;
 - a summary with NO date or time: `$PM_SB_PREFIX window: <what> (<scope>)`; re-dating never rewrites the title except to remove a date that slipped in. Add the
   prefix to an existing title only when the window is touched for another reason (no bulk renames).
 - a comment on every change (re-date, scope, close-out) with why, old -> new UTC times and whose ruling authorized it; times moved without it are an
@@ -159,7 +159,7 @@ Jira is the only calendar (operator, 2026-10-16): no Google Calendar events, no 
 - One plan per day in one place; mark off-plan windows on the row (two live plans read as misses).
 - Print the same-day overlap check in the comment before any re-date (silent double-bookings survive otherwise).
 - Clear the slot fields in the same edit that blocks a window and record the old slot in the comment (a blocked window must not advertise a slot).
-- Close a window on a coordinator Verified OK comment, never on a deploy having started (a tool verdict is a claim).
+- Close a window on a Verified OK comment by the manager or the owning lead, never on a deploy having started (a tool verdict is a claim).
 - Call a passed slot with no record unrecorded, not failed, and re-check late (early flags misfire).
 - Compute the UTC offset per date with zoneinfo in `$PM_TIMEZONE` (in a central European zone 2026-10-25 flips +0200 to +0100): a wrong offset moves the window an hour.
 - Clear a slot field with PUT null and re-read: the API returns 204 either way.
@@ -208,8 +208,8 @@ Every board reorganisation or mutation batch is recorded durably, not only in la
 - **Record:** one Substrate batch issue per reorganisation; its `result` entry lists every change: key, field, before, after, reason.
 - **Jira:** each touched ticket gets label `jira-batch:<sb-ref>`; one JQL (`labels = "jira-batch:<sb-ref>"`) lists the batch; Jira's history holds the
   field diffs.
-- **Status board "Modifiche Jira":** a derived view only; the keeper writes one doc per batch in `jirabatches`: `{ref, at, by, count, jql, plain_it}`.
-  The board helper applies the label in the same write, on the coordinator's word.
+- **Status board, Jira changes view:** derived only; the keeper writes one doc per batch in `jirabatches` (fields: skill `status-board-keeper`).
+  The board helper applies the label in the same write, on the order of the manager or the owning lead.
 
 ## Write guards and checked verbs (MMD-3546 Phase 2)
 
@@ -261,3 +261,26 @@ name and the length are printed; DP-02 a create whose exact summary or `substrat
   a row this process already wrote is not another writer's. `post-guard.py` applies the same 60-minute rule to a comment.
 
 Comments still go through `post-guard.py`; `jira.py` refuses a direct `POST .../comment` unless `POST_GUARD_ACTIVE=1`, which only that tool sets.
+
+## Comments: post-guard.py
+
+The one comment path (SKILL.md "Jira writes: one path, enforced in code"); the board helper runs it. An ad-hoc `jira.call('POST', ..., comment)`
+raises `RuntimeError` and writes nothing (before the guard, a hand-built ADF body posted c16623 on 2026-11-01 with no mention node and an operator
+question sat unnotified).
+
+```
+scripts/post-guard.py <KEY> <text-file> --run <WORD> [--mention-first] [--force] [--dry-run] [--update <cid>] [--reply-to <cid>] \
+  [--own-writes <file>] [--run-file <file>]
+```
+
+Checks in order, stopping at the first failure with nothing written: the live row; the other-writer rule (a row changed in the last 60 minutes by another
+writer, unless `--force` on a comment that has been READ); the duplicate rule (same text in the last five comments, so a crash recovers by reading); the
+`$PM_SB_PREFIX-n` title rule (the guard inserts the title from Substrate and refuses a number with no single issue, or a parenthetical that is not the exact title;
+`--no-title-keys` keeps the hard refusal); a line-number prefix refusal. Read-back asserts id, exactly one mention and FIRST with `--mention-first` (zero
+otherwise), the agent tag last, `[[KEY]]` inlineCards, no prefixes. `--mention-first` turns a leading `@operator` into a notifying mention of
+`$PM_OPERATOR_ACCOUNT_ID`; a plain "@<name>" does not notify.
+
+`--run <WORD>` is required and never inherited from a file (B406 comments were mislabelled `run:B364`). `--update <cid>` fixes this writer's own
+comment before any reply. `--reply-to <cid>` posts a threaded reply: the target is read first and `parentId` asserted, and the comment sits under the
+one it answers. `--own-writes` and `--run-file` (env forms) let a watch skip its own posts and stamp the tag; a caller keeps a thin wrapper that execs
+the shared tool. A text above ~30,000 characters is split (the Jira limit is 32,767).

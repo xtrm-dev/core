@@ -104,8 +104,8 @@ Two passes on one sprint audit (2026-10-31, 253 rows) show why:
   legal state. A gate that proves a citation exists does not prove the inference from it.
 
 The rule that follows: an agent reports facts per row (status, dates, links, last comment id) and no
-disposition. Bulk status adjudication stays with the lane that owns the board, because a verdict the coordinator
-must disprove costs more than the sweep saved.
+disposition. Bulk status adjudication stays with the lane that owns the board, because a verdict the lead or
+manager must disprove costs more than the sweep saved.
 
 ## Index-lag rule
 
@@ -117,7 +117,7 @@ row whose direct re-read is correct.
 ## Close and block
 
 Window closing and slot-clearing discipline is **not** repeated here: it lives in
-`project-management/references/jira.md` under window discipline (close on a coordinator
+`project-management/references/jira.md` under window discipline (close on the manager's
 Verified OK, never on a deploy having started; a blocked window clears its slot in the same edit;
 a passed slot with no record is unrecorded, not failed).
 

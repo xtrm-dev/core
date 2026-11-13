@@ -21,13 +21,13 @@ only what it lists (determined v2 missed a window outside the market halt, and c
 > If a run fails: stop, escalate with the exact error text, disclose any manual substitute.
 
 Rule: the same judgment over dozens or hundreds of items (title checks, field checks, per-ticket verdicts) runs as an AgentRun workflow, never
-per-item API calls from the coordinator session: a workflow snapshots once, judges every item in parallel with one typed call each, and records every
+per-item API calls from the manager's or a lead's session: a workflow snapshots once, judges every item in parallel with one typed call each, and records every
 decision with a receipt.
 
 ## When AgentRun, when direct API
 
 - **AgentRun:** repetitive judgment over many items in an operator-approved workflow (board audits, hygiene, coverage, per-item verdicts); the
-  coordinator reads the verdicts.
+  manager or the owning lead reads the verdicts.
 - **Direct API (`scripts/jira.py`, `acli`, `gh`):** single reads and writes, snapshots feeding a workflow, one-claim checks; never a
   loop-with-a-decision over a whole board.
 

@@ -7,8 +7,10 @@ a question to the coordinator, a production or window matter, or a halt. Everyth
 in the cycle report. Acks on rows already handled ("ok", "yes") are never forwarded one by one.
 
 Channels (settings in board-audit/references/setup-lane.md):
-  PM_BOT_INBOX       operator comments that mention the bot (written by the xtrm-bot watcher)
-  PM_ANSWERS_INBOX   Status board answers (written by status_board_sync.py)
+  PM_BOT_INBOX       operator comments that mention the bot (written by the xtrm-bot watcher;
+                     default <state_dir>/xtrm-bot-watch/inbox.jsonl)
+  PM_ANSWERS_INBOX   Status board answers (written by status_board_sync.py;
+                     default <status_board_state_dir>/answers-inbox.jsonl)
 
 The classifier is explicit and prints the trigger it matched, so a misroute is auditable by the person who
 receives it. It errs toward DECISION: a comment forwarded that did not need to be costs one message, a
@@ -25,8 +27,9 @@ import lanecfg
 LANE = lanecfg.lane()
 CURSOR = f"{LANE}/route-cursor.json"
 CHANNELS = {
-    "inbox": str(lanecfg.pm_config.path("PM_BOT_INBOX", required=True)),
-    "answers": str(lanecfg.pm_config.path("PM_ANSWERS_INBOX", required=True)),
+    # One path per inbox, shared with status_board_sync.py through pm_config (defaults under the state dirs).
+    "inbox": str(lanecfg.pm_config.bot_inbox()),
+    "answers": str(lanecfg.pm_config.answers_inbox()),
 }
 DECISION = [
     # 'question' FIRST (2026-11-01): "i do not see issue 558 ... why?" was labelled trigger=negative, which

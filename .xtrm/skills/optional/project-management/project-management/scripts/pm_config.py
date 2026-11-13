@@ -147,6 +147,30 @@ def path(name: str, default: str | None = None, *, required: bool = False) -> pa
     return pathlib.Path(str(value)).expanduser() if value is not None else None
 
 
+def state_dir() -> pathlib.Path:
+    """Coordinator state root, ``PM_STATE_DIR``; default ``~/.xtrm/product/<repo name>``."""
+    name = get("PM_REPO_NAME") or str(get("PM_REPO_SLUG") or "").rsplit("/", 1)[-1] or "pm"
+    return path("PM_STATE_DIR", "~/.xtrm/product/%s" % name)
+
+
+def status_board_state_dir() -> pathlib.Path:
+    """Status board sync state, ``PM_STATUS_BOARD_STATE_DIR``; default ``<state_dir>/status_board``."""
+    return path("PM_STATUS_BOARD_STATE_DIR", str(state_dir() / "status_board"))
+
+
+def answers_inbox() -> pathlib.Path:
+    """The one Status board answers inbox: the sync appends to it, the lane router reads it.
+
+    ``PM_ANSWERS_INBOX``; default ``<status_board_state_dir>/answers-inbox.jsonl``."""
+    return path("PM_ANSWERS_INBOX", str(status_board_state_dir() / "answers-inbox.jsonl"))
+
+
+def bot_inbox() -> pathlib.Path:
+    """The one bot inbox: the bot watcher writes it, the lane router reads it, and the Status board sync reads the
+    watcher's ``config.json`` beside it. ``PM_BOT_INBOX``; default ``<state_dir>/xtrm-bot-watch/inbox.jsonl``."""
+    return path("PM_BOT_INBOX", str(state_dir() / "xtrm-bot-watch" / "inbox.jsonl"))
+
+
 def skill_dir(skill: str) -> pathlib.Path:
     """Directory of a sibling skill in this pack (``board-audit``, ``status-board-keeper``, ``project-management``)."""
     return PACK_ROOT / skill

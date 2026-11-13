@@ -38,23 +38,31 @@ variable name in lower case without `PM_`.
 
 Shared settings this skill reads: `JIRA_SITE` (full base URL), `JIRA_TOKEN_FILE`,
 `PM_OPERATOR_EMAIL`, `PM_OPERATOR_ACCOUNT_ID`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`, `PM_EPIC`,
-`PM_REPO_DIR`, `PM_REPO_SLUG`, `PM_REPO_NAME`, `PM_STATE_DIR`, `PM_CUSTOM_FIELDS`.
+`PM_REPO_DIR`, `PM_REPO_SLUG`, `PM_REPO_NAME`, `PM_STATE_DIR`, `PM_CUSTOM_FIELDS`, and for answer routing
+`PM_ROUTE_ROLES`, `PM_AGENT_HOST_INFO`, `PM_MATCH_DIRS`.
 
 | Variable / config key | Required | Meaning |
 |---|---|---|
 | `PM_STATUS_BOARD_SITE` / `status_board_site` | yes | here.now site slug of the artifact |
 | `PM_STATUS_BOARD_SELF_ISSUE` / `status_board_self_issue` | yes | Substrate issue the sync runs under; its workers doc is `workers/<issue>-status-board-sync` |
 | `PM_STATUS_BOARD_KEY_FILE` / `status_board_key_file` | no | here.now owner key file (default `~/.herenow/credentials`) |
-| `PM_STATUS_BOARD_STATE_DIR` / `status_board_state_dir` | no | sync state, drift report, answers inbox (default `$PM_STATE_DIR/status-board`; env `STATUS_BOARD_STATE_DIR` wins) |
-| `PM_OPERATOR_HANDLE` / `operator_handle` | no | plain-text mention (`@<handle>`) that counts as asking the operator (default `operator`) |
+| `PM_STATUS_BOARD_STATE_DIR` / `status_board_state_dir` | no | sync state, drift report, answers inbox (default `$PM_STATE_DIR/status_board`; the unprefixed `STATUS_BOARD_STATE_DIR` is no longer read) |
+| `PM_ANSWERS_INBOX` / `answers_inbox` | no | the answers inbox the sync appends to and the lane router reads (default `<status_board_state_dir>/answers-inbox.jsonl`; one path for both ends) |
+| `PM_BOT_INBOX` / `bot_inbox` | no | the bot watcher's inbox; the sync reads the bot account id from `config.json` in the same directory (default `$PM_STATE_DIR/xtrm-bot-watch/inbox.jsonl`; replaces the env `XTRM_BOT_WATCH_DIR`) |
+| `PM_STATUS_BOARD_UNIT` / `status_board_unit` | no | systemd user unit of this sync; the lane scheduler checks its health (default `status-board-sync.service`) |
+| `PM_OPERATOR_HANDLE` / `operator_handle` | no | plain-text mention (`@<handle>`) that counts as asking the operator (default `operator`; how it relates to `operator_name` and `operator_names`: project-management/references/setup.md) |
 | `PM_EXTRA_REF_PREFIXES` / `extra_ref_prefixes` | no | JSON list of other issue-key prefixes that may appear in event refs |
-| `PM_STATUS_BOARD_OWNER_ADDR` / `status_board_owner_addr` | no | JSON object: questions owner name -> xt session address that receives routed answers |
-| `PM_STATUS_BOARD_FALLBACK_OWNER` / `status_board_fallback_owner` | no | address for answers with no known owner; also `reportsTo` of the sync's own workers doc |
-| `PM_STATUS_BOARD_FILE_ONLY_OWNERS` / `status_board_file_only_owners` | no | JSON list of addresses that get answers only as inbox lines, never keystrokes |
+| `PM_STATUS_BOARD_FILE_ONLY` / `status_board_file_only` | no | JSON list of roles (`manager`, `lead`, `board_helper`) or session names whose answers are delivered as inbox lines only, never keystrokes |
 | `PM_STATUS_BOARD_ANSWER_SEED_AT` / `status_board_answer_seed_at` | no | route only answers at or after this `YYYY-MM-DDTHH:MMZ` stamp (empty: all) |
 | `PM_STATUS_BOARD_STATUS_OVERRIDES` / `status_board_status_overrides` | no | JSON object: Jira status name -> page status, applied before the category map |
 | `PM_CUSTOM_FIELDS` / `custom_fields` | no | `window_start` / `window_end` field ids, used when `/rest/api/3/field` has no "Window start"/"Window end" field |
 | `PM_SB_BIN` / `sb_bin` | no | path to `sb` (default: `sb` on `PATH`) |
+
+Answer routing needs no address table. An answer goes to the live session that owns the question (the
+`questions/<owner>` doc: a lead's session name, or `manager`), else to the one live `manager`; both are resolved at
+delivery time from the xtrm agent host (project-management/references/setup.md, "Routing roles"). With no live
+target the inbox line records `FAILED-no-route` and the lane router still reads it. The sync's own workers doc
+reports to the live manager.
 
 The Jira project must have two datetime fields named "Window start" and "Window end", and
 window Tasks must carry the label `window`. The operator's waiting list uses the label
@@ -67,20 +75,19 @@ Placeholder values only. Merge into the pack config file:
 ```json
 {
   "jira_project": "PROJ",
-  "sb_prefix": "TASK",
-  "epic": "TASK-100",
+  "sb_prefix": "SB",
+  "epic": "SB-100",
   "repo_name": "example-repo",
   "repo_slug": "example-org/example-repo",
   "repo_dir": "~/projects/example-repo",
-  "state_dir": "~/.xtrm/product/example-repo",
+  "state_dir": "~/.local/state/pm/example",
   "operator_account_id": "<jira-account-id>",
-  "operator_handle": "operator",
+  "operator_handle": "jane",
   "custom_fields": {"window_start": "customfield_10001", "window_end": "customfield_10002"},
   "status_board_site": "example-site-1234",
-  "status_board_self_issue": "TASK-101",
-  "status_board_owner_addr": {"main-coord": "example-repo-xt-claude-main-coord"},
-  "status_board_fallback_owner": "example-repo-xt-claude-main-coord",
-  "status_board_file_only_owners": ["example-repo-xt-claude-main-coord"],
+  "status_board_self_issue": "SB-101",
+  "status_board_file_only": ["manager"],
+  "status_board_unit": "status-board-sync.service",
   "status_board_answer_seed_at": "",
   "status_board_status_overrides": {"Deferred": "blocked", "Won't Do": "blocked"}
 }

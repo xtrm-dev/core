@@ -5,15 +5,18 @@
     pm_question.py refresh --q <text> | --id <qid> [--rec ..] [--why ..] [--owner <doc>]
     pm_question.py close   --ref <ref> --q <text> | --id <qid> [--answer <text>] [--owner <doc>]
 
-add      journal entry kind=blocker on <ref> (semantic {for: operator, qid, q, rec, why}) and the
+add      journal entry kind=blocker on <ref> (semantic {summary, for: operator, qid, q, rec, why}) and the
          row {id, ref, by, q, rec, why, at} in Status board doc questions/<owner> (rule 15).
 refresh  re-stamps the row ``at`` (and q/rec/why when given). Needs no journal write.
-close    journal entry kind=decision (semantic {answers: qid, answer}) and removes the row.
+close    journal entry kind=decision (semantic {summary, answers: qid, answer}) and removes the row.
+
+Every journal entry carries ``semantic.summary`` (Substrate requires it; XTRM-771).
 
 The row id is ``qid_of(q)`` (hash of the text) unless --id is given; the Stop hook
 (hooks/operator-questions.py) uses the same function, so the command it prints files the same row it looked for.
 Settings come from pm_config (PM_STATUS_BOARD_SITE, PM_STATUS_BOARD_KEY_FILE, PM_STATE_DIR); the key is never printed.
-No Jira writes: the @operator Jira comment stays the board helper's job.
+No Jira writes: the @operator Jira comment stays the board helper's job. After ``add`` the coordinator hands the
+board helper the exact question text and the ticket key; the board helper posts it with post-guard.py --mention-first.
 """
 from __future__ import annotations
 
@@ -65,24 +68,26 @@ def qid_of(text: str) -> str:
 
 
 def state_root() -> pathlib.Path:
-    root = pm_config.get("PM_STATE_DIR", "~/.xtrm/product/pm")
-    return pathlib.Path(str(root)).expanduser() / "operator-questions"
+    return pm_config.state_dir() / "operator-questions"
+
+
+RUNTIME_PREFIX_RE = re.compile(r"^.*?-xt-[a-z]+-(?=.)")
+MANAGER_RE = re.compile(r"[0-9]{2}-manager$")
 
 
 def owner_of(ident: str) -> str:
-    """Status board doc name (``questions/<owner>``) of a coordinator session name.
+    """Status board doc name (``questions/<owner>``) of a manager or lead session name.
 
-    Order: PM_QUESTION_OWNER; the longest ``status_board_owner_addr`` key the session name ends with;
-    the trailing ``<word>-coord[-N]``; else the session name itself.
+    Order: PM_QUESTION_OWNER; ``manager`` for a ``<day>-manager`` session (one doc that outlives the day, so the
+    next day's manager inherits the open questions); else the session name without its ``<repo>-xt-<runtime>-``
+    worktree prefix (a lead: ``<epic>-<area>-lead``). The answer router sends an answer to the live session of
+    that name, else to the live manager.
     """
     explicit = pm_config.get("PM_QUESTION_OWNER")
     if explicit:
         return str(explicit)
-    keys = [k for k in (pm_config.get_data("PM_STATUS_BOARD_OWNER_ADDR", {}) or {}) if ident.endswith(k)]
-    if keys:
-        return max(keys, key=len)
-    m = re.search(r"([^-]+-coord(?:-\d+)?)$", ident)
-    return m.group(1) if m else ident
+    name = RUNTIME_PREFIX_RE.sub("", ident)
+    return "manager" if MANAGER_RE.search(name) else name
 
 
 # ---------------------------------------------------------------- here.now data API
@@ -243,7 +248,16 @@ def journal_entries(ref: str, kind: str, limit=40) -> list[dict]:
     return (out or {}).get("data") or [] if isinstance(out, dict) else []
 
 
+SUMMARY_MAX = 20000  # sb journal append refuses a longer summary and writes nothing
+
+
 def journal_append(ref: str, kind: str, semantic: dict) -> None:
+    """Append one entry. ``semantic.summary`` is required by Substrate: a caller that left it out gets one built
+    from the entry itself, so no entry is ever written without it (XTRM-771)."""
+    summary = str(semantic.get("summary") or "").strip()
+    if not summary:
+        summary = "%s: %s" % (kind, semantic.get("q") or semantic.get("answer") or semantic.get("qid") or kind)
+    semantic = {**semantic, "summary": summary[:SUMMARY_MAX]}
     r = subprocess.run([sb_bin(), "journal", "append", ref, "--kind", kind,
                         "--semantic", json.dumps(semantic, ensure_ascii=False)],
                        capture_output=True, text=True, timeout=15)
@@ -293,8 +307,11 @@ def cmd_add(a) -> str:
     if not a.dry_run:
         known = [e for e in journal_entries(a.ref, "blocker") if (e.get("semantic") or {}).get("qid") == qid]
         if not known:
-            journal_append(a.ref, "blocker", {"for": "operator", "qid": qid, "q": row["q"], "rec": row["rec"], "why": row["why"]})
+            journal_append(a.ref, "blocker", {"summary": "Operator question %s: %s" % (qid, row["q"]), "for": "operator",
+                                              "qid": qid, "q": row["q"], "rec": row["rec"], "why": row["why"]})
             msgs.append("journal blocker on %s" % a.ref)
+        msgs.append("next: hand the board helper an @operator Jira comment on the row's ticket with this exact text "
+                    "(it posts it with post-guard.py --mention-first): %s" % row["q"])
     return "; ".join(msgs)
 
 
@@ -318,7 +335,9 @@ def cmd_close(a) -> str:
     qid = a.id or qid_of(a.q or "")
     msgs = []
     if a.ref and not a.dry_run:
-        journal_append(a.ref, "decision", {"answers": qid, "answer": a.answer or "answered by the operator"})
+        answer = a.answer or "answered by the operator"
+        journal_append(a.ref, "decision", {"summary": "Operator answer to %s: %s" % (qid, answer),
+                                           "answers": qid, "answer": answer})
         msgs.append("journal decision on %s" % a.ref)
 
     def mutate(rows):

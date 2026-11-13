@@ -19,8 +19,8 @@ spec = importlib.util.spec_from_file_location("operator_questions", HOOK)
 oq = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(oq)
 
-OWNER = "alpha-coord"
-IDENT = "proj-xt-claude-alpha-coord"
+OWNER = "EP-1-api-lead"
+IDENT = "proj-xt-claude-EP-1-api-lead"
 QUESTION = "Vuoi che proceda con il merge della PR 12 prima della finestra?"
 
 
@@ -57,7 +57,7 @@ def run_stops(n, fetch=no_row, text=QUESTION, t0=1000.0, journal=lambda ref, kin
 
 # ---------------------------------------------------------------- classifier
 @pytest.mark.parametrize("prompt", [
-    '<cross-session-message message-id="m1" from="uds:/run/x.sock">hi</cross-session-message>',
+    '<cross-session-message message-id="m1" from="peer-session">hi</cross-session-message>',
     "<task-notification><task-id>b1</task-id></task-notification>",
     "[Cross-session delivery notice] message m1 delivered",
     "[SYSTEM NOTIFICATION] context 80%",
@@ -149,6 +149,9 @@ def test_no_reminder_before_n_turns_then_exactly_one(env):
     reason = block["reason"]
     assert QUESTION in reason and "pm_question.py add" in reason and "--ref EP-1" in reason
     assert pm_question.qid_of(QUESTION) in reason and "questions/%s" % OWNER in reason
+    # the board-helper hand-off: one @operator Jira comment per open question, exact text and ticket key
+    assert "hand the board helper an @operator comment for the Jira ticket of EP-1" in reason
+    assert json.dumps(QUESTION, ensure_ascii=False) in reason and "post-guard.py --mention-first" in reason
 
 
 def test_reminder_once_per_n_turns(env):
@@ -232,17 +235,23 @@ def test_non_coordinator_is_untouched(env, monkeypatch, capsys):
     assert not (env / "state" / "operator-questions").exists()
 
 
-@pytest.mark.parametrize("ident,yes", [("alpha-coord", True), ("beta-coord-3", True), ("mon-coord-123", False),
-                                        ("coordinator-helper", False), ("alpha-coord-board", False)])
+@pytest.mark.parametrize("ident,yes", [("proj-xt-claude-thu13-manager", True), ("fri14-manager", True),
+                                        ("thu13-manager-2", True), ("EP-1-api-lead", True),
+                                        ("proj-xt-claude-EP-2-ui-lead", True), ("EP-2-ui-lead-12", True),
+                                        ("alpha-coord", True), ("beta-coord-3", True), ("mon-coord-123", False),
+                                        ("alpha-coord-board", False), ("EP-1-lead-worker", False),
+                                        ("proj-xt-pi-board-helper", False), ("proj-xt-claude-SB-12-fix-parser", False),
+                                        ("XTRM-763-worker", False), ("leader", False), ("manager", False)])
 def test_coordinator_pattern(env, ident, yes):
     assert oq.is_coordinator(ident) is yes
 
 
 def test_xtrm_role_overrides_name(env, monkeypatch):
     monkeypatch.setenv("XTRM_ROLE", "worker")
-    assert oq.is_coordinator("alpha-coord") is False
-    monkeypatch.setenv("XTRM_ROLE", "coordinator")
-    assert oq.is_coordinator("plain-name") is True
+    assert oq.is_coordinator("thu13-manager") is False
+    for role in ("coordinator", "manager", "lead"):
+        monkeypatch.setenv("XTRM_ROLE", role)
+        assert oq.is_coordinator("plain-name") is True
 
 
 def test_multi_project_config_needs_explicit_project(env, monkeypatch, tmp_path):
@@ -376,13 +385,13 @@ def test_chat_question_is_due_n_turns_after_the_ask(env):
 
 
 def test_instance_names_come_from_config_only(env):
-    assert oq.detect_questions("Dawid, pronto per la finestra?") == []
+    assert oq.detect_questions("Morgana, pronto per la finestra?") == []
     cfg = json.loads(pathlib.Path(os.environ["PM_CONFIG"]).read_text())
-    cfg["operator_names"] = ["dawid"]
+    cfg["operator_names"] = ["morgana"]
     pathlib.Path(os.environ["PM_CONFIG"]).write_text(json.dumps(cfg))
     pm_config._RAW = pm_config._CACHE = None
     oq._NAME_RE = None
-    assert oq.detect_questions("Dawid, pronto per la finestra?")
+    assert oq.detect_questions("Morgana, pronto per la finestra?")
 
 
 @pytest.mark.parametrize("text", [

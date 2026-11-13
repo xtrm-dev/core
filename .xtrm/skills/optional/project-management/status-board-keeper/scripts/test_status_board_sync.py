@@ -23,7 +23,7 @@ os.environ.update({
     "PM_JIRA_PROJECT": "PROJ", "PM_SB_PREFIX": "TASK", "JIRA_SITE": "https://example.atlassian.net",
     "PM_REPO_NAME": "example-repo", "PM_REPO_SLUG": "example-org/example-repo",
     "PM_STATUS_BOARD_SITE": "example-site", "PM_STATUS_BOARD_SELF_ISSUE": "TASK-1",
-    "STATUS_BOARD_STATE_DIR": os.path.join(tempfile.gettempdir(), "status_board-test-state"),
+    "PM_STATUS_BOARD_STATE_DIR": os.path.join(tempfile.gettempdir(), "status_board-test-state"),
 })
 spec = importlib.util.spec_from_file_location("status_board_sync", os.path.join(HERE, "status_board_sync.py"))
 ts = importlib.util.module_from_spec(spec)
@@ -375,6 +375,60 @@ class MainExitPath(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("ASSERT-COUNT window-events-placed=2 distinct-refs=2", out)
         self.assertIn("RESULT OK", out)
+
+
+class AnswerRouting(unittest.TestCase):
+    """deliver(): an answer goes to its owner's live session, else to the live manager; never a stored address."""
+
+    REPO = "/srv/example-repo/.xtrm/worktrees/"
+
+    def sess(self, wt, state="working"):
+        return {"name": wt, "cwd": self.REPO + wt, "state": state, "repository": "example-org/example-repo"}
+
+    def setUp(self):
+        self.sent = []
+        saved = (ts.subprocess.run, ts.FILE_ONLY, ts.live_panes)
+        self.addCleanup(lambda: (setattr(ts.subprocess, "run", saved[0]), setattr(ts, "FILE_ONLY", saved[1]),
+                                 setattr(ts, "live_panes", saved[2])))
+
+        class R:
+            returncode = 0
+
+        def run(cmd, **kw):
+            self.sent.append(cmd)
+            return R()
+        ts.subprocess.run = run
+        ts.live_panes = lambda: []
+        ts.FILE_ONLY = set()
+
+    def test_live_owner_gets_the_answer(self):
+        live = [self.sess("example-repo-xt-claude-EP-1-api-lead"), self.sess("example-repo-xt-claude-thu13-manager")]
+        self.assertEqual(ts.deliver("EP-1-api-lead", "text", live), "xtmux:example-repo-xt-claude-EP-1-api-lead")
+
+    def test_gone_owner_falls_back_to_the_manager(self):
+        live = [self.sess("example-repo-xt-claude-EP-1-api-lead", state="ended"),
+                self.sess("example-repo-xt-claude-thu13-manager")]
+        self.assertEqual(ts.deliver("EP-1-api-lead", "text", live), "xtmux:example-repo-xt-claude-thu13-manager")
+        self.assertEqual(ts.deliver("unknown", "text", live), "xtmux:example-repo-xt-claude-thu13-manager")
+
+    def test_no_owner_and_no_manager_is_a_failed_delivery(self):
+        out = ts.deliver("EP-1-api-lead", "text", [])
+        self.assertTrue(out.startswith("FAILED-no-route:"), out)
+        self.assertEqual(self.sent, [])
+
+    def test_file_only_by_role_or_name_sends_nothing(self):
+        live = [self.sess("example-repo-xt-claude-thu13-manager"), self.sess("example-repo-xt-claude-EP-1-api-lead")]
+        ts.FILE_ONLY = {"manager"}
+        self.assertEqual(ts.deliver("unknown", "text", live), "file-only")
+        ts.FILE_ONLY = {"lead"}
+        self.assertEqual(ts.deliver("EP-1-api-lead", "text", live), "file-only")
+        ts.FILE_ONLY = {"EP-1-api-lead"}
+        self.assertEqual(ts.deliver("EP-1-api-lead", "text", live), "file-only")
+        self.assertEqual(self.sent, [])
+
+    def test_answers_inbox_is_the_lane_path(self):
+        self.assertEqual(ts.INBOX, str(ts.pm_config.answers_inbox()))
+        self.assertEqual(os.path.dirname(ts.INBOX), ts.STATE_DIR)
 
 
 if __name__ == "__main__":

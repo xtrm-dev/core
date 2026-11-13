@@ -33,7 +33,7 @@ that is missing stops the script with its name.
 
 | Family | Scripts | Required | Optional |
 |---|---|---|---|
-| Audit | `scripts/run-audit.sh`, `scripts/facts.py`, `scripts/aggregate.py` | `AGENTRUN_PI_ROOT`, `JIRA_SITE`, `PM_OPERATOR_EMAIL`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`, `PM_REPO_SLUG`, `custom_fields`, `terminal_statuses` | `JIRA_TOKEN_FILE` (default `~/.secrets/atlassian-api-token.txt`), `PM_REPO_DIR` (default: current directory, or `--repo`), `PM_STATE_DIR` (default `~/.local/state`; receipts in `<state>/board-audit`), `PM_AUDIT_MODEL`, `blocked_statuses` (default `["Blocked"]`), `window_keys`, `plan_predecessors`, `day_predecessors`, `halt_band_utc`, `stale_pr_control` |
+| Audit | `scripts/run-audit.sh`, `scripts/facts.py`, `scripts/aggregate.py` | `AGENTRUN_PI_ROOT`, `JIRA_SITE`, `PM_OPERATOR_EMAIL`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`, `PM_REPO_SLUG`, `custom_fields`, `terminal_statuses` | `JIRA_TOKEN_FILE` (default `~/.secrets/atlassian-api-token.txt`), `PM_REPO_DIR` (default: current directory, or `--repo`), `PM_STATE_DIR` (default `~/.local/state`; receipts in `<state>/board-audit`), `PM_AUDIT_MODEL`, `blocked_statuses` (default `["Blocked"]`), `window_keys`, `plan_predecessors`, `day_predecessors`, `window_bands`, `stale_pr_control` |
 | Readiness | `scripts/readiness/run-readiness.sh`, `readiness_facts.py`, `aggregate_readiness.py` | `AGENTRUN_PI_ROOT`, `READINESS_OUT`, the Jira settings of `project-management/scripts/jira.py`, `PM_JIRA_PROJECT`, `PM_JIRA_EPIC`, `PM_SB_PREFIX`, `PM_SB_PROJECT_ID`, `PM_REPO_SLUG`, `PM_REPO_NAME`, `PM_PR_SINCE`, `custom_fields`, `terminal_statuses` | `READINESS_METHOD2`, `readiness_extra_epics`, `other_repos`, `readiness_controls` (without it the selftest proves nothing and says SKIP) |
 | Cycle | `scripts/cycle/hygiene_cycle.py` | the Jira settings of `jira.py`, `PM_JIRA_PROJECT`, `PM_EPIC`, `PM_REPO_SLUG`, `PM_LANE_DIR` (writes `CYCLE-HYGIENE.json` there), `custom_fields`, `done_statuses`, `open_statuses` | none. `--check-names` needs no setting |
 | Lane | `scripts/lane/*` | see [`setup-lane.md`](setup-lane.md) | |
@@ -66,7 +66,7 @@ are read from the current directory.
 | `o1w_pinned_control` (`PM_O1W_PINNED_CONTROL`) | optional Jira key the hygiene cycle pins as the O1w positive control; a PASS then proves the query, auth and field mapping |
 | `window_keys` | the pinned sample rows `run-audit.sh` reads when no day is given |
 | `plan_predecessors`, `day_predecessors` | declared window order: `{key: [keys]}` and `{"YYYY-MM-DD": {key: [keys]}}` |
-| `halt_band_utc` | `["HH:MM", "HH:MM"]`: the only band an ingestor window may use (default `21:17`-`21:55`) |
+| `window_bands` | `[{"name", "utc_from": "HH:MM", "utc_to": "HH:MM", "match": [lower-case words], "rule"}]`: a window Task whose summary or labels contain a `match` word must lie inside that UTC band (first match wins). Default: none, so no band applies. Replaces `halt_band_utc`: the old pair `["21:17", "21:55"]` becomes one band with the `match` words of the service it guarded |
 | `stale_pr_control` | a PR number merged 7 or more days ago; the selftest checks it is classed stale |
 | `readiness_extra_epics` | epics read by the readiness snapshot besides the ones linked from `jira_epic` |
 | `other_repos` | sibling repository names a ticket can point to (readiness R3) |
@@ -85,14 +85,14 @@ Placeholder values. Replace each one; do not commit the result.
   "jira_project": "PROJ",
   "jira_epic": "PROJ-1",
   "jira_label": "proj-project",
-  "sb_prefix": "PRJ",
-  "sb_project_id": "prj_example",
-  "epic": "PRJ-100",
+  "sb_prefix": "SB",
+  "sb_project_id": "prj_sb",
+  "epic": "SB-100",
   "repo_slug": "example-org/example-repo",
   "repo_name": "example-repo",
-  "repo_dir": "~/src/example-repo",
-  "state_dir": "~/.local/state",
-  "lane_dir": "~/.local/state/lanes/PRJ-200",
+  "repo_dir": "~/projects/example-repo",
+  "state_dir": "~/.local/state/pm/example",
+  "lane_dir": "~/.local/state/pm/example/lane",
   "timezone": "Europe/Paris",
   "pr_since": "2026-01-01",
   "custom_fields": {"start_date": "customfield_10015", "window_start": "customfield_10100",
@@ -105,6 +105,8 @@ Placeholder values. Replace each one; do not commit the result.
   "plan_predecessors": {"PROJ-11": ["PROJ-10"]},
   "day_predecessors": {"2026-01-15": {"PROJ-11": ["PROJ-10"]}},
   "other_repos": ["infra"],
+  "window_bands": [{"name": "nightly-halt", "utc_from": "21:15", "utc_to": "21:55", "match": ["feed handler"],
+                    "rule": "the feed handler changes only inside the nightly halt"}],
   "readiness_extra_epics": [],
   "readiness_controls": [
     {"name": "positive: PROJ-20 ties #123 merged on master", "key": "PROJ-20", "pr_on_master": 123},

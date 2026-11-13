@@ -22,8 +22,8 @@ class Selection(unittest.TestCase):
         self.old_env = dict(os.environ)
         self.old_cwd = os.getcwd()
         os.environ["PM_CONFIG"] = str(self.cfg)
-        os.environ.pop("PM_PROJECT", None)
-        os.environ.pop("PM_LANE_DIR", None)
+        for key in [k for k in os.environ if (k.startswith("PM_") or k.startswith("JIRA_")) and k != "PM_CONFIG"]:
+            del os.environ[key]  # other tests in the same process may have set them
 
     def tearDown(self):
         os.chdir(self.old_cwd)
@@ -104,6 +104,34 @@ class Selection(unittest.TestCase):
         out = subprocess.run([sys.executable, str(HERE / "pm_check.py"), "--project", "a"],
                              env={**os.environ}, capture_output=True, text=True).stdout
         self.assertIn("CLASH   lane_dir", out)
+
+
+class SharedPaths(unittest.TestCase):
+    """One answers inbox and one bot inbox for every reader, derived from the state dirs."""
+
+    def setUp(self):
+        self.old_env = dict(os.environ)
+        self.tmp = tempfile.TemporaryDirectory()
+        cfg = pathlib.Path(self.tmp.name) / "pm.json"
+        cfg.write_text(json.dumps({"state_dir": "/srv/state", "repo_name": "example-repo"}))
+        os.environ["PM_CONFIG"] = str(cfg)
+        for k in ("PM_PROJECT", "PM_STATE_DIR", "PM_STATUS_BOARD_STATE_DIR", "PM_ANSWERS_INBOX", "PM_BOT_INBOX"):
+            os.environ.pop(k, None)
+        pm_config._RAW = pm_config._CACHE = None
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.old_env)
+        pm_config._RAW = pm_config._CACHE = None
+        self.tmp.cleanup()
+
+    def test_defaults_follow_the_state_dirs(self):
+        self.assertEqual(str(pm_config.answers_inbox()), "/srv/state/status_board/answers-inbox.jsonl")
+        self.assertEqual(str(pm_config.bot_inbox()), "/srv/state/xtrm-bot-watch/inbox.jsonl")
+        os.environ["PM_STATUS_BOARD_STATE_DIR"] = "/srv/sb"
+        self.assertEqual(str(pm_config.answers_inbox()), "/srv/sb/answers-inbox.jsonl")
+        os.environ["PM_ANSWERS_INBOX"] = "/x/a.jsonl"
+        self.assertEqual(str(pm_config.answers_inbox()), "/x/a.jsonl")
 
 
 if __name__ == "__main__":

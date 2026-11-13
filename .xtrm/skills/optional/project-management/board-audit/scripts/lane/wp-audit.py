@@ -817,7 +817,7 @@ def selftest():
                 return [args[-1] + parents]
             if args[0] == "diff":
                 forms.append(("diff", args[-1]))
-                return ["api/mcp_v2/market.py", "rust_ingestor/src/bar_engine.rs"]
+                return ["api/mcp_v2/market.py", "svc_feed/src/engine.rs"]
             if args[0] == "show":
                 forms.append(("show", args[-1]))
                 return ["app/plain.py"]
@@ -826,7 +826,7 @@ def selftest():
         git_lines = fake_git
         merge_files = derive_scope(merge_sha)
         plain_files = derive_scope(plain_sha)
-        ok = (merge_files == ["api/mcp_v2/market.py", "rust_ingestor/src/bar_engine.rs"]
+        ok = (merge_files == ["api/mcp_v2/market.py", "svc_feed/src/engine.rs"]
               and plain_files == ["app/plain.py"]
               and ("diff", merge_sha) in forms and ("show", merge_sha) not in forms
               and ("show", plain_sha) in forms)

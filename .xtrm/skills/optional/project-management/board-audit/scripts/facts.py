@@ -19,7 +19,7 @@ Settings (pm_config: env var, then the pack config file; see ../references/setup
   PM_REPO_DIR        optional, the checkout git is read from; overridable with --repo
   custom_fields      start_date, window_start, window_end field ids
   terminal_statuses, blocked_statuses, window_keys, plan_predecessors, day_predecessors,
-  halt_band_utc, stale_pr_control   per-board data (setup.md lists the shapes)
+  window_bands, stale_pr_control    per-board data (setup.md lists the shapes)
 
 Unit tests: `python3 facts.py --selftest` (network cases report SKIPPED, not pass).
 """
@@ -48,11 +48,13 @@ def require_settings():
     for name in ('PM_CUSTOM_FIELDS', 'PM_TERMINAL_STATUSES'):
         pm_config.get_data(name, required=True)
 
-# CME daily halt: the only window in which the Rust tick ingestor may be swapped.
 # Git reads (on_stable) need the project checkout (PM_REPO_DIR). Never a literal path.
 BASE_REPO = str(pm_config.path('PM_REPO_DIR') or os.getcwd())
-INGESTOR_HALT_UTC = ('21:17', '21:55')
-INGESTOR_HALT_UTC = tuple(pm_config.get_data('PM_HALT_BAND_UTC') or INGESTOR_HALT_UTC)
+# UTC bands some windows must fall inside (config window_bands; none by default, so no band applies):
+#   [{"name": str, "utc_from": "HH:MM", "utc_to": "HH:MM", "match": [lower-case words], "rule": str}]
+# A Task whose summary or labels contain one of a band's `match` words must sit inside that band; the first
+# band that matches wins. The pack carries no band: which service may change when is the project's fact.
+WINDOW_BANDS = list(pm_config.get_data('PM_WINDOW_BANDS', []) or [])
 
 # The pinned sample rows read when no --day is given (config window_keys).
 WINDOW_KEYS = pm_config.get_data('PM_WINDOW_KEYS', [])
@@ -94,17 +96,14 @@ def parse_jira_time(value):
     raise ValueError(f'unparseable Jira time: {value!r}')
 
 
-def is_ingestor_row(row):
-    text = ((row.get('summary') or '') + ' ' + ' '.join(row.get('labels') or [])).lower()
-    return 'ingestor' in text or 'tick' in text
-
-
 def window_band(row):
-    """The UTC band this Task's window must fall inside, or None when any band is fine."""
-    if is_ingestor_row(row):
-        start, end = INGESTOR_HALT_UTC
-        return {'name': 'cme-daily-halt', 'utc_from': start, 'utc_to': end,
-                'rule': 'the tick ingestor changes only inside the CME daily halt'}
+    """The UTC band this Task's window must fall inside (the first configured band whose `match` words occur in
+    its summary or labels), or None when any band is fine."""
+    text = ((row.get('summary') or '') + ' ' + ' '.join(row.get('labels') or [])).lower()
+    for band in WINDOW_BANDS:
+        if any(str(word).lower() in text for word in band.get('match') or []):
+            return {'name': band.get('name') or 'band', 'utc_from': band['utc_from'], 'utc_to': band['utc_to'],
+                    'rule': band.get('rule') or ''}
     return None
 
 
@@ -446,8 +445,13 @@ def selftest():
     cl = same_slot_clusters(rows)
     check('182/306 detected as one same-slot cluster', [c['rows'] for c in cl], [['WIN-182', 'WIN-306']])
 
-    # 2. window 457 as it was entered: 23:17+0100 -> 22:17Z, outside the 21:17-21:55Z halt.
-    ing = {'summary': 'window: ingestor swap Mon (rust)', 'labels': ['window'], 'cf37': '2026-10-26T23:17:00.000+0100', 'cf38': '2026-10-26T23:55:00.000+0100'}
+    # 2. window 457 as it was entered: 23:17+0100 -> 22:17Z, outside the 21:17-21:55Z band.
+    #    The band is a fixture here: the pack carries none (config window_bands).
+    global WINDOW_BANDS
+    saved_bands = WINDOW_BANDS
+    WINDOW_BANDS = [{'name': 'daily-halt', 'utc_from': '21:17', 'utc_to': '21:55', 'match': ['feeder'],
+                     'rule': 'the feeder changes only inside the daily halt'}]
+    ing = {'summary': 'window: feeder swap Mon', 'labels': ['window'], 'cf37': '2026-10-26T23:17:00.000+0100', 'cf38': '2026-10-26T23:55:00.000+0100'}
     inside, detail = window_inside_expected_band(ing)
     check('457 as entered is OUTSIDE the halt band', (inside, '2026-10-26T22:17Z' in detail), (False, True))
 
@@ -455,9 +459,12 @@ def selftest():
     ing_ok = dict(ing, cf37='2026-10-26T22:17:00.000+0100', cf38='2026-10-26T22:47:00.000+0100')
     check('457 corrected is INSIDE the halt band', window_inside_expected_band(ing_ok)[0], True)
 
-    # 4. a non-ingestor Task has no band, so the band check cannot fail it.
+    # 4. a Task no band matches has no band, so the band check cannot fail it.
     other = {'summary': 'api deploy', 'cf37': '2026-10-22T12:07:00.000+0200', 'cf38': '2026-10-22T12:37:00.000+0200'}
-    check('non-ingestor row has no band', window_inside_expected_band(other)[0], None)
+    check('unmatched row has no band', window_inside_expected_band(other)[0], None)
+    WINDOW_BANDS = []
+    check('no configured band: no band applies', window_inside_expected_band(ing)[0], None)
+    WINDOW_BANDS = saved_bands
 
     # 5. ordering: 458 (ends 10:37+0200 = 08:37Z) before 373 (starts 10:07+0200 = 08:07Z) -> violated.
     order_rows = {

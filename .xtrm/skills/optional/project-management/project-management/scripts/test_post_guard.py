@@ -272,5 +272,77 @@ class VerifyReplyTargetTest(unittest.TestCase):
             self.assertIn("99999", why)
 
 
+class AttachTest(unittest.TestCase):
+    """jira.py attach: multipart POST with X-Atlassian-Token, refused without the board-helper flag (AT-01)."""
+
+    def setUp(self):
+        self.J = pg.J
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.file = os.path.join(tmp.name, "evidence.txt")
+        with open(self.file, "w") as fh:
+            fh.write("deploy log line\n")
+        self.sent = []
+        J = self.J
+
+        class Resp:
+            status = 200
+
+            def read(self):
+                return json.dumps([{"id": "10500", "filename": "evidence.txt"}]).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, *a, **k):
+            self.sent.append(req)
+            return Resp()
+        patches = [mock.patch.object(J.urllib.request, "urlopen", urlopen),
+                   mock.patch.object(J, "creds", lambda: ("bot@example.invalid", "tok")),
+                   mock.patch.dict(os.environ, {}, clear=False)]
+        for pt in patches:
+            pt.start()
+            self.addCleanup(pt.stop)
+        os.environ.pop("POST_GUARD_ACTIVE", None)   # post-guard sets it at import; the CLI path has it unset
+
+    def test_refused_without_the_flag(self):
+        with redirect_stdout(io.StringIO()) as out:
+            st, msg = self.J.attach(KEY, self.file)
+        self.assertEqual(st, 400)
+        self.assertIn("AT-01", msg)
+        self.assertEqual(self.sent, [], "nothing reached Jira")
+
+    def test_board_helper_posts_multipart_with_the_no_check_header(self):
+        st, out = self.J.attach(KEY, self.file, board_helper=True)
+        self.assertEqual(st, 200)
+        (req,) = self.sent
+        self.assertEqual(req.get_method(), "POST")
+        self.assertTrue(req.full_url.endswith(f"/rest/api/3/issue/{KEY}/attachments"))
+        self.assertEqual(req.get_header("X-atlassian-token"), "no-check")
+        self.assertTrue(req.get_header("Content-type").startswith("multipart/form-data; boundary="))
+        self.assertIn(b'name="file"; filename="evidence.txt"', req.data)
+        self.assertIn(b"deploy log line", req.data)
+
+    def test_inside_post_guard_is_allowed(self):
+        os.environ["POST_GUARD_ACTIVE"] = "1"
+        self.assertEqual(self.J.attach(KEY, self.file)[0], 200)
+
+    def test_credential_shaped_text_is_refused(self):
+        with open(self.file, "w") as fh:
+            fh.write("token = ATATT" + "x" * 30)
+        with redirect_stdout(io.StringIO()):
+            st, msg = self.J.attach(KEY, self.file, board_helper=True)
+        self.assertEqual(st, 400)
+        self.assertIn("SC-03", msg)
+        self.assertEqual(self.sent, [])
+
+    def test_json_post_to_attachments_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self.J._raw_call("POST", f"/rest/api/3/issue/{KEY}/attachments", {})
+
+
 if __name__ == "__main__":
     unittest.main()

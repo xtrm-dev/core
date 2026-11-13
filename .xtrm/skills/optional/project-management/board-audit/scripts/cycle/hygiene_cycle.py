@@ -56,6 +56,10 @@ CF_WIN_START = _CF.get("window_start", "customfield_window_start")
 KEY_RE = re.escape(PROJECT) + r"-\d+"
 DONE_STATUSES = set(pm_config.get_data("PM_DONE_STATUSES", []))
 ACTIVE_STATUSES = set(pm_config.get_data("PM_OPEN_STATUSES", []))
+# Statuses a window may hold without being workable: excluded from O1w/O1b. The lane's parked_statuses
+# (default: the names these predicates have always used). Every name must exist on the board, or JQL fails.
+_PARKED = pm_config.get_data("PM_PARKED_STATUSES", ["Blocked", "Deferred"])
+PARKED_JQL = ", ".join('"%s"' % s.replace('"', '\\"') for s in dict.fromkeys(_PARKED))
 
 # O1w's positive control is PINNED, not taken from the predicate's own result set. Derived from the
 # result set, a zero result made the control unexercised, so a real zero and a broken predicate looked
@@ -106,9 +110,9 @@ PREDS = {
     "H2": f"project = {PROJECT} AND labels = window AND (duedate is EMPTY OR {CF_WIN_START} is EMPTY)",
     "H3": f'project = {PROJECT} AND labels = window AND summary ~ "10-*"',
     "H4": f"project = {PROJECT} AND labels = window AND parent is EMPTY",
-    "O1w": (f"project = {PROJECT} AND statusCategory != Done AND status not in (Blocked, Deferred) "
+    "O1w": (f"project = {PROJECT} AND statusCategory != Done AND status not in ({PARKED_JQL}) "
             "AND duedate < now() AND labels = window"),
-    "O1b": f"project = {PROJECT} AND statusCategory != Done AND status not in (Blocked, Deferred) AND duedate < now()",
+    "O1b": f"project = {PROJECT} AND statusCategory != Done AND status not in ({PARKED_JQL}) AND duedate < now()",
     "N1": f"{BASE} AND duedate >= now() AND duedate <= 2d",
     "N2": f"project = {PROJECT} AND statusCategory != Done AND duedate is EMPTY",
 }

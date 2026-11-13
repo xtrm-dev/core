@@ -35,11 +35,19 @@ class Resolve(unittest.TestCase):
         pm_config._RAW = pm_config._CACHE = None
         self.tmp.cleanup()
 
-    def test_lead_by_worktree_address(self):
-        live = [sess("thu13-lead-coord", REPO + "/.xtrm/worktrees/alpha-xt-claude-thu13-lead-coord"),
-                sess("MMD-1-options-coord", REPO + "/.xtrm/worktrees/alpha-xt-claude-MMD-1-options-coord")]
-        t = rt.resolve("lead", live)
-        self.assertEqual(t["address"], "alpha-xt-claude-thu13-lead-coord")
+    def wt(self, name):
+        return REPO + "/.xtrm/worktrees/alpha-xt-claude-" + name
+
+    def test_manager_by_worktree_address(self):
+        live = [sess("thu13-manager", self.wt("thu13-manager")),
+                sess("EP-1-api-lead", self.wt("EP-1-api-lead"))]
+        self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-thu13-manager")
+
+    def test_manager_pattern_needs_the_day(self):
+        live = [sess("x", self.wt("project-manager"))]   # a worker that merely ends in -manager
+        with self.assertRaises(rt.RouteError) as ctx:
+            rt.resolve("manager", live)
+        self.assertEqual(ctx.exception.code, 3)
 
     def test_board_helper_and_history_ignored(self):
         live = [sess("alpha-xt-pi-board-helper", REPO + "/.xtrm/worktrees/alpha-xt-pi-board-helper"),
@@ -47,27 +55,53 @@ class Resolve(unittest.TestCase):
         self.assertEqual(rt.resolve("board_helper", live)["address"], "alpha-xt-pi-board-helper")
 
     def test_other_project_does_not_count(self):
-        live = [sess("x-lead-coord", "/srv/projects/beta/.xtrm/worktrees/beta-xt-claude-x-lead-coord",
+        live = [sess("thu13-manager", "/srv/projects/beta/.xtrm/worktrees/beta-xt-claude-thu13-manager",
                      repository="org/beta")]
         with self.assertRaises(rt.RouteError) as ctx:
-            rt.resolve("lead", live)
+            rt.resolve("manager", live)
         self.assertEqual(ctx.exception.code, 3)
 
     def test_repository_slug_counts_outside_repo_dir(self):
-        live = [sess("y-lead-coord", "/elsewhere/.xtrm/worktrees/alpha-xt-claude-y-lead-coord", repository="org/alpha")]
-        self.assertEqual(rt.resolve("lead", live)["address"], "alpha-xt-claude-y-lead-coord")
+        live = [sess("fri14-manager", "/elsewhere/.xtrm/worktrees/alpha-xt-claude-fri14-manager", repository="org/alpha")]
+        self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-fri14-manager")
 
-    def test_two_leads_refused(self):
-        live = [sess("a-lead-coord", REPO + "/.xtrm/worktrees/alpha-xt-claude-a-lead-coord"),
-                sess("b-lead-coord", REPO + "/.xtrm/worktrees/alpha-xt-claude-b-lead-coord")]
+    def test_two_managers_refused(self):
+        live = [sess("thu13-manager", self.wt("thu13-manager")), sess("fri14-manager", self.wt("fri14-manager"))]
+        with self.assertRaises(rt.RouteError) as ctx:
+            rt.resolve("manager", live)
+        self.assertEqual(ctx.exception.code, 4)
+
+    def test_several_leads_are_listed_and_resolve_refuses(self):
+        live = [sess("EP-1-api-lead", self.wt("EP-1-api-lead")), sess("EP-2-ui-lead", self.wt("EP-2-ui-lead")),
+                sess("worker-1", self.wt("EP-1-fix-parser"))]
+        self.assertEqual(sorted(rt.address(s) for s in rt.matches("lead", live)),
+                         ["alpha-xt-claude-EP-1-api-lead", "alpha-xt-claude-EP-2-ui-lead"])
         with self.assertRaises(rt.RouteError) as ctx:
             rt.resolve("lead", live)
         self.assertEqual(ctx.exception.code, 4)
+        self.assertIn("name the lead", str(ctx.exception))
+
+    def test_team_groups_every_live_session(self):
+        live = [sess("thu13-manager", self.wt("thu13-manager")), sess("EP-1-api-lead", self.wt("EP-1-api-lead")),
+                sess("EP-2-ui-lead", self.wt("EP-2-ui-lead")),
+                sess("pi", REPO + "/.xtrm/worktrees/alpha-xt-pi-board-helper"),
+                sess("w", self.wt("EP-1-fix-parser")), sess("gone", self.wt("old-worker"), state="ended")]
+        t = rt.team(live)
+        self.assertEqual([r["address"] for r in t["manager"]], ["alpha-xt-claude-thu13-manager"])
+        self.assertEqual(len(t["lead"]), 2)
+        self.assertEqual([r["address"] for r in t["board_helper"]], ["alpha-xt-pi-board-helper"])
+        self.assertEqual([r["address"] for r in t["other"]], ["alpha-xt-claude-EP-1-fix-parser"])
+
+    def test_find_by_name(self):
+        live = [sess("EP-1-api-lead", self.wt("EP-1-api-lead")), sess("EP-2-ui-lead", self.wt("EP-2-ui-lead"))]
+        self.assertEqual(rt.find("EP-1-api-lead", live)["address"], "alpha-xt-claude-EP-1-api-lead")
+        self.assertEqual(rt.find("alpha-xt-claude-EP-2-ui-lead", live)["address"], "alpha-xt-claude-EP-2-ui-lead")
+        self.assertIsNone(rt.find("lead", live))      # ends-with on a whole segment, and two would match
 
     def test_pattern_override_from_config(self):
-        os.environ["PM_ROUTE_ROLES"] = json.dumps({"lead": "*wed11-coord"})
-        live = [sess("wed11-coord", REPO + "/.xtrm/worktrees/alpha-xt-claude-wed11-coord")]
-        self.assertEqual(rt.resolve("lead", live)["address"], "alpha-xt-claude-wed11-coord")
+        os.environ["PM_ROUTE_ROLES"] = json.dumps({"manager": "*wed11-coord"})
+        live = [sess("wed11-coord", self.wt("wed11-coord"))]
+        self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-wed11-coord")
 
     def test_unknown_role(self):
         with self.assertRaises(rt.RouteError) as ctx:

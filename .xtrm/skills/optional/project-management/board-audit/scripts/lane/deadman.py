@@ -11,7 +11,8 @@ produces a sound. Checks, each against the record rather than against filesystem
   SCHEDULER-DEAD      the pid in the newest SCHEDULER-START line is gone, or its cwd is not this lane
   ROUTER-STALE        the newest events.log line carrying a timestamp is older than STALE_S
   SEND-UNCONFIRMED    an outbox-pending record has waited longer than SEND_S without mark-sent.py
-  ROUTE-TARGET        the lead or board_helper role resolves to no live session, or to several
+  ROUTE-TARGET        the manager or board_helper role resolves to no live session, or to several
+                      (not lead: several live leads are normal, and the board helper names the one it means)
   WATCHER-COUNT       zero or more than one tail on this lane's events.log (one watcher, and it advances)
   LOG-MISSING         events.log does not exist
 
@@ -157,11 +158,12 @@ def check():
         alarm("WATCHER-COUNT 0 tails on events.log: nobody is reading this log")
     elif n > 1:
         alarm(f"WATCHER-COUNT {n} tails on events.log: one watcher, not several")
-    # ROUTE-TARGET: forwarding needs exactly one live lead (and one board helper reading this log). A missing or
-    # doubled role is said here every pass, so a stale route is seen before a message waits on it.
+    # ROUTE-TARGET: the default forward target is the one live manager, and one board helper reads this log. A
+    # missing or doubled role is said here every pass, so a stale route is seen before a message waits on it.
+    # Leads are not checked: several live leads are the normal state.
     try:
         live = route_target.sessions()
-        for role in ("lead", "board_helper"):
+        for role in ("manager", "board_helper"):
             try:
                 route_target.resolve(role, live)
             except route_target.RouteError as exc:

@@ -71,24 +71,39 @@ Rules:
 
 ### Routing roles
 
-Messages that must reach a person-in-charge (the board helper forwarding operator comments to the lead coordinator,
+Messages that must reach a person-in-charge (operator comments the board helper forwards, Status board answers,
 the lane's alarms) are addressed by role, never by a stored address: a stored address goes stale the day its
 session ends. The role is in the session name, set once at launch:
 
-| Role | Default pattern | Launch it as |
-|---|---|---|
-| `lead` | `*-lead-coord` | `xt claude <day>-lead-coord` (for example `thu13-lead-coord`); the next day's lead takes the next name |
-| `board_helper` | `*board-helper*` | `xt pi board-helper` (or `<project>-board-helper`) |
+| Role | Default pattern | Launch it as | Live sessions |
+|---|---|---|---|
+| `manager` | `*[0-9][0-9]-manager` | `xt claude <day>-manager` (for example `thu13-manager`); the next day's manager takes the next name | exactly one |
+| `lead` | `*-lead` | `xt claude <epic>-<area>-lead` (for example `SB-120-api-lead`) | several, one per epic and area |
+| `board_helper` | `*board-helper*` | `xt pi board-helper` (or `<project>-board-helper`) | exactly one |
 
-`scripts/route_target.py <role>` resolves a role at send time against the live sessions of the xtrm agent host
-(`GET /v1/sessions`), keeps those of this project (same `repo_slug`, or cwd inside `repo_dir`/`match_dirs`), and
-prints the one match's address, the name `SendMessage` takes. No match or several is an error, never a guess;
-the lane's dead-man switch raises `ALARM ROUTE-TARGET` every pass until exactly one session holds each role.
-`python3 scripts/route_target.py --all` and `pm_check.py` print the current routes.
+Workers never use the `-manager` or `-lead` suffix: a worker so named would be counted as a manager or a lead.
+
+`scripts/route_target.py` resolves roles at send time against the live sessions of the xtrm agent host
+(`GET /v1/sessions`, info file `agent_host_info`) and keeps those of this project (same `repo_slug`, or cwd inside
+`repo_dir`/`match_dirs`):
+- `route_target.py manager` (or `board_helper`) prints the one match's address, the name `SendMessage` takes. No
+  match or several is an error, never a guess. `route_target.py lead` is an error when several leads are live, which
+  is normal: a caller that needs one lead names it.
+- `route_target.py --team` prints every live session of the project by role: manager, leads, board helper,
+  workers/other. `pm_check.py` prints the same team.
+- `route_target.py --all` prints the manager and the board helper, and lists the live leads.
+
+Who gets what:
+- The board helper alone decides where an operator comment goes. `board-audit/scripts/lane/route-forward.py` only
+  prints a default target, the live `manager`; `--to <name>` sends it to a named live session instead (a lead).
+  The old `COORD_SOCK` environment override is removed; `--to` replaces it.
+- A Status board answer goes to the live session that owns the question (its `questions/<owner>` doc), else to the
+  live `manager` (`status-board-keeper/references/setup.md`).
+- The lane's dead-man switch raises `ALARM ROUTE-TARGET manager|board_helper` every pass until exactly one live
+  session holds each of those two roles. Leads are not checked.
 
 Change the patterns per project with `route_roles` (for example while sessions launched before this convention
-still run: `{"lead": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched.
-`COORD_SOCK` in the environment still overrides the lead's address by hand.
+still run: `{"manager": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched.
 
 ## 3. Settings
 
@@ -103,24 +118,25 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `JIRA_TOKEN_FILE` | `jira_token_file` | path to the file holding the operator's Atlassian API token | PM, BA, TK | `~/.secrets/atlassian-api-token.txt` |
 | `PM_OPERATOR_EMAIL` | `operator_email` | operator's Atlassian account email (the token's account) | PM, BA | `operator@example.com` |
 | `PM_OPERATOR_ACCOUNT_ID` | `operator_account_id` | operator's Atlassian account id; target of every `@operator` mention | PM, BA | `000000000000000000000001` |
-| `PM_OPERATOR_NAME` | `operator_name` | operator's Jira display name (mention text, comment author match) | BA (PM optional, default `operator`) | `Jane Operator` |
+| `PM_OPERATOR_NAME` | `operator_name` | operator's Jira display name: the comment author the lane matches, and the plain mention text `jira.py` writes | BA (PM optional, default `operator`) | `Jane Operator` |
+| `PM_OPERATOR_HANDLE` | `operator_handle` | the plain-text `@<handle>` in a Jira comment that counts as asking the operator (Status board waiting list), and a name the question hook treats as addressing the operator (default `operator`) | optional (TK, hook) | `jane` |
 | `PM_JIRA_PROJECT` | `jira_project` | Jira project key of the board | PM, BA, TK | `PROJ` |
 | `PM_JIRA_BOARD_ID` | `jira_board_id` | Jira agile board id (sprints) | doc | `1` |
 | `PM_JIRA_LABEL` | `jira_label` | project label on theme Epics | doc, BA | `proj-project` |
-| `PM_SB_PREFIX` | `sb_prefix` | Substrate issue prefix of the project | PM, BA, TK | `PRJ` |
-| `PM_SB_PROJECT_ID` | `sb_project_id` | Substrate project id (default `prj_<prefix in lower case>`) | optional | `prj_prj` |
-| `PM_EPIC` | `epic` | Substrate ref of the project epic | BA, doc | `PRJ-100` |
-| `PM_REPO_DIR` | `repo_dir` | local checkout of the delivery repository; its parent holds sibling checkouts | PM, BA | `~/projects/example/app` |
-| `PM_REPO_SLUG` | `repo_slug` | GitHub `owner/repo` of the delivery repository | PM, BA | `example-org/app` |
-| `PM_REPO_NAME` | `repo_name` | short repo name (`<name>#<n>`, service-registry path); default: the slug's repo part | BA (PM optional) | `app` |
-| `PM_LANE_DIR` | `lane_dir` | board helper lane state (events, cursors, reports, gate script) | BA, doc | `~/.cache/proj-board` |
-| `PM_STATE_DIR` | `state_dir` | coordinator state: handovers, reports, evidence, review worktrees | TK default, doc | `~/.cache/proj-coord` |
-| `PM_DEPLOY_DIR` | `deploy_dir` | the project's deploy workspace (AgentRun pilot set) | doc | `~/deploy/proj` |
+| `PM_SB_PREFIX` | `sb_prefix` | Substrate issue prefix of the project | PM, BA, TK | `SB` |
+| `PM_SB_PROJECT_ID` | `sb_project_id` | Substrate project id (default `prj_<prefix in lower case>`) | optional | `prj_sb` |
+| `PM_EPIC` | `epic` | Substrate ref of the project epic | BA, doc | `SB-100` |
+| `PM_REPO_DIR` | `repo_dir` | local checkout of the delivery repository; its parent holds sibling checkouts | PM, BA | `~/projects/example-repo` |
+| `PM_REPO_SLUG` | `repo_slug` | GitHub `owner/repo` of the delivery repository | PM, BA | `example-org/example-repo` |
+| `PM_REPO_NAME` | `repo_name` | short repo name (`<name>#<n>`, service-registry path); default: the slug's repo part | BA (PM optional) | `example-repo` |
+| `PM_LANE_DIR` | `lane_dir` | board helper lane state (events, cursors, reports, gate script) | BA, doc | `~/.local/state/pm/example/lane` |
+| `PM_STATE_DIR` | `state_dir` | coordinator state: handovers, reports, evidence, review worktrees; root of the Status board state, the bot inbox and the operator-question cache (default `~/.xtrm/product/<repo_name>`) | optional (PM, TK) | `~/.local/state/pm/example` |
+| `PM_DEPLOY_DIR` | `deploy_dir` | the project's deploy workspace (AgentRun pilot set) | doc | `~/deploy/example` |
 | `PM_TIMEZONE` | `timezone` | IANA zone the window fields are written in | BA, TK, doc | `Europe/Paris` |
 | `PM_CI_WORKFLOW` | `ci_workflow` | CI workflow file of the delivery repo | BA | `ci.yml` |
 | `PM_OPERATOR_QUESTION_TURNS` | `operator_question_turns` | operator-silent turns before the operator-question reminder (default `5`, `0` = hook off). The hook acts only for a session whose cwd is inside `repo_dir`/`match_dirs`, or with `PM_PROJECT` set; addressing names come from `operator_names`/`operator_handle` | hook | `5` |
-| `PM_COORDINATOR_PATTERN` | `coordinator_pattern` | regex a coordinator's session name matches (default `-coord(-[0-9]{1,2})?$`) | hook | `-coord(-[0-9]{1,2})?$` |
-| `PM_QUESTION_OWNER` | `question_owner` | Status board `questions/<owner>` doc of this session (default: from the session name and `status_board_owner_addr`) | hook, CLI | `proj-coord` |
+| `PM_COORDINATOR_PATTERN` | `coordinator_pattern` | regex the session name of a manager or lead matches; the question hook acts only for those (default `-(?:manager\|lead\|coord)(?:-[0-9]{1,2})?$`: names ending `-manager`, `-lead` or the legacy `-coord`, each with an optional `-<n>` suffix; env `XTRM_ROLE=manager\|lead\|coordinator` also qualifies; the board helper and workers are not gated) | hook | `-(?:manager\|lead\|coord)(?:-[0-9]{1,2})?$` |
+| `PM_QUESTION_OWNER` | `question_owner` | Status board `questions/<owner>` doc of this session (default: `manager` for a `<day>-manager`, so the next day's manager inherits the doc; else the session name without its `<repo>-xt-<runtime>-` prefix, e.g. `SB-120-api-lead`) | hook, CLI | `SB-120-api-lead` |
 | `PM_CONFIG` | (none) | path of the config file itself | optional | `~/.config/xtrm/project-management.json` |
 
 ### Structured (JSON)
@@ -132,9 +148,10 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_DONE_STATUSES` | `done_statuses` | `[name]` | status names that mean done | PM (TX-07 fallback), BA, TK |
 | `PM_ACTIVE_STATUSES` | `active_statuses` | `[name]` | status names that mean being worked | BA, TK |
 | `PM_OPEN_STATUSES` | `open_statuses` | `[name]` | every not-done status an open window may hold (hygiene cycle) | BA |
-| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `lead: *-lead-coord`, `board_helper: *board-helper*`) | PM, BA (lane) |
+| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `manager: *[0-9][0-9]-manager`, `lead: *-lead`, `board_helper: *board-helper*`) | PM, BA (lane), TK |
+| `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
-| `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`) | PM, BA (lane) |
+| `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |
 | `PM_OPERATOR_INJECTED_PATTERNS` | `operator_injected_patterns` | `[regex]` | extra prompts that are not the operator (your cron prompt prefix); built-in: cross-session, task-notification, delivery notice, system notification, Stop-hook feedback, goal check-ins, `[cron` | hook |
 | `PM_OPERATOR_QUESTION_REFS` | `operator_question_refs` | `[ref]` | Substrate refs whose `for=operator` blockers the hook watches (default `[epic]`) | hook |
@@ -146,8 +163,14 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_HYGIENE_FILTERS` | `hygiene_filters` | `{role: {"id", "name"}}` | saved Jira filters the board helper runs (roles `open_without_dates`, `overdue`, `next_48h`) | doc, BA (lane) |
 | `PM_KNOWN_REPOS` | `known_repos` | `[repo name]` | repos a `<repo>#<n>` in a comment may link (added to the sibling checkouts of `PM_REPO_DIR`) | PM |
 
-The other skills add their own keys (for example `waiting_production_status`, `deferred_status`, `parked_statuses`, `operator_names`, `window_keys`, `halt_band_utc`, the `status_board_*` keys); their
-setup files list them.
+How the three operator names relate: `operator_name` is the one Jira display name; `operator_names` widens it to
+every name the operator is known by (defaults to `[operator_name]`); `operator_handle` is the short plain-text
+`@handle` people type when they ask the operator in a comment. `operator_account_id` is what a real mention
+targets.
+
+The other skills add their own keys (for example `waiting_production_status`, `deferred_status`, `parked_statuses`,
+`window_keys`, `window_bands`, `bot_inbox`, `answers_inbox`, the `status_board_*` keys); their setup files list them.
+`pm_check.py --all-settings` lists every setting the setup files name, set or unset.
 
 ## 4. The config file
 
@@ -166,15 +189,15 @@ Example with placeholder values (every key used by the three skills; replace eac
   "jira_project": "PROJ",
   "jira_board_id": "1",
   "jira_label": "proj-project",
-  "sb_prefix": "PRJ",
-  "sb_project_id": "prj_prj",
-  "epic": "PRJ-100",
-  "repo_dir": "~/projects/example/app",
-  "repo_slug": "example-org/app",
-  "repo_name": "app",
-  "lane_dir": "~/.cache/proj-board",
-  "state_dir": "~/.cache/proj-coord",
-  "deploy_dir": "~/deploy/proj",
+  "sb_prefix": "SB",
+  "sb_project_id": "prj_sb",
+  "epic": "SB-100",
+  "repo_dir": "~/projects/example-repo",
+  "repo_slug": "example-org/example-repo",
+  "repo_name": "example-repo",
+  "lane_dir": "~/.local/state/pm/example/lane",
+  "state_dir": "~/.local/state/pm/example",
+  "deploy_dir": "~/deploy/example",
   "timezone": "Europe/Paris",
   "ci_workflow": "ci.yml",
 
@@ -204,9 +227,10 @@ Example with placeholder values (every key used by the three skills; replace eac
   "waiting_production_status": "Waiting Production",
   "deferred_status": "Deferred",
   "parked_statuses": ["Deferred"],
-  "operator_names": ["Jane Operator"],
+  "operator_names": ["Jane Operator", "Jane"],
+  "operator_handle": "jane",
   "status_board_site": "example-slug",
-  "status_board_self_issue": "PRJ-101"
+  "status_board_self_issue": "SB-101"
 }
 ```
 
@@ -230,9 +254,22 @@ python3 .../project-management/scripts/pm_check.py --skill board-audit          
 python3 .../project-management/scripts/pm_check.py --all-settings                                   # optional settings too
 ```
 
-The check prints the config file it read, each tool, and each setting as `OK (env|config)` or `MISSING ... required by <skill>`; values are not
-printed. Exit 0 means every required setting of the chosen skills is present and the token file exists. Then make one read:
+The check prints the config file it read, each tool, each setting as `OK (env|config)` or `MISSING ... required by <skill>`
+(with `--all-settings` also every optional one, `unset` or `OK`), then the team: every live session of the project by
+role, and the manager and board helper routes. Values are not printed. Exit 0 means every required setting of the chosen
+skills is present and the token file exists. Then make one read:
 `python3 .../scripts/jira.py GET /rest/api/3/myself` must print `HTTP 200` and the operator's account id.
+
+`scripts/jira.py` commands (its docstring has the guards):
+
+| Command | Does | Who |
+|---|---|---|
+| `jira.py GET <path>` | one read | anyone |
+| `jira.py POST\|PUT <path> <json-file>` | one write, through the write guards | anyone; comments refused here |
+| `jira.py transition <KEY> "<status>"`, `transition-by-id <KEY> <id>` | move a row, re-read to prove it | anyone |
+| `jira.py link <BLOCKER> <BLOCKED> [type]` | a Blocks link with the sides named | anyone |
+| `post-guard.py <KEY> <text-file> --run <WORD> [--mention-first]` | the one comment write path | the board helper for `@operator` comments |
+| `jira.py attach <KEY> <file> --board-helper` | attach one file (multipart `POST /rest/api/3/issue/<KEY>/attachments`, header `X-Atlassian-Token: no-check`, 10 MB cap, credential scan of text files); refused without the flag unless run inside post-guard (`POST_GUARD_ACTIVE=1`), event `AT-01` | the board helper only |
 
 ## 7. First read of a new board
 
