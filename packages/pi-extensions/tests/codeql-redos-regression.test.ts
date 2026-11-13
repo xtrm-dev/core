@@ -65,8 +65,8 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(Array.isArray(value)).toBe(true);
   });
 
-  it("xtrm-ui:1723 heading match guard (linearity, non-discriminating)", () => {
-    const md = "###" + "x".repeat(100000);
+  it("xtrm-ui:1723 heading match guard (CodeQL-cited space run)", () => {
+    const md = "  ".repeat(50000);
     const { value, ms } = timed(() => boldMarkdownHeadings(md));
     expect(ms).toBeLessThan(100);
     expect(typeof value).toBe("string");
@@ -123,9 +123,13 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(isControlNudge("continue please")).toBe(true);
   });
 
-  it("skill-suggest:136 peer-relay guard (linearity, non-discriminating)", () => {
-    const { value, ms } = timed(() => isPeerRelay(" ".repeat(100000) + "coord: hello"));
+  it("skill-suggest:136 peer-relay guard (CodeQL-cited !→ run)", () => {
+    // Exact shape from the CodeQL report: "!→" repetitions partition S+ runs
+    // around arrows on the old pattern; bounded runs answer at once.
+    const { value, ms } = timed(() => isPeerRelay("!→".repeat(50000)));
     expect(ms).toBeLessThan(100);
+    expect(value).toBe(false);
     expect(isPeerRelay("Coordinator abc: hello")).toBe(true);
+    expect(isPeerRelay("a -> b: hi")).toBe(true);
   });
 });

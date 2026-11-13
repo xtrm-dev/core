@@ -1720,7 +1720,7 @@ export function boldMarkdownHeadings(markdown: string): string {
 				return line;
 			}
 			if (inFence) return line;
-			const match = line.match(/^(#{1,6}\s+)([^\n]*)$/);
+			const match = line.match(/^(#{1,6}\s{1,100})([^\n]{0,10000})$/);
 			if (!match || match[2].trim() === "" || match[2].includes("\x1b[1m")) return line;
 			// Headings carry weight rather than brightness; the theme owns the
 			// escape so a no-color terminal degrades to plain text.
