@@ -18,6 +18,14 @@ import {
     type RunFn,
 } from '../core/jira-identity.js';
 
+// jira.py (project-management pack) reads its instance values from a config file; give every child a neutral one.
+const PM_TEST_CONFIG = path.join(os.tmpdir(), `pm-jira-identity-${process.pid}.json`);
+fs.writeJsonSync(PM_TEST_CONFIG, {
+    operator_email: 'operator@example.com', operator_account_id: '0000', operator_name: 'Test Operator',
+    jira_site: 'https://example.atlassian.net', jira_token_file: '~/.secrets/atlassian-api-token.txt',
+});
+process.env.PM_CONFIG = PM_TEST_CONFIG;
+
 const EMAIL = 'agent@example.test';
 const TOKEN = 'tok-secret-value';
 
@@ -232,13 +240,13 @@ describe('jira.py identity rule', () => {
 
     it('uses the bot for a holder, the operator when forced, and explicit env over both', () => {
         expect(py({ SUBSTRATE_HOLDER: 'w' }, home)).toBe(`${EMAIL} ${tokenFile}`);
-        expect(py({ SUBSTRATE_HOLDER: 'w', XTRM_JIRA_AS: 'operator' }, home)).toMatch(/^jagger\.xtrm@gmail\.com /);
+        expect(py({ SUBSTRATE_HOLDER: 'w', XTRM_JIRA_AS: 'operator' }, home)).toMatch(/^operator@example\.com /);
         expect(py({ SUBSTRATE_HOLDER: 'w', JIRA_EMAIL: 'x@y.z', JIRA_TOKEN_FILE: '/t' }, home)).toBe('x@y.z /t');
     });
 
     it('stays on the operator when no agent signal is present or identity.json is absent', () => {
-        expect(py({ XTRM_JIRA_WALK_FROM: '1' }, home)).toMatch(/^jagger\.xtrm@gmail\.com /);
-        expect(py({ SUBSTRATE_HOLDER: 'w' }, fs.mkdtempSync(path.join(home, 'empty-')))).toMatch(/^jagger\.xtrm@gmail\.com /);
+        expect(py({ XTRM_JIRA_WALK_FROM: '1' }, home)).toMatch(/^operator@example\.com /);
+        expect(py({ SUBSTRATE_HOLDER: 'w' }, fs.mkdtempSync(path.join(home, 'empty-')))).toMatch(/^operator@example\.com /);
     });
 
     it('importing jira.py reads no secret', () => {
@@ -372,7 +380,7 @@ def fake(req, *a, **k):
 urllib.request.urlopen = fake
 fields = json.loads(sys.argv[1])
 jira.call('POST', '/rest/api/3/issue', {'fields': fields})
-print(json.dumps([s for s in sent if s[0] == 'POST'][0][2]['fields'].get('assignee')))
+print(json.dumps([s for s in sent if s[0] == 'POST' and s[1] == '/issue'][0][2]['fields'].get('assignee')))
 `;
     const py = (fields: object, extra: Record<string, string>) => {
         const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, ...extra };
@@ -928,6 +936,8 @@ def fake(req, *a, **k):
         raise urllib.error.HTTPError(req.full_url, 403, 'no', {}, io.BytesIO(b'denied'))
     if path.endswith('/myself'): return R({'accountId': 'bot-id'})
     if path.endswith('/transitions') and req.get_method() == 'GET': return R({'transitions': [{'id': '31', 'to': {'name': 'Done'}}]})
+    if req.get_method() == 'GET' and path.startswith('/issue/XT-1?'):
+        return R({'key': 'XT-1', 'fields': {'status': {'name': 'Done'}, 'labels': [], 'updated': '2026-11-13T10:00:00.000+0000'}})
     return R({'id': '1'})
 urllib.request.urlopen = fake
 def flat(adf):
@@ -938,9 +948,11 @@ if mode == 'comment':
     print(json.dumps({'status': st, 'posted': posted, 'sent': flat(sent[-1][2]['body'])}))
 elif mode == 'create':
     jira.call('POST', '/rest/api/3/issue', {'fields': json.loads(arg)})
-    print(json.dumps([s for s in sent if s[0] == 'POST'][0][2]['fields'].get('labels')))
+    print(json.dumps([s for s in sent if s[0] == 'POST' and s[1] == '/issue'][0][2]['fields'].get('labels')))
 elif mode == 'transition':
-    st, out = jira.transition('XT-1', 'Done')
+    import contextlib
+    with contextlib.redirect_stdout(io.StringIO()):   # jira.py prints its own DONE/REFUSED event line
+        st, out = jira.transition('XT-1', 'Done')
     print(json.dumps([s for s in sent if s[0] != 'GET']))
 elif mode == 'put':
     spec = json.loads(arg)
@@ -951,7 +963,8 @@ elif mode == 'cli':
     runpy.run_path(${JSON.stringify(path.join(script, 'jira.py'))}, run_name='__main__')
 `;
     const py = (mode: string, arg: string, extra: Record<string, string> = {}) => {
-        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SUBSTRATE_HOLDER: 'w', SUBSTRATE_RUN_ID: 'abc123', ...extra };
+        // POST_GUARD_ACTIVE: these cases test attribution, not the comment guard (post-guard.py sets it in real use).
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SUBSTRATE_HOLDER: 'w', SUBSTRATE_RUN_ID: 'abc123', POST_GUARD_ACTIVE: '1', ...extra };
         for (const k of ['JIRA_EMAIL', 'JIRA_TOKEN_FILE', 'XTRM_JIRA_AS', 'XTRM_JIRA_WALK_FROM', 'FAKE_LABEL_FAIL']) if (!(k in extra)) delete env[k];
         return spawnSync('python3', ['-I', '-c', code, mode, arg], { env, encoding: 'utf8' });
     };
@@ -987,7 +1000,7 @@ elif mode == 'cli':
         const wt = path.join(home, 'core-xt-foo');
         fs.ensureDirSync(path.join(wt, '.git'));
         const claude = path.join(home, 'claude');
-        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SUBSTRATE_RUN_ID: 'abc123' };
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, SUBSTRATE_RUN_ID: 'abc123', POST_GUARD_ACTIVE: '1' };
         for (const k of ['SUBSTRATE_HOLDER', 'JIRA_EMAIL', 'JIRA_TOKEN_FILE', 'XTRM_JIRA_AS', 'XTRM_JIRA_WALK_FROM']) delete env[k];
         fs.writeFileSync(claude, '#!/bin/bash\n"$@"\n', { mode: 0o755 });
         const r = spawnSync(claude, ['python3', '-I', '-c', code, 'comment', 'hi'], { env, cwd: wt, encoding: 'utf8' });
