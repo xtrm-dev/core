@@ -168,6 +168,13 @@ describe("CORE-2655 ReDoS regression", () => {
     const longBanner = `[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' ${longPath} | head -c 51200]`;
     expect(longPath.length).toBeGreaterThan(2000);
     expect(numberReadText(longBanner, 1, false)).toBe(longBanner);
+    // Adversarial banner: repeats BOTH literals with no closing "]", so every
+    // large run is a candidate for every anchor. With uniform 8 KiB runs this
+    // cost ~1 s; the size/limit fields are bounded at 64, so it answers at once.
+    const hostileBanner = "[Line 1 is " + " exceeds ".repeat(550) + " limit. Use bash: sed -n '1p' ".repeat(350) + "x";
+    expect(hostileBanner.length).toBeLessThan(16384);
+    const hostile = timed(() => numberReadText(hostileBanner, 1, false));
+    expect(hostile.ms).toBeLessThan(100);
     // Past NOTICE_MAX_LENGTH a notice-shaped line is content: the guard turns
     // the patterns off rather than letting file content reach them.
     const oversized = "[Showing lines 1-1 of 1" + "0".repeat(20000) + " Use offset=2 to continue.]";
