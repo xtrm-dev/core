@@ -84454,13 +84454,13 @@ async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
         for (const warning of shim.warnings) console.log(kleur_default.yellow(`  gh shim: ${warning}`));
       }
     }
-    const shimDir = import_node_path59.default.dirname(status2.path);
-    const onPath = (process.env.PATH ?? "").split(import_node_path59.default.delimiter).includes(shimDir);
+    const shimDir = import_node_path60.default.dirname(status2.path);
+    const onPath = (process.env.PATH ?? "").split(import_node_path60.default.delimiter).includes(shimDir);
     if (status2.installed && status2.realGh !== null && !status2.pathOrderOk && !installWarnedOrdering) {
       console.log(kleur_default.yellow(onPath ? `  gh shim: ${shimDir} comes after the real gh on PATH \u2014 the shim will not be used` : `  gh shim: ${shimDir} is not on PATH \u2014 the shim will not be used`));
     }
-  } catch (error51) {
-    console.log(kleur_default.yellow(`  gh shim: refresh failed (${error51 instanceof Error ? error51.message : String(error51)})`));
+  } catch (error62) {
+    console.log(kleur_default.yellow(`  gh shim: refresh failed (${error62 instanceof Error ? error62.message : String(error62)})`));
   }
   if (shouldUseGlobalSkills(repoRoot)) {
     await printSkillsMigrationNudge(repoRoot);
