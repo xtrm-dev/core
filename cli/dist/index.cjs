@@ -31040,11 +31040,11 @@ var require_utils3 = __commonJS({
       }
       return output.join("");
     }
-    function removeDotSegmentsRelative(path97) {
-      if (path97 === "" || path97[0] === "/") {
-        return removeDotSegments(path97);
+    function removeDotSegmentsRelative(path96) {
+      if (path96 === "" || path96[0] === "/") {
+        return removeDotSegments(path96);
       }
-      const segments = path97.split("/");
+      const segments = path96.split("/");
       const last = segments.length - 1;
       const output = [];
       let trailingDirectory = false;
