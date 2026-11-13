@@ -37,25 +37,25 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 | agent author identity / git identity env | Step 20 CORE-2525 | partial | git-identity.ts helpers exist; launcher exports env; not an installer concern but doctor could check. |
 | skill pack state migration (programme->project-management) | not covered | NOT COVERED (missing) | No migration code in skills-state or update. |
 
-## 3. Uncovered components and proposed amendments (not a parallel design)
+## 3. Uncovered components and the amendments that closed them (not a parallel design)
 
-Only four components are truly uncovered by any existing step. Proposed amendments to existing steps (which step, which sentence), not new designs:
+Only four components are truly uncovered by any existing step. Each item below is a gap, not an open question: the ruling that settles it is section 7.
 
 1. prepare-commit-msg trailer hook (step 6b / CORE-2570): **settled by §7 resolution 1 (operator ruling of 2026-11-11) — `xt init` and `xt update` chain the hook by default, there is no opt-in flag, and `xt doctor` warns when it is missing.** No amendment is needed beyond that ruling.
 
-2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init` on Linux and a cron line on macOS, with `xt doctor` reporting timer presence. Ask: server-side only or also PC? (Operator note: server runs it; PC uses remote sb.)
+2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init` on Linux and a cron line on macOS, with `xt doctor` reporting timer presence. **Settled by §7 resolution 2: server only (the PC uses the remote `sb`), installed by `xt init`/`xt update` on the server role, checked by `xt doctor`.**
 
-3. skill pack rename programme -> project-management (CORE-2624 done): amend Step 4/Step 17 to add a one-time migration in xt update: rewrite enabledPacks entries "programme" -> "project-management" in ~/.xtrm/skills/state.json and manifests/*.json, idempotent. Conflict: manifests are operator-curated; ask before rewriting.
+3. skill pack rename programme -> project-management (CORE-2624 done): amend Step 4/Step 17 to add a one-time migration in xt update: rewrite enabledPacks entries "programme" -> "project-management" in ~/.xtrm/skills/state.json and manifests/*.json, idempotent. **Settled by §7 resolution 3: one-time idempotent migration in `xt update`, backup first.**
 
-4. git-cliff: amend Step 18 (Clean-PATH E2E) or Step 9 to add git-cliff to MANAGED_DEPS (npm, required:false) so xt init installs it. Note: currently only referenced in changelog/release docs; not a runtime requirement. Ask whether it should be managed at all.
+4. git-cliff: amend Step 18 (Clean-PATH E2E) or Step 9 to add git-cliff to MANAGED_DEPS (npm, required:false) so xt init installs it. Note: currently only referenced in changelog/release docs; not a runtime requirement. **Settled by §7 resolution 4: managed, `required: false`.**
 
 Additionally, partially covered items needing amendments:
 
-5. substrate Claude plugin upgrade (0.2.3 -> 0.3.1 on server): amend Step 9/17 to add Claude plugin version reconciliation to xt init/update (today only Pi packages are reconciled; Claude plugins are installed by hand / marketplace). Conflict with "one versioned xtrm Claude plugin" (Step 12). Ask.
+5. substrate Claude plugin upgrade (0.2.3 -> 0.3.1 on server): amend Step 9/17 to add Claude plugin version reconciliation to xt init/update (today only Pi packages are reconciled; Claude plugins are installed by hand / marketplace). **Settled by §7 resolution 5: yes, in `xt init`/`xt update`; it is reconciling the version of the one plugin Step 12 defines, not a second plugin.**
 
-6. skill-suggest@xtrm plugin: amend Step 4c/Step 12 to include it in the Claude plugin baseline installed by xt init (OFFICIAL_CLAUDE_PLUGINS list or a new XTRM_CLAUDE_PLUGINS list). Ask.
+6. skill-suggest@xtrm plugin: amend Step 4c/Step 12 to include it in the Claude plugin baseline installed by xt init (OFFICIAL_CLAUDE_PLUGINS list or a new XTRM_CLAUDE_PLUGINS list). **Settled by §7 resolution 6: yes, by default, on the operator ruling.**
 
-7. Claude route switch installer: amend SPECIALISTS-4442 (not a core Issue) — propose a small core helper `xt specialists claude-route enable` that writes the claude_bridge block, gated by explicit operator consent (no billing/cred). This is the one component that is genuinely not owned by any core step; suggest filing a new child Issue under CORE-2629 only for this.
+7. Claude route switch installer: amend SPECIALISTS-4442 (not a core Issue) — propose a small core helper `xt specialists claude-route enable` that writes the claude_bridge block, gated by explicit operator consent (no billing/cred). This is the one component that is genuinely not owned by any core step. **Settled by §7 resolution 7: filed as child Issue CORE-2632 under CORE-2629, with SPECIALISTS-4442 as its dependency.**
 
 ## 4. Maintainer-side requirement mapping
 
@@ -63,11 +63,11 @@ Additionally, partially covered items needing amendments:
 - Step 17 CORE-2383 (docs + doctor checks) for the doctor side.
 - Step 18 CORE-2382/CORE-2377 (clean-PATH E2E) for the test side.
 - Step 9 CORE-2380 for the registry/installer side.
-Proposed amendment: add one sentence to Step 17: "xt doctor iterates a single declarative component registry (cli/src/core/component-registry.ts, one entry per component with installer + check + machine roles) and fails if any registered component lacks a check or any check lacks a registry entry." This is an amendment to existing steps, not a new design; the registry pattern already exists (MANAGED_DEPS, MANAGED_PACKAGES).
+Amendment (part of the §7 rulings): add one sentence to Step 17: "xt doctor iterates a single declarative component registry (cli/src/core/component-registry.ts, one entry per component with installer + check + machine roles) and fails if any registered component lacks a check or any check lacks a registry entry." This is an amendment to existing steps, not a new design; the registry pattern already exists (MANAGED_DEPS, MANAGED_PACKAGES).
 
 ## 5. Child contracts
 
-Only one new child contract proposed (no existing Issue covers it): a small Issue for the Claude route switch installer (`xt specialists claude-route enable`, consent-gated). All other components map to existing Issues listed above; extend those rather than create new ones.
+Exactly one new child contract exists, and it is filed: **CORE-2632**, the consent-gated Claude route switch installer (`xt specialists claude-route enable`), under CORE-2629 with SPECIALISTS-4442 as its dependency (§7 resolution 7). All other components map to existing Issues listed above; those are extended rather than duplicated.
 
 ## 6. Jira keys not read
 
