@@ -24,6 +24,7 @@ import {
     type RunGit,
 } from '../core/gh-pr-link.js';
 import type { SbProject } from '../core/sb-receipt.js';
+import { resolveWorkerSessionId } from '../core/session-identity.js';
 
 const PROJECTS: SbProject[] = [
     { id: 'prj_core', prefix: 'CORE', name: 'core' },
@@ -456,74 +457,76 @@ describe('linkCreatedPr', () => {
 // `no_receipt`. The shim recovers once: dispatch -> allocate -> attach. A receipt
 // that already exists makes the first attach succeed, so recovery is a no-op on
 // repeat runs. Any other failure never triggers dispatch or allocate.
-describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
-    function recoveryDeps(overrides: {
-        attachErrors?: string[];   // sequence of errors for attach calls
-        dispatchOk?: boolean;
-        dispatchError?: string;
-        allocateOk?: boolean;
-        allocateError?: string;
-        commitsOk?: boolean;
-        held?: boolean;            // whether the issue is live-held
-        holder?: string;           // holder name when held
-        activationId?: string | null; // activation on the live claim
-        env?: NodeJS.ProcessEnv;   // the process env the linker sees
-        flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
-        showFails?: boolean;       // the claim read fails outright
-    } = {}) {
-        const calls: { kind: string; argv: string[] }[] = [];
-        const { runGit } = gitFake({
-            branch: 'core-2631-gh-shim',
-            mergeBases: { 'origin/HEAD': BASE },
-        });
-        const runSb = () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' });
-        let attachIndex = 0;
-        const attachErrors = overrides.attachErrors ?? [];
-        const isHeld = overrides.held ?? false;
-        const holderName = overrides.holder ?? 'pi152-core';
-        const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
-            cwd: '/repo',
-            env: overrides.env ?? {},
-            runGit,
-            runSb,
-            readFile: () => { throw new Error('no file'); },
-            runAttach: (args) => {
-                const kind = args[1]; // show | attach | dispatch | allocate
-                calls.push({ kind, argv: [...args] });
-                if (kind === 'show') {
-                    // The real sb answer: {schema, command, ok, data: {claim}}.
-                    // An earlier version read the top level and saw null forever.
-                    const claim = isHeld
-                        ? { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null }
-                        : null;
-                    const payload = overrides.flatClaim
-                        ? { claim }
-                        : { schema: 'substrate-cli/v1', command: 'issue.show', ok: true, data: { claim } };
-                    if (overrides.showFails) {
-                        return { ok: false, error: 'sb exited 1: no store', stdout: '' };
-                    }
-                    return { ok: true, stdout: JSON.stringify(payload) };
+/** The no_receipt recovery harness, shared by the CORE-2631 and CORE-2639 cases. */
+function recoveryDeps(overrides: {
+    attachErrors?: string[];   // sequence of errors for attach calls
+    dispatchOk?: boolean;
+    dispatchError?: string;
+    allocateOk?: boolean;
+    allocateError?: string;
+    commitsOk?: boolean;
+    held?: boolean;            // whether the issue is live-held
+    holder?: string;           // holder name when held
+    activationId?: string | null; // activation on the live claim
+    env?: NodeJS.ProcessEnv;   // the process env the linker sees
+    flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
+    showFails?: boolean;       // the claim read fails outright
+} = {}) {
+    const calls: { kind: string; argv: string[] }[] = [];
+    const { runGit } = gitFake({
+        branch: 'core-2631-gh-shim',
+        mergeBases: { 'origin/HEAD': BASE },
+    });
+    const runSb = () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' });
+    let attachIndex = 0;
+    const attachErrors = overrides.attachErrors ?? [];
+    const isHeld = overrides.held ?? false;
+    const holderName = overrides.holder ?? 'pi152-core';
+    const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+        cwd: '/repo',
+        env: overrides.env ?? {},
+        runGit,
+        runSb,
+        readFile: () => { throw new Error('no file'); },
+        runAttach: (args) => {
+            const kind = args[1]; // show | attach | dispatch | allocate
+            calls.push({ kind, argv: [...args] });
+            if (kind === 'show') {
+                // The real sb answer: {schema, command, ok, data: {claim}}.
+                // An earlier version read the top level and saw null forever.
+                const claim = isHeld
+                    ? { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null }
+                    : null;
+                const payload = overrides.flatClaim
+                    ? { claim }
+                    : { schema: 'substrate-cli/v1', command: 'issue.show', ok: true, data: { claim } };
+                if (overrides.showFails) {
+                    return { ok: false, error: 'sb exited 1: no store', stdout: '' };
                 }
-                if (kind === 'attach') {
-                    const err = attachErrors[attachIndex++];
-                    if (err) return { ok: false, error: err, stdout: '' };
-                    return { ok: true, stdout: '' };
-                }
-                if (kind === 'dispatch') {
-                    return overrides.dispatchOk === false
-                        ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed', stdout: '' }
-                        : { ok: true, stdout: '' };
-                }
-                if (kind === 'allocate') {
-                    return overrides.allocateOk === false
-                        ? { ok: false, error: overrides.allocateError ?? 'allocate failed', stdout: '' }
-                        : { ok: true, stdout: '' };
-                }
+                return { ok: true, stdout: JSON.stringify(payload) };
+            }
+            if (kind === 'attach') {
+                const err = attachErrors[attachIndex++];
+                if (err) return { ok: false, error: err, stdout: '' };
                 return { ok: true, stdout: '' };
-            },
-        });
-        return { result, calls };
-    }
+            }
+            if (kind === 'dispatch') {
+                return overrides.dispatchOk === false
+                    ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed', stdout: '' }
+                    : { ok: true, stdout: '' };
+            }
+            if (kind === 'allocate') {
+                return overrides.allocateOk === false
+                    ? { ok: false, error: overrides.allocateError ?? 'allocate failed', stdout: '' }
+                    : { ok: true, stdout: '' };
+            }
+            return { ok: true, stdout: '' };
+        },
+    });
+    return { result, calls };
+}
+
+describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
 
     it('recovers from no_receipt: dispatch + allocate once, attach retried once, attached true', () => {
         const { result, calls } = recoveryDeps({ attachErrors: ['no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first'] });
@@ -850,5 +853,52 @@ describe('shallow clone (CORE-2638)', () => {
         const { result } = deps({ shallow: false, base: BASE, commitsOk: false, commitsError: raw });
         expect(result.warning).toMatch(/commit evidence failed: sb exited 1: unknown flag --commits-range/);
         expect(result.warning).not.toMatch(/shallow/);
+    });
+});
+
+describe('provenance dispatch session identity (CORE-2639)', () => {
+    const NO_RECEIPT = 'no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first';
+
+    function dispatchArgvOf(env: NodeJS.ProcessEnv): string[] {
+        const { calls } = recoveryDeps({ attachErrors: [NO_RECEIPT], env });
+        const dispatch = calls.find((call) => call.kind === 'dispatch');
+        expect(dispatch, 'the recovery path must dispatch').toBeDefined();
+        return dispatch?.argv ?? [];
+    }
+
+    it("passes the worker's own runtime session id when the environment carries one", () => {
+        const argv = dispatchArgvOf({ PI_SESSION_ID: '01a1cc7e-f75d' });
+        expect(argv[argv.indexOf('--session') + 1]).toBe('01a1cc7e-f75d');
+    });
+
+    it('falls back through the Claude and Codex variables', () => {
+        expect(dispatchArgvOf({ CLAUDE_SESSION_ID: 'claude-sess' })[dispatchArgvOf({ CLAUDE_SESSION_ID: 'claude-sess' }).indexOf('--session') + 1])
+            .toBe('claude-sess');
+        const codex = dispatchArgvOf({ CODEX_SESSION_ID: 'codex-sess' });
+        expect(codex[codex.indexOf('--session') + 1]).toBe('codex-sess');
+    });
+
+    it('never forwards a tmux session id, and omits the flag when nothing is available', () => {
+        expect(dispatchArgvOf({})).not.toContain('--session');
+        expect(dispatchArgvOf({ XTRM_SESSION_ID: '$1' })).not.toContain('--session');
+        // A tmux-shaped value under a worker variable is refused too.
+        expect(dispatchArgvOf({ PI_SESSION_ID: '$7' })).not.toContain('--session');
+        // The worker value wins over a tmux id sitting beside it.
+        const both = dispatchArgvOf({ PI_SESSION_ID: 'worker-1', XTRM_SESSION_ID: '$3' });
+        expect(both[both.indexOf('--session') + 1]).toBe('worker-1');
+    });
+});
+
+describe('resolveWorkerSessionId', () => {
+    it('takes the first present, non-tmux value', () => {
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: 'pi-1', CLAUDE_SESSION_ID: 'c-1' })).toBe('pi-1');
+        expect(resolveWorkerSessionId({ CLAUDE_SESSION_ID: 'c-1' })).toBe('c-1');
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '   ' })).toBeNull();
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '$2' })).toBeNull();
+        expect(resolveWorkerSessionId({})).toBeNull();
+    });
+
+    it('skips a tmux-shaped value and keeps looking', () => {
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '$1', CLAUDE_SESSION_ID: 'c-2' })).toBe('c-2');
     });
 });

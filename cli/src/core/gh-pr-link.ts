@@ -37,6 +37,7 @@
  */
 
 import { runReceipt, listProjects, resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps, type SbProject } from './sb-receipt.js';
+import { resolveWorkerSessionId } from './session-identity.js';;
 import { parseIssueMarker, parseIssueMarkers, markerRunVerdict } from './review-posting.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -510,6 +511,12 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
             // activation rejects a participant without one.
             if (claimActivation) dispatchArgs.push('--activation', claimActivation);
         }
+        // CORE-2639: bind to the worker's own runtime session, not the tmux session
+        // id sb would otherwise record — every window in one tmux session shares
+        // that value, so it cannot attribute the binding. Absent from the
+        // environment means no flag, and sb keeps its own fallback.
+        const workerSession = resolveWorkerSessionId(env);
+        if (workerSession) dispatchArgs.push('--session', workerSession);
         // --workspace is only meaningful when cwd is known; the shim always sets
         // it, but tests may omit it.
         if (deps.cwd) dispatchArgs.push('--workspace', cwd);

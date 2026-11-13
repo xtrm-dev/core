@@ -65728,6 +65728,15 @@ function buildDetachedLaunchOutcome(input2) {
 var import_node_child_process7 = require("child_process");
 var XTRM_SESSION_ID_VAR = "XTRM_SESSION_ID";
 var XTRM_SESSION_NAME_VAR = "XTRM_SESSION_NAME";
+var WORKER_SESSION_ID_VARS = ["PI_SESSION_ID", "CLAUDE_SESSION_ID", "CODEX_SESSION_ID"];
+var TMUX_SESSION_ID = /^\$\d+$/;
+function resolveWorkerSessionId(env3 = process.env) {
+  for (const key of WORKER_SESSION_ID_VARS) {
+    const value = (env3[key] ?? "").trim();
+    if (value && !TMUX_SESSION_ID.test(value)) return value;
+  }
+  return null;
+}
 function defaultProbe(args) {
   const result = (0, import_node_child_process7.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe" });
   return { status: result.status, stdout: String(result.stdout ?? "") };
@@ -79253,6 +79262,8 @@ function linkOrWarn(stdout, argv, deps) {
       dispatchArgs.push("--participant", ownHolder);
       if (claimActivation) dispatchArgs.push("--activation", claimActivation);
     }
+    const workerSession = resolveWorkerSessionId(env3);
+    if (workerSession) dispatchArgs.push("--session", workerSession);
     if (deps.cwd) dispatchArgs.push("--workspace", cwd);
     const dispatchArgv = withReceiptProject(dispatchArgs, project);
     if (recoveryBudget() <= 0) return outOfTime();
