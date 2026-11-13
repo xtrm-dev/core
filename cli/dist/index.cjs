@@ -79130,16 +79130,21 @@ function defaultRunGit() {
   };
 }
 var FULL_SHA = /^[0-9a-f]{40}$/;
+function isShallowRepository(runGit2, cwd) {
+  const result = runGit2(["rev-parse", "--is-shallow-repository"], cwd);
+  return result.status === 0 && result.stdout.trim() === "true";
+}
 function resolveLinkRange(runGit2, cwd) {
   const headResult = runGit2(["rev-parse", "HEAD"], cwd);
   const head = headResult.status === 0 ? headResult.stdout.trim() : "";
   if (!FULL_SHA.test(head)) return null;
+  if (isShallowRepository(runGit2, cwd)) return { head, base: null, shallow: true };
   for (const upstream of ["origin/HEAD", "origin/main", "@{upstream}"]) {
     const merged = runGit2(["merge-base", "HEAD", upstream], cwd);
     const base = merged.status === 0 ? (merged.stdout.trim().split("\n")[0] ?? "").trim() : "";
-    if (FULL_SHA.test(base)) return { head, base };
+    if (FULL_SHA.test(base)) return { head, base, shallow: false };
   }
-  return { head, base: null };
+  return { head, base: null, shallow: false };
 }
 function oneLine(text) {
   return text.replace(/\s+/g, " ").trim();
@@ -79309,13 +79314,16 @@ function linkOrWarn(stdout, argv, deps) {
   ], project);
   const t2 = run5(commitsArgv, env3, budget());
   if (!t2.ok) {
+    const reason = oneLine(t2.error ?? "sb gave no reason");
+    const rangeShaped = /Invalid revision range|unknown revision|bad revision/i.test(reason);
+    const warning = !range.shallow ? `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason}` : rangeShaped ? `linked ${pr.canonical} to ${ref}, but its commit evidence is unavailable in a shallow clone (${cwd}); run git fetch --unshallow to link the range` : `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason} (this checkout is a shallow clone; git fetch --unshallow if the range is what is missing)`;
     return {
       attached: true,
       ref,
       canonical: pr.canonical,
       argv: attachArgv,
       commitsArgv,
-      warning: `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${oneLine(t2.error ?? "sb gave no reason")}`
+      warning
     };
   }
   return { attached: true, ref, canonical: pr.canonical, argv: attachArgv, commitsArgv };
