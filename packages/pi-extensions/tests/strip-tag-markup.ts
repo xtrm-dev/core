@@ -15,7 +15,14 @@ export function stripTagMarkup(text: string): string {
     const open = text.indexOf("<", i);
     if (open < 0) break;
     const close = text.indexOf(">", open + 1);
-    if (close < 0) break; // no tag: the remainder is literal text
+    if (close < 0) break; // no closing bracket at all: the rest is literal
+    if (close === open + 1) {
+      // "<>" has no content between the brackets, so /<[^>]+>/ left it literal.
+      // Keep this "<" and resume after it: a later real tag must still strip.
+      out += text.slice(i, open + 1);
+      i = open + 1;
+      continue;
+    }
     out += text.slice(i, open);
     i = close + 1;
   }

@@ -135,12 +135,9 @@ describe("CORE-2655 ReDoS regression", () => {
   });
 
   it("xtrm-ui:1113/1191 framing scan stays linear and keeps its rules (CORE-2694)", () => {
-    // Unclosed bracket header plus a dash run: the old /^\[[^\]\n]*\][ \t\r]*\n/
-    // and /\n+---\s*\n/ scanned it as one repeated-`\n` blob.
-    const adversarial = "[" + "z".repeat(200000) + "\n" + "-".repeat(200000) + "\n";
-    const { ms } = timed(() => ultraExternalPrimary("bash", [adversarial]));
-    expect(ms).toBeLessThan(100);
-    const payload = "{\"a\":1}" + "\n".repeat(200000) + "---\n";
+    // Discriminating: /\n+---\s*\n/ backtracks over the newline run when the
+    // separator never completes (measured 424 ms old vs 1 ms new at 40k).
+    const payload = "{\"a\":1}" + "\n".repeat(40000) + "---\n";
     const second = timed(() => ultraExternalPrimary("bash", [payload]));
     expect(second.ms).toBeLessThan(100);
     // Behaviour: header line and trailing `---` hint are still stripped.
@@ -150,11 +147,14 @@ describe("CORE-2655 ReDoS regression", () => {
     expect(ultraExternalPrimary("bash", ["---\n{\"a\":1}"])).toBe("{\"a\":1}");
   });
 
-  it("read-line-numbers:39 notice match stays linear (CORE-2694)", () => {
-    const adversarial = "[Showing lines " + "0".repeat(200000) + "\nbody line";
+  it("read-line-numbers:39 notice match stays linear (discriminating)", () => {
+    // Discriminating: the old `/\d+.*Use offset=` splits the digit run across
+    // `\d+` and `.*` with no terminator in sight (measured 474 ms old vs
+    // <1 ms new at 40k). The unbounded form is why CodeQL flagged line 39.
+    const adversarial = "[Showing lines 1-1 of " + "1".repeat(40000) + "x";
     const { value, ms } = timed(() => numberReadText(adversarial, 1, false));
     expect(ms).toBeLessThan(100);
-    expect(value).toContain("1 | [Showing lines ");
+    expect(value).toContain("1 | [Showing lines 1-1 of ");
     // Behaviour: the three Pi notices are still recognised verbatim.
     expect(numberReadText("foo\nbar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]", 1, true))
       .toBe("1 | foo\n2 | bar\n\n[Showing lines 1-2 of 5000. Use offset=3 to continue.]");
@@ -162,13 +162,26 @@ describe("CORE-2655 ReDoS regression", () => {
       .toBe("1 | foo\n2 | \n3 | \n\n[3 more lines in file. Use offset=4 to continue.]");
     const banner = "[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' /a/b.txt | head -c 51200]";
     expect(numberReadText(banner, 1, false)).toBe(banner);
+    // A long file path is still a notice, not file content: a real banner can
+    // carry a deep path, so the path runs are bounded at 8 KiB, not 2 KiB.
+    const longPath = "/very/deep/" + "nested/".repeat(400) + "file.txt";
+    const longBanner = `[Line 5 is 60KB, exceeds 50KB limit. Use bash: sed -n '5p' ${longPath} | head -c 51200]`;
+    expect(longPath.length).toBeGreaterThan(2000);
+    expect(numberReadText(longBanner, 1, false)).toBe(longBanner);
+    // Past NOTICE_MAX_LENGTH a notice-shaped line is content: the guard turns
+    // the patterns off rather than letting file content reach them.
+    const oversized = "[Showing lines 1-1 of 1" + "0".repeat(20000) + " Use offset=2 to continue.]";
+    expect(oversized.length).toBeGreaterThan(16384);
+    expect(numberReadText(oversized, 1, false)).toContain("1 | [Showing lines ");
   });
 
-  it("agent-host:274 trailing-slash trim stays linear (CORE-2694)", () => {
-    const adversarial = "https://github.com/org/repo" + "/".repeat(200000);
+  it("agent-host:274 trailing-slash trim stays linear (discriminating)", () => {
+    // Discriminating: `/\/+$/` backtracks the whole slash run when the end
+    // anchor fails (measured 379 ms old vs <1 ms new at 40k).
+    const adversarial = "https://github.com/a" + "/".repeat(40000) + "b";
     const { value, ms } = timed(() => repositoryFromRemote(adversarial));
     expect(ms).toBeLessThan(100);
-    expect(value).toBe("org/repo");
+    expect(value).toBe("a/b"); // inner slashes survive; only the tail run trims
     // Behaviour: trailing slashes and one .git suffix are still dropped.
     expect(repositoryFromRemote("https://github.com/org/repo.git")).toBe("org/repo");
     expect(repositoryFromRemote("git@github.com:org/repo.git/")).toBe("org/repo");

@@ -1108,8 +1108,12 @@ function afterBracketHeader(text: string): number {
   const newline = text.indexOf("\n");
   // No newline: the whole text is the bracket line, which is content here.
   if (close < 0 || newline < 0 || close > newline) return 0;
-  // Framing only when nothing but blanks follows the closing bracket.
-  if (text.slice(close + 1, newline).trim() !== "") return 0;
+  // Framing only when nothing but [ \t\r] follows the closing bracket — the
+  // class the replaced pattern used, not String#trim's wider definition.
+  for (let i = close + 1; i < newline; i++) {
+    const c = text.charCodeAt(i);
+    if (c !== 0x20 && c !== 0x09 && c !== 0x0d) return 0;
+  }
   return newline + 1;
 }
 
@@ -1118,7 +1122,9 @@ function afterBracketHeader(text: string): number {
 function isHintSeparator(line: string): boolean {
   let i = 0;
   while (i < line.length && line.charCodeAt(i) === 0x2d) i++;
-  if (i < 3) return false;
+  // Exactly three dashes: `/---\s*\n/` could not match a fourth, because the
+  // dash is not whitespace and `\s*` may not consume it.
+  if (i !== 3) return false;
   for (; i < line.length; i++) {
     const c = line.charCodeAt(i);
     if (c !== 0x20 && c !== 0x09 && c !== 0x0d) return false;
