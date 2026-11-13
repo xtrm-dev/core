@@ -196,14 +196,16 @@ def session_ident(cwd: str) -> str:
 
 
 def is_coordinator(ident: str) -> bool:
-    role = os.environ.get("XTRM_ROLE", "")
-    if role:
-        return role in COORDINATOR_ROLES
+    # The session name decides; XTRM_ROLE can only add a session, never remove one. A pane may inherit an unrelated
+    # XTRM_ROLE (worker, reviewer) from the tmux server, and xt does not set manager/lead for a project-manager launch.
     pattern = str(pm_config.get("PM_COORDINATOR_PATTERN", DEFAULT_COORD_PATTERN))
     try:
-        return bool(re.search(pattern, ident))
+        if re.search(pattern, ident):
+            return True
     except re.error:
-        return bool(re.search(DEFAULT_COORD_PATTERN, ident))
+        if re.search(DEFAULT_COORD_PATTERN, ident):
+            return True
+    return os.environ.get("XTRM_ROLE", "") in COORDINATOR_ROLES
 
 
 # ---------------------------------------------------------------- state

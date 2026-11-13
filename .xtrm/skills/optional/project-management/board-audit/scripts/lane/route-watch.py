@@ -130,6 +130,11 @@ def already_outboxed(rid, cid=None):
 
 
 def append_outbox(row):
+    with lanecfg.outbox_lock(OUTBOX):
+        return _append_outbox(row)
+
+
+def _append_outbox(row):
     """Durable, because a DECISION is not delivered by printing it to a terminal.
 
     WHAT WENT WRONG on 2026-11-01: c16409 was classified correctly at 09:20:54Z (ROUTE-DECISION is in events.log at

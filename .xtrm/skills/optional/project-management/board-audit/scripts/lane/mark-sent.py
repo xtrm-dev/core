@@ -24,6 +24,11 @@ def stamp():
 
 
 def main(ids):
+    with lanecfg.outbox_lock(OUTBOX):
+        return _main(ids)
+
+
+def _main(ids):
     rows = []
     with open(OUTBOX, encoding="utf-8") as fh:
         for line in fh:
@@ -57,9 +62,11 @@ def main(ids):
         if r.get("id") in pending:
             r["delivered"] = True
             r["delivered_at"] = now
-    with open(OUTBOX, "w", encoding="utf-8") as fh:
+    tmp = OUTBOX + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         for r in rows:
             fh.write(json.dumps(r) + "\n")
+    os.replace(tmp, OUTBOX)  # readers (deadman) never see a half-written file
     print(f"marked delivered and archived {len(pending)}: {sorted(pending)}")
     return 0
 

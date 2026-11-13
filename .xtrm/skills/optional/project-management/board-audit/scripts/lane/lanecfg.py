@@ -8,6 +8,8 @@ Importing this module also puts project-management/scripts on sys.path, so `impo
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import pathlib
 import re
 import shutil
@@ -122,3 +124,15 @@ def sb_key_re(min_digits: int = 1, group: bool = False) -> str:
     p = re.escape(sb_prefix())
     d = r"\d" + ("{%d,}" % min_digits if min_digits > 1 else "+")
     return rf"{p}-({d})" if group else rf"{p}-{d}"
+
+
+@contextlib.contextmanager
+def outbox_lock(path: str):
+    """Exclusive lock for the read-check-write of an outbox file. Every writer of pending-routes.jsonl takes it:
+    a whole-file rewrite (mark-sent.py) racing an append (route-watch.py, route-jira.py) would drop the appended row."""
+    with open(str(path) + ".lock", "a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)

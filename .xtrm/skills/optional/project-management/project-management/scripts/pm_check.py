@@ -114,9 +114,9 @@ SETTINGS = [
     ("PM_STATUS_BOARD_STATUS_OVERRIDES", True, (), (TK,), "Jira status -> page status"),
     ("PM_EXTRA_REF_PREFIXES", True, (), (TK,), "other issue-key prefixes in event refs"),
 ]
-TOOLS = ("sb", "xt", "gh", "tmux", "python3")
+TOOLS = ("sb", "xt", "gh", "tmux", "xtmux", "python3")
 # Per-project state that two projects must never share: they would overwrite each other.
-UNIQUE_KEYS = ("lane_dir", "state_dir", "status_board_state_dir", "status_board_site")
+UNIQUE_KEYS = ("lane_dir", "state_dir", "status_board_state_dir", "status_board_site", "repo_dir")
 
 
 def source(name: str, structured: bool):

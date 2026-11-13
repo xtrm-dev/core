@@ -77,7 +77,7 @@ session ends. The role is in the session name, set once at launch:
 
 | Role | Default pattern | Launch it as | Live sessions |
 |---|---|---|---|
-| `manager` | `*[0-9][0-9]-manager` | `xt claude <day>-manager` (for example `thu13-manager`); the next day's manager takes the next name | exactly one |
+| `manager` | `*[0-9]-manager` | `xt claude <day>-manager` (for example `thu13-manager`); the next day's manager takes the next name | exactly one |
 | `lead` | `*-lead` | `xt claude <epic>-<area>-lead` (for example `SB-120-api-lead`) | several, one per epic and area |
 | `board_helper` | `*board-helper*` | `xt pi board-helper` (or `<project>-board-helper`) | exactly one |
 
@@ -148,7 +148,7 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_DONE_STATUSES` | `done_statuses` | `[name]` | status names that mean done | PM (TX-07 fallback), BA, TK |
 | `PM_ACTIVE_STATUSES` | `active_statuses` | `[name]` | status names that mean being worked | BA, TK |
 | `PM_OPEN_STATUSES` | `open_statuses` | `[name]` | every not-done status an open window may hold (hygiene cycle) | BA |
-| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `manager: *[0-9][0-9]-manager`, `lead: *-lead`, `board_helper: *board-helper*`) | PM, BA (lane), TK |
+| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `manager: *[0-9]-manager`, `lead: *-lead`, `board_helper: *board-helper*`) | PM, BA (lane), TK |
 | `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |

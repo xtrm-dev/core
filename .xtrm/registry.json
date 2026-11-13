@@ -853,7 +853,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/deadman.py": {
-          "hash": "631f0fa6c971f255d70540a14579ddb1319e840e0c0e2fb98817854ee436da33",
+          "hash": "8f1e7cc8adfb2f9419c36382aaba56b9e437636447c1ce47263edaae1537a0c6",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/deep-dup-probe.py": {
@@ -881,7 +881,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/lanecfg.py": {
-          "hash": "f74344ea19ebccc04354903874b6c594efde1ef90131372bd38284fcbeb805f9",
+          "hash": "0dd5f975d9a9493b570bedd6aebd3cac5861bd7df4927259d5afceb25b5264db",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/mark-routed.py": {
@@ -889,7 +889,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/mark-sent.py": {
-          "hash": "78e35f2a87d1873280f1356e15fc8bb47ac7bf99ee1081a8bd80b9c2259d4ef2",
+          "hash": "7e11731282a0833ae5446415b8f0f6d811ceb9567a3bc76ecc9e4a8b89dc8361",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/oneshot.py": {
@@ -917,11 +917,11 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-jira.py": {
-          "hash": "778bd21636a28e51bf659ea91a0f2aead46337924519bef623a98afbc3b44e3d",
+          "hash": "73222cb2c1020077925f2b82f11cd6fed64b07f1ad4ecd0efa23f972107724b3",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-watch.py": {
-          "hash": "4ded7dd0e8f8a7848f6176a10aaa493aef421d5be13996acc6faa6fff4b5ab36",
+          "hash": "53be6bdd52bbbe177e6f659ce0d90f353e3fa783a6d58974f2d853614891e4fe",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/sbtext.py": {
@@ -929,7 +929,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/scheduler.sh": {
-          "hash": "af97beed950504b548ccc8726c04a3dceafc321b875bf8909d3f1c4452a78eff",
+          "hash": "b968599e6ae171efeeb72e3de3cafdd72d679da3e1e4f4d13052df70730bb964",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/test-unrowed-done.py": {
@@ -961,7 +961,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/SKILL.md": {
-          "hash": "bd33cb2fb8a53c4095b81e92b583d8746b2450fcd1432cd494ab2e8a142a3ac9",
+          "hash": "9218bea92b16679e4a3edbd43c84210ce748981f53bb92b7dd5dc6a2e2dbe9c9",
           "version": "0.15.3"
         },
         "project-management/board-audit/workflows/board-batch-verdicts-v3.json": {
@@ -977,7 +977,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
-          "hash": "27c1b87a7fecc141d98e566044f7743dd4cc89de40a37d1e643d622b3a6318e3",
+          "hash": "75fd785070e07770c214f851b4096c4b926fd44087623c1bb88e1c2119b2a4bf",
           "version": "0.15.3"
         },
         "project-management/project-management/references/agentrun.md": {
@@ -997,15 +997,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "c9e8ebbd049d8edca4110265261a1caad6f328bd4559a4f2861fafae21a64cfd",
+          "hash": "b093cdaea75d8c38331cf9edc150fae1963eef9865c5fee0c9afd26e6c1a8378",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "8c5150fed2fdf7252c3060e060ceafd6d2b6ae1b3811e245998531a0059d2828",
+          "hash": "0d296c817481128298333f56be5dd22fae43389892a1b04f844f9ad7a3367fc4",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "de0da35427c4bf9c2f6634c1c0c5a772bd704fc41e2fea2f5a2359e9b2c4ba89",
+          "hash": "ee464888cc68efa9c41261be414df8f41b9eb7fd05f9dc157cbb2f82d29e8fc0",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1013,7 +1013,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/setup.md": {
-          "hash": "702f1c9f2531335c95e534b69bd5268218de19607ce30eaae9b742dab199d536",
+          "hash": "275718bd9cff4f68fb5037433811ecc2b02a88aebb39ee788e9e6de7408b0b4a",
           "version": "0.15.3"
         },
         "project-management/project-management/references/substrate.md": {
@@ -1033,15 +1033,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_check.py": {
-          "hash": "c4c1348740bbc2afa048041fa16ecec924b59d8b5d7ccac5c52a07f45d7f3e0b",
+          "hash": "3927043d7300851bd941e8784588cc6739ead351102c53943dd3ab1073c19226",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_config.py": {
-          "hash": "03195b78a04537ec8e1be9a7fce0f7402b825e1a8237b5821693577504a6d01c",
+          "hash": "ce9c037e9a31d5c83e4c62286fa3f96efabb9fb51da3681ba68ad9bb00333dac",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_question.py": {
-          "hash": "034fa0099b1b915204b2414f9429059e65af903856d8d8de4d5f0ec57cc38658",
+          "hash": "67a6b9911988b34256ecd933a8ad679d5c578277dbbae56d147e652ab2a2eba7",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/post-guard.py": {
@@ -1049,7 +1049,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/route_target.py": {
-          "hash": "93f5246e4880e8989f2bdb4ec1643b086c955e8600a1bf19d7c6f1413c153bfe",
+          "hash": "6929c2630792da0a018c406ac9e969a9d72bc7664006c5ebbe2f6bb7d11fbd26",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/window-lineage.py": {
@@ -1065,7 +1065,7 @@
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/scripts/status_board_sync.py": {
-          "hash": "90be7f87efc396c2e7e7c5bc0c1d150a1ff05508697b61cc8a4a14ccde01debc",
+          "hash": "0a08a28771bb2e8a4b2010dd68914cc83ad9d5fc7667bf532fa5e786609bd760",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/SKILL.md": {

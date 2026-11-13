@@ -246,9 +246,10 @@ def test_coordinator_pattern(env, ident, yes):
     assert oq.is_coordinator(ident) is yes
 
 
-def test_xtrm_role_overrides_name(env, monkeypatch):
-    monkeypatch.setenv("XTRM_ROLE", "worker")
-    assert oq.is_coordinator("thu13-manager") is False
+def test_name_decides_and_xtrm_role_only_adds(env, monkeypatch):
+    monkeypatch.setenv("XTRM_ROLE", "worker")                # inherited from the tmux server: must not hide a manager
+    assert oq.is_coordinator("thu13-manager") is True
+    assert oq.is_coordinator("plain-name") is False
     for role in ("coordinator", "manager", "lead"):
         monkeypatch.setenv("XTRM_ROLE", role)
         assert oq.is_coordinator("plain-name") is True

@@ -431,5 +431,32 @@ class AnswerRouting(unittest.TestCase):
         self.assertEqual(os.path.dirname(ts.INBOX), ts.STATE_DIR)
 
 
+
+class RouteAnswersRetry(unittest.TestCase):
+    """A failed delivery is not marked routed: the next run retries it (overthinker XTRM-795 B1)."""
+
+    def setUp(self):
+        self.saved = {k: getattr(ts, k) for k in ("deliver", "owner_of", "DRY", "INBOX", "ANSWER_SEED_AT")}
+        self.tmp = tempfile.mkdtemp()
+        ts.INBOX = os.path.join(self.tmp, "answers-inbox.jsonl")
+        ts.DRY = False
+        ts.ANSWER_SEED_AT = ""
+        ts.owner_of = lambda qid, live: "EP-1-api-lead"
+        self.live = {"answers/q-1": (None, {"at": "2026-11-13T10:00Z", "answer": "yes", "by": "op"})}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(ts, k, v)
+
+    def test_failed_delivery_is_retried(self):
+        ts.deliver = lambda owner, text, *a, **k: "FAILED-no-route:agent host unreachable"
+        state = {}
+        self.assertEqual(ts.route_answers(self.live, state), 0)
+        self.assertEqual(state["routed_answer_ids"], [])
+        self.assertFalse(os.path.exists(ts.INBOX))
+        ts.deliver = lambda owner, text, *a, **k: "xtmux:example-repo-xt-claude-EP-1-api-lead"
+        self.assertEqual(ts.route_answers(self.live, state), 1)
+        self.assertEqual(state["routed_answer_ids"], ["q-1"])
+
 if __name__ == "__main__":
     unittest.main()

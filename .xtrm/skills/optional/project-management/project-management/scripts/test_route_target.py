@@ -38,6 +38,10 @@ class Resolve(unittest.TestCase):
     def wt(self, name):
         return REPO + "/.xtrm/worktrees/alpha-xt-claude-" + name
 
+    def test_single_digit_day_manager(self):
+        live = [sess("thu3-manager", self.wt("thu3-manager"))]
+        self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-thu3-manager")
+
     def test_manager_by_worktree_address(self):
         live = [sess("thu13-manager", self.wt("thu13-manager")),
                 sess("EP-1-api-lead", self.wt("EP-1-api-lead"))]

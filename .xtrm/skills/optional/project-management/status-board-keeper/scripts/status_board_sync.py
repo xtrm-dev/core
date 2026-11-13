@@ -1505,6 +1505,11 @@ def route_answers(live, state):
             print("  DRY route %s" % text[:200])
             continue
         where = deliver(owner, text)
+        if str(where).startswith("FAILED-"):
+            # Not routed: leave it out of routed_answer_ids so the next run retries it (an answer marked routed after a
+            # failed delivery is lost for good).
+            print("  NOT routed %s: %s (retried next run)" % (qid, where))
+            continue
         entry = {"qid": qid, "owner": owner, "at": at, "answer": doc.get("answer"),
                  "comment": (doc.get("comment") or "")[:500], "by": doc.get("by"),
                  "delivered": where, "run": NOW}

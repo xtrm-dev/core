@@ -7,7 +7,7 @@ session name instead, set once at launch, and resolved at send time against the 
 agent host (GET /v1/sessions on loopback).
 
 Roles and their default patterns (override per project with the setting PM_ROUTE_ROLES, {role: fnmatch pattern}):
-  manager       *[0-9][0-9]-manager   one per project and day, e.g. thu13-manager
+  manager       *[0-9]-manager        one per project and day, e.g. thu13-manager or thu3-manager
   lead          *-lead                one per epic and area, e.g. EPIC-7-api-lead; several are normal
   board_helper  *board-helper*        one per project
 Workers never take the -manager or -lead suffix. A pattern matches the session's address (its worktree name, the
@@ -36,7 +36,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
 
-DEFAULT_ROLES = {"manager": "*[0-9][0-9]-manager", "lead": "*-lead", "board_helper": "*board-helper*"}
+DEFAULT_ROLES = {"manager": "*[0-9]-manager", "lead": "*-lead", "board_helper": "*board-helper*"}
 # Roles that exactly one live session holds; `lead` is plural by design.
 SINGLE_ROLES = ("manager", "board_helper")
 NOT_LIVE = {"history_only", "stopped", "ended"}

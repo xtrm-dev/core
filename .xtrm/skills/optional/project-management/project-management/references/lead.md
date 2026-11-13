@@ -50,7 +50,8 @@ what you believe is wrong.
    silence is not agreement. While a proposal waits, the lead continues the work the proposal does not affect. The manager checks the lead's claims
    (a lead report is a claim); the lead checks the manager's plans.
 2. A window under 2 hours away: the lead escalates by `SendMessage` to the manager. Within 20 minutes of a window: no rounds, the manager decides and
-   records.
+   records. With no live manager (`route_target.py manager` finds none), the lead decides its own window, journals the decision, and the next
+   manager ratifies it.
 3. At most two rounds per item, then a tie-breaker: the advisor (order, risk, production sequencing); an Opus `quant-methodologist` (data meaning,
    rule 29); the operator (product or release preference) via one `@operator` comment (rule 36; the board helper posts it on the lead's or manager's
    order).
@@ -92,7 +93,8 @@ includes the section 3 audit. Every lead launch prompt and resume line says: "Lo
 references/worker.md first."
 
 A lead compacts at a clear checkpoint (`references/continuity.md`) and rotates at 24 h or when its context is rotted (SKILL.md rules 35, 40): a
-`handoff` entry first, then a fresh session on the same issue (`xt attach <name>`, then `sb issue resume <ref>`).
+`handoff` entry first, then the lead itself launches its successor on the same issue (`xt attach <name>`, then `sb issue resume <ref>`); the
+successor reaps the outgoing, as in `references/handover.md`.
 
 ## Why (2026-10-31, MMD-3012)
 

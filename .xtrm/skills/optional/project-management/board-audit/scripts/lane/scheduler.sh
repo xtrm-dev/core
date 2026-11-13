@@ -24,14 +24,13 @@ log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$EV"; }
 # State is one key per line, always rewritten whole: the first version wrote one space-separated line and
 # `sed` collapsed it, which silently lost every other key (a state file is an interface - board-audit
 # references/lane-automation.md).
-save() { printf 'cycle=%s\ndeploy=%s\nstatus_board=%s\nwp=%s\ntabhash=%s\nheavy=%s\nroute=%s\n' \
-         "$cycle" "$deploy" "$status_board" "$wp" "$tabhash" "$heavy" "$route" > "$ST.tmp" && mv "$ST.tmp" "$ST"; }
+save() { printf 'cycle=%s\ndeploy=%s\nstatus_board=%s\nwp=%s\ntabhash=%s\nheavy=%s\nroute=%s\ndue=%s\n' \
+         "$cycle" "$deploy" "$status_board" "$wp" "$tabhash" "$heavy" "$route" "$due" > "$ST.tmp" && mv "$ST.tmp" "$ST"; }
 load() {
-  cycle=0; deploy=0; status_board=0; wp=0; tabhash=-; heavy=0; route=0
-due=0
+  cycle=0; deploy=0; status_board=0; wp=0; tabhash=-; heavy=0; route=0; due=0
   if [ -f "$ST" ]; then
     while IFS='=' read -r k v; do
-      case "$k" in cycle|deploy|status_board|wp|tabhash|heavy|route) printf -v "$k" '%s' "${v:-0}";; esac
+      case "$k" in cycle|deploy|status_board|wp|tabhash|heavy|route|due) printf -v "$k" '%s' "${v:-0}";; esac
     done < "$ST"
   fi
 }

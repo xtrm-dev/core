@@ -70,6 +70,11 @@ def parse_ts(s):
 
 
 def append_outbox(row):
+    with lanecfg.outbox_lock(OUTBOX):
+        return _append_outbox(row)
+
+
+def _append_outbox(row):
     """Append one decision, deduplicated on the COMMENT id, not on the channel-prefixed id.
 
     The id of a decision is `inbox:<cid>` or `jira:<cid>`, so the same operator comment arriving on both channels

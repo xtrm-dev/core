@@ -18,6 +18,7 @@ before the first production window. A lead reads `references/lead.md` instead.
 | When | Action | Evidence |
 |---|---|---|
 | Start / resume | `sb issue resume <epic>`; `sb journal latest <epic> --kind handoff`; `CronList`; re-arm Monitors; `tmux list-panes -s` | handoff seq in the first message |
+| Every hour | Team check: `python3 scripts/route_target.py --team`; no live board helper, or two, means relaunch it from its issue and journal it | team line |
 | Every 30 min | Re-arm the file-watch Monitor (30 min life) on helper and board output folders | `NEW FILE:` lines |
 | Every 2 h | Renew the claim: `sb issue renew <epic> --ttl-ms 14400000`; claim again only after the lease expired | `renewed` line |
 | Before each window | `date -u`; `/proc/loadavg`, `/proc/pressure/memory`; DRY run; GO/DRY comment on the window's Jira Task | Jira comment |

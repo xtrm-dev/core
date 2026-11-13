@@ -46,6 +46,8 @@ def raw_config() -> dict:
             _RAW = json.loads(config_path().read_text())
         except FileNotFoundError:
             _RAW = {}
+        except (OSError, ValueError) as exc:
+            sys.exit(f"pm_config: {config_path()} is unreadable ({type(exc).__name__}: {exc}); fix it, see {SETUP_DOC}")
     return _RAW
 
 
@@ -76,13 +78,18 @@ def select_project() -> tuple[str | None, str]:
             sys.exit(f"pm_config: PM_PROJECT={name} is not in {config_path()} (projects: {', '.join(sorted(projects))})")
         return name, "PM_PROJECT"
     cwd = pathlib.Path.cwd().resolve()
-    best, best_len = None, -1
+    best, best_len, tied = None, -1, set()
     for pname, prof in projects.items():
         merged = {**defaults, **prof}
         for d in [merged.get("repo_dir"), *(merged.get("match_dirs") or [])]:
             n = _under(cwd, d) if d else -1
             if n > best_len:
-                best, best_len = pname, n
+                best, best_len, tied = pname, n, {pname}
+            elif n == best_len and n >= 0:
+                tied.add(pname)
+    if len(tied) > 1:
+        sys.exit(f"pm_config: the current directory belongs to {len(tied)} projects ({', '.join(sorted(tied))}: same "
+                 f"repo_dir or match_dirs); set PM_PROJECT, and fix the overlap (pm_check.py reports it)")
     if best is not None:
         return best, f"current directory inside {best}'s repo_dir/match_dirs"
     if len(projects) == 1:

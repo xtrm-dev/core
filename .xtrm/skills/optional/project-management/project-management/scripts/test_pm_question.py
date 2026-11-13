@@ -94,6 +94,7 @@ def test_owner_resolution(fake, monkeypatch):
     assert pq.owner_of("p-xt-claude-EP-1-api-lead") == "EP-1-api-lead"
     assert pq.owner_of("p-xt-claude-thu13-manager") == "manager"       # one doc the next day's manager inherits
     assert pq.owner_of("fri14-manager") == "manager"
+    assert pq.owner_of("thu3-manager") == "manager"            # single-digit day
     assert pq.owner_of("EP-2-ui-lead") == "EP-2-ui-lead"
     monkeypatch.setenv("PM_QUESTION_OWNER", "custom")
     assert pq.owner_of("anything") == "custom"

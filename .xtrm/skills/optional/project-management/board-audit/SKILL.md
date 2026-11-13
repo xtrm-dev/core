@@ -139,7 +139,7 @@ board.
 ## Continuous helper cycle (board helper)
 
 One board helper per project (session `board-helper`, role board-audit-runner) runs this cycle as an
-`xt pi` worker (Muse Spark or the pi default; one process, no Claude, no subagents). Launch syntax:
+`xt pi` worker (the pack default model, never Muse Spark: it stops mid-task; one process, no Claude, no subagents). Launch syntax:
 `project-management/references/launching.md`. It is the only Jira writer: leads order their own Jira
 moves through it, the manager orders the rest. Jira calls go through `project-management/scripts/jira.py`.
 Writes follow steps 2-3 above unless the manager has allowed a class of mechanical fixes in writing on

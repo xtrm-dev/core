@@ -58,9 +58,11 @@ def read_lines():
 
 
 def last_stamp(lines):
+    # The newest line the ROUTER wrote. This switch's own ALARM lines must not count, or a repeating alarm keeps the
+    # log "fresh" and ROUTER-STALE never fires while the router is dead.
     for line in reversed(lines):
         m = TS.match(line)
-        if m:
+        if m and " ALARM " not in line:
             return datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     return None
 

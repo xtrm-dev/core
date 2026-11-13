@@ -89,6 +89,21 @@ class Selection(unittest.TestCase):
         os.environ["PM_LANE_DIR"] = "/env"
         self.assertEqual(pm_config.get("PM_LANE_DIR"), "/env")
 
+    def test_equal_directories_stop(self):
+        self.write({"projects": {"alpha": {"repo_dir": str(self.root / "alpha")},
+                                 "beta": {"repo_dir": str(self.root / "alpha")}}})
+        os.chdir(self.root / "alpha" / "sub")
+        with self.assertRaises(SystemExit) as ctx:
+            pm_config.get("PM_LANE_DIR")
+        self.assertIn("same repo_dir", str(ctx.exception))
+
+    def test_malformed_config_names_the_file(self):
+        self.cfg.write_text('{"lane_dir": "/x",}')
+        pm_config._RAW = pm_config._CACHE = None
+        with self.assertRaises(SystemExit) as ctx:
+            pm_config.get("PM_LANE_DIR")
+        self.assertIn("unreadable", str(ctx.exception))
+
     def test_cli_get_and_project(self):
         self.two()
         env = {**os.environ, "PM_PROJECT": "alpha"}

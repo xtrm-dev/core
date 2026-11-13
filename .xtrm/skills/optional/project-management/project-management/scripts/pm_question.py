@@ -72,7 +72,7 @@ def state_root() -> pathlib.Path:
 
 
 RUNTIME_PREFIX_RE = re.compile(r"^.*?-xt-[a-z]+-(?=.)")
-MANAGER_RE = re.compile(r"[0-9]{2}-manager$")
+MANAGER_RE = re.compile(r"[0-9]{1,2}-manager$")
 
 
 def owner_of(ident: str) -> str:
