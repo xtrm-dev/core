@@ -84441,13 +84441,16 @@ async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
   }
   try {
     const status2 = ghShimStatus({ home: process.env.HOME });
-    if (status2.installed && !status2.current) {
+    if (opts.apply && status2.installed && !status2.current) {
       const shim = installGhShim({ home: process.env.HOME });
       if (!shim.ok) {
         console.log(kleur_default.yellow(`  gh shim: not refreshed (${shim.reason ?? "unknown reason"})`));
       } else {
-        for (const warning of shim.warnings) console.log(kleur_default.yellow(`  gh shim: ${warning}`));
+        for (const warning of shim.warnings ?? []) console.log(kleur_default.yellow(`  gh shim: ${warning}`));
       }
+    }
+    if (status2.installed && !status2.pathOrderOk) {
+      console.log(kleur_default.yellow("  gh shim: ~/.local/bin comes after the real gh on PATH \u2014 the shim will not be used"));
     }
   } catch (error51) {
     console.log(kleur_default.yellow(`  gh shim: refresh failed (${error51 instanceof Error ? error51.message : String(error51)})`));

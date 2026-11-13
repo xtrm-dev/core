@@ -125,13 +125,20 @@ export async function runUserScopeMaintenance(packageRoot: string, repoRoot: str
     // finding the operator must see, not a silent no-op.
     try {
         const status = ghShimStatus({ home: process.env.HOME });
-        if (status.installed && !status.current) {
+        // The refresh is a write, so it is apply-gated here as well as at every
+        // call site: a future dry-run caller must not rewrite ~/.local/bin/gh.
+        if (opts.apply && status.installed && !status.current) {
             const shim = installGhShim({ home: process.env.HOME });
             if (!shim.ok) {
                 console.log(kleur.yellow(`  gh shim: not refreshed (${shim.reason ?? 'unknown reason'})`));
             } else {
-                for (const warning of shim.warnings) console.log(kleur.yellow(`  gh shim: ${warning}`));
+                for (const warning of shim.warnings ?? []) console.log(kleur.yellow(`  gh shim: ${warning}`));
             }
+        }
+        // Reinstalling cannot fix a PATH that still prefers the real gh: say so
+        // rather than implying `xt identity doctor` will go green.
+        if (status.installed && !status.pathOrderOk) {
+            console.log(kleur.yellow('  gh shim: ~/.local/bin comes after the real gh on PATH — the shim will not be used'));
         }
     } catch (error) {
         console.log(kleur.yellow(`  gh shim: refresh failed (${error instanceof Error ? error.message : String(error)})`));
