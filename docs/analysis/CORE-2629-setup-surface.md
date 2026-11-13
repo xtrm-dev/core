@@ -4,7 +4,7 @@ Scoping research only. No installers implemented. Read-only probes with temp HOM
 
 ## 1. Evidence base
 
-- PRD: docs/plans/xtrm-build-order/PRD.md (Phase 2 lines 619-955; Phase 1 steps 2/4/5/6b).
+- PRD: docs/plans/xtrm-build-order/PRD.md — Phase 1 steps 2/4/5/6b (lines 377-520), Phase 2 lines 619-955, plus Step 26 (line 1136), Step 27 (line 1156) and Step 46 (line 1388) from Phases 3 and 6.
 - Substrate Issues cited (all `sb issue show`): CORE-2380, CORE-2378, CORE-2400, CORE-2379, CORE-2591, CORE-2385, CORE-2386, CORE-2383, CORE-2384, CORE-2382, CORE-2377, CORE-2513, CORE-2570.
 - Jira: XT-114 parent, themes XT-125 (Pi runtime), XT-126 (install/update), XT-127 (global state), XT-128 (releases), XT-129 (picker/xtmux), XT-130 (Claude plugin). Jira keys could NOT be read: acli on ssh server is authenticated to xtrmxt.atlassian.net, not mercuryintel.atlassian.net where XT lives. List of unreadable keys: XT-114, XT-115, XT-116, XT-117, XT-119, XT-120, XT-121, XT-122, XT-123, XT-125, XT-126, XT-127, XT-128, XT-129, XT-130, XT-160, XT-162, XT-165, XT-166, XT-167, XT-172, XT-173, XT-174, XT-175, XT-178, XT-181, XT-183, XT-184, XT-185, XT-186, XT-187, XT-188, XT-189, XT-190, XT-191, XT-192. (No auth change made, per constraint.)
 - Temp-HOME dry run: `HOME=/tmp/xtsetup-dryrun/home node .../cli/dist/index.cjs init --dry-run -y` in a fresh git repo. Output shows Machine Bootstrap, Claude Runtime Sync, Pi Runtime, Skills, Project Bootstrap phases; skills "20 changes pending"; sb init deferred. Confirms xt init already orchestrates many components but several (below) are not in any phase.
@@ -35,15 +35,14 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 | service-knowledge install everywhere | Step 15c (XTRM-631) | partial | ensureServiceSkills is called in init.ts inside runProjectBootstrap (cli/src/commands/init.ts) and in update.ts; remaining gap is only where not covered (e.g. non-service repos / older layouts). |
 | xt-worktree-reap timer (systemd) | Step 27/24 | partial | Timer exists on server only; not installed by xt init on PC; no unit file shipped by core. |
 | agent author identity / git identity env | Step 20 CORE-2525 | partial | git-identity.ts helpers exist; launcher exports env; not an installer concern but doctor could check. |
-| skill pack state migration (programme->project-management) | not covered | NOT COVERED (missing) | No migration code in skills-state or update. |
 
 ## 3. Uncovered components and the amendments that closed them (not a parallel design)
 
-Five components are truly uncovered by any existing step (items 1–6 below, where items 5 and 6 are partially covered components that still need an amendment); item 7, the Claude route switch, is additionally owned by no core step at all. Each item below is a gap, not an open question: the ruling that settles it is section 7.
+Five components are truly uncovered by any existing step (items 1–4 and 7 below; items 5 and 6 are partially covered components that still need an amendment, and item 7 is additionally owned by no core step at all). Each item below is a gap, not an open question: the ruling that settles it is section 7.
 
 1. prepare-commit-msg trailer hook (step 6b / CORE-2570): **Settled by §7 resolution 1 (operator ruling of 2026-11-11) — `xt init` and `xt update` chain the hook by default, there is no opt-in flag, and `xt doctor` warns when it is missing.** No amendment is needed beyond that ruling.
 
-2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init`/`xt update`, with `xt doctor` reporting timer presence. **Settled by §7 resolution 2: server only (the PC uses the remote `sb`), installed by `xt init`/`xt update` on the server role, checked by `xt doctor`.**
+2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init`/`xt update` on the server role only, with a role-conditional `xt doctor` timer check. **Settled by §7 resolution 2: server only (the PC uses the remote `sb`), installed by `xt init`/`xt update` on the server role, checked by `xt doctor`.**
 
 3. skill pack rename programme -> project-management (CORE-2624 done): amend Step 4/Step 17 to add a one-time migration in xt update: rewrite enabledPacks entries "programme" -> "project-management" in ~/.xtrm/skills/state.json and manifests/*.json, idempotent. **Settled by §7 resolution 3: one-time idempotent migration in `xt update`, backup first.**
 
@@ -85,4 +84,4 @@ Applying the operator's 11-11 rulings (linking automated as far as possible; xt 
 6. skill-suggest: included in the Claude plugin baseline installed by xt init (OFFICIAL_CLAUDE_PLUGINS / new XTRM_CLAUDE_PLUGINS list), amending Step 4c/12. (Operator ruling: yes, by default.)
 7. Claude route switch: an xt command writes the claude_bridge block only after explicit operator consent. Filed as child Issue CORE-2632 under CORE-2629, with SPECIALISTS-4442 as its dependency.
 
-Child Issues for 1-5 are NOT filed; core-85 extends existing Issues (CORE-2570, XTRM-728, CORE-2624, CORE-2380/CORE-2383).
+Child Issues for resolutions 1-6 are NOT filed; core-85 extends one existing host Issue per resolution: 1 CORE-2570, 2 XTRM-728, 3 CORE-2624, 4 CORE-2380/CORE-2383, 5 CORE-2380/CORE-2383, 6 CORE-2532. Resolution 7 is the only filed child (CORE-2632).
