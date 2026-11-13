@@ -17,7 +17,7 @@ index:
     - {id: run, title: "2. Run", when: "Journaling, PRs, reviews, closes, Jira status moves"}
     - {id: fleet, title: "3. Workers (fleet)", when: "Dispatching or supervising workers: preflight, gates, caps (rules 1-6)"}
     - {id: goal, title: "4. /goal keeps everyone alive", when: "Writing manager, lead or worker goals"}
-    - {id: continuity, title: "5. Continuity", when: "Compaction, resume, day-boundary handover, manager and lead hooks, bili"}
+    - {id: continuity, title: "5. Continuity", when: "Compaction, resume, handover, session hooks, bili"}
     - {id: modes, title: "Modes", when: "Choosing Light vs Full"}
     - {id: pitfalls, title: "Pitfalls", when: "Before fan-out, Jira creates, approvals"}
     - {id: operations, title: "Daily operations (added 2026-10-22)", when: "Rules 14-55 (48-50 are the slim way, 55 the sb habit); manager.md holds the daily items"}
@@ -27,9 +27,9 @@ index:
     - {path: references/worker.md, when: "Every worker, at launch and after every compaction", see: [fleet]}
     - {path: references/launching.md, when: "Launch syntax, liveness, reaping, specialists, limits (mechanics only)", see: [fleet]}
     - {path: references/handover.md, when: "Manager handover to the next day's manager, in order", see: [continuity]}
-    - {path: references/continuity.md, when: "Compaction, resume, day-boundary handover, manager and lead hooks", see: [continuity]}
+    - {path: references/continuity.md, when: "Compaction, resume, handover, session hooks", see: [continuity]}
     - {path: references/project-start.md, when: "Starting a project; creating epics, themes, stories, sprints", see: [shape, start]}
-    - {path: references/setup.md, when: "First-time setup of the pack: tools, settings, config file, secrets, routing roles, pm_check.py", see: [start, roles]}
+    - {path: references/setup.md, when: "First-time setup of the pack: tools, settings, config file, secrets, routing roles, session hooks, pm_check.py", see: [start, roles]}
     - {path: references/substrate.md, when: "Contract, issue, journal, claim renewal, links command syntax", see: [start, run, continuity]}
     - {path: references/jira.md, when: "Jira fields, windows, ticket description, comments through post-guard, batch log, transition ids", see: [shape, run]}
     - {path: references/worked-example.md, when: "Full worked pass before acting", see: [start]}
@@ -55,10 +55,10 @@ names and paths are settings (env var or `~/.config/xtrm/project-management.json
 
 Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
 
-**One role, two modes.** Manager and lead launch with `--role project-manager`; the session-name suffix picks the mode: `<day>-manager`
-(`thu13-manager`) is the MANAGER, `<epic>-<area>-lead` (`MMD-4416-options-lead`) a LEAD. A worker name never ends in `-manager` or `-lead`.
-A legacy `*-coord` session keeps working until relaunch: the one named manager in the routing config acts as manager, any other as lead. A
-build lane is a lead; there is no separate build mode.
+**One role, two modes.** Manager and lead launch with `--role project-manager`; the session role picks the mode. The role comes from the role
+file `.pm-role` in the session's worktree (`manager`, `lead`, `board_helper`), written right after launch (`references/launching.md`, "Role
+file"); names are a fallback (`*-manager`, `*-lead`, legacy `*-coord`), else `worker` (`references/setup.md`, "Routing roles"). A build lane
+is a lead; there is no separate build mode.
 
 | Role | Owns | Does not |
 |---|---|---|
@@ -150,8 +150,8 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
   with `sb issue renew <ref>` (`references/substrate.md`, "Renew a claim"); it claims again only after the lease expired. Put this in the prompt.
 - Name a worker `<story-key>-<slug>` (`PROJ-260-pi-runtime`): branch `xt/<name>`, window `claude-<name>` lower case, so the Jira key reaches
   branches, PRs and commits.
-- **Roles are in session names:** manager `<day>-manager`, lead `<epic>-<area>-lead`, board helper `board-helper`; peers resolve them at send
-  time (`references/setup.md`, "Routing roles"). Never hand out a socket path.
+- **Roles come from the role file** (`scripts/pm_role.py`), the session name only as a fallback; peers resolve them at send time
+  (`references/setup.md`, "Routing roles"). Never hand out a socket path.
 - **Several projects in one config:** every launch, timer and lead sets `PM_PROJECT=<name>` (`references/setup.md`, "Several projects");
   the scripts stop rather than guess.
 - **Never leave a worker stale.** Each cycle check every window and act (`references/launching.md`, "Liveness"); keep a prompt-and-silence monitor armed.
@@ -474,7 +474,7 @@ comment writes nothing. Checks, flags and read-back: `references/jira.md`, "Comm
 
 ## 5. Continuity
 
-Compaction, resume, day-boundary handover, manager and lead hooks: `references/continuity.md`.
+Compaction, resume, handover, the pack session hooks: `references/continuity.md`; wiring: `references/setup.md`, "8. Session hooks".
 
 ## Modes
 

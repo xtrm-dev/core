@@ -47,11 +47,26 @@ class Resolve(unittest.TestCase):
                 sess("EP-1-api-lead", self.wt("EP-1-api-lead"))]
         self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-thu13-manager")
 
-    def test_manager_pattern_needs_the_day(self):
-        live = [sess("x", self.wt("project-manager"))]   # a worker that merely ends in -manager
-        with self.assertRaises(rt.RouteError) as ctx:
-            rt.resolve("manager", live)
-        self.assertEqual(ctx.exception.code, 3)
+    def test_any_manager_name_matches(self):
+        live = [sess("acme-manager", self.wt("acme-manager"))]
+        self.assertEqual(rt.resolve("manager", live)["address"], "alpha-xt-claude-acme-manager")
+
+    def test_role_file_overrides_the_name(self):
+        tmp = tempfile.mkdtemp()
+        (pathlib.Path(tmp) / ".git").write_text("gitdir: x")
+        (pathlib.Path(tmp) / ".pm-role").write_text("manager\n")
+        os.environ["PM_REPO_DIR"] = ""                    # in_project falls back to the slug check
+        live = [sess("SB-4416", tmp, repository="org/alpha")]
+        self.assertEqual(rt.resolve("manager", live)["name"], "SB-4416")
+
+    def test_claim_breaks_a_manager_tie(self):
+        live = [sess("thu13-manager", self.wt("thu13-manager")), sess("fri14-manager", self.wt("fri14-manager"))]
+        rt.claim_holder = lambda ref: "thu13-manager"
+        try:
+            self.assertEqual(rt.resolve("manager", live)["name"], "thu13-manager")
+        finally:
+            import importlib
+            importlib.reload(rt)
 
     def test_board_helper_and_history_ignored(self):
         live = [sess("alpha-xt-pi-board-helper", REPO + "/.xtrm/worktrees/alpha-xt-pi-board-helper"),

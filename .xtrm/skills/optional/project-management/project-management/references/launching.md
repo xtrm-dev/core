@@ -19,8 +19,8 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 | worker role (default) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--bead` is the prompt. |
 | `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Default `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high; never Muse Spark (it stops mid-task, operator 2026-10-30). `--skill <name>` repeats. |
 | Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's; `--bead` and `--prompt` exclude each other. |
-| Manager or lead | `xt claude <day>-manager\|<epic>-<area>-lead --window --role project-manager --bead <ref> --model opus\|sonnet -- --effort high` | The name suffix picks the mode (SKILL.md "Who does what"); a worker name never ends in `-manager` or `-lead`. |
-| Board helper | `xt pi board-helper --window --role board-audit-runner` | The only Jira writer; one per project. |
+| Manager or lead | `xt claude <name> --window --role project-manager --bead <ref> --model opus\|sonnet -- --effort high` | The role file picks the mode (SKILL.md "Who does what"): write it right after launch ("Role file" below). Any name. |
+| Board helper | `xt pi board-helper --window --role board-audit-runner` | The only Jira writer; one per project. Write its role file `board_helper` right after launch. |
 | Resume, hotfix base | `xt attach <slug\|dir\|branch>` (name only); `--base origin/stable` | Default base is fresh `origin/<default>`. |
 | Specialist | `specialist_list` -> `specialist_dispatch {specialist, issue_ref}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | One of `issue_ref` or `contract`; the issue must be READY. An inline `contract` needs `parent_ref`. |
 
@@ -33,6 +33,19 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 - Rule: launch any role but `worker` on Claude with `--model sonnet|opus`; `worker` pins `surface_models.claude: sonnet`.
 - Open fixes (specialists `surface_models` override; core `FOREIGN_MODEL_PROVIDERS`) wait for a design session: do not change the specialists or core
   repos from a project session.
+
+### Role file
+
+Every manager, lead and board-helper launch writes the session's role file right after the launch command, before any message to the session:
+
+```
+python3 <pack>/project-management/scripts/pm_role.py set manager|lead|board_helper --dir <worktree>
+python3 <pack>/project-management/scripts/pm_role.py show --dir <worktree>        # prints "<role> (file)"
+```
+
+`<pack>` is the pack directory (`~/.xtrm/skills/optional/project-management`); `<worktree>` is the session's worktree, which `xt` creates under
+`<repo>/.xtrm/worktrees/`. A worker gets no role file. Without the file the role falls back to the name (`references/setup.md`, "Routing
+roles"). CORE-2702 tracks an `xt` launch flag that will write the file; until then the launcher writes it.
 
 ## Launch
 

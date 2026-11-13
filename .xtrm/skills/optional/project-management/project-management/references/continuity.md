@@ -10,14 +10,15 @@ Read after every compaction, before a resume or a day-boundary handover.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
 - Resume: `sb issue resume <ref>` (the epic for the manager, the workstream issue for a lead). Set `SUBSTRATE_ISSUE_REF` to it; bind the
   worktree with `echo <ref> > .substrate-issue` (in `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.
-- **Manager and lead hooks** (operator, 2026-10-31) fire for a coordinating session: by `XTRM_ROLE`, else by the session name against the
-  `coordinator_pattern` setting (`references/setup.md`, "3. Settings"). Workers and reviewers get neither. Sources: the project's hook directory,
-  `~/.xtrm/hooks/<project>/`.
-   - `context-checkpoint-warn.py` warns at 70% (EARLY) and 85% (FINAL) of the window and asks for ONE structured `handoff` entry, the handover itself
-     and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, next action), verified against live state, then
-     `/compact`.
-   - `<project>-post-compact.sh` prints resume steps, runs `.claude/post-compact-extra.sh`, and types
-     `/project-management continue with the goal ...` into `$TMUX_PANE` after about 12 s.
+- **Session hooks** (operator, 2026-10-31) are part of the pack, in `project-management/hooks/`, wired by the operator in
+  `~/.claude/settings.json` (`references/setup.md`, "8. Session hooks"). They act by the session role (`scripts/pm_role.py`: role file, then
+  name). Workers and reviewers get no checkpoint or resume steps.
+   - `checkpoint_warn.py` warns at the `checkpoint_thresholds` (default 70% EARLY, 85% FINAL) of the window and asks for ONE structured
+     `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, next
+     action), verified against live state, then `/compact`.
+   - `post_compact.py` prints the resume steps after a compaction or a start, then the project's private `post_compact_extra` text file (its
+     own fleet rules); with `post_compact_nudge` true it also types `post_compact_nudge_text` into `$TMUX_PANE`.
+   - `action_gate.py` blocks the gated actions (merges, launches, attests, dispatches) until the session has re-read its role references.
    - Hooks load at session start: open `/hooks` once or restart. Pi sessions do not run these hooks: their checkpoint comes from their own goal.
 - **billion-context (bili) pilot** (operator, 2026-10-31; sun01-coord first, review 11-01): launch through the per-session launcher, never
   `bili plugin install claude` (it writes the global `~/.claude/settings.json` and disables auto-compact in every Claude session).

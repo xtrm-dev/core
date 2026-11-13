@@ -20,11 +20,13 @@ Open questions come from (a) Substrate journal blockers with ``for=operator`` an
 references them, on the refs in ``operator_question_refs`` (default: ``epic``); (b) a heuristic over the last
 assistant message (a direct question to the operator, or an A/B/C choice block; Italian or English).
 
+Only the manager and the leads are gated: the role comes from the pack's one resolver, scripts/pm_role.py
+(``.pm-role`` file in the worktree root, else the ``route_roles`` name patterns, else worker). The board helper and
+workers are untouched.
+
 Config (pm_config, ~/.config/xtrm/project-management.json): ``operator_question_turns`` (default 5, 0 = off),
-``coordinator_pattern`` (default ``-(?:manager|lead|coord)(?:-[0-9]{1,2})?$``: the manager, the leads, and a
-legacy ``-coord`` session, each with an optional ``-<n>`` suffix; ``XTRM_ROLE`` manager|lead|coordinator also
-qualifies; the board helper and workers are not gated), ``operator_injected_patterns`` (extra regexes for
-injected prompts, e.g. your cron prompt prefix), ``operator_question_refs``.
+``operator_injected_patterns`` (extra regexes for injected prompts, e.g. your cron prompt prefix),
+``operator_question_refs``.
 Non-coordinator sessions and sessions outside a configured project are untouched. Every internal error fails
 open (exit 0, no output) and is appended to $PM_STATE_DIR/operator-questions/errors.log.
 """
@@ -42,12 +44,10 @@ SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import pm_config  # noqa: E402
 import pm_question  # noqa: E402
+import pm_role  # noqa: E402
 
 DEFAULT_TURNS = 5
-# Same gate as the other hooks: a name ending -manager, -lead or the legacy -coord, each with an optional -<n>
-# (1-2 digit) suffix. The board helper and workers are not gated.
-DEFAULT_COORD_PATTERN = r"-(?:manager|lead|coord)(?:-[0-9]{1,2})?$"
-COORDINATOR_ROLES = ("coordinator", "manager", "lead")
+COORDINATOR_ROLES = ("manager", "lead")  # pm_role roles that get the reminder; board_helper and worker do not
 MAX_REPORTED = 3
 Q_CAP = 300
 
@@ -195,17 +195,9 @@ def session_ident(cwd: str) -> str:
             or os.path.basename(os.environ.get("CLAUDE_PROJECT_DIR") or cwd or ""))
 
 
-def is_coordinator(ident: str) -> bool:
-    # The session name decides; XTRM_ROLE can only add a session, never remove one. A pane may inherit an unrelated
-    # XTRM_ROLE (worker, reviewer) from the tmux server, and xt does not set manager/lead for a project-manager launch.
-    pattern = str(pm_config.get("PM_COORDINATOR_PATTERN", DEFAULT_COORD_PATTERN))
-    try:
-        if re.search(pattern, ident):
-            return True
-    except re.error:
-        if re.search(DEFAULT_COORD_PATTERN, ident):
-            return True
-    return os.environ.get("XTRM_ROLE", "") in COORDINATOR_ROLES
+def is_coordinator() -> bool:
+    """True for the manager and the leads (pm_role.current(): role file, else name patterns, else worker)."""
+    return pm_role.current() in COORDINATOR_ROLES
 
 
 # ---------------------------------------------------------------- state
@@ -420,7 +412,7 @@ def cached_blockers(owner, refs, now, journal):
 
 def _due_reminder(st, chat, reminded, n_turns, now, fetch, journal, payload):
     turns = st["turns"]
-    owner = pm_question.owner_of(session_ident(payload.get("cwd") or ""))
+    owner = pm_question.owner_of(session_ident(payload.get("cwd") or ""), pm_role.current())
     refs = question_refs()
     cands = list(cached_blockers(owner, refs, now, journal))
     known = {b["qid"] for b in cands}
@@ -453,7 +445,7 @@ def main(argv=None) -> int:
     try:
         payload = json.loads(sys.stdin.read() or "{}")
         cwd = payload.get("cwd") or os.getcwd()
-        if event not in ("prompt", "stop") or not project_applies(cwd) or not is_coordinator(session_ident(cwd)):
+        if event not in ("prompt", "stop") or not project_applies(cwd) or not is_coordinator():
             return 0
         now = time.time()
         if event == "prompt":

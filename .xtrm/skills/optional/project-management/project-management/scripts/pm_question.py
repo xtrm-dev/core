@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pm_config  # noqa: E402
+import pm_role  # noqa: E402
 
 BY = "pm-question"
 MAX_DOC_BYTES = 16 * 1024
@@ -72,22 +73,24 @@ def state_root() -> pathlib.Path:
 
 
 RUNTIME_PREFIX_RE = re.compile(r"^.*?-xt-[a-z]+-(?=.)")
-MANAGER_RE = re.compile(r"[0-9]{1,2}-manager$")
 
 
-def owner_of(ident: str) -> str:
-    """Status board doc name (``questions/<owner>``) of a manager or lead session name.
+def owner_of(ident: str, role: str | None = None) -> str:
+    """Status board doc name (``questions/<owner>``) of a manager or lead session.
 
-    Order: PM_QUESTION_OWNER; ``manager`` for a ``<day>-manager`` session (one doc that outlives the day, so the
-    next day's manager inherits the open questions); else the session name without its ``<repo>-xt-<runtime>-``
-    worktree prefix (a lead: ``<epic>-<area>-lead``). The answer router sends an answer to the live session of
-    that name, else to the live manager.
+    Order: PM_QUESTION_OWNER; ``manager`` when the session's role is manager, whatever its name (one doc that
+    outlives the day, so the next manager inherits the open questions); else the session name without its
+    ``<repo>-xt-<runtime>-`` worktree prefix (a lead: its own name). ``role`` is the session's role from
+    pm_role (callers pass ``pm_role.current()``); when omitted, the name alone decides (pm_role name patterns).
+    The answer router sends an answer to the live session of that name, else to the live manager.
     """
     explicit = pm_config.get("PM_QUESTION_OWNER")
     if explicit:
         return str(explicit)
-    name = RUNTIME_PREFIX_RE.sub("", ident)
-    return "manager" if MANAGER_RE.search(name) else name
+    name = RUNTIME_PREFIX_RE.sub("", ident or "")
+    if role is None:
+        role = pm_role.by_name(ident, name) if ident else None
+    return "manager" if role == "manager" else name
 
 
 # ---------------------------------------------------------------- here.now data API
@@ -220,9 +223,14 @@ def blockers_file(owner: str) -> pathlib.Path:
     return state_root() / ("blockers-%s.json" % re.sub(r"[^A-Za-z0-9._-]", "_", owner))
 
 
+def gate_questions_file(owner: str) -> pathlib.Path:
+    """Cache of the action gate's open-question scan (hooks/action_gate.py) for one owner."""
+    return state_root() / ("gate-questions-%s.json" % re.sub(r"[^A-Za-z0-9._-]", "_", owner))
+
+
 def invalidate(owner: str) -> None:
     """Drop the doc and blocker caches of one coordinator (the CLI calls it after every write)."""
-    for f in (cache_file(owner), blockers_file(owner)):
+    for f in (cache_file(owner), blockers_file(owner), gate_questions_file(owner)):
         try:
             f.unlink()
         except OSError:
@@ -381,7 +389,8 @@ def main(argv=None) -> int:
     if a.cmd == "close" and not a.ref and not a.dry_run:
         print("pm-question: no --ref, so no decision entry is written (row only)", file=sys.stderr)
     ident = os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME") or ""
-    a.owner = a.owner or (owner_of(ident) if ident else None)
+    role = pm_role.current()
+    a.owner = a.owner or (owner_of(ident, role) if ident or role == "manager" else None)
     if not a.owner:
         sys.exit("pm-question: no coordinator name (SUBSTRATE_HOLDER unset); pass --owner")
     try:

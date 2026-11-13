@@ -2,10 +2,17 @@
 """Check the project-management pack setup: tools on PATH, settings, token file.
 
 Usage: pm_check.py [--skill project-management|board-audit|status-board-keeper|all] [--project NAME|all] [--all-settings]
+       pm_check.py --hooks
 
 Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING; with
---all-settings also every optional setting the setup docs name. Then the team: every live session of the project
-by role (manager, leads, board helper, workers/other). Values are not printed, so the output is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
+--all-settings also every optional setting the setup docs name. Then this session's role (pm_role: role file, name,
+or default) and the team: every live session of the project by role (manager, leads, board helper, workers/other),
+with a warning when the live manager does not hold the claim on manager_issue. Values are not printed, so the output
+is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
+
+--hooks reads ~/.claude/settings.json (or $CLAUDE_CONFIG_DIR/settings.json), reports each pack session hook as wired
+or MISSING, and prints the settings.json snippet for the missing ones. It never edits the file. Exit 0 when all are
+wired, 1 otherwise.
 The settings and the config file are described in project-management/references/setup.md; a skill that adds a
 setting adds its row to SETTINGS below and to its own setup reference.
 """
@@ -21,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
+import pm_role  # noqa: E402
 import route_target  # noqa: E402
 
 PM, BA, TK = "project-management", "board-audit", "status-board-keeper"
@@ -70,11 +78,21 @@ SETTINGS = [
     ("PM_MATCH_DIRS", True, (), (PM, BA, TK), "extra directories that belong to the project"),
     ("PM_AGENT_HOST_INFO", False, (), (PM, BA), "xtrm agent host info file (default ~/.xtrm/run/agent-host.json)"),
     ("PM_OPERATOR_QUESTION_TURNS", False, (), (PM,), "operator-silent turns before the question reminder"),
-    ("PM_COORDINATOR_PATTERN", False, (), (PM,), "regex of manager/lead session names for the question hook"),
     ("PM_QUESTION_OWNER", False, (), (PM,), "Status board questions/<owner> doc of this session"),
     ("PM_OPERATOR_INJECTED_PATTERNS", True, (), (PM,), "prompts that are not the operator"),
     ("PM_OPERATOR_QUESTION_REFS", True, (), (PM,), "Substrate refs whose operator blockers the hook watches"),
     ("PM_SB_BIN", False, (), (PM, BA, TK), "path of the sb CLI"),
+    # project-management/references/setup.md, "Session hooks"
+    ("PM_MANAGER_ISSUE", False, (), (PM,), "issue whose claim holder keeps the manager role in a handover (default epic)"),
+    ("PM_CLAIM_TTL_MS", False, (), (PM,), "claim TTL the session hooks use, ms (default 3600000)"),
+    ("PM_REFREAD_FILES", True, (), (PM,), "role -> reference files (pack-relative) read before a gated action"),
+    ("PM_GATED_COMMANDS", True, (), (PM,), "Bash command regexes gated until the references are read"),
+    ("PM_GATED_TOOLS", True, (), (PM,), "tool-name fnmatch patterns gated until the references are read"),
+    ("PM_PENDING_MAX_AGE_S", False, (), (PM,), "max age of pending items the gate shows, s (default 3600)"),
+    ("PM_POST_COMPACT_NUDGE", True, (), (PM,), "post-compact hook types a resume prompt into the pane (default false)"),
+    ("PM_POST_COMPACT_NUDGE_TEXT", False, (), (PM,), "text of the post-compact nudge"),
+    ("PM_POST_COMPACT_EXTRA", False, (), (PM,), "private text file appended to the post-compact resume steps"),
+    ("PM_CHECKPOINT_THRESHOLDS", True, (), (PM,), "context fractions of the checkpoint warnings (default [0.70, 0.85])"),
     # board-audit/references/setup.md
     ("PM_JIRA_EPIC", False, (), (BA,), "Jira root epic of the project themes (readiness)"),
     ("PM_PR_SINCE", False, (), (BA,), "earliest PR date of the readiness snapshot"),
@@ -115,6 +133,18 @@ SETTINGS = [
     ("PM_EXTRA_REF_PREFIXES", True, (), (TK,), "other issue-key prefixes in event refs"),
 ]
 TOOLS = ("sb", "xt", "gh", "tmux", "xtmux", "python3")
+# Pack session hooks: (file in project-management/hooks/, settings.json event, matcher or None, arguments).
+HOOKS = [
+    ("post_compact.py", "SessionStart", "compact", "--mode compact"),
+    ("post_compact.py", "SessionStart", "startup", "--mode startup"),
+    ("action_gate.py", "SessionStart", None, "--event start"),
+    ("action_gate.py", "PreToolUse", "Bash|Agent|.*specialist_dispatch", "--event pre"),
+    ("action_gate.py", "PostToolUse", "Read", "--event post"),
+    ("checkpoint_warn.py", "PostToolUse", "*", ""),
+    ("checkpoint_warn.py", "UserPromptSubmit", None, ""),
+    ("operator-questions.py", "UserPromptSubmit", None, "--event prompt"),
+    ("operator-questions.py", "Stop", None, "--event stop"),
+]
 # Per-project state that two projects must never share: they would overwrite each other.
 UNIQUE_KEYS = ("lane_dir", "state_dir", "status_board_state_dir", "status_board_site", "repo_dir")
 
@@ -178,6 +208,14 @@ def clashes() -> int:
     return found
 
 
+def role_line() -> tuple[str, str]:
+    """This session's role by pm_role.current() and where it came from: file, name or default."""
+    role = pm_role.current()
+    if pm_role.declared(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()):
+        return role, "file"
+    return role, ("name" if role != "worker" else "default")
+
+
 def check_routes() -> int:
     """Print the team (every live session of the project, by role) and the single-holder roles.
 
@@ -190,10 +228,93 @@ def check_routes() -> int:
     route_target.print_team(route_target.team(live))
     for role in route_target.SINGLE_ROLES:
         try:
-            print(f"route   {role:<24} -> {route_target.resolve(role, live)['address']}")
+            rec = route_target.resolve(role, live)
         except route_target.RouteError as exc:
             print(f"WARN    route {role}: {exc}")
+            continue
+        print(f"route   {role:<24} -> {rec['address']}")
+        if role == "manager":
+            check_manager_claim(rec)
     return 0
+
+
+def check_manager_claim(rec: dict) -> None:
+    """Warn when the live manager is not the holder of the claim on manager_issue (default: the epic)."""
+    ref = pm_config.get("PM_MANAGER_ISSUE") or pm_config.get("PM_EPIC")
+    if not ref:
+        return
+    holder = route_target.claim_holder(ref)
+    if holder is None:
+        print(f"WARN    manager claim: no live claim on {ref} (or sb unreadable); the manager claims it at start")
+    elif holder not in (rec.get("address"), rec.get("name")):
+        print(f"WARN    manager claim: {ref} is held by {holder}, not by the live manager {rec.get('address')}")
+    else:
+        print(f"OK      manager claim on {ref} held by the live manager")
+
+
+def settings_json() -> pathlib.Path:
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (pathlib.Path(base).expanduser() if base else pathlib.Path.home() / ".claude") / "settings.json"
+
+
+def hook_command(name: str, args: str, pack=None) -> str:
+    pack = pack or pm_config.PACK_ROOT
+    return f"python3 {pack}/project-management/hooks/{name}" + (f" {args}" if args else "")
+
+
+def wired_hooks(settings: dict) -> list[bool]:
+    """For each HOOKS entry: does a command under its event mention the hook file (and its arguments)?"""
+    events = (settings.get("hooks") or {}) if isinstance(settings, dict) else {}
+    out = []
+    for name, event, _matcher, args in HOOKS:
+        commands = []
+        for group in events.get(event) or []:
+            if not isinstance(group, dict):
+                continue
+            commands += [str(h.get("command") or "") for h in group.get("hooks") or [] if isinstance(h, dict)]
+        out.append(any(name in c and (not args or args in c) for c in commands))
+    return out
+
+
+def hooks_snippet(entries, pack=None) -> dict:
+    """The settings.json `hooks` block for `entries` (HOOKS rows), grouped by event and matcher."""
+    block: dict = {}
+    for name, event, matcher, args in entries:
+        groups = block.setdefault(event, [])
+        group = next((g for g in groups if g.get("matcher") == matcher), None)
+        if group is None:
+            group = {"matcher": matcher} if matcher else {}
+            group["hooks"] = []
+            groups.append(group)
+        group["hooks"].append({"type": "command", "command": hook_command(name, args, pack)})
+    return {"hooks": block}
+
+
+def check_hooks() -> int:
+    """Report each pack hook as wired or MISSING in settings.json; print the snippet for the missing. Never writes."""
+    path = settings_json()
+    try:
+        settings = json.loads(path.read_text())
+        print(f"settings {path}: present")
+    except FileNotFoundError:
+        settings = {}
+        print(f"settings {path}: absent")
+    except (OSError, ValueError) as exc:
+        settings = {}
+        print(f"settings {path}: UNREADABLE ({type(exc).__name__}); every hook counts as missing")
+    missing = []
+    for row, ok in zip(HOOKS, wired_hooks(settings)):
+        name, event, matcher, args = row
+        where = event + (f" [{matcher}]" if matcher else "")
+        print(f"{'OK     ' if ok else 'MISSING'} hook {name:<22} {args or '(no args)':<16} {where}")
+        if not ok:
+            missing.append(row)
+    if missing:
+        print(f"result  {len(missing)} of {len(HOOKS)} hook(s) not wired; merge this into {path} (the pack never edits it):")
+        print(json.dumps(hooks_snippet(missing), indent=2))
+    else:
+        print(f"result  all {len(HOOKS)} pack hooks wired")
+    return 1 if missing else 0
 
 
 def use_project(name: str | None) -> None:
@@ -207,7 +328,10 @@ def main() -> int:
     ap.add_argument("--skill", choices=(*SKILLS, "all"), default="all")
     ap.add_argument("--project", help="project to check (a name, or 'all'); default: the one pm_config would choose")
     ap.add_argument("--all-settings", action="store_true", help="also list optional settings that are set")
+    ap.add_argument("--hooks", action="store_true", help="only check the pack session hooks in settings.json")
     a = ap.parse_args()
+    if a.hooks:
+        return check_hooks()
     chosen = SKILLS if a.skill == "all" else (a.skill,)
 
     cfg = pm_config.config_path()
@@ -222,6 +346,11 @@ def main() -> int:
 
     for tool in TOOLS:
         print(f"tool    {tool:<24} {'OK' if shutil.which(tool) else 'MISSING'}")
+    try:
+        wired = wired_hooks(json.loads(settings_json().read_text()))
+    except (OSError, ValueError):
+        wired = [False] * len(HOOKS)
+    print(f"hooks   {sum(wired)} of {len(HOOKS)} pack session hooks wired (details: --hooks)")
 
     names = pm_config.project_names()
     problems = 0
@@ -240,6 +369,8 @@ def main() -> int:
                 continue
             print(f"project {name} ({how})")
         problems += check_settings(chosen, a.all_settings)
+        role, how = role_line()
+        print(f"role    this session: {role} ({how})")
         problems += check_routes()
 
     print(f"result  {'ready' if not problems else f'{problems} problem(s)'} for {', '.join(chosen)}"

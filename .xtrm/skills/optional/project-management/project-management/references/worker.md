@@ -25,7 +25,8 @@ specialists). The manager and lead parts are in `references/manager.md` and `ref
    - No full local suite or full `make ci-light`: targeted tests; the hosted Light gate on the pushed head is the gate.
 8. Quote a window's or ticket's vehicle (commit, PR, image) only from that row's own description or a gh/git read, never a summary or neighbouring row
    (2026-10-31).
-9. Your name never ends in `-manager` or `-lead` (reserved). A session whose name ends in `-lead` is a lead and reads `references/lead.md`.
+9. You have no role file, or one that says `worker`. A session whose role file says `lead` (or, with no role file, whose name ends in `-lead`) is a
+   lead and reads `references/lead.md`; if your name ends in `-manager` or `-lead`, ask your launcher for a `worker` role file.
 10. When your contract names a specialist in VALIDATION, dispatch it and put its activation id in your result; without it the result is partial. On
     2026-11-01 six builders loaded the worker role and used no specialist.
 11. Close your issue in the turn you write its `result` when your contract grants closure (SKILL.md rule 54); else your lead closes it.

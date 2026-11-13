@@ -2,17 +2,13 @@
 """Resolve a routing role (manager, lead, board_helper) to the live session(s) that hold it.
 
 A route target written into config or code goes stale the day its session ends (2026-11-12: the lane forwarded to
-a coordinator socket that no longer existed, and 26 operator messages waited a day). The role is carried by the
-session name instead, set once at launch, and resolved at send time against the live session registry of the xtrm
-agent host (GET /v1/sessions on loopback).
+a coordinator socket that no longer existed, and 26 operator messages waited a day). Each session's role is resolved
+at send time by pm_role (its worktree's role file .pm-role, else its name against the project's route_roles
+patterns, else worker), against the live session registry of the xtrm agent host (GET /v1/sessions on loopback).
 
-Roles and their default patterns (override per project with the setting PM_ROUTE_ROLES, {role: fnmatch pattern}):
-  manager       *[0-9]-manager        one per project and day, e.g. thu13-manager or thu3-manager
-  lead          *-lead                one per epic and area, e.g. EPIC-7-api-lead; several are normal
-  board_helper  *board-helper*        one per project
-Workers never take the -manager or -lead suffix. A pattern matches the session's address (its worktree name, the
-name SendMessage takes, e.g. example-xt-claude-thu13-manager) or its registry name. Only live sessions of this
-project count: same PM_REPO_SLUG, or cwd inside PM_REPO_DIR or one of PM_MATCH_DIRS.
+Roles: manager (one per project), lead (one per workstream; several are normal), board_helper (one per project).
+While two managers are live (a handover) the holder of the claim on manager_issue (default: the epic) keeps the role.
+Only live sessions of this project count: same PM_REPO_SLUG, or cwd inside PM_REPO_DIR or one of PM_MATCH_DIRS.
 
 resolve(role) needs exactly one match: none or several is an error, never a guess. That is the rule for manager
 and board_helper; a caller that needs one lead names it (several live leads are the normal state).
@@ -26,7 +22,6 @@ Exit:  0 resolved, 3 no live match, 4 several matches, 5 agent host unreachable,
 """
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import pathlib
@@ -35,8 +30,8 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
+import pm_role  # noqa: E402
 
-DEFAULT_ROLES = {"manager": "*[0-9]-manager", "lead": "*-lead", "board_helper": "*board-helper*"}
 # Roles that exactly one live session holds; `lead` is plural by design.
 SINGLE_ROLES = ("manager", "board_helper")
 NOT_LIVE = {"history_only", "stopped", "ended"}
@@ -49,7 +44,27 @@ class RouteError(Exception):
 
 
 def roles() -> dict:
-    return {**DEFAULT_ROLES, **(pm_config.get_data("PM_ROUTE_ROLES", {}) or {})}
+    """Role -> its name patterns (for messages). The role itself comes from pm_role: role file, then patterns."""
+    return {r: ", ".join(p) for r, p in pm_role.patterns().items()}
+
+
+def session_role(s: dict) -> str:
+    """The session's role by the shared resolver: its worktree's role file, else its address/name patterns."""
+    return pm_role.declared(s.get("cwd")) or pm_role.by_name(address(s), s.get("name")) or "worker"
+
+
+def claim_holder(ref: str | None) -> str | None:
+    """Live holder of the claim on ``ref`` (one sb read), else None. Used only to break a tie between managers."""
+    if not ref:
+        return None
+    import subprocess
+    sb = str(pm_config.get("PM_SB_BIN", "sb"))
+    try:
+        r = subprocess.run([sb, "issue", "show", ref, "--json"], capture_output=True, text=True, timeout=30)
+        claim = (json.loads(r.stdout).get("data") or {}).get("claim") or {}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return None if claim.get("releasedAt") else claim.get("holder")
 
 
 def host_url() -> str:
@@ -103,17 +118,16 @@ def _live_in_project(live: list[dict]) -> list[dict]:
     return [s for s in live if s.get("state") not in NOT_LIVE and in_project(s)]
 
 
-def _holds(s: dict, pattern: str) -> bool:
-    return fnmatch.fnmatch(address(s), pattern) or fnmatch.fnmatch(s.get("name") or "", pattern)
+def _holds(s: dict, role: str) -> bool:
+    return session_role(s) == role
 
 
 def matches(role: str, live: list[dict] | None = None) -> list[dict]:
     """Every live session of this project whose address or name matches the role's pattern."""
-    pattern = roles().get(role)
-    if pattern is None:
-        raise RouteError(2, f"unknown role {role!r}; configured: {', '.join(sorted(roles()))}")
+    if role not in pm_role.ROLES or role == "worker":
+        raise RouteError(2, f"unknown role {role!r}; roles: manager, lead, board_helper")
     live = sessions() if live is None else live
-    return [s for s in _live_in_project(live) if _holds(s, pattern)]
+    return [s for s in _live_in_project(live) if _holds(s, role)]
 
 
 def record(role: str, s: dict) -> dict:
@@ -126,9 +140,15 @@ def resolve(role: str, live: list[dict] | None = None) -> dict:
     a caller that needs one lead of several passes its name instead."""
     found = matches(role, live)
     pattern = roles()[role]
+    if role == "manager" and len(found) > 1:
+        # Two managers live (a handover): the holder of the manager issue's claim keeps the role until it releases.
+        holder = claim_holder(pm_config.get("PM_MANAGER_ISSUE") or pm_config.get("PM_EPIC"))
+        held = [s for s in found if holder and holder in (address(s), s.get("name"))]
+        if len(held) == 1:
+            found = held
     if not found:
         raise RouteError(3, f"no live session of this project matches {role} pattern {pattern!r}; "
-                            f"launch it with a matching name (references/setup.md, \"Routing roles\")")
+                            f"write its role file (pm_role.py set {role}) or match the pattern (references/setup.md, \"Routing roles\")")
     if len(found) > 1:
         hint = ("; name the lead you mean" if role not in SINGLE_ROLES else "; exactly one may hold the role")
         raise RouteError(4, f"{len(found)} live sessions match {role} pattern {pattern!r}: "
@@ -148,11 +168,11 @@ def team(live: list[dict] | None = None) -> dict:
     """Every live session of this project grouped by role: {role: [record]}, plus "other" (workers and the rest).
     A session matching several patterns is listed under the first role in roles() order."""
     live = _live_in_project(sessions() if live is None else live)
-    pats = roles()
-    out: dict[str, list[dict]] = {r: [] for r in pats}
+    out: dict[str, list[dict]] = {r: [] for r in ("manager", "lead", "board_helper")}
     out["other"] = []
     for s in sorted(live, key=address):
-        role = next((r for r, p in pats.items() if _holds(s, p)), "other")
+        role = session_role(s)
+        role = role if role in out else "other"
         out[role].append(record(role, s))
     return out
 

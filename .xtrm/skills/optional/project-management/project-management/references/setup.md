@@ -73,15 +73,27 @@ Rules:
 
 Messages that must reach a person-in-charge (operator comments the board helper forwards, Status board answers,
 the lane's alarms) are addressed by role, never by a stored address: a stored address goes stale the day its
-session ends. The role is in the session name, set once at launch:
+session ends. A session has one role, `manager`, `lead`, `board_helper` or `worker`, resolved by one module,
+`scripts/pm_role.py`, for every consumer (`route_target.py`, the session hooks, `pm_check.py`):
+1. **The role file:** a one-word `.pm-role` in the session's worktree root. Whoever launches the session writes it
+   right after launch (`references/launching.md`, "Role file"):
+   `python3 <pack>/project-management/scripts/pm_role.py set <role> --dir <worktree>`. With a role file the name is free.
+   CORE-2702 tracks an `xt` launch flag that will write it; until then the launcher writes it.
+2. **Else the session name** against the `route_roles` patterns (defaults below).
+3. **Else `worker`.** A worker gets no role file, or one that says `worker`.
 
-| Role | Default pattern | Launch it as | Live sessions |
-|---|---|---|---|
-| `manager` | `*[0-9]-manager` | `xt claude <day>-manager` (for example `thu13-manager`); the next day's manager takes the next name | exactly one |
-| `lead` | `*-lead` | `xt claude <epic>-<area>-lead` (for example `SB-120-api-lead`) | several, one per epic and area |
-| `board_helper` | `*board-helper*` | `xt pi board-helper` (or `<project>-board-helper`) | exactly one |
+`<pack>` is the pack directory, for example `~/.xtrm/skills/optional/project-management`. Check a session with
+`pm_role.py show [--dir <worktree>] [--name <session name>]`; it prints the role and its source (`file`, `name`, `default`).
 
-Workers never use the `-manager` or `-lead` suffix: a worker so named would be counted as a manager or a lead.
+| Role | Default name pattern (fallback) | Live sessions |
+|---|---|---|
+| `manager` | `*-manager`, optionally `-<n>` (`proj-manager`, `proj-manager-2`) | exactly one, except during a handover |
+| `lead` | `*-lead`, optionally `-<n>`; legacy `*-coord` | several, one per epic and area |
+| `board_helper` | `*board-helper*` | exactly one |
+
+Without a role file, a session whose name matches a pattern takes that role: give a worker so named a role file
+that says `worker`. While two managers are live (a handover, `references/handover.md`), the one holding the claim on
+`manager_issue` (default: the epic) keeps the role until it releases the claim.
 
 `scripts/route_target.py` resolves roles at send time against the live sessions of the xtrm agent host
 (`GET /v1/sessions`, info file `agent_host_info`) and keeps those of this project (same `repo_slug`, or cwd inside
@@ -102,8 +114,9 @@ Who gets what:
 - The lane's dead-man switch raises `ALARM ROUTE-TARGET manager|board_helper` every pass until exactly one live
   session holds each of those two roles. Leads are not checked.
 
-Change the patterns per project with `route_roles` (for example while sessions launched before this convention
-still run: `{"manager": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched.
+Change the patterns per project with `route_roles` (for example while sessions launched before the role file still
+run: `{"manager": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched. A role
+file always wins over the patterns.
 
 ## 3. Settings
 
@@ -135,8 +148,12 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_TIMEZONE` | `timezone` | IANA zone the window fields are written in | BA, TK, doc | `Europe/Paris` |
 | `PM_CI_WORKFLOW` | `ci_workflow` | CI workflow file of the delivery repo | BA | `ci.yml` |
 | `PM_OPERATOR_QUESTION_TURNS` | `operator_question_turns` | operator-silent turns before the operator-question reminder (default `5`, `0` = hook off). The hook acts only for a session whose cwd is inside `repo_dir`/`match_dirs`, or with `PM_PROJECT` set; addressing names come from `operator_names`/`operator_handle` | hook | `5` |
-| `PM_COORDINATOR_PATTERN` | `coordinator_pattern` | regex the session name of a manager or lead matches; the question hook acts only for those (default `-(?:manager\|lead\|coord)(?:-[0-9]{1,2})?$`: names ending `-manager`, `-lead` or the legacy `-coord`, each with an optional `-<n>` suffix; env `XTRM_ROLE=manager\|lead\|coordinator` also qualifies; the board helper and workers are not gated) | hook | `-(?:manager\|lead\|coord)(?:-[0-9]{1,2})?$` |
-| `PM_QUESTION_OWNER` | `question_owner` | Status board `questions/<owner>` doc of this session (default: `manager` for a `<day>-manager`, so the next day's manager inherits the doc; else the session name without its `<repo>-xt-<runtime>-` prefix, e.g. `SB-120-api-lead`) | hook, CLI | `SB-120-api-lead` |
+| `PM_QUESTION_OWNER` | `question_owner` | Status board `questions/<owner>` doc of this session (default: `manager` for the manager, so its successor inherits the doc; else the session name without its `<repo>-xt-<runtime>-` prefix, e.g. `SB-120-api-lead`) | hook, CLI | `SB-120-api-lead` |
+| `PM_MANAGER_ISSUE` | `manager_issue` | Substrate issue whose claim holder keeps the manager role while two managers are live; the manager claims it (default: `epic`) | hooks, routing | `SB-100` |
+| `PM_CLAIM_TTL_MS` | `claim_ttl_ms` | claim TTL the session hooks use and advise, in ms (default `3600000`) | hooks | `3600000` |
+| `PM_PENDING_MAX_AGE_S` | `pending_max_age_s` | pending-message guard: only items younger than this many seconds are shown (default `3600`) | hooks | `3600` |
+| `PM_POST_COMPACT_NUDGE_TEXT` | `post_compact_nudge_text` | the prompt the post-compact hook types into the pane when `post_compact_nudge` is true | hooks | `/project-management continue with the goal` |
+| `PM_POST_COMPACT_EXTRA` | `post_compact_extra` | path of a private text file appended to the post-compact resume steps: the project's own fleet rules | hooks | `~/.config/xtrm/pm-extra.txt` |
 | `PM_CONFIG` | (none) | path of the config file itself | optional | `~/.config/xtrm/project-management.json` |
 
 ### Structured (JSON)
@@ -148,7 +165,12 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_DONE_STATUSES` | `done_statuses` | `[name]` | status names that mean done | PM (TX-07 fallback), BA, TK |
 | `PM_ACTIVE_STATUSES` | `active_statuses` | `[name]` | status names that mean being worked | BA, TK |
 | `PM_OPEN_STATUSES` | `open_statuses` | `[name]` | every not-done status an open window may hold (hygiene cycle) | BA |
-| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern}` | session-name patterns for routing roles (defaults `manager: *[0-9]-manager`, `lead: *-lead`, `board_helper: *board-helper*`) | PM, BA (lane), TK |
+| `PM_ROUTE_ROLES` | `route_roles` | `{role: pattern or [pattern]}` | name fallback for roles when a session has no role file (defaults `manager: *-manager[-<n>]`, `lead: *-lead[-<n>]` and `*-coord[-<n>]`, `board_helper: *board-helper*`); a role named here replaces its default | PM, BA (lane), TK, hooks |
+| `PM_REFREAD_FILES` | `refread_files` | `{role: [path]}` | reference files, relative to the pack, a session of that role reads before a gated action (default `manager` and `lead`: `project-management/references/manager.md`, `lead.md`, `launching.md`) | hooks |
+| `PM_GATED_COMMANDS` | `gated_commands` | `[regex]` | Bash commands blocked until the references are read and the pending check passes (default: `gh pr merge`, `xt claude` or `xt pi` launches, `sb issue attest`) | hooks |
+| `PM_GATED_TOOLS` | `gated_tools` | `[fnmatch]` | tool names gated the same way (default `Agent`, `*specialist_dispatch`) | hooks |
+| `PM_POST_COMPACT_NUDGE` | `post_compact_nudge` | bool | the post-compact hook also types `post_compact_nudge_text` into `$TMUX_PANE` (default `false`) | hooks |
+| `PM_CHECKPOINT_THRESHOLDS` | `checkpoint_thresholds` | `[fraction]` | context fractions of the EARLY and FINAL checkpoint warnings (default `[0.70, 0.85]`) | hooks |
 | `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |
@@ -252,11 +274,14 @@ Example with placeholder values (every key used by the three skills; replace eac
 python3 ~/.xtrm/skills/optional/project-management/project-management/scripts/pm_check.py            # all three skills
 python3 .../project-management/scripts/pm_check.py --skill board-audit                              # one skill
 python3 .../project-management/scripts/pm_check.py --all-settings                                   # optional settings too
+python3 .../project-management/scripts/pm_check.py --hooks                                          # session hooks in settings.json
 ```
 
-The check prints the config file it read, each tool, each setting as `OK (env|config)` or `MISSING ... required by <skill>`
-(with `--all-settings` also every optional one, `unset` or `OK`), then the team: every live session of the project by
-role, and the manager and board helper routes. Values are not printed. Exit 0 means every required setting of the chosen
+The check prints the config file it read, each tool, how many pack session hooks are wired, each setting as
+`OK (env|config)` or `MISSING ... required by <skill>` (with `--all-settings` also every optional one, `unset` or `OK`),
+this session's role and its source (`file`, `name`, `default`), then the team: every live session of the project by
+role, the manager and board helper routes, and a `WARN manager claim` when the live manager does not hold the claim on
+`manager_issue`. Values are not printed. `pm_check.py --hooks` checks only the session hooks ("8. Session hooks"). Exit 0 means every required setting of the chosen
 skills is present and the token file exists. Then make one read:
 `python3 .../scripts/jira.py GET /rest/api/3/myself` must print `HTTP 200` and the operator's account id.
 
@@ -276,3 +301,57 @@ skills is present and the token file exists. Then make one read:
 Before the first Jira write, build the board profile (`references/jira.md`, "Read the board first") and write what it found into the config:
 `transitions`, `done_statuses`, `active_statuses`, `terminal_statuses`, `custom_fields`, `entity_options`, `hygiene_filters`. Journal the profile once as a
 `finding` on the project epic.
+
+## 8. Session hooks
+
+The pack ships four Claude Code hooks in `project-management/hooks/`. The operator wires them in `~/.claude/settings.json`
+(or `$CLAUDE_CONFIG_DIR/settings.json`); the pack never edits that file. Each hook resolves the session role with
+`scripts/pm_role.py` ("Routing roles") and reads its settings through `pm_config.py`.
+
+| Hook | Events | Does |
+|---|---|---|
+| `post_compact.py` | `SessionStart` (`compact`, `startup`) | prints the role's resume steps, then the text of `post_compact_extra`; types `post_compact_nudge_text` into the pane when `post_compact_nudge` is true |
+| `action_gate.py` | `SessionStart`, `PreToolUse` (`Bash\|Agent\|.*specialist_dispatch`), `PostToolUse` (`Read`) | blocks the `gated_commands` and `gated_tools` until the session has read its `refread_files` (reset at start and after compaction), and runs the pending-message guard |
+| `checkpoint_warn.py` | `PostToolUse` (`*`), `UserPromptSubmit` | warns at each `checkpoint_thresholds` fraction of the context window and asks for one structured `handoff` entry (`references/continuity.md`) |
+| `operator-questions.py` | `UserPromptSubmit`, `Stop` | the operator-question reminder (SKILL.md rule 15) |
+
+The pending-message guard: before a gated action, the items pending for this session (routed operator comments not
+yet delivered, open operator questions it owns), younger than `pending_max_age_s`, are shown once in a deny. A retry
+with the same set of items passes.
+
+Behaviour outside a project: with no project configured for the session (no config, or the cwd outside every
+`repo_dir`/`match_dirs` and no `PM_PROJECT`), every hook is silent. With an ambiguous project (several match and no
+`PM_PROJECT`), each hook fails open: the action proceeds and the hook prints one warning that names the projects. A
+role with no `refread_files` entry (a worker, by default) is not gated. Pi sessions do not run Claude Code hooks.
+
+Wire them with this block (replace `<pack>` with the pack directory; merge it with the hooks you already have):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "compact", "hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/post_compact.py --mode compact"}]},
+      {"matcher": "startup", "hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/post_compact.py --mode startup"}]},
+      {"hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/action_gate.py --event start"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Bash|Agent|.*specialist_dispatch", "hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/action_gate.py --event pre"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Read", "hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/action_gate.py --event post"}]},
+      {"matcher": "*", "hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/checkpoint_warn.py"}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/checkpoint_warn.py"},
+                 {"type": "command", "command": "python3 <pack>/project-management/hooks/operator-questions.py --event prompt"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "python3 <pack>/project-management/hooks/operator-questions.py --event stop"}]}
+    ]
+  }
+}
+```
+
+Verify with `python3 <pack>/project-management/scripts/pm_check.py --hooks`: one line per hook, `OK` or `MISSING`, and
+this block with your real pack path for the missing ones. Hooks load at session start: open `/hooks` once or restart
+the session.

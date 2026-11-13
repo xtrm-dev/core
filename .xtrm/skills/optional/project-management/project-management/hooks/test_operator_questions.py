@@ -34,6 +34,7 @@ def env(tmp_path, monkeypatch):
         monkeypatch.delenv(k)
     monkeypatch.setenv("PM_CONFIG", str(cfg))
     monkeypatch.setenv("SUBSTRATE_HOLDER", IDENT)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))   # role file lookup stays inside the test dir
     pm_config._RAW = pm_config._CACHE = oq._NAME_RE = None
     yield tmp_path
     pm_config._RAW = pm_config._CACHE = oq._NAME_RE = None
@@ -242,17 +243,22 @@ def test_non_coordinator_is_untouched(env, monkeypatch, capsys):
                                         ("alpha-coord-board", False), ("EP-1-lead-worker", False),
                                         ("proj-xt-pi-board-helper", False), ("proj-xt-claude-SB-12-fix-parser", False),
                                         ("XTRM-763-worker", False), ("leader", False), ("manager", False)])
-def test_coordinator_pattern(env, ident, yes):
-    assert oq.is_coordinator(ident) is yes
+def test_coordinator_pattern(env, ident, yes, monkeypatch):
+    monkeypatch.setenv("SUBSTRATE_HOLDER", ident)
+    assert oq.is_coordinator() is yes
 
 
-def test_name_decides_and_xtrm_role_only_adds(env, monkeypatch):
-    monkeypatch.setenv("XTRM_ROLE", "worker")                # inherited from the tmux server: must not hide a manager
-    assert oq.is_coordinator("thu13-manager") is True
-    assert oq.is_coordinator("plain-name") is False
-    for role in ("coordinator", "manager", "lead"):
-        monkeypatch.setenv("XTRM_ROLE", role)
-        assert oq.is_coordinator("plain-name") is True
+def test_role_file_decides_and_xtrm_role_is_ignored(env, monkeypatch):
+    monkeypatch.setenv("SUBSTRATE_HOLDER", "plain-name")
+    monkeypatch.setenv("XTRM_ROLE", "manager")               # no longer a role source
+    assert oq.is_coordinator() is False
+    (env / ".pm-role").write_text("manager\n")
+    assert oq.is_coordinator() is True
+    (env / ".pm-role").write_text("lead\n")
+    assert oq.is_coordinator() is True
+    monkeypatch.setenv("SUBSTRATE_HOLDER", "thu13-manager")
+    (env / ".pm-role").write_text("board_helper\n")         # the role file wins over the name
+    assert oq.is_coordinator() is False
 
 
 def test_multi_project_config_needs_explicit_project(env, monkeypatch, tmp_path):

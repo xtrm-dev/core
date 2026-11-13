@@ -959,8 +959,7 @@ def file_only(owner, addr, why):
     if owner in FILE_ONLY or (addr and addr in FILE_ONLY) or (why == "manager" and "manager" in FILE_ONLY):
         return True
     if addr:
-        pats = route_target.roles()
-        return any(r in FILE_ONLY and fnmatch.fnmatch(addr, p) for r, p in pats.items())
+        return route_target.pm_role.by_name(addr) in FILE_ONLY
     return False
 
 

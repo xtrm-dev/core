@@ -1,8 +1,8 @@
 # Lead: one workstream, end to end
 
 Read when you are a lead, or launch, resume or work with one, together with `references/worker.md`. A lead is the `project-manager` role in a
-session named `<epic>-<area>-lead` (`MMD-4416-options-lead`): SKILL.md "Who does what" and rule 28. A build lane is a lead. A legacy `*-coord`
-session not named manager in the routing config acts as a lead until relaunch.
+session whose role file says `lead` (name fallback `*-lead`, for example `MMD-4416-options-lead`): SKILL.md "Who does what" and rule 28. A build
+lane is a lead. A legacy `*-coord` session with no role file acts as a lead until relaunch, unless `route_roles` names it the manager.
 
 ## 1. Who owns what
 
@@ -87,14 +87,16 @@ moves and closes from the board helper.
 ## 8. Launching a lead
 
 The manager launches it from the main checkout, in its own tmux session:
-`xt claude <epic>-<area>-lead --window --role project-manager --bead <workstream ref> --model sonnet -- --effort high`. Branch `xt/<name>`;
-session and holder names match. Never `pr-lane`, `pr-coord` or a `-coord` suffix: the `-lead` suffix routes it. The workstream issue's SCOPE
+`xt claude <epic>-<area>-lead --window --role project-manager --bead <workstream ref> --model sonnet -- --effort high`, then the role file:
+`python3 <pack>/project-management/scripts/pm_role.py set lead --dir <worktree>` (`references/launching.md`, "Role file"). Branch `xt/<name>`;
+session and holder names match. The `<epic>-<area>-lead` name is a convention and the routing fallback; the role file routes it. The workstream issue's SCOPE
 includes the section 3 audit. Every lead launch prompt and resume line says: "Load project-management; read references/lead.md and
 references/worker.md first."
 
 A lead compacts at a clear checkpoint (`references/continuity.md`) and rotates at 24 h or when its context is rotted (SKILL.md rules 35, 40): a
-`handoff` entry first, then the lead itself launches its successor on the same issue (`xt attach <name>`, then `sb issue resume <ref>`); the
-successor reaps the outgoing, as in `references/handover.md`.
+`handoff` entry first, then the lead itself launches its successor on the same issue (`xt attach <name>`, then `sb issue resume <ref>`) and
+writes `lead` into the successor's role file; it releases its claim, the successor claims, the outgoing deletes its own role file
+(`pm_role.py clear --dir <its worktree>`) and exits, and the successor reaps it, as in `references/handover.md`.
 
 ## Why (2026-10-31, MMD-3012)
 

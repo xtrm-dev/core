@@ -33,6 +33,7 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setenv("PM_CONFIG", str(cfg))
     monkeypatch.setenv("SUBSTRATE_HOLDER", "p-xt-claude-alpha-api-lead")
     monkeypatch.delenv("PM_QUESTION_OWNER", raising=False)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))   # no role file: the name decides
     pm_config._RAW = pm_config._CACHE = None
     FakeHn.docs, FakeHn.writes = {}, 0
     journal = []
@@ -98,6 +99,24 @@ def test_owner_resolution(fake, monkeypatch):
     assert pq.owner_of("EP-2-ui-lead") == "EP-2-ui-lead"
     monkeypatch.setenv("PM_QUESTION_OWNER", "custom")
     assert pq.owner_of("anything") == "custom"
+
+
+def test_owner_follows_the_role_not_the_name(fake):
+    assert pq.owner_of("p-xt-claude-alice", "manager") == "manager"            # a manager's doc, whatever its name
+    assert pq.owner_of("p-xt-claude-EP-1-api-lead", "lead") == "EP-1-api-lead"  # a lead's doc is its own name
+    assert pq.owner_of("p-xt-claude-thu13-manager", "lead") == "thu13-manager"  # the role wins over the name
+    assert pq.owner_of("bob", "worker") == "bob"
+
+
+def test_cli_owner_uses_the_role_file(fake, tmp_path, monkeypatch, capsys):
+    (tmp_path / ".pm-role").write_text("manager\n")
+    monkeypatch.setenv("SUBSTRATE_HOLDER", "p-xt-claude-alice")
+    assert run("add", "--ref", "EP-1", "--q", Q, "--rec", "r", "--dry-run") == 0
+    assert "questions/manager" in capsys.readouterr().out
+    monkeypatch.delenv("SUBSTRATE_HOLDER")
+    monkeypatch.delenv("XTRM_SESSION_NAME", raising=False)
+    assert run("add", "--ref", "EP-1", "--q", Q, "--rec", "r", "--dry-run") == 0   # a manager needs no name
+    assert "questions/manager" in capsys.readouterr().out
 
 
 def test_add_requires_fields(fake):

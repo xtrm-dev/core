@@ -7,8 +7,8 @@ description: >
   manager) with before/after re-reads, verify, and journal with --semantic.
   Use for board cleanups, window scheduling, theme restructures, and
   pre-window precondition checks — in interactive sessions and as the injected
-  skill of board-audit roles. Also the skill of the board helper (`board-helper`,
-  role board-audit-runner): the only Jira writer, the owner of the lane
+  skill of board-audit roles. Also the skill of the board helper (role file
+  `board_helper`, usually named `board-helper`, role board-audit-runner): the only Jira writer, the owner of the lane
   processes, and the router that alone reads the operator's inbound channels,
   decides where each comment goes, and writes every comment through one guarded path.
 version: 1.7.0
@@ -138,7 +138,7 @@ board.
 
 ## Continuous helper cycle (board helper)
 
-One board helper per project (session `board-helper`, role board-audit-runner) runs this cycle as an
+One board helper per project (role file `board_helper`, usually session `board-helper`; role board-audit-runner) runs this cycle as an
 `xt pi` worker (the pack default model, never Muse Spark: it stops mid-task; one process, no Claude, no subagents). Launch syntax:
 `project-management/references/launching.md`. It is the only Jira writer: leads order their own Jira
 moves through it, the manager orders the rest. Jira calls go through `project-management/scripts/jira.py`.
