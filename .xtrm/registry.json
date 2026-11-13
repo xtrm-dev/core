@@ -602,7 +602,7 @@
           "version": "0.15.3"
         },
         "using-specialists/references/claude-code.md": {
-          "hash": "21c00c5ddab6b4e13b65ff75aa69aad4520f550e5d397f9b3c24a86811a25275",
+          "hash": "65d17bb928c69e2e98a22bacfedc46c301814ff596be58f0145cff77fbe0d268",
           "version": "0.15.3"
         },
         "using-specialists/references/dispatch-preconditions.md": {
@@ -1631,8 +1631,8 @@
     "digest": "git-blob-sha1",
     "source": {
       "kind": "repo",
-      "ref": "865c4d52ec74e785c54abd6b3c87014d2a4751ad",
-      "resolved_sha": "865c4d52ec74e785c54abd6b3c87014d2a4751ad",
+      "ref": "346eea1d6a758e3386fe53b8384d8d83aeb41b01",
+      "resolved_sha": "346eea1d6a758e3386fe53b8384d8d83aeb41b01",
       "repo_path": "../specialists",
       "source_path": "config/skills"
     },
@@ -1647,7 +1647,7 @@
     "files": {
       "using-specialists": {
         "references/chain-recipes.md": "fd5bd419f2516f859f6709ddfc5abe7c3fc2a508",
-        "references/claude-code.md": "01d296287f8ba0a3ed210311d05312f19153720e",
+        "references/claude-code.md": "cbfd2d7b50fda3c988487474360b15ddaa1d7f57",
         "references/dispatch-preconditions.md": "28e5d3a7ffe363a022e81d9236fa5f3cd90f8c3d",
         "references/issue-contracts.md": "635cd6930d0aee03656108d24f278782123844b5",
         "references/kpi.md": "93caf443c4f3d19f824b4ebbec133a902addb520",

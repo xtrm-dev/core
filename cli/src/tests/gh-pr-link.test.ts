@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
     ATTACH_TIMEOUT_MS,
     chooseIssueRef,
+    isShallowRepository,
     issueRefsInText,
     linkCreatedPr,
     parseCreatedPrUrl,
@@ -23,6 +24,7 @@ import {
     type RunGit,
 } from '../core/gh-pr-link.js';
 import type { SbProject } from '../core/sb-receipt.js';
+import { resolveWorkerSessionId } from '../core/session-identity.js';
 
 const PROJECTS: SbProject[] = [
     { id: 'prj_core', prefix: 'CORE', name: 'core' },
@@ -43,6 +45,8 @@ function gitFake(options: {
     head?: string | null;
     branch?: string;
     mergeBases?: Record<string, string | null>;
+    /** CORE-2638: what `git rev-parse --is-shallow-repository` answers. */
+    shallow?: boolean;
 } = {}): { runGit: RunGit; calls: string[][] } {
     const calls: string[][] = [];
     const runGit: RunGit = (args) => {
@@ -52,6 +56,11 @@ function gitFake(options: {
         }
         if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
             return { status: 0, stdout: `${options.branch ?? 'xt/shim-attach'}\n`, stderr: '' };
+        }
+        if (args[0] === 'rev-parse' && args[1] === '--is-shallow-repository') {
+            return options.shallow === undefined
+                ? { status: 1, stdout: '', stderr: "error: unknown option" }
+                : { status: 0, stdout: `${options.shallow}\n`, stderr: '' };
         }
         if (args[0] === 'merge-base') {
             const base = options.mergeBases?.[args[2] ?? ''] ?? null;
@@ -230,15 +239,15 @@ describe('resolveLinkRange', () => {
             if (args[2] === 'origin/HEAD') return { status: 1, stdout: '', stderr: '' };
             return { status: 0, stdout: `${BASE}\n`, stderr: '' };
         };
-        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE, shallow: false });
         expect(order).toEqual(['origin/HEAD', 'origin/main']);
     });
 
     it('uses the branch upstream last and reports no base when every candidate fails', () => {
         const { runGit } = gitFake({ mergeBases: { '@{upstream}': BASE } });
-        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE, shallow: false });
         const none = gitFake().runGit;
-        expect(resolveLinkRange(none, '/repo')).toEqual({ head: HEAD, base: null });
+        expect(resolveLinkRange(none, '/repo')).toEqual({ head: HEAD, base: null, shallow: false });
     });
 
     it('gives up when HEAD cannot be read', () => {
@@ -246,6 +255,57 @@ describe('resolveLinkRange', () => {
         expect(resolveLinkRange(runGit, '/repo')).toBeNull();
     });
 });
+
+/** The linkCreatedPr harness, shared by the ordered tests and the shallow cases. */
+function deps(overrides: {
+    stdout?: string;
+    argv?: string[];
+    projects?: SbProject[] | 'fail';
+    attachOk?: boolean;
+    attachError?: string;
+    commitsOk?: boolean;
+    commitsError?: string;
+    throwAttach?: boolean;
+    bodyText?: string;
+    branch?: string;
+    base?: string | null;
+    shallow?: boolean;
+} = {}) {
+    const receiptCalls: string[][] = [];
+    const projectCalls: string[][] = [];
+    const { runGit } = gitFake({
+        branch: overrides.branch ?? 'core-2607-gh-shim',
+        mergeBases: { 'origin/HEAD': overrides.base === null ? null : (overrides.base ?? BASE) },
+        shallow: overrides.shallow,
+    });
+    const runSb = (args: string[]) => {
+        projectCalls.push(args);
+        if (overrides.projects === 'fail') return { status: 1, stdout: '', stderr: 'sb: no store' };
+        return { status: 0, stdout: projectList(overrides.projects ?? PROJECTS), stderr: '' };
+    };
+    const result = linkCreatedPr(overrides.stdout ?? CREATED, overrides.argv ?? ['pr', 'create', '--body', overrides.bodyText ?? '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+        cwd: '/repo',
+        env: {},
+        runGit,
+        runSb,
+        readFile: () => {
+            throw new Error('no file');
+        },
+        runAttach: (args) => {
+            receiptCalls.push(args);
+            if (overrides.throwAttach) throw new Error('boom');
+            if (args[0] === 'provenance') {
+                return overrides.attachOk === false
+                    ? { ok: false, error: overrides.attachError ?? 'sb exited 1: refused' }
+                    : { ok: true };
+            }
+            return overrides.commitsOk === false
+                ? { ok: false, error: overrides.commitsError ?? 'sb exited 1: unknown flag --commits-range' }
+                : { ok: true };
+        },
+    });
+    return { result, receiptCalls, projectCalls };
+}
 
 describe('linkCreatedPr', () => {
     // sb 0.3 `FLAG_ALLOWLIST` for the two verbs the link uses, plus the global
@@ -261,53 +321,6 @@ describe('linkCreatedPr', () => {
         return argv.filter((arg) => arg.startsWith('--')).map((arg) => arg.slice(2).split('=')[0] as string);
     }
 
-    function deps(overrides: {
-        stdout?: string;
-        argv?: string[];
-        projects?: SbProject[] | 'fail';
-        attachOk?: boolean;
-        attachError?: string;
-        commitsOk?: boolean;
-        commitsError?: string;
-        throwAttach?: boolean;
-        bodyText?: string;
-        branch?: string;
-        base?: string | null;
-    } = {}) {
-        const receiptCalls: string[][] = [];
-        const projectCalls: string[][] = [];
-        const { runGit } = gitFake({
-            branch: overrides.branch ?? 'core-2607-gh-shim',
-            mergeBases: { 'origin/HEAD': overrides.base === null ? null : (overrides.base ?? BASE) },
-        });
-        const runSb = (args: string[]) => {
-            projectCalls.push(args);
-            if (overrides.projects === 'fail') return { status: 1, stdout: '', stderr: 'sb: no store' };
-            return { status: 0, stdout: projectList(overrides.projects ?? PROJECTS), stderr: '' };
-        };
-        const result = linkCreatedPr(overrides.stdout ?? CREATED, overrides.argv ?? ['pr', 'create', '--body', overrides.bodyText ?? '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
-            cwd: '/repo',
-            env: {},
-            runGit,
-            runSb,
-            readFile: () => {
-                throw new Error('no file');
-            },
-            runAttach: (args) => {
-                receiptCalls.push(args);
-                if (overrides.throwAttach) throw new Error('boom');
-                if (args[0] === 'provenance') {
-                    return overrides.attachOk === false
-                        ? { ok: false, error: overrides.attachError ?? 'sb exited 1: refused' }
-                        : { ok: true };
-                }
-                return overrides.commitsOk === false
-                    ? { ok: false, error: overrides.commitsError ?? 'sb exited 1: unknown flag --commits-range' }
-                    : { ok: true };
-            },
-        });
-        return { result, receiptCalls, projectCalls };
-    }
 
     it('writes T1 then T2 with the exact argv sb allows for each verb', () => {
         const { result, receiptCalls, projectCalls } = deps();
@@ -440,6 +453,257 @@ describe('linkCreatedPr', () => {
     });
 });
 
+// CORE-2631: a fresh issue has no WorkReceipt, so `provenance attach` fails with
+// `no_receipt`. The shim recovers once: dispatch -> allocate -> attach. A receipt
+// that already exists makes the first attach succeed, so recovery is a no-op on
+// repeat runs. Any other failure never triggers dispatch or allocate.
+/** The no_receipt recovery harness, shared by the CORE-2631 and CORE-2639 cases. */
+function recoveryDeps(overrides: {
+    attachErrors?: string[];   // sequence of errors for attach calls
+    dispatchOk?: boolean;
+    dispatchError?: string;
+    allocateOk?: boolean;
+    allocateError?: string;
+    commitsOk?: boolean;
+    held?: boolean;            // whether the issue is live-held
+    holder?: string;           // holder name when held
+    activationId?: string | null; // activation on the live claim
+    env?: NodeJS.ProcessEnv;   // the process env the linker sees
+    flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
+    showFails?: boolean;       // the claim read fails outright
+} = {}) {
+    const calls: { kind: string; argv: string[] }[] = [];
+    const { runGit } = gitFake({
+        branch: 'core-2631-gh-shim',
+        mergeBases: { 'origin/HEAD': BASE },
+    });
+    const runSb = () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' });
+    let attachIndex = 0;
+    const attachErrors = overrides.attachErrors ?? [];
+    const isHeld = overrides.held ?? false;
+    const holderName = overrides.holder ?? 'pi152-core';
+    const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+        cwd: '/repo',
+        env: overrides.env ?? {},
+        runGit,
+        runSb,
+        readFile: () => { throw new Error('no file'); },
+        runAttach: (args) => {
+            const kind = args[1]; // show | attach | dispatch | allocate
+            calls.push({ kind, argv: [...args] });
+            if (kind === 'show') {
+                // The real sb answer: {schema, command, ok, data: {claim}}.
+                // An earlier version read the top level and saw null forever.
+                const claim = isHeld
+                    ? { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null }
+                    : null;
+                const payload = overrides.flatClaim
+                    ? { claim }
+                    : { schema: 'substrate-cli/v1', command: 'issue.show', ok: true, data: { claim } };
+                if (overrides.showFails) {
+                    return { ok: false, error: 'sb exited 1: no store', stdout: '' };
+                }
+                return { ok: true, stdout: JSON.stringify(payload) };
+            }
+            if (kind === 'attach') {
+                const err = attachErrors[attachIndex++];
+                if (err) return { ok: false, error: err, stdout: '' };
+                return { ok: true, stdout: '' };
+            }
+            if (kind === 'dispatch') {
+                return overrides.dispatchOk === false
+                    ? { ok: false, error: overrides.dispatchError ?? 'dispatch failed', stdout: '' }
+                    : { ok: true, stdout: '' };
+            }
+            if (kind === 'allocate') {
+                return overrides.allocateOk === false
+                    ? { ok: false, error: overrides.allocateError ?? 'allocate failed', stdout: '' }
+                    : { ok: true, stdout: '' };
+            }
+            return { ok: true, stdout: '' };
+        },
+    });
+    return { result, calls };
+}
+
+describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
+
+    it('recovers from no_receipt: dispatch + allocate once, attach retried once, attached true', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: ['no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first'] });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(dispatches).toHaveLength(1);
+        expect(allocates).toHaveLength(1);
+        expect(attaches).toHaveLength(2);
+        // dispatch carries the ref and project
+        expect(dispatches[0].argv).toContain('CORE-2607');
+        expect(dispatches[0].argv).toContain('--project');
+        expect(dispatches[0].argv).toContain('prj_core');
+        // unclaimed issue (held: false): no --participant
+        expect(dispatches[0].argv).not.toContain('--participant');
+        // allocate carries the ref
+        expect(allocates[0].argv).toContain('CORE-2607');
+        expect(allocates[0].argv).toContain('--project');
+        // attach retried with the same argv
+        expect(attaches[0].argv).toEqual(attaches[1].argv);
+    });
+
+    it('passes --participant with the session holder when the issue is live-held by it', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).toContain('--participant');
+        expect(dispatches[0].argv).toContain('pi152-core');
+    });
+
+    // The production state CORE-2631 was filed from: the agent environment has
+    // SUBSTRATE_HOLDER set while the Issue is unclaimed. An env-based decision
+    // passes the flag here; a claim-based one must not.
+    it('omits --participant when the issue is unclaimed, even with SUBSTRATE_HOLDER set', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: false,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).not.toContain('--participant');
+    });
+
+    // Review finding: echoing the observed holder would pass sb's anti-steal
+    // check by construction and attribute this session's work to the claimant.
+    it('never dispatches under a holder that is not the session\'s own', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'someone-else',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: holder/activation mismatch (anti-steal)',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/anti-steal/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        expect(dispatches[0].argv).not.toContain('--participant');
+        expect(dispatches[0].argv).not.toContain('someone-else');
+    });
+
+    // Regression for the FAIL review: the claim lives at data.claim in sb's
+    // envelope, and reading the top level made every Issue look unclaimed.
+    it('reads the claim from the sb envelope (data.claim), not the top level', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--participant');
+        expect(dispatch?.argv).toContain('pi152-core');
+    });
+
+    it('still accepts a flat {claim} answer', () => {
+        const { calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            flatClaim: true,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--participant');
+    });
+
+    it('says the claim could not be read when the read fails', () => {
+        const { result } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            showFails: true,
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: participant is required (anti-steal)',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/claim could not be read/);
+    });
+
+    it('passes --activation when the live claim carries one', () => {
+        const { calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            activationId: 'act:abc123',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--activation');
+        expect(dispatch?.argv).toContain('act:abc123');
+    });
+
+    it('does not attempt dispatch or allocate when attach fails for another reason', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: ['unknown migration: foo'] });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*unknown migration/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(0);
+        expect(allocates).toHaveLength(0);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+
+    it('is a no-op when a receipt already exists (attach succeeds first time)', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: [] });
+        expect(result.attached).toBe(true);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(0);
+        expect(allocates).toHaveLength(0);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+
+    it('warns once when dispatch fails during recovery', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: unknown flag --participant',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*unknown flag --participant/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        expect(dispatches).toHaveLength(1);
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(allocates).toHaveLength(0);
+    });
+
+    it('warns once when allocate fails during recovery', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            allocateOk: false,
+            allocateError: 'sb exited 1: no binding',
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/failed: .*no binding/);
+        const dispatches = calls.filter((c) => c.kind === 'dispatch');
+        const allocates = calls.filter((c) => c.kind === 'allocate');
+        expect(dispatches).toHaveLength(1);
+        expect(allocates).toHaveLength(1);
+        const attaches = calls.filter((c) => c.kind === 'attach');
+        expect(attaches).toHaveLength(1);
+    });
+});
+
 // The argv above is only as good as sb's flag allowlist: a flag sb does not
 // declare makes the whole receipt fail ("unknown flag --x for `verb`") and the
 // link degrades to a warning, so the golden tests alone cannot see it. This
@@ -514,5 +778,127 @@ describe('the real sb surface', () => {
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('shallow clone (CORE-2638)', () => {
+    it('asks git whether the checkout is shallow', () => {
+        expect(isShallowRepository(gitFake({ shallow: true }).runGit, '/repo')).toBe(true);
+        expect(isShallowRepository(gitFake({ shallow: false }).runGit, '/repo')).toBe(false);
+        // A git that does not know the flag must not be mistaken for a shallow repo.
+        expect(isShallowRepository(gitFake().runGit, '/repo')).toBe(false);
+    });
+
+    it('skips the range deliberately instead of letting merge-base pick an unwalkable base', () => {
+        const { runGit, calls } = gitFake({ shallow: true, mergeBases: { 'origin/HEAD': BASE } });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: null, shallow: true });
+        expect(calls.some((args) => args[0] === 'merge-base')).toBe(false);
+    });
+
+    it('records --commit HEAD so the evidence still lands, with no warning', () => {
+        const { result, receiptCalls } = deps({ shallow: true, base: BASE });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toBeUndefined();
+        expect(result.commitsArgv).toEqual([
+            'issue', 'link', 'pr', 'CORE-2607',
+            '--repo', 'xtrm-dev/core',
+            '--number', '912',
+            '--commit', HEAD,
+            '--project', 'prj_core',
+        ]);
+        expect(receiptCalls).toHaveLength(2);
+    });
+
+    it('names the shallow clone for a range-shaped failure, without leaking the raw git error', () => {
+        const raw = `sb: issue.link failed git log ${BASE}..${HEAD} failed: fatal: Invalid revision range ${BASE}..${HEAD}`;
+        const { result } = deps({ shallow: true, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toMatch(/unavailable in a shallow clone/);
+        expect(result.warning).toMatch(/git fetch --unshallow/);
+        expect(result.warning).not.toMatch(/Invalid revision range/);
+        // One line, as the contract requires.
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('keeps a shallow checkout\'s NON-range failure and appends the shallow note', () => {
+        // The shallow skip means the argv is always --commit, so an old sb can still
+        // reject it; rewriting that into a shallow-clone remedy would hide the cause.
+        const raw = 'sb exited 1: unknown flag --commit';
+        const { result } = deps({ shallow: true, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toMatch(/commit evidence failed: sb exited 1: unknown flag --commit/);
+        expect(result.warning).toMatch(/this checkout is a shallow clone/);
+        expect(result.warning).not.toMatch(/unavailable in a shallow clone/);
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('probes shallowness once per link, not once per consumer', () => {
+        const { runGit, calls } = gitFake({ shallow: true, mergeBases: { 'origin/HEAD': BASE } });
+        const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+            cwd: '/repo',
+            env: {},
+            runGit,
+            runSb: () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' }),
+            readFile: () => { throw new Error('no file'); },
+            runAttach: (args) => (args[0] === 'issue'
+                ? { ok: false, error: 'sb exited 1: unknown flag --commit' }
+                : { ok: true }),
+        });
+        expect(result.attached).toBe(true);
+        expect(calls.filter((args) => args[1] === '--is-shallow-repository')).toHaveLength(1);
+    });
+
+    it('keeps the original diagnostic on a full clone', () => {
+        const raw = 'sb exited 1: unknown flag --commits-range';
+        const { result } = deps({ shallow: false, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.warning).toMatch(/commit evidence failed: sb exited 1: unknown flag --commits-range/);
+        expect(result.warning).not.toMatch(/shallow/);
+    });
+});
+
+describe('provenance dispatch session identity (CORE-2639)', () => {
+    const NO_RECEIPT = 'no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first';
+
+    function dispatchArgvOf(env: NodeJS.ProcessEnv): string[] {
+        const { calls } = recoveryDeps({ attachErrors: [NO_RECEIPT], env });
+        const dispatch = calls.find((call) => call.kind === 'dispatch');
+        expect(dispatch, 'the recovery path must dispatch').toBeDefined();
+        return dispatch?.argv ?? [];
+    }
+
+    it("passes the worker's own runtime session id when the environment carries one", () => {
+        const argv = dispatchArgvOf({ PI_SESSION_ID: '01a1cc7e-f75d' });
+        expect(argv[argv.indexOf('--session') + 1]).toBe('01a1cc7e-f75d');
+    });
+
+    it('falls back through the Claude and Codex variables', () => {
+        expect(dispatchArgvOf({ CLAUDE_SESSION_ID: 'claude-sess' })[dispatchArgvOf({ CLAUDE_SESSION_ID: 'claude-sess' }).indexOf('--session') + 1])
+            .toBe('claude-sess');
+        const codex = dispatchArgvOf({ CODEX_SESSION_ID: 'codex-sess' });
+        expect(codex[codex.indexOf('--session') + 1]).toBe('codex-sess');
+    });
+
+    it('never forwards a tmux session id, and omits the flag when nothing is available', () => {
+        expect(dispatchArgvOf({})).not.toContain('--session');
+        expect(dispatchArgvOf({ XTRM_SESSION_ID: '$1' })).not.toContain('--session');
+        // A tmux-shaped value under a worker variable is refused too.
+        expect(dispatchArgvOf({ PI_SESSION_ID: '$7' })).not.toContain('--session');
+        // The worker value wins over a tmux id sitting beside it.
+        const both = dispatchArgvOf({ PI_SESSION_ID: 'worker-1', XTRM_SESSION_ID: '$3' });
+        expect(both[both.indexOf('--session') + 1]).toBe('worker-1');
+    });
+});
+
+describe('resolveWorkerSessionId', () => {
+    it('takes the first present, non-tmux value', () => {
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: 'pi-1', CLAUDE_SESSION_ID: 'c-1' })).toBe('pi-1');
+        expect(resolveWorkerSessionId({ CLAUDE_SESSION_ID: 'c-1' })).toBe('c-1');
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '   ' })).toBeNull();
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '$2' })).toBeNull();
+        expect(resolveWorkerSessionId({})).toBeNull();
+    });
+
+    it('skips a tmux-shaped value and keeps looking', () => {
+        expect(resolveWorkerSessionId({ PI_SESSION_ID: '$1', CLAUDE_SESSION_ID: 'c-2' })).toBe('c-2');
     });
 });

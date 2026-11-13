@@ -55,6 +55,12 @@ skills/*-workspace/
 .specialists/jobs/
 .specialists/ready/
 .specialists/trace.jsonl
+# Runtime roots the Specialists package writes in a project (CORE-2670):
+# settlement attestations and pending message bodies carry activation ids and
+# payloads that describe one machine's run, never the repository's source.
+# Whole directories, so a new file shape under either one cannot slip through.
+.specialists/settlements/
+.specialists/interactions/
 packages/pi-extensions/extensions/xtrm-ui/.serena/
 .xtrm/extensions/**/.pi/
 

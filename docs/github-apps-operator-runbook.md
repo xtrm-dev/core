@@ -287,6 +287,25 @@ picks up a credential. Two routes behave differently by design: the review route
 postponed to the operator's login without lying about who reviewed), while the merge route is flag-gated and
 OFF by default, so installing the shim cannot refuse every agent merge before the Apps exist.
 
+### The shim is a guardrail, not a security boundary
+
+A restricted role (the reviewer) reaches only an explicit **allowlist** of read routes through the shim —
+`gh pr view|list|diff|checks|status|checkout|comment|review`, `gh issue view|list|comment|status`, `gh api`
+through its GET-only verdict, `gh repo view`, `gh auth status`, `gh run view|list`, `gh search`, `gh status` —
+plus the create path (`gh pr create`, `gh pr new`), which still applies the marker refusal and the Issue link.
+Every other route is refused before the real `gh` runs, whatever it is spelled as: `gh pr edit|merge|close|
+reopen|ready|lock|unlock|update-branch|revert`, `gh issue close|reopen|edit` (gh resolves a PR number through
+`gh issue`), `gh issue create`, `gh alias set`, any unclassified command group, and an unknown first token
+(a user alias or a gh extension). An `XTRM_ROLE` that the role map cannot resolve counts as restricted, so a
+typo narrows rather than widens: `cli/src/core/gh-shim-routes.ts` holds the classification, and
+`cli/src/tests/gh-shim-routes.test.ts` fails when gh grows a verb or a group that no class covers.
+
+This is a guardrail for a cooperating agent's mistakes, **not** a security boundary. Any process can bypass it
+by unsetting `SUBSTRATE_HOLDER` and `XTRM_ROLE`, calling `/usr/bin/gh` directly, or reordering `PATH`; every
+pass-through then runs on the operator's own keyring token. The binding controls are on the GitHub side: App
+permissions, branch protection, required reviews, and the repository rulesets. Read the shim as a way to keep an
+honest agent inside its lane, never as enforcement against a hostile one.
+
 Known limits, accepted rather than hidden:
 
 - `SUBSTRATE_HOLDER`, `XTRM_ROLE`, `XTRM_MERGE_GUARD`, `XTRM_MERGE_GUARD_OVERRIDE` and the `<!-- xtrm … -->`
@@ -317,8 +336,10 @@ Known limits, accepted rather than hidden:
   push over ssh (`git@github.com:`), run `gh issue close` (not intercepted), or call the REST API directly with
   the operator's token. The launch guard narrows the mistake surface (role marker, transport, credential
   helper); it is not a sandbox, and the environment variables it sets are writable by the same unix user.
-- Each guarded `gh` call (`pr merge`, `pr close|edit|ready|reopen`, `api`) costs one `xt identity role --json`
-  lookup, measured at about 0.17 s; other commands do not pay it.
+- Each guarded `gh` call — every route outside the read allowlist, plus `api` — costs one
+  `xt identity role --json` lookup, measured at about 0.17 s. Read routes (`pr view|list|diff|checks|status|
+  checkout|comment`, `issue view|list|comment|status`, `repo view`, `auth status`, `run view|list`, `search`)
+  pay nothing: the choke point classifies the argv before it resolves a role.
 - `XTRM_MERGE_GUARD` (unset = off; `on`, `1`, `true`, `yes` enable it) gates the merge check. With it off the
   shim passes `gh pr merge` through and prints one line saying the guard is off. With it on, an unreachable
   GitHub or App is still refusable by `XTRM_MERGE_GUARD_OVERRIDE` from the coordinator or the operator, and an

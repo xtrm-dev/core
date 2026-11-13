@@ -37,6 +37,7 @@
  */
 
 import { runReceipt, listProjects, resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps, type SbProject } from './sb-receipt.js';
+import { resolveWorkerSessionId } from './session-identity.js';;
 import { parseIssueMarker, parseIssueMarkers, markerRunVerdict } from './review-posting.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -287,24 +288,52 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
  * base at all is not an error: the caller falls back to `--commit <HEAD>`, which
  * still records T1.
  */
-export function resolveLinkRange(runGit: RunGit, cwd: string): { head: string; base: string | null } | null {
+/**
+ * Whether git itself calls this checkout shallow (CORE-2638).
+ *
+ * A shallow clone has HEAD but not the fork point: `merge-base` can still name a
+ * commit, and `git log <base>..<head>` then fails with a bare
+ * `fatal: Invalid revision range`, which reads as a defect in the link rather than
+ * in the checkout. Ask git instead of guessing from the path, and treat a git that
+ * cannot answer as "not shallow" so an old client keeps today's behaviour.
+ */
+export function isShallowRepository(runGit: RunGit, cwd: string): boolean {
+    const result = runGit(['rev-parse', '--is-shallow-repository'], cwd);
+    return result.status === 0 && result.stdout.trim() === 'true';
+}
+
+export interface LinkRange {
+    head: string;
+    base: string | null;
+    /** Whether git calls this checkout shallow; the caller reuses it to word the warning. */
+    shallow: boolean;
+}
+
+export function resolveLinkRange(runGit: RunGit, cwd: string): LinkRange | null {
     const headResult = runGit(['rev-parse', 'HEAD'], cwd);
     const head = headResult.status === 0 ? headResult.stdout.trim() : '';
     if (!FULL_SHA.test(head)) return null;
+    // Deliberate skip, not a failure: in a shallow clone the range cannot be walked,
+    // so the caller records `--commit <head>` instead and the evidence still lands.
+    if (isShallowRepository(runGit, cwd)) return { head, base: null, shallow: true };
     for (const upstream of ['origin/HEAD', 'origin/main', '@{upstream}']) {
         const merged = runGit(['merge-base', 'HEAD', upstream], cwd);
         const base = merged.status === 0 ? (merged.stdout.trim().split('\n')[0] ?? '').trim() : '';
-        if (FULL_SHA.test(base)) return { head, base };
+        if (FULL_SHA.test(base)) return { head, base, shallow: false };
     }
-    return { head, base: null };
+    return { head, base: null, shallow: false };
 }
 
 export interface GhPrLinkDeps extends ReceiptProjectDeps {
     cwd?: string;
     readFile?: (file: string) => string;
     runGit?: RunGit;
-    /** The receipt runner; tests inject a fake so no real store is touched. */
-    runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string };
+    /**
+     * Runs every `sb` call this module makes — the attach, the claim read, the
+     * recovery dispatch/allocate and the retry. Tests inject a fake so no real
+     * store is touched and can route on the argv.
+     */
+    runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
 }
 
 export interface GhPrLinkResult {
@@ -325,7 +354,7 @@ function oneLine(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
 }
 
-function defaultAttach(args: string[], env: NodeJS.ProcessEnv, timeoutMs = ATTACH_TIMEOUT_MS): { ok: boolean; error?: string } {
+function defaultAttach(args: string[], env: NodeJS.ProcessEnv, timeoutMs = ATTACH_TIMEOUT_MS): { ok: boolean; error?: string; stdout?: string } {
     return runReceipt(args, env, { timeoutMs });
 }
 
@@ -340,6 +369,36 @@ export function linkCreatedPr(stdout: string | null | undefined, argv: string[],
     } catch (error) {
         return { attached: false, warning: `the new pull request was not linked to its Substrate Issue: ${oneLine((error as Error).message)}` };
     }
+}
+
+interface ClaimProjection {
+    holder?: string | null;
+    activationId?: string | null;
+    releasedAt?: string | null;
+}
+
+/**
+ * The claim from `sb issue show <ref> --json`, accepting both the real envelope
+ * (`{…, data: {claim}}`) and a flat `{claim}`. Returns null when the answer is not
+ * readable, so the caller can tell "no claim" from "could not read the claim".
+ */
+function parseClaimPayload(stdout: string): ClaimProjection | null {
+    // Tolerant of a non-JSON preamble: a strict parse would read a live-held
+    // Issue as unclaimed.
+    const start = stdout.indexOf('{');
+    if (start < 0) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(stdout.slice(start));
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const envelope = parsed as { claim?: ClaimProjection | null; data?: { claim?: ClaimProjection | null } | null };
+    const claim = envelope.data && typeof envelope.data === 'object' ? envelope.data.claim : envelope.claim;
+    if (claim === null) return {};
+    if (!claim || typeof claim !== 'object') return null;
+    return claim;
 }
 
 function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhPrLinkDeps): GhPrLinkResult {
@@ -374,17 +433,131 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
     // is what must stay inside the budget.
     const deadline = Date.now() + ATTACH_TIMEOUT_MS;
     const budget = (): number => Math.max(250, deadline - Date.now());
+    // CORE-2631 review: recovery adds up to four calls (show, dispatch,
+    // allocate, retry). With only the per-call floor those floors can outlive the
+    // deadline and run into the shim's own LINK_TIMEOUT_MS (6000), which SIGKILLs
+    // this process mid-sequence. Reserve a tail so the shim always gets control
+    // back, and give up honestly when nothing is left.
+    const RECOVERY_TAIL_MS = 1_000;
+    const recoveryBudget = (): number => {
+        const left = deadline - RECOVERY_TAIL_MS - Date.now();
+        return left > 0 ? left : 0;
+    };
 
     const attachArgv = withReceiptProject(['provenance', 'attach', ref, 'pr', pr.canonical], project);
     const t1 = run(attachArgv, env, budget());
     if (!t1.ok) {
-        return {
+        // CORE-2631: `attach` resolves a WorkReceipt, which only exists after
+        // `dispatch` (creates the binding) and `allocate` (creates the receipt).
+        // A fresh issue has neither, so attach fails with `no_receipt`. Recover
+        // once: dispatch -> allocate -> attach. A receipt that already exists makes
+        // the first attach succeed, so this path is a no-op on repeat runs.
+        const err = t1.error ?? '';
+        if (!/no_receipt/i.test(err)) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || 'sb gave no reason')}`,
+            };
+        }
+        const outOfTime = (): GhPrLinkResult => ({
             attached: false,
             ref,
             canonical: pr.canonical,
             argv: attachArgv,
-            warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1.error ?? 'sb gave no reason')}`,
-        };
+            warning: `created ${pr.canonical}, but the Substrate link to ${ref} ran out of time before it could recover; run sb provenance dispatch ${ref}, then sb provenance allocate ${ref}, then re-link`,
+        });
+        if (recoveryBudget() <= 0) return outOfTime();
+
+        // CORE-2631 review (pr-reviewer): decide --participant from the Issue's
+        // claim state, not from env.SUBSTRATE_HOLDER alone (every agent process has
+        // that variable, even for an unclaimed Issue). One read via the runner.
+        // The VALUE stays the session's own holder: echoing the observed holder
+        // would pass sb's anti-steal check by construction and attribute this
+        // session's work to whoever holds the claim. When the two differ, the flag
+        // is omitted and sb refuses with its own message — one honest warning.
+        //
+        // sb wraps every answer as {schema, command, ok, data}, and the claim lives
+        // at data.claim. Reading the top level (an earlier version did) silently
+        // found nothing, so every Issue looked unclaimed and a genuinely held one
+        // lost its --participant. Both shapes are accepted because the unit tests
+        // and older callers build the flat one.
+        let claimHolder: string | null = null;
+        let claimActivation: string | null = null;
+        let claimReadFailed = false;
+        const showArgv = ['issue', 'show', ref, '--json'];
+        const showResult = run(showArgv, env, recoveryBudget());
+        if (!showResult.ok) {
+            claimReadFailed = true;
+        } else {
+            const parsed = parseClaimPayload(showResult.stdout ?? '');
+            if (!parsed) {
+                claimReadFailed = true;
+            } else if (parsed.holder && !parsed.releasedAt) {
+                claimHolder = parsed.holder;
+                claimActivation = parsed.activationId ?? null;
+            }
+        }
+        const ownHolder = (env.SUBSTRATE_HOLDER ?? '').trim();
+
+        // Dispatch: create the execution binding. --participant is required when
+        // the issue is live-held (anti-steal); omit it when unclaimed.
+        const dispatchArgs = ['provenance', 'dispatch', ref];
+        if (claimHolder && ownHolder && ownHolder === claimHolder) {
+            dispatchArgs.push('--participant', ownHolder);
+            // sb compares holder AND activation, so a claim carrying an
+            // activation rejects a participant without one.
+            if (claimActivation) dispatchArgs.push('--activation', claimActivation);
+        }
+        // CORE-2639: bind to the worker's own runtime session, not the tmux session
+        // id sb would otherwise record — every window in one tmux session shares
+        // that value, so it cannot attribute the binding. Absent from the
+        // environment means no flag, and sb keeps its own fallback.
+        const workerSession = resolveWorkerSessionId(env);
+        if (workerSession) dispatchArgs.push('--session', workerSession);
+        // --workspace is only meaningful when cwd is known; the shim always sets
+        // it, but tests may omit it.
+        if (deps.cwd) dispatchArgs.push('--workspace', cwd);
+        const dispatchArgv = withReceiptProject(dispatchArgs, project);
+        if (recoveryBudget() <= 0) return outOfTime();
+        const td = run(dispatchArgv, env, recoveryBudget());
+        if (!td.ok) {
+            const why = claimReadFailed ? ' (the claim could not be read, so no participant was sent)' : '';
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed${why}: ${oneLine(td.error ?? 'sb gave no reason')}`,
+            };
+        }
+        // Allocate: create the receipt from the binding.
+        const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
+        if (recoveryBudget() <= 0) return outOfTime();
+        const ta = run(allocateArgv, env, recoveryBudget());
+        if (!ta.ok) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(ta.error ?? 'sb gave no reason')}`,
+            };
+        }
+        // Retry attach once.
+        if (recoveryBudget() <= 0) return outOfTime();
+        const t1b = run(attachArgv, env, recoveryBudget());
+        if (!t1b.ok) {
+            return {
+                attached: false,
+                ref,
+                canonical: pr.canonical,
+                argv: attachArgv,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(t1b.error ?? 'sb gave no reason')}`,
+            };
+        }
     }
 
     const range = resolveLinkRange(git, cwd);
@@ -405,13 +578,25 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
     ], project);
     const t2 = run(commitsArgv, env, budget());
     if (!t2.ok) {
+        // In a shallow clone a RANGE failure is the checkout's shape, not the link's,
+        // and the raw `fatal: Invalid revision range` names neither cause nor remedy.
+        // Any other failure keeps its own diagnostic with the shallow note appended:
+        // rewriting `unknown flag --commit` into a shallow-clone remedy would hide the
+        // real reason behind advice that cannot fix it.
+        const reason = oneLine(t2.error ?? 'sb gave no reason');
+        const rangeShaped = /Invalid revision range|unknown revision|bad revision/i.test(reason);
+        const warning = !range.shallow
+            ? `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason}`
+            : rangeShaped
+                ? `linked ${pr.canonical} to ${ref}, but its commit evidence is unavailable in a shallow clone (${cwd}); run git fetch --unshallow to link the range`
+                : `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason} (this checkout is a shallow clone; git fetch --unshallow if the range is what is missing)`;
         return {
             attached: true,
             ref,
             canonical: pr.canonical,
             argv: attachArgv,
             commitsArgv,
-            warning: `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${oneLine(t2.error ?? 'sb gave no reason')}`,
+            warning,
         };
     }
     return { attached: true, ref, canonical: pr.canonical, argv: attachArgv, commitsArgv };

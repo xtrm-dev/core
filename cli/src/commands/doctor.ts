@@ -13,7 +13,9 @@ import { findProjectRoot } from '../utils/repo-root.js';
 import { applySettingsFixes, auditSettings, type SettingsAuditOutcome, type SettingsFinding } from '../core/settings-audit.js';
 import { defaultStateDbPath, getSbDoctorJson, getSbVersion, runSetupCheck, stateDbPresent, type SetupCheckReport } from '../core/substrate.js';
 import { migrationBlockedReason } from '../core/substrate-migration.js';
+import { trailerHookVerdict } from '../core/trailer-hooks.js';
 import { CLAUDE_CHANNEL_POLICY_JSON, defaultInstalledPluginsPath, defaultManagedSettingsPath, getClaudeChannelStatus, type ClaudeChannelStatus } from '../core/claude-channel-status.js';
+import { CLAUDE_ROUTE_BLOCK_KEY, getClaudeRouteStatus, type ClaudeRouteStatus } from '../core/claude-route.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
 
 interface CheckJson {
@@ -98,6 +100,13 @@ interface DoctorJson {
   legacyMigration: LegacyMigrationSection;
   /** Advisory channel-wake state; never affects the exit code. */
   claudeChannels: ClaudeChannelStatus;
+  /** Advisory operator Claude Code route state (CORE-2632); never affects the exit code. */
+  claudeRoute: ClaudeRouteDoctorSection;
+}
+
+interface ClaudeRouteDoctorSection extends ClaudeRouteStatus {
+    /** Version of the installed pi-claude-bridge, or null when the package is absent. */
+    bridge_package_version: string | null;
 }
 
 function ok(msg: string) { console.log(`  ${kleur.green('✓')} ${msg}`); }
@@ -684,6 +693,52 @@ function renderLegacyMigration(report: LegacyMigrationSection): void {
   }) ?? 'legacy .beads workspace blocks migration — see docs/migration/beads-to-substrate.md');
 }
 
+function buildClaudeRouteSection(piPackages: XtManagedPiPackageDoctorReport): ClaudeRouteDoctorSection {
+  // Read-only and fail-soft: a missing or malformed user.json is a reportable
+  // state, never a doctor failure. The Specialists loader stays the authority
+  // for route resolution; this only shows what it will read.
+  const status = getClaudeRouteStatus();
+  return { ...status, bridge_package_version: piPackages.bridge?.installedVersion ?? null };
+}
+
+function renderClaudeRoute(report: ClaudeRouteDoctorSection): void {
+  section('Claude route');
+  console.log(kleur.dim(`  config: ${report.path}`));
+  if (report.error) {
+    warn(report.error);
+    // The remedy must be one that can actually clear THIS state: an unparseable
+    // file is refused by every xt write, while an invalid block is replaced by
+    // `disable` with the valid off state.
+    if (/not valid JSON|not a JSON object/.test(report.error)) {
+      fix(`repair ${report.path} by hand — xt refuses to overwrite a file it cannot parse`);
+    } else {
+      fix('run: xt claude-route disable --purge (removes a block that does not validate), or repair it by hand');
+    }
+    return;
+  }
+  if (!report.present) {
+    ok(`route not configured (no ${CLAUDE_ROUTE_BLOCK_KEY} block) — Specialists run on their configured providers`);
+  } else if (!report.enabled) {
+    ok('route disabled');
+  } else if (report.listedSpecialists.length === 0) {
+    warn('route enabled with an empty allow list — off for every Specialist');
+    fix('xt claude-route enable --specialist <name> --model claude-bridge/<model>');
+  } else {
+    ok(`route enabled for ${report.listedSpecialists.length} listed Specialist(s): ${report.listedSpecialists.join(', ')}`);
+    for (const name of report.listedSpecialists) {
+      console.log(kleur.dim(`    ${name} → ${report.models[name] ?? 'no model'}`));
+    }
+  }
+  if (report.bridge_package_version) {
+    ok(`pi-claude-bridge installed (${report.bridge_package_version})`);
+  } else if (report.enabled) {
+    warn('pi-claude-bridge is not installed — the enabled route cannot run');
+    fix('pi install npm:pi-claude-bridge@0.12.0');
+  } else {
+    console.log(kleur.dim('  pi-claude-bridge not installed (route is off, nothing to run)'));
+  }
+}
+
 export function createDoctorCommand(): Command {
   const doctor = new Command('doctor')
     .description('Canonical diagnosis for xtrm-managed project and runtime surfaces')
@@ -706,6 +761,7 @@ export function createDoctorCommand(): Command {
       const legacyMigration = await buildLegacyMigrationSection(cwd);
       const legacyMigrationRequired = legacyMigration.status !== 'clean';
       const claudeChannels = buildClaudeChannelsSection();
+      const claudeRoute = buildClaudeRouteSection(piPackages);
       const doctorJson: DoctorJson = {
         catB,
         piPackages,
@@ -723,6 +779,7 @@ export function createDoctorCommand(): Command {
         substrate,
         legacyMigration,
         claudeChannels,
+        claudeRoute,
       };
 
       if (opts.json) {
@@ -754,7 +811,12 @@ export function createDoctorCommand(): Command {
       const piPackagesOk = renderXtManagedPiPackages(piPackages);
       renderSubstrate(substrate);
       renderClaudeChannels(claudeChannels);
+      renderClaudeRoute(claudeRoute);
       renderLegacyMigration(legacyMigration);
+      // CORE-2570: trailer hook presence
+      const trailer = trailerHookVerdict(cwd);
+      if (trailer.status === 'installed') ok(trailer.message);
+      else warn(trailer.message);
       renderCatB(catB);
 
       section('Updates');

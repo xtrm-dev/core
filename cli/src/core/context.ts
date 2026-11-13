@@ -23,34 +23,70 @@ type ConfigShape = {
     syncMode: SyncMode;
 };
 
+// CORE-2630: key the cached Conf on the HOME/XDG it was built under. The
+// store path is resolved at construction time, so a cached instance is only
+// valid while HOME and XDG_CONFIG_HOME are unchanged. Without this key the first
+// call freezes the store location for the whole process.
 let config: Conf<ConfigShape> | null = null;
+let configKey: string | null = null;
+
+/**
+ * CORE-2630: the per-project config directory, mirroring `env-paths` exactly for
+ * every platform. This is the single source of truth: the Conf store path, the
+ * read-only existence check and the cache identity all derive from it, so they
+ * cannot disagree (review finding: three copies drifted, and the win32 base —
+ * %APPDATA%/xtrm-cli-nodejs/Config — was missing entirely).
+ *
+ * env-paths computes its home from `os.homedir()` at module load; resolving here
+ * on every call is what makes a later HOME/XDG change take effect.
+ */
+export function resolveConfProjectDir(): string {
+    const name = 'xtrm-cli-nodejs';
+    const home = os.homedir();
+    if (process.platform === 'darwin') {
+        return path.join(home, 'Library', 'Preferences', name);
+    }
+    if (process.platform === 'win32') {
+        // env-paths: APPDATA || ~/AppData/Roaming, then <appData>/<name>/Config.
+        const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+        return path.join(appData, name, 'Config');
+    }
+    // env-paths uses `||`, so an empty XDG_CONFIG_HOME falls back to ~/.config.
+    const base = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
+    return path.join(base, name);
+}
 
 function getConfig(): Conf<ConfigShape> {
-    if (!config) {
-        config = new Conf<ConfigShape>({
-            projectName: 'xtrm-cli',
-            defaults: {
-                syncMode: 'copy',
-            },
-        });
+    // The cache key is the resolved directory itself, so every input that moves
+    // the store (HOME, XDG_CONFIG_HOME, APPDATA, the platform base) also
+    // invalidates the cached instance. Resolved once per call, and used for both
+    // the comparison and the instance.
+    const dir = resolveConfProjectDir();
+    if (config && configKey === dir) {
+        return config;
     }
-
+    config = new Conf<ConfigShape>({
+        cwd: dir,
+        configName: 'config',
+        defaults: {
+            syncMode: 'copy',
+        },
+    });
+    configKey = dir;
     return config;
 }
 
 /**
- * Default Conf store path without instantiating Conf — constructing it
- * writes the file on first access, which would turn every read-only path
- * (preflight, dry-run, fail-closed gates) into a HOME mutation.
- * Unknown platforms fail open (assume present → old behavior).
+ * Whether the Conf store exists, checked without instantiating Conf —
+ * constructing it writes the file on first access, which would turn every
+ * read-only path (preflight, dry-run, fail-closed gates) into a HOME mutation.
+ * CORE-2630: uses the same resolver as the store itself, so the check can never
+ * look at a different directory than the write. A filesystem error still fails
+ * open (assume present → old behavior).
  */
 function defaultConfigFilePresent(): boolean {
     try {
-        if (process.platform === 'win32') return true;
-        const dir = process.platform === 'darwin'
-            ? path.join(os.homedir(), 'Library', 'Preferences', 'xtrm-cli-nodejs')
-            : path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'), 'xtrm-cli-nodejs');
-        return fs.pathExistsSync(path.join(dir, 'config.json'));
+        return fs.pathExistsSync(path.join(resolveConfProjectDir(), 'config.json'));
     } catch {
         return true;
     }

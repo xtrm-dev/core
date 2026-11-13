@@ -277,6 +277,7 @@ export function deepMergeWithProtection(original: any, updates: any, currentPath
     const result = { ...original };
 
     for (const [key, value] of Object.entries(updates)) {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
         const keyPath = currentPath ? `${currentPath}.${key}` : key;
 
         // Hooks: merge by command identity normally; in prune mode replace xtrm-managed wrappers wholesale.

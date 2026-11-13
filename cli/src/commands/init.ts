@@ -23,6 +23,7 @@ import { shouldUseGlobalHooks } from '../core/global-hooks-flag.js';
 import { ensureServiceSkills } from '../core/service-skills-ensure.js';
 import { inventoryDeps, renderBootstrapPlan, runMachineBootstrapPhase, type BootstrapPlan } from '../core/machine-bootstrap.js';
 import { runInitVerification, renderVerificationSummary } from '../core/init-verification.js';
+import { installTrailerHook } from '../core/trailer-hooks.js';
 import { assertRuntimeSkillsViews } from '../core/skills-runtime-views.js';
 import { getGlobalSkillsOverrideRoots } from '../core/global-skills-flag.js';
 import { syncPiMcpConfig, syncProjectMcpConfig } from '../core/project-mcp-sync.js';
@@ -988,6 +989,23 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
         console.log(kleur.red('  ✗ Substrate project not linked — init cannot complete Substrate-first setup.'));
         process.exitCode = 1;
         return;
+    }
+
+    // Trailer hook chaining (CORE-2570): install by default.
+    try {
+        const tr = await installTrailerHook(projectRoot);
+        if (tr.changed) console.log(kleur.dim('  • chained Substrate prepare-commit-msg into repo hooks'));
+        else if (tr.reason === 'substrate-hook-unresolved') {
+            // Same loudness as the explicit command: init is where the chain is
+            // supposed to switch on, so a silent warning here hides the gap.
+            console.log(kleur.yellow('  ✗ trailer hook NOT installed: no substrate prepare-commit-msg entry found'));
+            console.log(kleur.dim('    a release that ships hooks/ is required, or set XTRM_SUBSTRATE_DIR to a checkout;'));
+            console.log(kleur.dim('    `xt hooks install-trailers` retries, `xt doctor` reports it'));
+            // Exit stays 0: init's contract pins a clean exit, and the hook is a
+            // warning surface here, not a gate (the explicit command exits 1).
+        }
+    } catch (e) {
+        console.log(kleur.yellow(`  ⚠ trailer hook install failed: ${e instanceof Error ? e.message : String(e)}`));
     }
 
     // ── Phase 8: Dependency maintenance ──────────────────────────────────────

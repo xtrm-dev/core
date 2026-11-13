@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+# Workflow default is least privilege. The `publish` job widens it for npm
+# trusted publishing (id-token: write); every other job stays read-only.
+permissions:
+  contents: read
+
 jobs:
   resolve_ref:
     runs-on: ubuntu-latest
@@ -11,7 +16,7 @@ jobs:
       specialists_ref: ${{ steps.resolve.outputs.specialists_ref }}
     steps:
       - name: Checkout xtrm-tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve specialists ref from manifest
         id: resolve
@@ -46,10 +51,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout specialists source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Jaggerxtrm/specialists
           ref: ${{ needs.resolve_ref.outputs.specialists_ref }}
@@ -65,7 +70,7 @@ jobs:
           echo "SPECIALISTS_REPO_PATH=$GITHUB_WORKSPACE/specialists-src" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'

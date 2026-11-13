@@ -16,6 +16,7 @@ import { buildDispatcherEnv, stripDispatcherEnv } from '../core/dispatcher-ident
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
+import { setWorktreeIssue } from '../core/trailer-hooks.js';
 import {
     buildDetachedLaunchOutcome,
     checkStructuredLaunchPaths,
@@ -2392,8 +2393,32 @@ function currentTmuxSessionId(): string {
     return r.status === 0 ? (r.stdout ?? '').trim() : '';
 }
 
-function randomSlug(len: number = 4): string {
-    return Math.random().toString(36).slice(2, 2 + len);
+// CORE-2637 (CodeQL #52): the slug names a session and ends up in paths, tmux
+// window names and environment values that later code treats as identity, so it
+// must not come from Math.random(). Draw from node:crypto instead, keeping the
+// [a-z0-9] alphabet and the exact length. Bytes at or above the largest
+// multiple of the alphabet size are rejected, so every character is uniform.
+//
+// The old body also violated its own length contract: Math.random().toString(36)
+// carries about ten base-36 digits, so a request for more than that (97.6% of
+// draws at len 12) returned a short slug. Callers pass 4, which is why it never
+// surfaced, but the contract is now true for every length.
+const SLUG_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const SLUG_ALPHABET_SIZE = SLUG_ALPHABET.length;
+const SLUG_UNBIASED_LIMIT = 256 - (256 % SLUG_ALPHABET_SIZE);
+
+// Exported for its unit test: the alphabet and length are the contract that
+// callers (session names, worktree paths) depend on, so they are pinned there.
+export function randomSlug(len: number = 4): string {
+    const chars: string[] = [];
+    while (chars.length < len) {
+        for (const byte of randomBytes(len * 2)) {
+            if (byte >= SLUG_UNBIASED_LIMIT) continue;
+            chars.push(SLUG_ALPHABET[byte % SLUG_ALPHABET_SIZE]);
+            if (chars.length === len) break;
+        }
+    }
+    return chars.join('');
 }
 
 function gitRepoRoot(cwd: string): string | null {
@@ -3258,6 +3283,15 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // Normalize parent's core.hooksPath to absolute if it's still the bd
     // relative default — safety net for older bd installs (see xtrm-2s44).
     normalizeParentHooksPath(mainRepoRoot);
+
+    // CORE-2570: write xtrm.issue worktree binding when an Issue is bound.
+    const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
+    if (boundIssue) {
+        const binding = setWorktreeIssue(worktreePath, boundIssue);
+        // Fail-open: a missing binding must not block the launch, but it must
+        // not be invisible either.
+        if (!binding.ok) console.error(kleur.yellow(`  ⚠ xtrm.issue binding not written: ${binding.error}`));
+    }
 
     // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
     // its DB via git common-dir discovery (shared-server mode + absolute

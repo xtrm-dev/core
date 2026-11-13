@@ -75,6 +75,18 @@ describe('parseFrontmatter', () => {
         expect(fm!.summary).toBe('Actual content.');
     });
 
+    it('strips a --!> comment close as well as -->', () => {
+        const content = '---\ntitle: X\n---\n\n<!-- INDEX: meta --!> Real summary.';
+        const fm = parseFrontmatter(content);
+        expect(fm!.summary).toBe('Real summary.');
+    });
+
+    it('strips stray HTML comment delimiters in one pass', () => {
+        const content = '---\ntitle: X\n---\n\n<!-- stray --> Real summary.';
+        const fm = parseFrontmatter(content);
+        expect(fm!.summary).toBe('Real summary.');
+    });
+
     it('FrontmatterFilter type is exported and structurally correct', () => {
         const filter: FrontmatterFilter = { field: 'type', value: 'service' };
         expect(filter.field).toBe('type');
