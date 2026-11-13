@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 // @ts-ignore
 import prompts from 'prompts';
-import { getCandidatePaths } from '../core/context.js';
+import { getCandidatePaths, resolveConfProjectDir } from '../core/context.js';
 import { calculateDiff } from '../core/diff.js';
 import { executeSync } from '../core/sync-executor.js';
 import { findRepoRoot } from '../utils/repo-root.js';
@@ -159,8 +159,12 @@ export function createStatusCommand(): Command {
 
             const toSync = pending.filter(r => selected.includes(r.path));
 
-            // Reuse the already-computed changeSets — no second diff needed
-            const store = new Conf({ projectName: 'xtrm-manager' });
+            // Reuse the already-computed changeSets — no second diff needed.
+            // CORE-2630: read the same store the rest of the CLI writes, through
+            // the shared resolver. `projectName: 'xtrm-manager'` resolved its own
+            // path via env-paths (frozen at module load) and named a store nothing
+            // in the repo actually writes.
+            const store = new Conf({ cwd: resolveConfProjectDir(), configName: 'config' });
             const syncMode = (store.get('syncMode') as string) || 'copy';
 
             let totalSynced = 0;

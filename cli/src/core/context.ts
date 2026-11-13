@@ -58,32 +58,29 @@ export function resolveConfProjectDir(): string {
 
 // CORE-2630: pass `cwd` explicitly so Conf does not fall back to env-paths,
 // which caches os.homedir() at module load and freezes the store location.
+// Kept as a named alias because it is what callers say they want (the directory
+// Conf uses), and the test asserts the two never diverge.
 export function resolveConfCwd(): string {
     return resolveConfProjectDir();
 }
 
-/**
- * The cache key. Derived from the resolved directory rather than from raw env
- * vars, so every input that moves the store (HOME, XDG_CONFIG_HOME, APPDATA,
- * platform base) also invalidates the cached instance.
- */
-function configIdentity(): string {
-    return resolveConfProjectDir();
-}
-
 function getConfig(): Conf<ConfigShape> {
-    const key = configIdentity();
-    if (config && configKey === key) {
+    // The cache key is the resolved directory itself, so every input that moves
+    // the store (HOME, XDG_CONFIG_HOME, APPDATA, the platform base) also
+    // invalidates the cached instance. Resolved once per call, and used for both
+    // the comparison and the instance.
+    const dir = resolveConfProjectDir();
+    if (config && configKey === dir) {
         return config;
     }
     config = new Conf<ConfigShape>({
-        cwd: resolveConfCwd(),
+        cwd: dir,
         configName: 'config',
         defaults: {
             syncMode: 'copy',
         },
     });
-    configKey = key;
+    configKey = dir;
     return config;
 }
 

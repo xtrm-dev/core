@@ -67350,25 +67350,19 @@ function resolveConfProjectDir() {
   const base = process.env.XDG_CONFIG_HOME || import_path11.default.join(home, ".config");
   return import_path11.default.join(base, name);
 }
-function resolveConfCwd() {
-  return resolveConfProjectDir();
-}
-function configIdentity() {
-  return resolveConfProjectDir();
-}
 function getConfig() {
-  const key = configIdentity();
-  if (config2 && configKey === key) {
+  const dir = resolveConfProjectDir();
+  if (config2 && configKey === dir) {
     return config2;
   }
   config2 = new Conf({
-    cwd: resolveConfCwd(),
+    cwd: dir,
     configName: "config",
     defaults: {
       syncMode: "copy"
     }
   });
-  configKey = key;
+  configKey = dir;
   return config2;
 }
 function defaultConfigFilePresent() {
@@ -69245,7 +69239,7 @@ function createStatusCommand() {
       return;
     }
     const toSync = pending.filter((r) => selected.includes(r.path));
-    const store = new Conf({ projectName: "xtrm-manager" });
+    const store = new Conf({ cwd: resolveConfProjectDir(), configName: "config" });
     const syncMode = store.get("syncMode") || "copy";
     let totalSynced = 0;
     for (const r of toSync) {
