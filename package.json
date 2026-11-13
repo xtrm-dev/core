@@ -136,15 +136,6 @@
       "npm:pi-claude-bridge@0.12.0"
     ]
   },
-  "pnpm": {
-    "overrides": {
-      "fast-uri": "^3.1.7",
-      "nanoid": "^3.3.18",
-      "postcss": "^8.5.23",
-      "vite": "8.3.8",
-      "esbuild": "0.28.1"
-    }
-  },
   "devDependencies": {
     "git-cliff": "2.13.1"
   }
