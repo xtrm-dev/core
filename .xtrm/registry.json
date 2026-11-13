@@ -976,10 +976,6 @@
           "hash": "472bb85a4f33cea473d843321bf2d71fa155b3bac9192fe6582fa086e6d5a8c6",
           "version": "0.15.3"
         },
-        "project-management/project-management/hooks/.claude/tdd-guard/data/test.json": {
-          "hash": "5d1ac16ab5ab03b49c02fbf851f11c8f3be6d79a5198cc1e63c2065e914910d5",
-          "version": "0.15.3"
-        },
         "project-management/project-management/hooks/operator-questions.py": {
           "hash": "9fca80cb7d1bed408718be8c6a0b9fa4570178ba71f43b966a78a4c427df2e75",
           "version": "0.15.3"
@@ -1030,10 +1026,6 @@
         },
         "project-management/project-management/references/workers.md": {
           "hash": "01566ec189f92da0985b4974a35640e1ee3481abf3dcd9b2c5679c83d7905b46",
-          "version": "0.15.3"
-        },
-        "project-management/project-management/scripts/.claude/tdd-guard/data/test.json": {
-          "hash": "fd1f7381979286db76148546ecf4fdca0d286eaaa97d329956608bb0a583a9c3",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/jira.py": {
