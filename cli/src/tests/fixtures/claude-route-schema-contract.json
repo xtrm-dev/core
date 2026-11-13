@@ -1,0 +1,13 @@
+{
+  "blockKey": "claude_bridge",
+  "modelPrefix": "claude-bridge/",
+  "specialistNamePattern": "^[a-z][a-z0-9-]*$",
+  "blockKeys": ["default_model", "enabled", "models", "specialists"],
+  "source": {
+    "repo": "xtrm-dev/specialists",
+    "path": "src/specialist/global-config.ts",
+    "commit": "36b89e24",
+    "issue": "SPECIALISTS-4442",
+    "captured": "2026-11-12"
+  }
+}

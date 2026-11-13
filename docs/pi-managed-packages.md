@@ -49,7 +49,7 @@ The runtime also marks packages as either required or optional for health semant
 - **Node floor.** The package declares `engines.node >= 20` and depends on `@anthropic-ai/claude-agent-sdk`; install it on Node 20 or newer. `xt doctor` reports the running Node against that floor and warns when the runtime is below it.
 - **`claude` CLI.** The bridge spawns the `claude` binary, and `~/.pi/agent/claude-bridge.json` may point at one through `provider.pathToClaudeCodeExecutable`. The CLI is optional at install; `xt doctor` says `claude CLI not found; the Claude Code route will refuse at dispatch` when it is absent.
 
-Installing the package does not enable the route: it stays opt-in under the SPECIALISTS-4403 ruling, and Core never writes `claude_bridge.enabled` or `execution.claude_bridge` in any specialists config. Its absence never makes the runtime unhealthy. When the bridge is installed, `xt doctor` reports the resolved version and entry path.
+Installing the package does not enable the route: it stays opt-in under the SPECIALISTS-4403 ruling. Core writes `claude_bridge` in the specialists user config only through `xt claude-route enable`, behind an explicit consent that names the billing implication, and it never writes a per-Specialist `execution.claude_bridge` (CORE-2632, [xt-claude-route.md](xt-claude-route.md)). Its absence never makes the runtime unhealthy. When the bridge is installed, `xt doctor` reports the resolved version and entry path.
 
 `native-specialists` and `xtmux` are local packages added by their own repos; Core does not install them.
 
