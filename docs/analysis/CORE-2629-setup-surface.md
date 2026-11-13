@@ -39,11 +39,11 @@ Columns: Component | Phase 2 step / Issue requiring it | State | Evidence.
 
 ## 3. Uncovered components and the amendments that closed them (not a parallel design)
 
-Only four components are truly uncovered by any existing step. Each item below is a gap, not an open question: the ruling that settles it is section 7.
+Five components are truly uncovered by any existing step (items 1–6 below, where items 5 and 6 are partially covered components that still need an amendment); item 7, the Claude route switch, is additionally owned by no core step at all. Each item below is a gap, not an open question: the ruling that settles it is section 7.
 
-1. prepare-commit-msg trailer hook (step 6b / CORE-2570): **settled by §7 resolution 1 (operator ruling of 2026-11-11) — `xt init` and `xt update` chain the hook by default, there is no opt-in flag, and `xt doctor` warns when it is missing.** No amendment is needed beyond that ruling.
+1. prepare-commit-msg trailer hook (step 6b / CORE-2570): **Settled by §7 resolution 1 (operator ruling of 2026-11-11) — `xt init` and `xt update` chain the hook by default, there is no opt-in flag, and `xt doctor` warns when it is missing.** No amendment is needed beyond that ruling.
 
-2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init` on Linux and a cron line on macOS, with `xt doctor` reporting timer presence. **Settled by §7 resolution 2: server only (the PC uses the remote `sb`), installed by `xt init`/`xt update` on the server role, checked by `xt doctor`.**
+2. sb links sync scheduler (Step 26 / XTRM-728): amend Step 26's "Still to build here: running it on a schedule in the agent host" to add a concrete deliverable: ship a systemd user timer unit (xt-links-sync.timer/service) installed by `xt init`/`xt update`, with `xt doctor` reporting timer presence. **Settled by §7 resolution 2: server only (the PC uses the remote `sb`), installed by `xt init`/`xt update` on the server role, checked by `xt doctor`.**
 
 3. skill pack rename programme -> project-management (CORE-2624 done): amend Step 4/Step 17 to add a one-time migration in xt update: rewrite enabledPacks entries "programme" -> "project-management" in ~/.xtrm/skills/state.json and manifests/*.json, idempotent. **Settled by §7 resolution 3: one-time idempotent migration in `xt update`, backup first.**
 
@@ -63,7 +63,7 @@ Additionally, partially covered items needing amendments:
 - Step 17 CORE-2383 (docs + doctor checks) for the doctor side.
 - Step 18 CORE-2382/CORE-2377 (clean-PATH E2E) for the test side.
 - Step 9 CORE-2380 for the registry/installer side.
-Amendment (part of the §7 rulings): add one sentence to Step 17: "xt doctor iterates a single declarative component registry (cli/src/core/component-registry.ts, one entry per component with installer + check + machine roles) and fails if any registered component lacks a check or any check lacks a registry entry." This is an amendment to existing steps, not a new design; the registry pattern already exists (MANAGED_DEPS, MANAGED_PACKAGES).
+Proposed amendment (not operator-settled; it follows the §7 preamble that `xt init`/`xt update` configure everything, but no resolution names the registry): add one sentence to Step 17: "xt doctor iterates a single declarative component registry (cli/src/core/component-registry.ts, one entry per component with installer + check + machine roles) and fails if any registered component lacks a check or any check lacks a registry entry." This is an amendment to existing steps, not a new design; the registry pattern already exists (MANAGED_DEPS, MANAGED_PACKAGES).
 
 ## 5. Child contracts
 
