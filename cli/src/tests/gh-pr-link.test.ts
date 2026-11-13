@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
     ATTACH_TIMEOUT_MS,
     chooseIssueRef,
+    isShallowRepository,
     issueRefsInText,
     linkCreatedPr,
     parseCreatedPrUrl,
@@ -43,6 +44,8 @@ function gitFake(options: {
     head?: string | null;
     branch?: string;
     mergeBases?: Record<string, string | null>;
+    /** CORE-2638: what `git rev-parse --is-shallow-repository` answers. */
+    shallow?: boolean;
 } = {}): { runGit: RunGit; calls: string[][] } {
     const calls: string[][] = [];
     const runGit: RunGit = (args) => {
@@ -52,6 +55,11 @@ function gitFake(options: {
         }
         if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
             return { status: 0, stdout: `${options.branch ?? 'xt/shim-attach'}\n`, stderr: '' };
+        }
+        if (args[0] === 'rev-parse' && args[1] === '--is-shallow-repository') {
+            return options.shallow === undefined
+                ? { status: 1, stdout: '', stderr: "error: unknown option" }
+                : { status: 0, stdout: `${options.shallow}\n`, stderr: '' };
         }
         if (args[0] === 'merge-base') {
             const base = options.mergeBases?.[args[2] ?? ''] ?? null;
@@ -230,15 +238,15 @@ describe('resolveLinkRange', () => {
             if (args[2] === 'origin/HEAD') return { status: 1, stdout: '', stderr: '' };
             return { status: 0, stdout: `${BASE}\n`, stderr: '' };
         };
-        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE, shallow: false });
         expect(order).toEqual(['origin/HEAD', 'origin/main']);
     });
 
     it('uses the branch upstream last and reports no base when every candidate fails', () => {
         const { runGit } = gitFake({ mergeBases: { '@{upstream}': BASE } });
-        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: BASE, shallow: false });
         const none = gitFake().runGit;
-        expect(resolveLinkRange(none, '/repo')).toEqual({ head: HEAD, base: null });
+        expect(resolveLinkRange(none, '/repo')).toEqual({ head: HEAD, base: null, shallow: false });
     });
 
     it('gives up when HEAD cannot be read', () => {
@@ -246,6 +254,57 @@ describe('resolveLinkRange', () => {
         expect(resolveLinkRange(runGit, '/repo')).toBeNull();
     });
 });
+
+/** The linkCreatedPr harness, shared by the ordered tests and the shallow cases. */
+function deps(overrides: {
+    stdout?: string;
+    argv?: string[];
+    projects?: SbProject[] | 'fail';
+    attachOk?: boolean;
+    attachError?: string;
+    commitsOk?: boolean;
+    commitsError?: string;
+    throwAttach?: boolean;
+    bodyText?: string;
+    branch?: string;
+    base?: string | null;
+    shallow?: boolean;
+} = {}) {
+    const receiptCalls: string[][] = [];
+    const projectCalls: string[][] = [];
+    const { runGit } = gitFake({
+        branch: overrides.branch ?? 'core-2607-gh-shim',
+        mergeBases: { 'origin/HEAD': overrides.base === null ? null : (overrides.base ?? BASE) },
+        shallow: overrides.shallow,
+    });
+    const runSb = (args: string[]) => {
+        projectCalls.push(args);
+        if (overrides.projects === 'fail') return { status: 1, stdout: '', stderr: 'sb: no store' };
+        return { status: 0, stdout: projectList(overrides.projects ?? PROJECTS), stderr: '' };
+    };
+    const result = linkCreatedPr(overrides.stdout ?? CREATED, overrides.argv ?? ['pr', 'create', '--body', overrides.bodyText ?? '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+        cwd: '/repo',
+        env: {},
+        runGit,
+        runSb,
+        readFile: () => {
+            throw new Error('no file');
+        },
+        runAttach: (args) => {
+            receiptCalls.push(args);
+            if (overrides.throwAttach) throw new Error('boom');
+            if (args[0] === 'provenance') {
+                return overrides.attachOk === false
+                    ? { ok: false, error: overrides.attachError ?? 'sb exited 1: refused' }
+                    : { ok: true };
+            }
+            return overrides.commitsOk === false
+                ? { ok: false, error: overrides.commitsError ?? 'sb exited 1: unknown flag --commits-range' }
+                : { ok: true };
+        },
+    });
+    return { result, receiptCalls, projectCalls };
+}
 
 describe('linkCreatedPr', () => {
     // sb 0.3 `FLAG_ALLOWLIST` for the two verbs the link uses, plus the global
@@ -261,53 +320,6 @@ describe('linkCreatedPr', () => {
         return argv.filter((arg) => arg.startsWith('--')).map((arg) => arg.slice(2).split('=')[0] as string);
     }
 
-    function deps(overrides: {
-        stdout?: string;
-        argv?: string[];
-        projects?: SbProject[] | 'fail';
-        attachOk?: boolean;
-        attachError?: string;
-        commitsOk?: boolean;
-        commitsError?: string;
-        throwAttach?: boolean;
-        bodyText?: string;
-        branch?: string;
-        base?: string | null;
-    } = {}) {
-        const receiptCalls: string[][] = [];
-        const projectCalls: string[][] = [];
-        const { runGit } = gitFake({
-            branch: overrides.branch ?? 'core-2607-gh-shim',
-            mergeBases: { 'origin/HEAD': overrides.base === null ? null : (overrides.base ?? BASE) },
-        });
-        const runSb = (args: string[]) => {
-            projectCalls.push(args);
-            if (overrides.projects === 'fail') return { status: 1, stdout: '', stderr: 'sb: no store' };
-            return { status: 0, stdout: projectList(overrides.projects ?? PROJECTS), stderr: '' };
-        };
-        const result = linkCreatedPr(overrides.stdout ?? CREATED, overrides.argv ?? ['pr', 'create', '--body', overrides.bodyText ?? '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
-            cwd: '/repo',
-            env: {},
-            runGit,
-            runSb,
-            readFile: () => {
-                throw new Error('no file');
-            },
-            runAttach: (args) => {
-                receiptCalls.push(args);
-                if (overrides.throwAttach) throw new Error('boom');
-                if (args[0] === 'provenance') {
-                    return overrides.attachOk === false
-                        ? { ok: false, error: overrides.attachError ?? 'sb exited 1: refused' }
-                        : { ok: true };
-                }
-                return overrides.commitsOk === false
-                    ? { ok: false, error: overrides.commitsError ?? 'sb exited 1: unknown flag --commits-range' }
-                    : { ok: true };
-            },
-        });
-        return { result, receiptCalls, projectCalls };
-    }
 
     it('writes T1 then T2 with the exact argv sb allows for each verb', () => {
         const { result, receiptCalls, projectCalls } = deps();
@@ -763,5 +775,80 @@ describe('the real sb surface', () => {
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+describe('shallow clone (CORE-2638)', () => {
+    it('asks git whether the checkout is shallow', () => {
+        expect(isShallowRepository(gitFake({ shallow: true }).runGit, '/repo')).toBe(true);
+        expect(isShallowRepository(gitFake({ shallow: false }).runGit, '/repo')).toBe(false);
+        // A git that does not know the flag must not be mistaken for a shallow repo.
+        expect(isShallowRepository(gitFake().runGit, '/repo')).toBe(false);
+    });
+
+    it('skips the range deliberately instead of letting merge-base pick an unwalkable base', () => {
+        const { runGit, calls } = gitFake({ shallow: true, mergeBases: { 'origin/HEAD': BASE } });
+        expect(resolveLinkRange(runGit, '/repo')).toEqual({ head: HEAD, base: null, shallow: true });
+        expect(calls.some((args) => args[0] === 'merge-base')).toBe(false);
+    });
+
+    it('records --commit HEAD so the evidence still lands, with no warning', () => {
+        const { result, receiptCalls } = deps({ shallow: true, base: BASE });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toBeUndefined();
+        expect(result.commitsArgv).toEqual([
+            'issue', 'link', 'pr', 'CORE-2607',
+            '--repo', 'xtrm-dev/core',
+            '--number', '912',
+            '--commit', HEAD,
+            '--project', 'prj_core',
+        ]);
+        expect(receiptCalls).toHaveLength(2);
+    });
+
+    it('names the shallow clone for a range-shaped failure, without leaking the raw git error', () => {
+        const raw = `sb: issue.link failed git log ${BASE}..${HEAD} failed: fatal: Invalid revision range ${BASE}..${HEAD}`;
+        const { result } = deps({ shallow: true, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toMatch(/unavailable in a shallow clone/);
+        expect(result.warning).toMatch(/git fetch --unshallow/);
+        expect(result.warning).not.toMatch(/Invalid revision range/);
+        // One line, as the contract requires.
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('keeps a shallow checkout\'s NON-range failure and appends the shallow note', () => {
+        // The shallow skip means the argv is always --commit, so an old sb can still
+        // reject it; rewriting that into a shallow-clone remedy would hide the cause.
+        const raw = 'sb exited 1: unknown flag --commit';
+        const { result } = deps({ shallow: true, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toMatch(/commit evidence failed: sb exited 1: unknown flag --commit/);
+        expect(result.warning).toMatch(/this checkout is a shallow clone/);
+        expect(result.warning).not.toMatch(/unavailable in a shallow clone/);
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('probes shallowness once per link, not once per consumer', () => {
+        const { runGit, calls } = gitFake({ shallow: true, mergeBases: { 'origin/HEAD': BASE } });
+        const result = linkCreatedPr(CREATED, ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=h run=r -->'], {
+            cwd: '/repo',
+            env: {},
+            runGit,
+            runSb: () => ({ status: 0, stdout: projectList(PROJECTS), stderr: '' }),
+            readFile: () => { throw new Error('no file'); },
+            runAttach: (args) => (args[0] === 'issue'
+                ? { ok: false, error: 'sb exited 1: unknown flag --commit' }
+                : { ok: true }),
+        });
+        expect(result.attached).toBe(true);
+        expect(calls.filter((args) => args[1] === '--is-shallow-repository')).toHaveLength(1);
+    });
+
+    it('keeps the original diagnostic on a full clone', () => {
+        const raw = 'sb exited 1: unknown flag --commits-range';
+        const { result } = deps({ shallow: false, base: BASE, commitsOk: false, commitsError: raw });
+        expect(result.warning).toMatch(/commit evidence failed: sb exited 1: unknown flag --commits-range/);
+        expect(result.warning).not.toMatch(/shallow/);
     });
 });
