@@ -127,23 +127,26 @@ export async function runUserScopeMaintenance(packageRoot: string, repoRoot: str
         const status = ghShimStatus({ home: process.env.HOME });
         // The refresh is a write, so it is apply-gated here as well as at every
         // call site: a future dry-run caller must not rewrite ~/.local/bin/gh.
-        let shimWarningsOnce = false;
+        let installWarnedOrdering = false;
         if (opts.apply && status.installed && !status.current) {
             const shim = installGhShim({ home: process.env.HOME });
-            shimWarningsOnce = shim.ok && shim.warnings.some((w) => w.includes('comes after'));
+            installWarnedOrdering = shim.pathOrderWarned;
             if (!shim.ok) {
                 console.log(kleur.yellow(`  gh shim: not refreshed (${shim.reason ?? 'unknown reason'})`));
             } else {
                 for (const warning of shim.warnings) console.log(kleur.yellow(`  gh shim: ${warning}`));
             }
         }
-        // Reinstalling cannot fix a PATH that still prefers the real gh. Say so
-        // only when that is the actual cause: pathOrderOk is also false when no
-        // real gh exists (already reported above) and when the shim's directory is
-        // missing from PATH, which needs different words.
-        const installWarned = !status.current && shimWarningsOnce;
-        if (status.installed && status.realGh !== null && !status.pathOrderOk && !installWarned) {
-            console.log(kleur.yellow('  gh shim: ~/.local/bin comes after the real gh on PATH — the shim will not be used'));
+        // Reinstalling cannot fix a PATH that does not resolve to the shim, and the
+        // cause decides the words: the directory may be missing from PATH entirely,
+        // or it may sit after the real gh. Nothing is printed for the "no real gh"
+        // case — the refusal above already explains it.
+        const shimDir = path.dirname(status.path);
+        const onPath = (process.env.PATH ?? '').split(path.delimiter).includes(shimDir);
+        if (status.installed && status.realGh !== null && !status.pathOrderOk && !installWarnedOrdering) {
+            console.log(kleur.yellow(onPath
+                ? `  gh shim: ${shimDir} comes after the real gh on PATH — the shim will not be used`
+                : `  gh shim: ${shimDir} is not on PATH — the shim will not be used`));
         }
     } catch (error) {
         console.log(kleur.yellow(`  gh shim: refresh failed (${error instanceof Error ? error.message : String(error)})`));

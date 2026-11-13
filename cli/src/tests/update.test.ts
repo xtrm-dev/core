@@ -879,7 +879,7 @@ describe('CORE-2633 gh shim refresh in update', () => {
     runPiStartupSmokeCheckMock.mockResolvedValue(undefined);
     checkDriftMock.mockResolvedValue({});
 
-    const okShim = { ok: true, path: '/home/u/.local/bin/gh', realGh: '/usr/bin/gh', warnings: [] as string[] };
+    const okShim = { ok: true, path: '/home/u/.local/bin/gh', realGh: '/usr/bin/gh', warnings: [] as string[], pathOrderWarned: false };
     const status = (over: Record<string, unknown>) => ({
       path: '/home/u/.local/bin/gh', installed: true, current: false,
       realGh: '/usr/bin/gh', recordedRealGh: null, pathOrderOk: true, ...over,
@@ -912,7 +912,7 @@ describe('CORE-2633 gh shim refresh in update', () => {
       installGhShimMock.mockClear();
       captured.length = 0;
       ghShimStatusMock.mockReturnValue(status({}));
-      installGhShimMock.mockReturnValue({ ok: false, path: '', realGh: null, reason: 'no real gh on PATH', warnings: [] });
+      installGhShimMock.mockReturnValue({ ok: false, path: '', realGh: null, reason: 'no real gh on PATH', warnings: [], pathOrderWarned: false });
       await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
       expect(captured.join('\n')).toContain('gh shim: not refreshed (no real gh on PATH)');
 
@@ -929,12 +929,29 @@ describe('CORE-2633 gh shim refresh in update', () => {
       await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
       expect(captured.join('\n')).toContain('will not be used');
 
-      // ...and stays silent when no real gh exists, because the refusal says it
+      // the install's own ordering warning is not repeated
+      installGhShimMock.mockClear();
       captured.length = 0;
-      ghShimStatusMock.mockReturnValue(status({ current: true, pathOrderOk: false, realGh: null }));
-      installGhShimMock.mockReturnValue({ ok: false, path: '', realGh: null, reason: 'no real gh on PATH', warnings: [] });
+      ghShimStatusMock.mockReturnValue(status({}));
+      installGhShimMock.mockReturnValue({ ...okShim, warnings: ['/home/u/.local/bin comes after /usr/bin on PATH; the shim will not be used'], pathOrderWarned: true });
       await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
+      expect(captured.join('\n').match(/will not be used/g)?.length).toBe(1);
+
+      // an installed stale shim whose real gh vanished: refusal only, no PATH line
+      installGhShimMock.mockClear();
+      captured.length = 0;
+      ghShimStatusMock.mockReturnValue(status({ current: false, realGh: null, pathOrderOk: false }));
+      installGhShimMock.mockReturnValue({ ok: false, path: '', realGh: null, reason: 'no real gh on PATH', warnings: [], pathOrderWarned: false });
+      await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
+      expect(captured.join('\n')).toContain('not refreshed (no real gh on PATH)');
       expect(captured.join('\n')).not.toContain('will not be used');
+
+      // a shim directory missing from PATH gets its own words
+      installGhShimMock.mockClear();
+      captured.length = 0;
+      ghShimStatusMock.mockReturnValue(status({ current: true, path: '/nowhere/bin/gh', pathOrderOk: false }));
+      await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
+      expect(captured.join('\n')).toContain('/nowhere/bin is not on PATH');
 
       // dry run must not write, even when the shim is stale
       installGhShimMock.mockClear();
