@@ -6,13 +6,17 @@
 #   DAY  window start date, e.g. 2026-10-22; omit to use the pinned sample rows
 #
 # Everything it writes goes to a run directory OUTSIDE this git repo
-# (default $HOME/.local/state/mmd-board-audit), never next to the code.
+# ($PM_STATE_DIR/board-audit, PM_STATE_DIR from the env or the pack config; default
+# $HOME/.local/state), never next to the code. facts.py reads the Jira settings
+# (see ../references/setup.md).
 set -eu
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 N=${1:-3}
 DAY=${2:-}
-RUNS=${MMD_AUDIT_RUN_DIR:-$HOME/.local/state/mmd-board-audit}
+PM_SCRIPTS="$HERE/../../project-management/scripts"
+STATE_DIR=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import pm_config; print(pm_config.get("PM_STATE_DIR") or "")' "$PM_SCRIPTS")
+RUNS=${STATE_DIR:-$HOME/.local/state}/board-audit
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 
 : "${AGENTRUN_PI_ROOT:?set AGENTRUN_PI_ROOT to the @parcha/agentrun-pi install root}"

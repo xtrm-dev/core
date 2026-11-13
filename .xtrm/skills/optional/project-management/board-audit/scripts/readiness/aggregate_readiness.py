@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Odd-N majority over code-readiness-v1 runs (in code, not by a model), then a compare against an
-independent second method (the MMD-3014 manual table). Usage:
+independent second method (a manual table built without this harness). Usage:
   aggregate_readiness.py --runs run-*.json --rows rows.json [--method2 code-readiness.json] --out majority.json
 A run whose status is not 'complete' is refused, never averaged in.
 """

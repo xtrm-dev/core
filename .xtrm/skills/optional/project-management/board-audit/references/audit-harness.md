@@ -13,14 +13,15 @@ the harness was honest about its own blind spot.
 ## One command
 
 ```sh
-cd skills/optional/project-management/board-audit
+cd ~/.xtrm/skills/optional/project-management/board-audit
 ./scripts/run-audit.sh 3 2026-10-22      # a day's windows
 ./scripts/run-audit.sh 3                 # the pinned sample rows
 ```
 
-Requires `AGENTRUN_PI_ROOT` (the `@parcha/agentrun-pi` install root), `JIRA_EMAIL` and
-`JIRA_TOKEN_FILE`. Receipts go to `$MMD_AUDIT_RUN_DIR` (default
-`~/.local/state/mmd-board-audit`), never into this repo.
+Requires `AGENTRUN_PI_ROOT` (the `@parcha/agentrun-pi` install root) and the settings in
+`setup.md` (`JIRA_SITE`, `PM_OPERATOR_EMAIL`, `JIRA_TOKEN_FILE`, `PM_JIRA_PROJECT`, `PM_SB_PREFIX`,
+`PM_REPO_SLUG`, `custom_fields`, `terminal_statuses`). Receipts go to `$PM_STATE_DIR/board-audit`
+(default `~/.local/state/board-audit`), never into this repo.
 
 Files: `scripts/facts.py` (snapshot + facts + `--selftest`), `workflows/board-batch-verdicts-v3.json`
 (the judged workflow), `scripts/aggregate.py` (odd-N majority, refuses a run that is not
@@ -31,8 +32,8 @@ Files: `scripts/facts.py` (snapshot + facts + `--selftest`), `workflows/board-ba
 | Fact | Meaning |
 |---|---|
 | `same_slot_cluster` | two Tasks of one parent whose windows overlap. A fact about windows only; whether the two Tasks are **one deploy** is the judge's S4 |
-| `order` | each predecessor's `cf38` in UTC against this row's `cf37`, printed as holds/violated with both times |
-| `expected_band` | the window converted to UTC and compared with the band its Task type requires. Today the only band is the CME daily halt 21:17–21:55Z for tick-ingestor changes |
+| `order` | each predecessor's window end (`custom_fields.window_end`) in UTC against this row's window start (`custom_fields.window_start`), printed as holds/violated with both times |
+| `expected_band` | the window converted to UTC and compared with the band its Task type requires. The bands come from config `window_bands` (each names the words its Task summary matches) |
 | `named_pr` / `named_subject` / `named_blocker_required` / `named_reference_only` | every PR and Substrate mention, classified and state-tagged (`SATISFIED`, `BLOCKING`, `STALE`, `HISTORICAL`) |
 | `stable_check` | for a precondition that says "on stable"/"promotion", whether the merged commit is an ancestor of `origin/stable` |
 | `stated_preconditions` | the sentences that state a blocking condition, quoted. The judge reads the quote; this function never decides "met" |
@@ -50,8 +51,8 @@ Three classification rules earn their place by the wrong verdicts they fixed:
    a closed-unmerged PR that old is `HISTORICAL`. The threshold is **global, measured from now,
    fitted to one observed case (PR #879)**: it is provisional and nothing may describe it as
    calibrated.
-3. **A closed window is not a plan.** Terminal status (`Done`, `Completata`, `Won't Do`,
-   `Cancelled`, `Done with Follow-up`) gives `not_applicable` at S0, so a closed window cannot
+3. **A closed window is not a plan.** A status in config `terminal_statuses` gives
+   `not_applicable` at S0, so a closed window cannot
    be judged as if it were schedulable.
 
 ## Rubric S0–S9
@@ -87,7 +88,7 @@ Two lessons that must survive with those numbers:
   ISSUE-457 whose window sat outside the halt band. Agreement across runs measures the
   authoring, not the truth. The facts are the thing to review; the selftest is the gate.
 - **A tool verdict is a claim.** Sample-check before acting, and never let the harness's
-  `approve` stand in for a coordinator's Verified OK.
+  `approve` stand in for the manager's Verified OK.
 
 ## Why v1 was retired
 

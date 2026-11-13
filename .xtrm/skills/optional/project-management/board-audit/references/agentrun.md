@@ -43,10 +43,10 @@ shape defects (no `not_applicable`, a model node transcribing verdicts), not for
 
 ```sh
 export AGENTRUN_PI_ROOT="$(npm root -g)/@parcha/agentrun-pi"
-export JIRA_EMAIL=...            # required, no default
+export PM_OPERATOR_EMAIL=...     # required, no default (setup.md)
 export JIRA_TOKEN_FILE=~/.secrets/atlassian-api-token.txt
 
-cd skills/optional/project-management/board-audit
+cd ~/.xtrm/skills/optional/project-management/board-audit
 python3 scripts/check.py                 # literals + selftest, before anything else
 ./scripts/run-audit.sh 3 2026-10-22      # snapshot -> 3 runs -> majority
 ```
@@ -63,7 +63,7 @@ python3 scripts/check.py                 # literals + selftest, before anything 
    check is discarded, not applied. The check is a 5-item list, not a feeling: oracle present?
    evidence quotes the relied-on fact? counts reconcile? snapshot younger than one hour?
    input hash recorded in the batch proposal?
-6. **Apply** row by row per the apply protocol, on the coordinator's word. The workflow never
+6. **Apply** row by row per the apply protocol, on the orderer's word (owning lead, or manager). The workflow never
    writes to Jira, Substrate or GitHub.
 
 ## The two authoring rules that decide whether a batch is worth running
@@ -78,7 +78,7 @@ python3 scripts/check.py                 # literals + selftest, before anything 
    precomputed, it belongs to S4 (is this one deploy in one slot?) and nowhere else.
 
 Both halves, stated once: a stable rubric can be stably **wrong**, so the snapshot facts are the
-thing to test, and a verdict is a claim, so no harness verdict substitutes for a coordinator's
+thing to test, and a verdict is a claim, so no harness verdict substitutes for the manager's
 Verified OK.
 
 ## Heavy Substrate context: pre-export, never live-fetch
@@ -88,13 +88,13 @@ theme mapping across work-lists), the judge must not call `sb` live. The workflo
 has no tool calls by design; live-fetching breaks the evidence gate and the
 40-row budget.
 
-Pattern, measured 2026-10-22: a full `sb export project --project prj_mmd`
+Pattern, measured 2026-10-22: a full `sb export project --project $PM_SB_PROJECT_ID`
 is ~19 MB — unusable as model input. Export once, filter in code, fold the
 selection into the rows:
 
 ```sh
 # one export to the run dir, outside the repo
-sb export project --project prj_mmd --file "$RUNS/sb-export-$STAMP.json"
+sb export project --project "$PM_SB_PROJECT_ID" --file "$RUNS/sb-export-$STAMP.json"
 # facts.py selects only the refs the day's windows name (subjects +
 # dependencies; references are provenance, never gates) via
 # `sb issue show <ref> --json` / `sb journal show <ref> --limit <n> --json`,
@@ -124,7 +124,7 @@ without the cache.
 | Theme mapping (C2/G2 pattern) | Approve primary when evidence names the theme family or a sibling there | story work-lists + Relates graph |
 | Status-vs-evidence sweep | Approve transitions when slot/evidence/status agree | windows with a past end slot |
 | PR-link top-up + drift sweep (measured 2026-10-24: 18 rows, 0 disagreement) | Approve when the slot still holds and no Jira-visible defect exists; `reject_needs_evidence` for Blocked and for stale dates (S1/S5) | window-labelled rows touched since the last ledger stamp, plus PRs merged/opened since that stamp |
-| Code readiness of epic children (MMD-3015, 2026-10-28: 168 rows, 15 runs, 29 run disagreements, 23 deep-read overrides) | R1-R7 (`scripts/readiness/RUBRIC.md`): code computes the oracle (OPEN_PR/PARTIAL/SUPERSEDED/BUILT); the judge only rules the rest; every NOT_BUILT/PARTIAL/NEEDS_HUMAN row is deep-read by a worker, because the model majority is NOT the answer | `scripts/readiness/run-readiness.sh [N]` from a market-data checkout: Jira epic snapshot + Substrate own-vs-mentioned refs + PRs tied by key/own ref/'Jira binding:' footer with master/stable ancestry + last 6 master commits per contract path + remote branches with no PR; selftest of 7 positive/negative controls must pass; workflow `workflows/code-readiness-v1.json` |
+| Code readiness of epic children (MMD-3015, 2026-10-28: 168 rows, 15 runs, 29 run disagreements, 23 deep-read overrides) | R1-R7 (`scripts/readiness/RUBRIC.md`): code computes the oracle (OPEN_PR/PARTIAL/SUPERSEDED/BUILT); the judge only rules the rest; every NOT_BUILT/PARTIAL/NEEDS_HUMAN row is deep-read by a worker, because the model majority is NOT the answer | `scripts/readiness/run-readiness.sh [N]` from the `$PM_REPO_DIR` checkout: Jira epic snapshot + Substrate own-vs-mentioned refs + PRs tied by key/own ref/'Jira binding:' footer with master/stable ancestry + last 6 master commits per contract path + remote branches with no PR; selftest of the positive/negative controls in config `readiness_controls` must pass; workflow `workflows/code-readiness-v1.json` |
 | New shape | Author ad-hoc, inspect, save under `workflows/`, extend this table | per need |
 
 ## Maintenance duty

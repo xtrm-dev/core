@@ -11,8 +11,8 @@ R2 UMBRELLA. Applies only when type is Story or the summary names a theme ("New 
    scale", "Data safety: ..."), the description lists other tickets or work items as its content, and it states no
    single change of its own. Return UMBRELLA. Otherwise R2 does not apply.
 R3 OTHER_REPO. Applies only when other_repo_mentions is not none AND the description says the change is made in
-   that repository AND no path line shows a market-data file the ticket must change. Return OTHER_REPO and name the
-   repository in missing. If market-data also needs a change, R3 does not apply.
+   that repository AND no path line shows a {repo_name} file the ticket must change. Return OTHER_REPO and name the
+   repository in missing. If {repo_name} also needs a change, R3 does not apply.
 R4 OPERATIONAL. Applies only when the ticket's deliverable is an action on code that already exists: run, verify,
    check, measure, compare, upload, restart, review, decide, report, promote, tag a release, or drop/purge existing
    objects with an existing tool. Every `make <target>` line must show exists_on_master=True; if any shows False,
@@ -23,7 +23,7 @@ R4 OPERATIONAL. Applies only when the ticket's deliverable is an action on code 
    Return OPERATIONAL with missing=none.
 R5 COVERED BY MERGED WORK. Applies only when a pr line shows on_master=True, or a path line lists a commit, whose
    title or subject states the deliverable of this ticket (the summary, or the contract success).
-   - The covering PR/commit carries this ticket's own MMD ref or key, and covers every item the contract success
+   - The covering PR/commit carries this ticket's own {sb_prefix} ref or key, and covers every item the contract success
      names: return BUILT.
    - It covers only part of the success: return PARTIAL and list the uncovered items in missing.
    - The covering commit carries a DIFFERENT ref than this ticket's own: return SUPERSEDED and quote that commit.

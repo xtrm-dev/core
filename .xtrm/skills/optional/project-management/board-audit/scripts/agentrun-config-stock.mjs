@@ -7,7 +7,8 @@
 // Required env:
 //   AGENTRUN_PI_ROOT  install root of @parcha/agentrun-pi, e.g. "$(npm root -g)/@parcha/agentrun-pi"
 // Optional env:
-//   PI_MODELS_PATH / PI_MODELS_STORE_PATH, MMD_AUDIT_MODEL (default opencode-go/deepseek-v4.1-flash)
+//   PI_MODELS_PATH / PI_MODELS_STORE_PATH, PM_STATE_DIR (default ~/.local/state),
+//   PM_AUDIT_MODEL (default opencode-go/deepseek-v4.1-flash)
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -23,10 +24,10 @@ const runtime = await runtimeModule.ModelRuntime.create({
   refreshOnCreate: false,
   modelsPath: process.env.PI_MODELS_PATH ?? path.join(os.homedir(), '.pi', 'agent', 'models.json'),
   modelsStorePath: process.env.PI_MODELS_STORE_PATH
-    ?? path.join(os.homedir(), '.local', 'state', 'mmd-board-audit', 'models-store.json'),
+    ?? path.join(process.env.PM_STATE_DIR ?? path.join(os.homedir(), '.local', 'state'), 'board-audit', 'models-store.json'),
 });
 
-const [provider, modelId] = (process.env.MMD_AUDIT_MODEL ?? 'opencode-go/deepseek-v4.1-flash').split('/');
+const [provider, modelId] = (process.env.PM_AUDIT_MODEL ?? 'opencode-go/deepseek-v4.1-flash').split('/');
 const model = runtime.models.getModel(provider, modelId);
 if (!model) throw new Error(`model unavailable: ${provider}/${modelId}`);
 

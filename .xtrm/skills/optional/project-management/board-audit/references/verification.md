@@ -21,7 +21,7 @@
   string exists, not that the verdict was posted: it matches the uploader's own list of batch names,
   an `MMD-` ref inside prose, an `ISSUE-` number inside a sentence. Search for the shape that only the
   intended comment can carry — `VERIFIED <batch>`, `PR-link <repo>#<n>` — and treat a hit on the bare
-  name as no evidence either way. Seen three times on the Mercury board before it became this rule.
+  name as no evidence either way. Seen three times on one board before it became this rule.
 - **Inspect actual state after a crashed write**, before retrying: read the fields and the comment
   list and write only what is missing. A half-applied batch is recovered by reading, not by
   re-running.
@@ -33,6 +33,17 @@
 - Ancestry for ship claims: `git merge-base --is-ancestor <sha>
   origin/stable` after `git fetch origin stable`.
 - Label sets: diff pre/post, explain every delta.
+
+## Blocks links (direction and verification)
+
+- **Create with `{"inwardIssue": BLOCKER, "outwardIssue": BLOCKED}`.** On this board the inward side is
+  the blocker: `inwardIssue=ISSUE-349, outwardIssue=ISSUE-578` reads "349 blocks 578". Writing it the
+  other way round produces a link that looks right in every issue view and asserts the opposite order.
+- **Verify at `GET /rest/api/3/issueLink/<id>`**, not through the issue view. The issue view renders the
+  relationship from that row's perspective and swaps which field holds which issue, so a backwards link
+  reads as correct in both rows it touches. 2026-10-31: link 11462 was posted as inward 578 / outward 349,
+  read "578 blocks 349", and passed a two-sided issue-view check; the coordinator's link-endpoint read
+  caught it. It was deleted and re-created as 11463. Read the endpoint, then compare the two keys.
 
 ## Controls before trust (every new check)
 
@@ -73,7 +84,7 @@ list that counted a `folded-into:*` ticket as late, halt collisions read from su
 season-aware windows, a reversed precondition direction, a CPU pressure series read for a memory gate,
 and a watcher baseline recaptured on every re-arm.
 
-- **No verdict is not a failure.** CI conclusions are not two-valued: the last 60 runs of market-data
+- **No verdict is not a failure.** CI conclusions are not two-valued: the last 60 runs of one repository
   measured 2026-10-26 were success 49, skipped 5, failure 4, cancelled 2. A `cancelled` or `skipped` run
   says the check did not decide, so a board cell that reads "fails CI" off it is wrong in the same way a
   zero from a broken filter is wrong. Report the categories with their counts, never a pass/fail collapse
@@ -93,8 +104,8 @@ Two passes on one sprint audit (2026-10-31, 253 rows) show why:
   legal state. A gate that proves a citation exists does not prove the inference from it.
 
 The rule that follows: an agent reports facts per row (status, dates, links, last comment id) and no
-disposition. Bulk status adjudication stays with the lane that owns the board, because a verdict the coordinator
-must disprove costs more than the sweep saved.
+disposition. Bulk status adjudication stays with the lane that owns the board, because a verdict the lead or
+manager must disprove costs more than the sweep saved.
 
 ## Index-lag rule
 
@@ -106,7 +117,7 @@ row whose direct re-read is correct.
 ## Close and block
 
 Window closing and slot-clearing discipline is **not** repeated here: it lives in
-`project-management/references/jira.md` under window discipline (close on a coordinator
+`project-management/references/jira.md` under window discipline (close on the manager's
 Verified OK, never on a deploy having started; a blocked window clears its slot in the same edit;
 a passed slot with no record is unrecorded, not failed).
 

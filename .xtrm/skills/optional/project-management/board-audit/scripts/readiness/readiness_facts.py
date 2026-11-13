@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """Snapshot + deterministic facts for the code-readiness audit (workflow code-readiness-v1).
 
-One row per unfinished child of the open MMD epics (ISSUE-198 themes). Every relational fact is
-computed here so the judge never has to infer it:
+One row per unfinished child of the open project epics (the themes linked from PM_JIRA_EPIC). Every
+relational fact is computed here so the judge never has to infer it:
 
-  substrate      each named MMD ref: lifecycle, readiness, closure outcome, createdAt, scope paths
+  substrate      each named Substrate ref (PM_SB_PREFIX): lifecycle, readiness, closure outcome, createdAt, scope paths
   prs            every PR named in the ticket, bound by a 'Jira binding:' footer, or carrying the
                  key/ref in its title or branch; state, merge SHA, ancestry on origin/master and
                  origin/stable
   paths          each file path the contracts name: exists on origin/master, and the master
                  commits that touched it since the contract was created (the supersession check:
-                 MMD-2782 was covered by MMD-2456/#920 and a grep missed it)
+                 a contract was once covered by an older PR and a grep missed it)
   make_targets   each `make <target>` the ticket names: present in origin/master's Makefile
-  other_repo     mentions of infra / market-archive / quant / sierra repos
+  other_repo     mentions of the sibling repositories listed in config other_repos
   oracle         the code verdict where code can decide; 'judge' otherwise
 
-Usage (run from a market-data git checkout; read-only everywhere):
+Settings (pm_config; see ../../references/setup.md): PM_JIRA_PROJECT, PM_JIRA_EPIC, PM_SB_PREFIX,
+PM_SB_PROJECT_ID, PM_REPO_SLUG, PM_PR_SINCE, custom_fields, terminal_statuses, readiness_extra_epics,
+other_repos, readiness_controls. Jira access through the pack's jira.py.
+
+Usage (run from a PM_REPO_DIR git checkout; read-only everywhere):
   readiness_facts.py snapshot --out rows.json
   readiness_facts.py chunk rows.json --size 40
   readiness_facts.py selftest rows.json
@@ -23,15 +27,36 @@ Usage (run from a market-data git checkout; read-only everywhere):
 import argparse, datetime as dt, hashlib, importlib.util, json, pathlib, re, subprocess, sys
 from collections import Counter
 
-JIRA_PY = str(pathlib.Path.home() / '.xtrm/skills/optional/project-management/project-management/scripts/jira.py')
-REPO = 'mercuryintelligence/market-data'
-TERMINAL = {'Completata', 'Done', "Won't Do", 'Cancelled', 'Done with Follow-up'}
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / 'project-management' / 'scripts'))
+import pm_config  # noqa: E402  (the pack's settings loader)
+
+JIRA_PY = str(pm_config.jira_py())
+REPO = pm_config.get('PM_REPO_SLUG')
+PROJECT = pm_config.get('PM_JIRA_PROJECT')
+ROOT_EPIC = pm_config.get('PM_JIRA_EPIC')
+SB_PREFIX = pm_config.get('PM_SB_PREFIX') or 'SB'
+SB_PROJECT = pm_config.get('PM_SB_PROJECT_ID')
+PR_SINCE = pm_config.get('PM_PR_SINCE')
+EXTRA_EPICS = pm_config.get_data('PM_READINESS_EXTRA_EPICS', [])
+_CF = pm_config.get_data('PM_CUSTOM_FIELDS', {})
+CF_WIN_START, CF_WIN_END = _CF.get('window_start'), _CF.get('window_end')
+TERMINAL = set(pm_config.get_data('PM_TERMINAL_STATUSES', []))
+OTHER_REPOS = pm_config.get_data('PM_OTHER_REPOS', [])
 EXT = r'(?:py|rs|yaml|yml|toml|json|sql|md|sh|mjs|ts|cfg|ini|txt)'
 PATH_RE = re.compile(r'(?<![\w/.:-])((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.' + EXT + r')(?![\w/])')
-MMD_RE = re.compile(r'\bMMD-(\d{3,4})\b')
+SB_RE = re.compile(r'\b' + re.escape(SB_PREFIX) + r'-(\d{3,4})\b')
+SB_NUM = len(SB_PREFIX) + 1   # ref[SB_NUM:] is the number of a <PREFIX>-<n> ref
 PR_RE = re.compile(r'(?<![\w/])#(\d{3,4})\b')
 MAKE_RE = re.compile(r'\bmake\s+([a-z][a-z0-9-]+)')
-OTHER_RE = re.compile(r'\b(infra|market-archive|quant|sierra-data|sierra-vps|xtrm-tools)(?=#\d+|\s+(?:repo|PR|#\d+))', re.I)
+OTHER_RE = (re.compile(r'\b(' + '|'.join(re.escape(r) for r in OTHER_REPOS) + r')(?=#\d+|\s+(?:repo|PR|#\d+))', re.I)
+            if OTHER_REPOS else None)
+
+
+def require_settings():
+    for name in ('PM_JIRA_PROJECT', 'PM_JIRA_EPIC', 'PM_SB_PREFIX', 'PM_SB_PROJECT_ID', 'PM_REPO_SLUG', 'PM_PR_SINCE'):
+        pm_config.get(name, required=True)
+    for name in ('PM_CUSTOM_FIELDS', 'PM_TERMINAL_STATUSES'):
+        pm_config.get_data(name, required=True)
 
 
 def sh(*cmd, check=False):
@@ -96,9 +121,9 @@ def ancestor(sha, ref):
 
 
 def created_iso(ref):
-    num = ref.split('-')[1]
+    num = ref[SB_NUM:]
     q = ("select i.created_at from issues i join projects p on p.id=i.project_id "
-         f"where p.id='prj_mmd' and i.human_number={num} limit 1;")
+         f"where p.id='{SB_PROJECT}' and i.human_number={num} limit 1;")
     v = sh('sqlite3', f'file:{pathlib.Path.home()}/.xtrm/state.db?mode=ro', q).stdout.strip()
     if not v.isdigit():
         return None
@@ -130,7 +155,7 @@ def sb_issue(ref):
 
 
 def path_facts(path):
-    # No --since: covering work can predate the contract (MMD-2782 was drafted after #920 merged).
+    # No --since: covering work can predate the contract (one was drafted after its covering PR merged).
     exists = sh('git', 'cat-file', '-e', f'origin/master:{path}').returncode == 0
     args = ['git', 'log', 'origin/master', '--format=%h|%cs|%s', '-n', '6', '--', path]
     commits = []
@@ -144,14 +169,14 @@ def snapshot(out):
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%MZ')
     sh('git', 'fetch', '-q', 'origin', 'master', 'stable', check=True)
     m = jira()
-    st, e198 = m.call('GET', '/rest/api/3/issue/ISSUE-198?fields=issuelinks')
-    linked = {(l.get('outwardIssue') or l.get('inwardIssue'))['key'] for l in e198['fields']['issuelinks']}
-    epics = {e['key']: e['fields']['summary'] for e in search(m, 'project = ISSUE AND issuetype = Epic AND statusCategory != Done', ['summary'])
-             if e['key'] in linked or e['key'] in ('ISSUE-198', 'ISSUE-488')}
-    F = ['summary', 'status', 'issuetype', 'labels', 'parent', 'customfield_10237', 'customfield_10238', 'duedate', 'description']
-    issues = search(m, 'project = ISSUE AND parent in (' + ','.join(sorted(epics)) + ') AND statusCategory != Done', F)
+    st, root = m.call('GET', f'/rest/api/3/issue/{ROOT_EPIC}?fields=issuelinks')
+    linked = {(l.get('outwardIssue') or l.get('inwardIssue'))['key'] for l in root['fields']['issuelinks']}
+    epics = {e['key']: e['fields']['summary'] for e in search(m, f'project = {PROJECT} AND issuetype = Epic AND statusCategory != Done', ['summary'])
+             if e['key'] in linked or e['key'] in (ROOT_EPIC, *EXTRA_EPICS)}
+    F = ['summary', 'status', 'issuetype', 'labels', 'parent', CF_WIN_START, CF_WIN_END, 'duedate', 'description']
+    issues = search(m, f'project = {PROJECT} AND parent in (' + ','.join(sorted(epics)) + ') AND statusCategory != Done', F)
     targets = set(re.findall(r'^([a-z][a-z0-9-]+):', sh('git', 'show', 'origin/master:Makefile').stdout, re.M))
-    prs = json.loads(sh('gh', 'pr', 'list', '--repo', REPO, '--state', 'all', '--limit', '1500', '--search', 'created:>=2026-08-01',
+    prs = json.loads(sh('gh', 'pr', 'list', '--repo', REPO, '--state', 'all', '--limit', '1500', '--search', f'created:>={PR_SINCE}',
                         '--json', 'number,title,headRefName,state,mergedAt,mergeCommit,body', check=True).stdout)
     if len(prs) < 100:
         raise SystemExit(f'gh returned {len(prs)} PRs: instrument broken (expected hundreds)')
@@ -163,8 +188,8 @@ def snapshot(out):
         text = f['summary'] + '\n' + desc
         labels = f.get('labels') or []
         # A ref has a role: the substrate: label is the ticket's own subject; text mentions are context.
-        label_refs = sorted({x.split(':', 1)[1] for x in labels if x.startswith('substrate:MMD-')})
-        text_refs = sorted({f'MMD-{n}' for n in MMD_RE.findall(text)})
+        label_refs = sorted({x.split(':', 1)[1] for x in labels if x.startswith(f'substrate:{SB_PREFIX}-')})
+        text_refs = sorted({f'{SB_PREFIX}-{n}' for n in SB_RE.findall(text)})
         refs = label_refs or text_refs[:3]
         mentioned = [r for r in text_refs if r not in refs][:5]
         for r in refs + mentioned:
@@ -173,7 +198,7 @@ def snapshot(out):
         matched = set()
         for p in prs:
             hay = p['title'] + ' ' + p['headRefName']
-            if (re.search(rf'\b{key}\b', hay) or any(re.search(rf'(?i)\bmmd[-_ ]?{r[4:]}\b', hay) for r in refs)
+            if (re.search(rf'\b{key}\b', hay) or any(re.search(rf'(?i)\b{re.escape(SB_PREFIX)}[-_ ]?{r[SB_NUM:]}\b', hay) for r in refs)
                     or re.search(rf'Jira binding:[^\n]*\b{key}\b', p.get('body') or '')):
                 matched.add(p['number'])
         prows = []
@@ -193,7 +218,7 @@ def snapshot(out):
         prbranches = {p['headRefName'] for p in prs}
         branches = []
         for r in refs:
-            pat = re.compile(rf'(?i)mmd[-_]?{r[4:]}(?!\d)')
+            pat = re.compile(rf'(?i){re.escape(SB_PREFIX)}[-_]?{r[SB_NUM:]}(?!\d)')
             for b in remote_branches():
                 if pat.search(b) and b not in prbranches:
                     ahead = sh('git', 'rev-list', '--count', f'origin/master..origin/{b}').stdout.strip()
@@ -209,17 +234,17 @@ def snapshot(out):
         elif branches:
             oracle, why = 'PARTIAL', 'own-ref code on a branch with NO PR: ' + ','.join(b['branch'] for b in branches)
         elif sub and all(s.get('closure_outcome') in ('superseded', 'duplicate') for s in sub):
-            oracle, why = 'SUPERSEDED', 'every named MMD ref is closed superseded/duplicate'
+            oracle, why = 'SUPERSEDED', f'every named {SB_PREFIX} ref is closed superseded/duplicate'
         elif sub and all(s.get('closure_outcome') == 'completed' for s in sub) and any(p.get('on_master') for p in prows):
-            oracle, why = 'BUILT', 'every named MMD ref closed completed and a tied PR is merged on master'
+            oracle, why = 'BUILT', f'every named {SB_PREFIX} ref closed completed and a tied PR is merged on master'
         rows.append({'key': key, 'type': f['issuetype']['name'], 'status': status, 'epic': f['parent']['key'],
                      'epic_summary': epics.get(f['parent']['key'], '')[:60], 'window': 'window' in labels,
-                     'slot_utc': utc(f.get('customfield_10237')), 'slot_end_utc': utc(f.get('customfield_10238')),
+                     'slot_utc': utc(f.get(CF_WIN_START)), 'slot_end_utc': utc(f.get(CF_WIN_END)),
                      'due': f.get('duedate'), 'summary': f['summary'], 'description': desc.strip()[:2200], 'labels': labels,
-                     'mmd_refs': refs, 'mentioned_refs': [sbc[r] for r in mentioned], 'substrate': sub, 'prs': prows, 'paths': pf,
+                     'sb_refs': refs, 'mentioned_refs': [sbc[r] for r in mentioned], 'substrate': sub, 'prs': prows, 'paths': pf,
                      'unpr_branches': branches,
                      'make_targets': [{'target': t, 'exists_on_master': t in targets} for t in sorted(set(MAKE_RE.findall(text)))],
-                     'other_repo_mentions': sorted({o.lower() for o in OTHER_RE.findall(text)}), 'oracle': oracle, 'oracle_why': why})
+                     'other_repo_mentions': sorted({o.lower() for o in OTHER_RE.findall(text)}) if OTHER_RE else [], 'oracle': oracle, 'oracle_why': why})
     rows.sort(key=lambda r: (r['slot_utc'] or '9999', r['key']))
     payload = {'stamp': stamp, 'source': 'readiness_facts.py snapshot', 'epics': epics, 'rows': rows}
     payload['input_hash'] = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
@@ -237,7 +262,7 @@ def evidence_text(r):
         L += [f"substrate {s['ref']}: '{s['title']}' lifecycle={s['lifecycle']} readiness={s['readiness']} closure={s['closure']} created={s.get('created')}",
               f"  scope: {s['scope'][:400]}", f"  success: {s['success'][:350]}"] + ([f"  latest journal: {s['latest']}"] if s.get('latest') else [])
     if not r['substrate']:
-        L.append('substrate: no MMD ref named')
+        L.append(f'substrate: no {SB_PREFIX} ref named')
     for s in r.get('mentioned_refs', []):
         L.append(f"mentioned (context, not this ticket's subject) {s['ref']}: '{s.get('title','')[:80]}' lifecycle={s.get('lifecycle')} closure={s.get('closure_outcome')}")
     for b in r.get('unpr_branches', []):
@@ -261,7 +286,10 @@ def evidence_text(r):
 def chunk(path, size):
     d = json.loads(pathlib.Path(path).read_text())
     rows = [r for r in d['rows'] if r['oracle'] != 'not_applicable']
-    rubric = (pathlib.Path(__file__).parent / 'RUBRIC.md').read_text()
+    # RUBRIC.md names the repository and the Substrate prefix as {repo_name} / {sb_prefix} placeholders.
+    rubric = ((pathlib.Path(__file__).parent / 'RUBRIC.md').read_text()
+              .replace('{repo_name}', pm_config.get('PM_REPO_NAME', required=True))
+              .replace('{sb_prefix}', SB_PREFIX))
     for n, i in enumerate(range(0, len(rows), size)):
         part = rows[i:i + size]
         inp = {'batch_id': f"readiness-{d['stamp']}-{n}", 'rubric': rubric,
@@ -279,20 +307,32 @@ def selftest(path):
         nonlocal fails
         print(('PASS ' if cond else 'FAIL ') + name)
         fails += not cond
-    r = by.get('ISSUE-423')
-    check('positive: ISSUE-423 (MMD-2376) ties #938 merged on master', bool(r) and any(p['number'] == 938 and p.get('on_master') for p in r['prs']))
-    r = by.get('ISSUE-345')
-    check('positive: ISSUE-345 oracle OPEN_PR via #946', bool(r) and r['oracle'] == 'OPEN_PR' and any(p['number'] == 946 for p in r['prs']))
-    r = by.get('ISSUE-501')
-    check('positive: ISSUE-501 supersession visible: a commit on config/tick_quarantine.yaml names MMD-2456',
-          bool(r) and any('MMD-2456' in c['subject'] or '#920' in c['subject'] for p in r['paths'] if 'tick_quarantine' in p['path'] for c in p['recent_commits']))
-    check('positive: ISSUE-501 oracle SUPERSEDED (MMD-2782 closed superseded)', bool(r) and r['oracle'] == 'SUPERSEDED')
-    r = by.get('ISSUE-450')
-    check('negative: ISSUE-450 (MMD-2659 explorer S1) has no PR merged on master', bool(r) and not any(p.get('on_master') for p in r['prs']))
-    r = by.get('ISSUE-246')
-    check('negative: ISSUE-246 is not BUILT (its PR #940 is open)', bool(r) and r['oracle'] != 'BUILT')
-    r = by.get('ISSUE-495')
-    check('positive: ISSUE-495 shows the no-PR branch xt/MMD-2353-stir', bool(r) and any(b['branch'] == 'xt/MMD-2353-stir' for b in r.get('unpr_branches', [])))
+    # Live controls are board facts, so they live in config (readiness_controls), one object each:
+    #   {"name", "key", and any of: "oracle", "oracle_not", "pr_on_master": n, "has_pr": n,
+    #    "no_pr_on_master": true, "path_contains" + "commit_terms": [..], "unpr_branch"}
+    # Every condition named in one control must hold. No controls configured -> nothing is proven.
+    controls = pm_config.get_data('PM_READINESS_CONTROLS', [])
+    if not controls:
+        print('SKIP no readiness_controls configured: the snapshot is unproven')
+    for c in controls:
+        r = by.get(c['key'])
+        ok = bool(r)
+        if ok and 'oracle' in c:
+            ok = r['oracle'] == c['oracle']
+        if ok and 'oracle_not' in c:
+            ok = r['oracle'] != c['oracle_not']
+        if ok and 'pr_on_master' in c:
+            ok = any(p['number'] == c['pr_on_master'] and p.get('on_master') for p in r['prs'])
+        if ok and 'has_pr' in c:
+            ok = any(p['number'] == c['has_pr'] for p in r['prs'])
+        if ok and c.get('no_pr_on_master'):
+            ok = not any(p.get('on_master') for p in r['prs'])
+        if ok and 'path_contains' in c:
+            ok = any(any(t in x['subject'] for t in c['commit_terms'])
+                     for p in r['paths'] if c['path_contains'] in p['path'] for x in p['recent_commits'])
+        if ok and 'unpr_branch' in c:
+            ok = any(b['branch'] == c['unpr_branch'] for b in r.get('unpr_branches', []))
+        check(c['name'], ok)
     print('controls failed:', fails)
     return 1 if fails else 0
 
@@ -305,6 +345,7 @@ if __name__ == '__main__':
     sp.add_parser('selftest').add_argument('path')
     ns = ap.parse_args()
     if ns.cmd == 'snapshot':
+        require_settings()
         snapshot(ns.out)
     elif ns.cmd == 'chunk':
         chunk(ns.path, ns.size)
