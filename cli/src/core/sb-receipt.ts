@@ -187,7 +187,7 @@ export function runReceipt(
     args: string[],
     env: NodeJS.ProcessEnv = process.env,
     options: ReceiptRunOptions = {},
-): { ok: boolean; error?: string } {
+): { ok: boolean; error?: string; stdout?: string } {
     const binary = resolveSbBinary(env);
     const result = spawnSync(binary, args, {
         encoding: 'utf8',
@@ -196,10 +196,12 @@ export function runReceipt(
         timeout: options.timeoutMs,
         killSignal: 'SIGKILL',
     });
-    if (result.status === 0) return { ok: true };
+    const stdout = result.stdout ?? '';
+    if (result.status === 0) return { ok: true, stdout };
     const timedOut = (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
     return {
         ok: false,
+        stdout,
         error: describeSbFailure({
             binary,
             status: result.status,

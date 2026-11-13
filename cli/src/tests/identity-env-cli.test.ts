@@ -453,7 +453,7 @@ describe('the Journal receipt warning names sb and its reason (CORE-2606)', () =
 
     it('reports success without inventing an error', () => {
         withSbStub('#!/bin/sh\nexit 0\n', () => {
-            expect(runSb(['journal', 'append', 'CORE-2606'])).toEqual({ ok: true });
+            expect(runSb(['journal', 'append', 'CORE-2606'])).toEqual({ ok: true, stdout: '' });
         });
     });
 });
