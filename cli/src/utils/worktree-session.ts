@@ -3287,7 +3287,10 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // CORE-2570: write xtrm.issue worktree binding when an Issue is bound.
     const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
     if (boundIssue) {
-        try { setWorktreeIssue(worktreePath, boundIssue); } catch { /* fail-open */ }
+        const binding = setWorktreeIssue(worktreePath, boundIssue);
+        // Fail-open: a missing binding must not block the launch, but it must
+        // not be invisible either.
+        if (!binding.ok) console.error(kleur.yellow(`  ⚠ xtrm.issue binding not written: ${binding.error}`));
     }
 
     // Remove worktree-local .beads/ entirely. bd inside the worktree resolves

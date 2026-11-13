@@ -995,6 +995,10 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     try {
         const tr = await installTrailerHook(projectRoot);
         if (tr.changed) console.log(kleur.dim('  • chained Substrate prepare-commit-msg into repo hooks'));
+        else if (tr.reason === 'substrate-hook-unresolved') {
+            console.log(kleur.yellow('  ⚠ trailer hook not installed: substrate prepare-commit-msg not found'));
+            console.log(kleur.dim('    set XTRM_SUBSTRATE_DIR to a substrate checkout; `xt hooks install-trailers` retries'));
+        }
     } catch (e) {
         console.log(kleur.yellow(`  ⚠ trailer hook install failed: ${e instanceof Error ? e.message : String(e)}`));
     }

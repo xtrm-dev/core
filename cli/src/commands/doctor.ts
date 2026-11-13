@@ -13,7 +13,7 @@ import { findProjectRoot } from '../utils/repo-root.js';
 import { applySettingsFixes, auditSettings, type SettingsAuditOutcome, type SettingsFinding } from '../core/settings-audit.js';
 import { defaultStateDbPath, getSbDoctorJson, getSbVersion, runSetupCheck, stateDbPresent, type SetupCheckReport } from '../core/substrate.js';
 import { migrationBlockedReason } from '../core/substrate-migration.js';
-import { isTrailerHookInstalled, resolveHooksDir } from '../core/trailer-hooks.js';
+import { trailerHookVerdict } from '../core/trailer-hooks.js';
 import { CLAUDE_CHANNEL_POLICY_JSON, defaultInstalledPluginsPath, defaultManagedSettingsPath, getClaudeChannelStatus, type ClaudeChannelStatus } from '../core/claude-channel-status.js';
 import { CLAUDE_ROUTE_BLOCK_KEY, getClaudeRouteStatus, type ClaudeRouteStatus } from '../core/claude-route.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
@@ -814,8 +814,9 @@ export function createDoctorCommand(): Command {
       renderClaudeRoute(claudeRoute);
       renderLegacyMigration(legacyMigration);
       // CORE-2570: trailer hook presence
-      const trailerInstalled = isTrailerHookInstalled(cwd);
-      trailerInstalled ? ok('Substrate trailer hook installed') : warn(`Substrate trailer hook missing in ${resolveHooksDir(cwd)} — run: xt hooks install-trailers`);
+      const trailer = trailerHookVerdict(cwd);
+      if (trailer.status === 'installed') ok(trailer.message);
+      else warn(`${trailer.message}${trailer.status === 'inert' ? ' (present but inert: the call names no file)' : ''}`);
       renderCatB(catB);
 
       section('Updates');
