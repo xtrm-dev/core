@@ -14,6 +14,7 @@ import {
   type HudColors,
   type HudEntry,
 } from "./hud.ts";
+import { stripTagMarkup } from "../../tests/strip-tag-markup.ts";
 
 /** Theme stub that records the tokens it was asked for. */
 function markTheme(): HudColors & { tokens: string[] } {
@@ -214,7 +215,7 @@ describe("HUD layout", () => {
       usage: { input: 42_000, output: 8_000, cacheRead: 86_000, cacheWrite: 0, cacheRate: 86 },
     }, 200, markTheme());
 
-    const plain = line.replace(/\*([^*]*)\*/g, "$1").replace(/<\/?[A-Za-z]+>/g, "").replace(/</g, "");
+    const plain = stripTagMarkup(line.replace(/\*([^*]*)\*/g, "$1"));
     expect(plain).toBe("core-xt-pi-colors ⎇ xt/ui-trim · deepseek-v4.1-flash high · 31.4%/1.0M · ↑42k ↓8k · 86% cache");
   });
 
