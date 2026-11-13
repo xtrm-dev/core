@@ -214,7 +214,7 @@ billion-context
 pi-claude-bridge@0.12.0
 ```
 
-The Claude Code bridge (`pi-claude-bridge`) is managed optional, pinned to `0.12.0`, and installs into the user Pi npm store (`<agentDir>/npm/node_modules/pi-claude-bridge`), where the specialists Claude Code route resolves its `src/index.ts` entry. Installing it does not enable that route: the route stays opt-in through `claude_bridge.enabled` in the specialists config, and Core never writes that setting. The `claude` CLI is optional at install; `xt doctor` warns when it is missing because the route then refuses at dispatch, and reports the running Node against the package's `>= 20` floor.
+The Claude Code bridge (`pi-claude-bridge`) is managed optional, pinned to `0.12.0`, and installs into the user Pi npm store (`<agentDir>/npm/node_modules/pi-claude-bridge`), where the specialists Claude Code route resolves its `src/index.ts` entry. Installing it does not enable that route: the route stays opt-in through `claude_bridge.enabled` in the specialists config, and Core writes that setting only through `xt claude-route enable`, which requires explicit operator consent after naming the billing implication (CORE-2632, [docs/xt-claude-route.md](docs/xt-claude-route.md)). The `claude` CLI is optional at install; `xt doctor` warns when it is missing because the route then refuses at dispatch, and reports the running Node against the package's `>= 20` floor.
 
 The live managed registry in Core is authority for exact install selectors. Local Core development may load `packages/pi-extensions` from the checkout, but the portable managed identity is `npm:@jaggerxtrm/pi-extensions`—never a developer-specific absolute path.
 
@@ -376,6 +376,7 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 | [docs/worktrees.md](docs/worktrees.md) | `xt` worktrees, attach/end/reap and isolation |
 | [docs/xt-pi-role.md](docs/xt-pi-role.md) | role launcher and Specialist behavior |
 | [docs/xt-claude-channels.md](docs/xt-claude-channels.md) | `xt claude` channel wake and the managed settings it needs |
+| [docs/xt-claude-route.md](docs/xt-claude-route.md) | `xt claude-route` consent-gated Claude Code route switch |
 | [docs/xtrm-ui.md](docs/xtrm-ui.md) | XTRM Pi UI/themes/tool rendering |
 | [docs/pi-extensions.md](docs/pi-extensions.md) | Pi extension/runtime integration (incl. `substrate-suggest` and `skill-suggest` Jev suggestion extensions) |
 | [docs/skills.md](docs/skills.md) | current skills-v4 catalog and tier model |
