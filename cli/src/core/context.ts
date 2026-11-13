@@ -56,14 +56,6 @@ export function resolveConfProjectDir(): string {
     return path.join(base, name);
 }
 
-// CORE-2630: pass `cwd` explicitly so Conf does not fall back to env-paths,
-// which caches os.homedir() at module load and freezes the store location.
-// Kept as a named alias because it is what callers say they want (the directory
-// Conf uses), and the test asserts the two never diverge.
-export function resolveConfCwd(): string {
-    return resolveConfProjectDir();
-}
-
 function getConfig(): Conf<ConfigShape> {
     // The cache key is the resolved directory itself, so every input that moves
     // the store (HOME, XDG_CONFIG_HOME, APPDATA, the platform base) also

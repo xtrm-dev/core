@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getContext, resolveConfCwd, resolveConfProjectDir } from '../core/context.js';
+import { getContext, resolveConfProjectDir } from '../core/context.js';
 import { ensureEnvFile, getEnvFilePath, getConfigDir } from '../utils/env-manager.js';
 
 // CORE-2630: config paths must follow HOME even after the CLI module graph has
@@ -76,7 +78,19 @@ describe('HOME is resolved lazily (CORE-2630)', () => {
     await getContext({ createMissingDirs: true, projectRoot: firstHome });
     // The writer's real path, not a second copy of the same expression.
     expect(await fs.pathExists(path.join(resolveConfProjectDir(), 'config.json'))).toBe(true);
-    expect(resolveConfCwd()).toBe(resolveConfProjectDir());
+  });
+
+  // Explicit rather than incidental: the cache key is the resolved directory, so
+  // the same HOME must reuse the instance and a changed HOME must not.
+  it('reuses the cached store for one HOME and rebuilds it when HOME changes', async () => {
+    process.env.HOME = firstHome;
+    const a = await getContext({ createMissingDirs: true, projectRoot: firstHome });
+    const b = await getContext({ createMissingDirs: true, projectRoot: firstHome });
+    expect(a.config).toBe(b.config);
+
+    process.env.HOME = secondHome;
+    const c = await getContext({ createMissingDirs: true, projectRoot: secondHome });
+    expect(c.config).not.toBe(a.config);
   });
 });
 
@@ -91,6 +105,10 @@ describe('the config directory mirrors env-paths per platform (CORE-2630)', () =
     previousHome = process.env.HOME;
     previousXdg = process.env.XDG_CONFIG_HOME;
     previousAppData = process.env.APPDATA;
+    // Stub the home itself: on Windows os.homedir() reads USERPROFILE and
+    // ignores HOME, so relying on the real value would make these cases
+    // POSIX-only while looking platform-independent.
+    vi.spyOn(os, 'homedir').mockReturnValue('/home/tester');
     process.env.HOME = '/home/tester';
     delete process.env.XDG_CONFIG_HOME;
     delete process.env.APPDATA;
@@ -138,7 +156,10 @@ describe('the config directory mirrors env-paths per platform (CORE-2630)', () =
     // env-paths captures os.homedir() at module load, so asking it in this
     // process would compare a live resolver with a frozen module and depend on
     // import order. A child process with the same environment is the real check.
-    const script = "import('env-paths').then(m => process.stdout.write(m.default('xtrm-cli', { suffix: 'nodejs' }).config))";
+    // Resolve the specifier here: the child's cwd may be the repo root or another
+    // package, where a bare 'env-paths' would not resolve.
+    const entry = createRequire(import.meta.url).resolve('env-paths');
+    const script = `import('${pathToFileURL(entry).href}').then(m => process.stdout.write(m.default('xtrm-cli', { suffix: 'nodejs' }).config))`;
     const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
       encoding: 'utf8',
       env: { ...process.env, HOME: '/home/tester', XDG_CONFIG_HOME: '', APPDATA: '' },
