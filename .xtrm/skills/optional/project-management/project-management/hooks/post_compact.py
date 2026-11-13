@@ -63,10 +63,17 @@ def step0(role: str, ref: str | None) -> str:
 def step1(role: str, ref: str | None, cwd: str, scope_ok: bool) -> str:
     h, ttl = common.holder(), common.claim_ttl_ms()
     if ref:
+        # A manager's claim lives on manager_issue when the project sets one (the bound issue may be the epic, which
+        # carries no claim); everyone else renews the issue bound to the worktree.
+        cref = ref
+        if role == "manager" and scope_ok:
+            mref, source = common.manager_ref()
+            if mref and source.startswith("manager_issue"):
+                cref = mref
         return ("1. Work item %s: sb issue resume %s; sb journal latest %s --kind handoff; renew the claim: "
                 "sb issue renew %s --holder %s --ttl-ms %d. Claim again only if renew reports the lease expired "
                 "(claim-expired or no-claim): sb issue claim %s --holder %s --ttl-ms %d."
-                % (ref, ref, ref, ref, h, ttl, ref, h, ttl))
+                % (ref, ref, ref, cref, h, ttl, cref, h, ttl))
     if role == "manager":
         mref, source = common.manager_ref() if scope_ok else (None, "")
         if mref:

@@ -191,6 +191,19 @@ def test_compact_output_renew_ttl_and_extra(env, monkeypatch):
     assert "SESSION START" in start and "sb issue renew" not in start and "FLEET RULES" not in start
 
 
+def test_bound_manager_renews_manager_issue(env, monkeypatch):
+    # The epic is bound to the worktree but carries no claim; the manager's claim lives on manager_issue.
+    env.role_file("manager")
+    env.set(manager_issue="EP-5")
+    monkeypatch.setenv("SUBSTRATE_HOLDER", "h1")
+    (env.wt / ".substrate-issue").write_text("EP-1\n")
+    out = compact(env)
+    assert "sb issue resume EP-1" in out and "sb issue renew EP-5 --holder h1" in out
+    env.role_file("lead")
+    out = compact(env)
+    assert "sb issue renew EP-1 --holder h1" in out
+
+
 def test_unbound_manager_uses_manager_issue_then_epic(env):
     env.role_file("manager")
     env.set(manager_issue="EP-4")
