@@ -84442,9 +84442,15 @@ async function runUserScopeMaintenance(packageRoot, repoRoot, opts) {
   try {
     const status2 = ghShimStatus({ home: process.env.HOME });
     if (status2.installed && !status2.current) {
-      installGhShim({ home: process.env.HOME });
+      const shim = installGhShim({ home: process.env.HOME });
+      if (!shim.ok) {
+        console.log(kleur_default.yellow(`  gh shim: not refreshed (${shim.reason ?? "unknown reason"})`));
+      } else {
+        for (const warning of shim.warnings) console.log(kleur_default.yellow(`  gh shim: ${warning}`));
+      }
     }
   } catch (error51) {
+    console.log(kleur_default.yellow(`  gh shim: refresh failed (${error51 instanceof Error ? error51.message : String(error51)})`));
   }
   if (shouldUseGlobalSkills(repoRoot)) {
     await printSkillsMigrationNudge(repoRoot);

@@ -838,21 +838,31 @@ describe('xtrm update', () => {
   });
 });
 
+// A default return keeps the pre-existing update tests green: they never reach
+// this module, and an undefined result would throw on the first property read.
 vi.mock('../core/gh-shim.js', () => ({
-  ghShimStatus: vi.fn(),
-  installGhShim: vi.fn(),
+  ghShimStatus: vi.fn(() => ({ path: '', installed: false, current: false, realGh: null, recordedRealGh: null, pathOrderOk: false })),
+  installGhShim: vi.fn(() => ({ ok: true, path: '', realGh: null, warnings: [] })),
 }));
 
 describe('CORE-2633 gh shim refresh in update', () => {
+  const created: string[] = [];
+  afterEach(() => {
+    for (const dir of created.splice(0)) fs.removeSync(dir);
+  });
+
   it('reinstalls a stale shim and leaves a current one alone', async () => {
     const { runUserScopeMaintenance } = await import('../commands/update.js');
     const { ghShimStatus, installGhShim } = await import('../core/gh-shim.js');
     const ghShimStatusMock = ghShimStatus as any;
     const installGhShimMock = installGhShim as any;
 
-    fs.ensureDirSync('/tmp/pkg');
-    fs.writeJsonSync('/tmp/pkg/package.json', { version: '0.0.0' });
-    resolvePackageRootMock.mockReturnValue('/tmp/pkg');
+    // A unique directory per run, removed afterwards: the suite's tmp-leak
+    // guard fails the whole `test` job on a leftover entry (CORE-2633 review).
+    const pkgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-update-pkg-'));
+    created.push(pkgDir);
+    fs.writeJsonSync(path.join(pkgDir, 'package.json'), { version: '0.0.0' });
+    resolvePackageRootMock.mockReturnValue(pkgDir);
     planSubstrateMigrationMock.mockResolvedValue({ needed: false });
     runDependencyMaintenanceMock.mockResolvedValue({});
     ensureServiceSkillsMock.mockResolvedValue(undefined);
@@ -872,19 +882,19 @@ describe('CORE-2633 gh shim refresh in update', () => {
     // stale
     ghShimStatusMock.mockReturnValue({ installed: true, current: false });
     installGhShimMock.mockReturnValue({ ok: true });
-    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
     expect(installGhShimMock).toHaveBeenCalled();
 
     // current
     installGhShimMock.mockClear();
     ghShimStatusMock.mockReturnValue({ installed: true, current: true });
-    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
     expect(installGhShimMock).not.toHaveBeenCalled();
 
     // non-shim (not installed) never overwritten
     installGhShimMock.mockClear();
     ghShimStatusMock.mockReturnValue({ installed: false, current: false });
-    await runUserScopeMaintenance('/tmp/pkg', '/tmp/repo', { apply: true } as any);
+    await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
     expect(installGhShimMock).not.toHaveBeenCalled();
   });
 });

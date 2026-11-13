@@ -120,14 +120,21 @@ export async function runUserScopeMaintenance(packageRoot: string, repoRoot: str
         await reconcileGlobalPiHooks();
     }
     // Refresh a stale installed gh shim (CORE-2633): xt update detects it and
-    // reinstalls; doctor passes afterwards. Fail-open: never block the update.
+    // reinstalls; doctor passes afterwards. Fail-open: never block the update,
+    // but never hide the outcome either — a stale shim that stays stale is a
+    // finding the operator must see, not a silent no-op.
     try {
         const status = ghShimStatus({ home: process.env.HOME });
         if (status.installed && !status.current) {
-            installGhShim({ home: process.env.HOME });
+            const shim = installGhShim({ home: process.env.HOME });
+            if (!shim.ok) {
+                console.log(kleur.yellow(`  gh shim: not refreshed (${shim.reason ?? 'unknown reason'})`));
+            } else {
+                for (const warning of shim.warnings) console.log(kleur.yellow(`  gh shim: ${warning}`));
+            }
         }
     } catch (error) {
-        // ignore
+        console.log(kleur.yellow(`  gh shim: refresh failed (${error instanceof Error ? error.message : String(error)})`));
     }
     if (shouldUseGlobalSkills(repoRoot)) {
         await printSkillsMigrationNudge(repoRoot);
