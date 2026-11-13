@@ -456,6 +456,8 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         holder?: string;           // holder name when held
         activationId?: string | null; // activation on the live claim
         env?: NodeJS.ProcessEnv;   // the process env the linker sees
+        flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
+        showFails?: boolean;       // the claim read fails outright
     } = {}) {
         const calls: { kind: string; argv: string[] }[] = [];
         const { runGit } = gitFake({
@@ -477,15 +479,18 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
                 const kind = args[1]; // show | attach | dispatch | allocate
                 calls.push({ kind, argv: [...args] });
                 if (kind === 'show') {
-                    if (isHeld) {
-                        return {
-                            ok: true,
-                            stdout: JSON.stringify({
-                                claim: { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null },
-                            }),
-                        };
+                    // The real sb answer: {schema, command, ok, data: {claim}}.
+                    // An earlier version read the top level and saw null forever.
+                    const claim = isHeld
+                        ? { holder: holderName, activationId: overrides.activationId ?? null, releasedAt: null }
+                        : null;
+                    const payload = overrides.flatClaim
+                        ? { claim }
+                        : { schema: 'substrate-cli/v1', command: 'issue.show', ok: true, data: { claim } };
+                    if (overrides.showFails) {
+                        return { ok: false, error: 'sb exited 1: no store', stdout: '' };
                     }
-                    return { ok: true, stdout: JSON.stringify({ claim: null }) };
+                    return { ok: true, stdout: JSON.stringify(payload) };
                 }
                 if (kind === 'attach') {
                     const err = attachErrors[attachIndex++];
@@ -576,6 +581,45 @@ describe('linkCreatedPr recovery on no_receipt (CORE-2631)', () => {
         expect(dispatches).toHaveLength(1);
         expect(dispatches[0].argv).not.toContain('--participant');
         expect(dispatches[0].argv).not.toContain('someone-else');
+    });
+
+    // Regression for the FAIL review: the claim lives at data.claim in sb's
+    // envelope, and reading the top level made every Issue look unclaimed.
+    it('reads the claim from the sb envelope (data.claim), not the top level', () => {
+        const { result, calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--participant');
+        expect(dispatch?.argv).toContain('pi152-core');
+    });
+
+    it('still accepts a flat {claim} answer', () => {
+        const { calls } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            held: true,
+            holder: 'pi152-core',
+            flatClaim: true,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        const dispatch = calls.find((c) => c.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--participant');
+    });
+
+    it('says the claim could not be read when the read fails', () => {
+        const { result } = recoveryDeps({
+            attachErrors: ['no_receipt: no receipt for this issue'],
+            showFails: true,
+            dispatchOk: false,
+            dispatchError: 'sb exited 1: participant is required (anti-steal)',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/claim could not be read/);
     });
 
     it('passes --activation when the live claim carries one', () => {

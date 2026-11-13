@@ -346,6 +346,36 @@ export function linkCreatedPr(stdout: string | null | undefined, argv: string[],
     }
 }
 
+interface ClaimProjection {
+    holder?: string | null;
+    activationId?: string | null;
+    releasedAt?: string | null;
+}
+
+/**
+ * The claim from `sb issue show <ref> --json`, accepting both the real envelope
+ * (`{…, data: {claim}}`) and a flat `{claim}`. Returns null when the answer is not
+ * readable, so the caller can tell "no claim" from "could not read the claim".
+ */
+function parseClaimPayload(stdout: string): ClaimProjection | null {
+    // Tolerant of a non-JSON preamble: a strict parse would read a live-held
+    // Issue as unclaimed.
+    const start = stdout.indexOf('{');
+    if (start < 0) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(stdout.slice(start));
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const envelope = parsed as { claim?: ClaimProjection | null; data?: { claim?: ClaimProjection | null } | null };
+    const claim = envelope.data && typeof envelope.data === 'object' ? envelope.data.claim : envelope.claim;
+    if (claim === null) return {};
+    if (!claim || typeof claim !== 'object') return null;
+    return claim;
+}
+
 function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhPrLinkDeps): GhPrLinkResult {
     const env = deps.env ?? process.env;
     const cwd = deps.cwd ?? process.cwd();
@@ -423,27 +453,26 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // would pass sb's anti-steal check by construction and attribute this
         // session's work to whoever holds the claim. When the two differ, the flag
         // is omitted and sb refuses with its own message — one honest warning.
+        //
+        // sb wraps every answer as {schema, command, ok, data}, and the claim lives
+        // at data.claim. Reading the top level (an earlier version did) silently
+        // found nothing, so every Issue looked unclaimed and a genuinely held one
+        // lost its --participant. Both shapes are accepted because the unit tests
+        // and older callers build the flat one.
         let claimHolder: string | null = null;
         let claimActivation: string | null = null;
+        let claimReadFailed = false;
         const showArgv = ['issue', 'show', ref, '--json'];
         const showResult = run(showArgv, env, recoveryBudget());
-        if (showResult.ok && showResult.stdout) {
-            // Tolerant parse: sb may print a non-JSON preamble, and a strict
-            // parse would read a live-held Issue as unclaimed.
-            const start = showResult.stdout.indexOf('{');
-            if (start >= 0) {
-                try {
-                    const parsed = JSON.parse(showResult.stdout.slice(start)) as {
-                        claim?: { holder?: string | null; activationId?: string | null; releasedAt?: string | null } | null;
-                    };
-                    const claim = parsed?.claim;
-                    if (claim && claim.holder && !claim.releasedAt) {
-                        claimHolder = claim.holder;
-                        claimActivation = claim.activationId ?? null;
-                    }
-                } catch {
-                    // Unparseable: treat as unclaimed (omit --participant).
-                }
+        if (!showResult.ok) {
+            claimReadFailed = true;
+        } else {
+            const parsed = parseClaimPayload(showResult.stdout ?? '');
+            if (!parsed) {
+                claimReadFailed = true;
+            } else if (parsed.holder && !parsed.releasedAt) {
+                claimHolder = parsed.holder;
+                claimActivation = parsed.activationId ?? null;
             }
         }
         const ownHolder = (env.SUBSTRATE_HOLDER ?? '').trim();
@@ -461,18 +490,21 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // it, but tests may omit it.
         if (deps.cwd) dispatchArgs.push('--workspace', cwd);
         const dispatchArgv = withReceiptProject(dispatchArgs, project);
+        if (recoveryBudget() <= 0) return outOfTime();
         const td = run(dispatchArgv, env, recoveryBudget());
         if (!td.ok) {
+            const why = claimReadFailed ? ' (the claim could not be read, so no participant was sent)' : '';
             return {
                 attached: false,
                 ref,
                 canonical: pr.canonical,
                 argv: attachArgv,
-                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(td.error ?? 'sb gave no reason')}`,
+                warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed${why}: ${oneLine(td.error ?? 'sb gave no reason')}`,
             };
         }
         // Allocate: create the receipt from the binding.
         const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
+        if (recoveryBudget() <= 0) return outOfTime();
         const ta = run(allocateArgv, env, recoveryBudget());
         if (!ta.ok) {
             return {
@@ -484,6 +516,7 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
             };
         }
         // Retry attach once.
+        if (recoveryBudget() <= 0) return outOfTime();
         const t1b = run(attachArgv, env, recoveryBudget());
         if (!t1b.ok) {
             return {
