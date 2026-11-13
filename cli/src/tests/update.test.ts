@@ -922,6 +922,20 @@ describe('CORE-2633 gh shim refresh in update', () => {
       await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
       expect(captured.join('\n')).toContain('gh shim: refresh failed (EACCES)');
 
+      // a wrong PATH order is reported when the install did not already warn
+      installGhShimMock.mockClear();
+      captured.length = 0;
+      ghShimStatusMock.mockReturnValue(status({ current: true, pathOrderOk: false }));
+      await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
+      expect(captured.join('\n')).toContain('will not be used');
+
+      // ...and stays silent when no real gh exists, because the refusal says it
+      captured.length = 0;
+      ghShimStatusMock.mockReturnValue(status({ current: true, pathOrderOk: false, realGh: null }));
+      installGhShimMock.mockReturnValue({ ok: false, path: '', realGh: null, reason: 'no real gh on PATH', warnings: [] });
+      await runUserScopeMaintenance(pkgDir, '/tmp/repo', { apply: true } as any);
+      expect(captured.join('\n')).not.toContain('will not be used');
+
       // dry run must not write, even when the shim is stale
       installGhShimMock.mockClear();
       installGhShimMock.mockReturnValue(okShim);
