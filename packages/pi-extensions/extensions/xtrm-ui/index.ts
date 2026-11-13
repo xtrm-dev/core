@@ -1304,7 +1304,7 @@ export function renderExternalToolLines(
   // Blank filtering is per-section so the code/result boundary survives it:
   // codeCount indexes pre-filter lines, and the frame needs the post-filter
   // code length to keep the result budget off the program lines.
-  const rtrimmed = lines.map((line) => line.replace(/\s+$/u, ""));
+  const rtrimmed = lines.map((line) => line.trimEnd());
   const codeSection = codeCount > 0 ? rtrimmed.slice(0, codeCount) : [];
   const resultSection = codeCount > 0 ? rtrimmed.slice(codeCount) : rtrimmed;
   const keptCode = codeSection.filter((line) => !isBlankRenderedLine(line));
@@ -2547,12 +2547,12 @@ const SHELL_WORD = String.raw`(?:"[^"]*"|'[^']*'|\$\([^)]*\)|[^\s;&|]+)`;
 /** Setup a shell call runs before its real command. Only ever trimmed for display. */
 const SETUP_PREFIXES = [
   new RegExp(String.raw`^\s*cd(?:\s+${SHELL_WORD})?${SHELL_SEP}`),
-  new RegExp(String.raw`^\s*export\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?(?:\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?)*${SHELL_SEP}`),
+  new RegExp(String.raw`^\s*export\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?(?:\s+[A-Za-z_]\w*(?:=${SHELL_WORD}?)?){0,20}${SHELL_SEP}`),
   new RegExp(String.raw`^\s*[A-Za-z_]\w*=${SHELL_WORD}?(?:${SHELL_SEP}|\s+)`),
-  new RegExp(String.raw`^\s*set\s+[-+]\w+(?:\s+[-+]?\w+)*${SHELL_SEP}`),
-  new RegExp(String.raw`^\s*(?:source|\.)\s+${SHELL_WORD}(?:\s+${SHELL_WORD})*?${SHELL_SEP}`),
-  /^\s*nice(?:\s+-n\s*-?\d+|\s+-\S+)*\s+/,
-  /^\s*ionice(?:\s+-[cnp]\s*\d+|\s+-\S+)*\s+/,
+  new RegExp(String.raw`^\s*set\s+[-+]\w+(?:\s+[-+]?\w+){0,20}${SHELL_SEP}`),
+  new RegExp(String.raw`^\s*(?:source|\.)\s+${SHELL_WORD}(?:\s+${SHELL_WORD}){0,20}?${SHELL_SEP}`),
+  /^\s*nice(?:\s+-n\s*-?\d+|\s+-\S+){0,20}\s+/,
+  /^\s*ionice(?:\s+-[cnp]\s*\d+|\s+-\S+){0,20}\s+/,
   /^\s*timeout(?:\s+-[ks]\s+\S+|\s+-\S+){0,20}\s+\d[\d.]*[smhd]?\s+/,
 ];
 
