@@ -75,15 +75,20 @@ Messages that must reach a person-in-charge (operator comments the board helper 
 the lane's alarms) are addressed by role, never by a stored address: a stored address goes stale the day its
 session ends. A session has one role, `manager`, `lead`, `board_helper` or `worker`, resolved by one module,
 `scripts/pm_role.py`, for every consumer (`route_target.py`, the session hooks, `pm_check.py`):
-1. **The role file:** a one-word `.pm-role` in the session's worktree root. Whoever launches the session writes it
-   right after launch (`references/launching.md`, "Role file"):
-   `python3 <pack>/project-management/scripts/pm_role.py set <role> --dir <worktree>`. With a role file the name is free.
-   CORE-2702 tracks an `xt` launch flag that will write it; until then the launcher writes it.
-2. **Else the session name** against the `route_roles` patterns (defaults below).
-3. **Else `worker`.** A worker gets no role file, or one that says `worker`.
+1. **The role file:** a one-word `.pm-role` in the session's worktree root, an explicit override. Needed only when the
+   launch does not say the role: a session launched under the shared `project-manager` role, or one from before the
+   role split. Write it with `python3 <pack>/project-management/scripts/pm_session.py init --role <role> --dir <worktree>`
+   (`references/launching.md`, "Session kit").
+2. **Else the launch role:** the specialist role of `xt claude|pi --role <name>`, which the session sees as
+   `XTMUX_AGENT_ROLE` and the agent host reports as the session's `role`. Defaults: `manager` -> manager, `lead` -> lead,
+   `board-audit-runner` (or `board-helper`) -> board_helper, `worker` -> worker; the `launch_roles` setting adds or
+   changes entries (`{"chief": "manager"}`). A role not listed (`project-manager`) says nothing.
+3. **Else the session name** against the `route_roles` patterns (defaults below).
+4. **Else `worker`.**
 
 `<pack>` is the pack directory, for example `~/.xtrm/skills/optional/project-management`. Check a session with
-`pm_role.py show [--dir <worktree>] [--name <session name>]`; it prints the role and its source (`file`, `name`, `default`).
+`pm_role.py show [--dir <worktree>] [--name <session name>] [--launch-role <role>]`; it prints the role and its source
+(`file`, `launch`, `name`, `default`). `pm_session.py show` prints the same line with the rest of the session kit.
 
 | Role | Default name pattern (fallback) | Live sessions |
 |---|---|---|
@@ -91,8 +96,8 @@ session ends. A session has one role, `manager`, `lead`, `board_helper` or `work
 | `lead` | `*-lead`, optionally `-<n>`; legacy `*-coord` | several, one per epic and area |
 | `board_helper` | `*board-helper*` | exactly one |
 
-Without a role file, a session whose name matches a pattern takes that role: give a worker so named a role file
-that says `worker`. While two managers are live (a handover, `references/handover.md`), the one holding the claim on
+Without a role file or a mapped launch role, a session whose name matches a pattern takes that role: launch a
+worker so named with `--role worker`. While two managers are live (a handover, `references/handover.md`), the one holding the claim on
 `manager_issue` (default: the epic) keeps the role until it releases the claim.
 
 `scripts/route_target.py` resolves roles at send time against the live sessions of the xtrm agent host
@@ -115,8 +120,21 @@ Who gets what:
   session holds each of those two roles. Leads are not checked.
 
 Change the patterns per project with `route_roles` (for example while sessions launched before the role file still
-run: `{"manager": "*wed11-coord", "board_helper": "*r8ux"}`), and set them back once the roles are relaunched. A role
-file always wins over the patterns.
+run: `{"manager": "*day11-coord", "board_helper": "*x8yz"}`), and set them back once the roles are relaunched. A role
+file and a mapped launch role always win over the patterns.
+
+### Common goal
+
+Every session of a project serves one common goal beyond its own issue (SKILL.md rule 56). The pack does not hold the
+goal's text; it points at where it lives and `pm_session.py show|goal` prints the pointers, which the post-compact hook
+repeats for the manager and the leads:
+- `goal_doc`: the goal document, relative to `repo_dir` (for example a PRD); its opening paragraph is quoted.
+- `epic`: the project's Substrate epic; its SUCCESS is shown with `pm_session.py goal`.
+- `jira_epic`: the Jira epic the operator reads.
+- `goal_refs`: any further pointers (a roadmap URL, a second document).
+
+Use one of each. When the project has several stale epics, the manager writes one current Substrate epic and one
+current Jira epic from the goal document, sets them here, and relates or closes the old ones.
 
 ## 3. Settings
 
@@ -138,7 +156,9 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_JIRA_LABEL` | `jira_label` | project label on theme Epics | doc, BA | `proj-project` |
 | `PM_SB_PREFIX` | `sb_prefix` | Substrate issue prefix of the project | PM, BA, TK | `SB` |
 | `PM_SB_PROJECT_ID` | `sb_project_id` | Substrate project id (default `prj_<prefix in lower case>`) | optional | `prj_sb` |
-| `PM_EPIC` | `epic` | Substrate ref of the project epic | BA, doc | `SB-100` |
+| `PM_EPIC` | `epic` | Substrate ref of the project epic; part of the common goal | BA, hooks, doc | `SB-100` |
+| `PM_JIRA_EPIC` | `jira_epic` | Jira key of the project's epic; part of the common goal (board-audit also reads it) | BA, hooks | `PROJ-1` |
+| `PM_GOAL_DOC` | `goal_doc` | the common goal's document, relative to `repo_dir` or absolute (for example a PRD) | hooks, doc | `docs/product/PRD.md` |
 | `PM_REPO_DIR` | `repo_dir` | local checkout of the delivery repository; its parent holds sibling checkouts | PM, BA | `~/projects/example-repo` |
 | `PM_REPO_SLUG` | `repo_slug` | GitHub `owner/repo` of the delivery repository | PM, BA | `example-org/example-repo` |
 | `PM_REPO_NAME` | `repo_name` | short repo name (`<name>#<n>`, service-registry path); default: the slug's repo part | BA (PM optional) | `example-repo` |
@@ -172,6 +192,8 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_POST_COMPACT_NUDGE` | `post_compact_nudge` | bool | the post-compact hook also types `post_compact_nudge_text` into `$TMUX_PANE` (default `false`) | hooks |
 | `PM_CHECKPOINT_THRESHOLDS` | `checkpoint_thresholds` | `[fraction]` | context fractions of the EARLY and FINAL checkpoint warnings (default `[0.70, 0.85]`) | hooks |
 | `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
+| `PM_GOAL_REFS` | `goal_refs` | `[text]` | further pointers to the common goal, printed as they are | hooks, doc |
+| `PM_LAUNCH_ROLES` | `launch_roles` | `{launch role: role}` | launch role (specialist name) -> pack role, merged over the defaults (`manager`, `lead`, `worker`, `board-audit-runner`) | all |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |

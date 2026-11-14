@@ -5,7 +5,7 @@ Usage: pm_check.py [--skill project-management|board-audit|status-board-keeper|a
        pm_check.py --hooks
 
 Prints one line per setting the chosen skill(s) read: OK (with its source, env or config) or MISSING; with
---all-settings also every optional setting the setup docs name. Then this session's role (pm_role: role file, name,
+--all-settings also every optional setting the setup docs name. Then this session's role (pm_role: role file, launch role, name,
 or default) and the team: every live session of the project by role (manager, leads, board helper, workers/other),
 with a warning when the live manager does not hold the claim on manager_issue. Values are not printed, so the output
 is safe to paste. Exit 0 when every required setting is present, 1 otherwise.
@@ -209,11 +209,8 @@ def clashes() -> int:
 
 
 def role_line() -> tuple[str, str]:
-    """This session's role by pm_role.current() and where it came from: file, name or default."""
-    role = pm_role.current()
-    if pm_role.declared(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()):
-        return role, "file"
-    return role, ("name" if role != "worker" else "default")
+    """This session's role by pm_role and where it came from: file, launch, name or default."""
+    return pm_role.current_source()
 
 
 def check_routes() -> int:

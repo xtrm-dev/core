@@ -3,8 +3,8 @@
 
 A route target written into config or code goes stale the day its session ends (2026-11-12: the lane forwarded to
 a coordinator socket that no longer existed, and 26 operator messages waited a day). Each session's role is resolved
-at send time by pm_role (its worktree's role file .pm-role, else its name against the project's route_roles
-patterns, else worker), against the live session registry of the xtrm agent host (GET /v1/sessions on loopback).
+at send time by pm_role (its worktree's role file .pm-role, else its launch role, else its name against the
+project's route_roles patterns, else worker), against the live session registry of the xtrm agent host (GET /v1/sessions on loopback).
 
 Roles: manager (one per project), lead (one per workstream; several are normal), board_helper (one per project).
 While two managers are live (a handover) the holder of the claim on manager_issue (default: the epic) keeps the role.
@@ -44,13 +44,14 @@ class RouteError(Exception):
 
 
 def roles() -> dict:
-    """Role -> its name patterns (for messages). The role itself comes from pm_role: role file, then patterns."""
+    """Role -> its name patterns (for messages). The role itself comes from pm_role: role file, launch role, patterns."""
     return {r: ", ".join(p) for r, p in pm_role.patterns().items()}
 
 
 def session_role(s: dict) -> str:
-    """The session's role by the shared resolver: its worktree's role file, else its address/name patterns."""
-    return pm_role.declared(s.get("cwd")) or pm_role.by_name(address(s), s.get("name")) or "worker"
+    """The session's role by the shared resolver: role file, else launch role (host record), else name patterns."""
+    return (pm_role.declared(s.get("cwd")) or pm_role.by_launch(s.get("role"))
+            or pm_role.by_name(address(s), s.get("name")) or "worker")
 
 
 def claim_holder(ref: str | None) -> str | None:
@@ -148,7 +149,8 @@ def resolve(role: str, live: list[dict] | None = None) -> dict:
             found = held
     if not found:
         raise RouteError(3, f"no live session of this project matches {role} pattern {pattern!r}; "
-                            f"write its role file (pm_role.py set {role}) or match the pattern (references/setup.md, \"Routing roles\")")
+                            f"launch it with its role, write its role file (pm_session.py init --role {role}) or match the pattern "
+                            f"(references/setup.md, \"Routing roles\")")
     if len(found) > 1:
         hint = ("; name the lead you mean" if role not in SINGLE_ROLES else "; exactly one may hold the role")
         raise RouteError(4, f"{len(found)} live sessions match {role} pattern {pattern!r}: "
