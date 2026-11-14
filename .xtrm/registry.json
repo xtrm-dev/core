@@ -973,7 +973,7 @@
           "version": "0.15.3"
         },
         "project-management/journal-search/scripts/jsearch.py": {
-          "hash": "37b692df233dc515c9087c69edee0257ac6ce99ccf66fccbe79c4b9a3737d56f",
+          "hash": "7f8b8c689c4c8a0100558706dd61b131c96919bab20e22f5594182bbb2465de8",
           "version": "0.15.3"
         },
         "project-management/journal-search/SKILL.md": {
@@ -982,10 +982,6 @@
         },
         "project-management/PACK.json": {
           "hash": "910727adbb81c660b82b7b92de566862de16a8ba29a80f5daa226755d8027e3a",
-          "version": "0.15.3"
-        },
-        "project-management/project-management/.claude/tdd-guard/data/test.json": {
-          "hash": "290656a4d9cd87ce14741759781b4f579ccb7cc987fe6848d7257b852805095b",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/action_gate.py": {
@@ -1017,7 +1013,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
-          "hash": "10595fc203db0c34a9c32015757d1eb39fe0f659ade480ef0f81d289762a2f24",
+          "hash": "b810716d6ae8027eb61973db1e38a88a1238cb4a36ad5090567dd1c0c47d3f6f",
           "version": "0.15.3"
         },
         "project-management/project-management/references/jira.md": {
@@ -1025,7 +1021,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "d7db3e698251d0fd55441f9761ecef1a822d0bc06914cc53f982d849c4389e06",
+          "hash": "6b3011883c6e614b4cfbef9b32c0a6a6b526a8dd4e8003f45ab6271b0ed1714e",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
@@ -1041,7 +1037,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/setup.md": {
-          "hash": "f655bc1ecb7ee0df6a6cc57a53e134ccbf05958de91a3f3397c6919bdbed89e8",
+          "hash": "d2bacc70d5d38563aaf6384b7d95323058fba2ce27ec151cff431b1e24e1e0db",
           "version": "0.15.3"
         },
         "project-management/project-management/references/substrate.md": {
@@ -1073,11 +1069,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_role.py": {
-          "hash": "e0715a18d1130cfc3288d3cd18966bea38ab2557bbef439004cda3c5720c0917",
+          "hash": "2086fc9f01f6d819882868abb32d34606043af3d248e16a26264e0d3fb0676da",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_session.py": {
-          "hash": "3fd939cfb64e046e89234e94c8cf83f122a62b0a80a22b2778e028c9246bfb1c",
+          "hash": "11089b540201126c6c80ba694fac841f50e075c8167a03fee2f35db578591200",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/post-guard.py": {
