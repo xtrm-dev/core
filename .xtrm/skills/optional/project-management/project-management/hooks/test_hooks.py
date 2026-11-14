@@ -123,7 +123,7 @@ def test_role_file_gates_every_hook(env, role, acts):
 
 
 @pytest.mark.parametrize("launch,acts", [("manager", True), ("lead", True), ("worker", False),
-                                         ("board-audit-runner", False)])
+                                         ("board-helper", False)])
 def test_launch_role_gates_without_a_file(env, launch, acts, monkeypatch):
     monkeypatch.setenv("XTMUX_AGENT_ROLE", launch)
     assert bool(compact(env)) is acts

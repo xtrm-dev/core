@@ -50,7 +50,7 @@ not what is written down.
    1.8).
 6. Worker count, model each (rule 29), start order.
 
-A `board-audit-runner` specialist or the board helper runs it, not the lead (rule 39): the lead writes the contract and reads only the verdict; a
+A `board-helper` specialist or the board helper runs it, not the lead (rule 39): the lead writes the contract and reads only the verdict; a
 per-item board loop is fan-out (rule 26). Output: one `finding` entry on the lead's issue with full text. A finding that moves a GO, a window or
 another workstream also goes as one short proposal to the manager or that lead: what is wrong, evidence, change, cost of doing nothing. One pass per
 batch.

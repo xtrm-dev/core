@@ -961,7 +961,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/SKILL.md": {
-          "hash": "d30927ce03a9adacdc6d79fbc863f37a3069210c52edf8eb675e63ceb558766e",
+          "hash": "0ce09ef8569b4fbbcefa1df086fcdf1278281434f97d9d1b7fa40f7663550c5e",
           "version": "0.15.3"
         },
         "project-management/board-audit/workflows/board-batch-verdicts-v3.json": {
@@ -1013,7 +1013,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
-          "hash": "b810716d6ae8027eb61973db1e38a88a1238cb4a36ad5090567dd1c0c47d3f6f",
+          "hash": "14223a318173cd3c1e3a3793f76a2de559ef2f8f0f9315d80c8aa709a726b327",
           "version": "0.15.3"
         },
         "project-management/project-management/references/jira.md": {
@@ -1021,15 +1021,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "6b3011883c6e614b4cfbef9b32c0a6a6b526a8dd4e8003f45ab6271b0ed1714e",
+          "hash": "743b0d4190a5a1c09afab20d56ae38c47e554d00ced71457d63f1361edb9c0da",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "a8ee912c6ac1ece0a317fc95b7c39307e0946914c0e7e0bca16d90bac16ae211",
+          "hash": "90e42df6ed3046b275edd96c0d06f5ffc106418f8397bada8c1800cd59607438",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "d5b0c91b13f68d4495cbe1ae4909c6a8829f459200094981bdd496e9a90c4847",
+          "hash": "d38b43c957ba49b21afabbac64681dde06ed8742e92ef2aa510f3954d15b2faf",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1037,7 +1037,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/setup.md": {
-          "hash": "d2bacc70d5d38563aaf6384b7d95323058fba2ce27ec151cff431b1e24e1e0db",
+          "hash": "6a767219992da4bede348c4ac79402fa8c9d91ce7fff4298a56eac59ea4094b0",
           "version": "0.15.3"
         },
         "project-management/project-management/references/substrate.md": {
@@ -1069,7 +1069,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_role.py": {
-          "hash": "2086fc9f01f6d819882868abb32d34606043af3d248e16a26264e0d3fb0676da",
+          "hash": "bc22b62e46d7ab41f1d46bf8e2d9033b446ce73459a0b4d3c9c38c096b4780cd",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_session.py": {
@@ -1089,7 +1089,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "63927a5efaa410c6dc56a82e5176d233f8c7858a8607fa3f38cf26307a3627c9",
+          "hash": "5909d909b44f5a2ad564a99d2aa62bebf87ef5ce4d55e1a879d50c9b5699ec9a",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {

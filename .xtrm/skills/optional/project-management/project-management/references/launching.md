@@ -21,7 +21,7 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 | Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's; `--bead` and `--prompt` exclude each other. |
 | Manager | `xt claude <name> --window --role manager --bead <ref> --model opus -- --effort high` | The launch role gives the role; any name. Then the session kit ("Session kit" below). |
 | Lead | `xt claude <name> --window --role lead --bead <epic-ref> --model sonnet -- --effort high` | One per workstream; any name. |
-| Board helper | `xt pi board-helper --window --role board-audit-runner` | The only Jira writer; one per project; the launch role gives `board_helper`. |
+| Board helper | `xt pi board-helper --window --role board-helper` | The only Jira writer; one per project; the launch role gives `board_helper`. |
 | Resume, hotfix base | `xt attach <slug\|dir\|branch>` (name only); `--base origin/stable` | Default base is fresh `origin/<default>`. |
 | Specialist | `specialist_list` -> `specialist_dispatch {specialist, issue_ref}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | One of `issue_ref` or `contract`; the issue must be READY. An inline `contract` needs `parent_ref`. |
 
@@ -37,7 +37,7 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 
 ### Session kit
 
-The launch role is the session's role: `--role manager`, `--role lead`, `--role worker`, `--role board-audit-runner` (mapped by the
+The launch role is the session's role: `--role manager`, `--role lead`, `--role worker`, `--role board-helper` (mapped by the
 `launch_roles` setting; `references/setup.md`, "Routing roles"). `--bead <ref>` binds the issue. Right after the launch command, before any message
 to the session, the launcher checks the kit and adds what the launch did not give:
 
@@ -174,9 +174,9 @@ Interim rules from the MMD-2331 project (October 2026); XT-132 replaces them.
 **Specialists**
 - Dispatch through the plugin MCP, not the `sp` CLI; `specialist_status` is authoritative. Create the issue under its theme and attest it first: an
   inline `contract` makes a parentless issue and `sb` cannot set a parent later.
-- Default specialists have no network, `gh`, tmux, ListAgents or host writes: that work goes to a window worker. Exception `board-audit-runner` (LOW +
+- Default specialists have no network, `gh`, tmux, ListAgents or host writes: that work goes to a window worker. Exception `board-helper` (LOW +
   `execution.lease_waiver`, v1.7.0): per-Issue worktree with `gh pr view/list`, `git merge-base --is-ancestor`, `python3 scripts/jira.py` and `sb`
-reads; Jira writes only through the board helper, journal writes only on the order of the manager or the owning lead. A `board-audit-runner`
+reads; Jira writes only through the board helper, journal writes only on the order of the manager or the owning lead. A `board-helper`
 specialist does not write Jira: it proposes, and the board helper writes on that order (sun01-coord, 2026-11-01); `denied_bash_patterns` enforce it: still no tmux,
   ListAgents, host writes outside the
   worktree, repo edits, production actions or `gh` mutations.

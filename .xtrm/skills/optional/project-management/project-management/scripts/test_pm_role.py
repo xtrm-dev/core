@@ -56,7 +56,8 @@ class Role(unittest.TestCase):
         self.assertEqual(pm_role.resolve("x-lead", self.wt), "lead")
 
     def test_launch_role_needs_no_file(self):
-        for launch, role in (("manager", "manager"), ("lead", "lead"), ("board-audit-runner", "board_helper")):
+        for launch, role in (("manager", "manager"), ("lead", "lead"), ("board-helper", "board_helper"),
+                             ("board-audit-runner", "board_helper")):  # the old name stays an alias
             self.assertEqual(pm_role.source("anything", self.wt, launch), (role, "launch"), launch)
 
     def test_worker_launch_keeps_a_legacy_name_role(self):
