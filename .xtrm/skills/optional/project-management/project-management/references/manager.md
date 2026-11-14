@@ -1,15 +1,32 @@
 # Manager: what the project manager does every day
 
-Read when you are the manager: the `project-manager` role in the session whose role file says `manager` (name fallback `*-manager`), one per
+Read when you are the manager: a session launched with `--role manager` (or whose role file says `manager`; name fallback `*-manager`), one per
 project (SKILL.md "Who does what"; `references/setup.md`, "Routing roles"). Added 2026-10-22 from the first coordinator session (MMD-2331); each rule was learned from a failure or repeated operator request. Read
 before the first production window. A lead reads `references/lead.md` instead.
+
+## Start: session kit, common goal, tools (first, and after every compaction)
+
+1. `python3 <pack>/project-management/scripts/pm_session.py show` prints your role and where it came from, the project, your bound issue
+   and the COMMON GOAL. Clear every `KIT:` line before other work (`pm_session.py init --role <r> --issue <ref>`). You launch with `--role manager`, so you need no role file.
+2. The common goal is what the whole project must achieve; your issue is your part of it (SKILL.md rule 56). Read the goal document once per
+   session. When your work and the goal disagree, stop and ask: a worker asks its lead, a lead the manager, the manager the operator.
+   You own the common goal: keep `goal_doc`, `epic` and `jira_epic` in the project's config profile current. When the goal document changes,
+   rewrite the project epic's SUCCESS from it (a new revision) and order the Jira epic's description from the board helper, in plain words.
+3. Tools for every role:
+   - `journal-search` (skill; `python3 <pack>/journal-search/scripts/jsearch.py "<words>"`): find where something was decided, reported or
+     handed off before you ask a peer; a hit is a pointer, so open it with `sb journal show` and re-check the fact live.
+   - `service-knowledge` (skill and CLI): before reading a service's source, load its expert skill (`/service-knowledge`, `/scope`) and query
+     the evidence index (`service-knowledge index query "<text>"`); after a change that touches a service, update its knowledge through the
+     skill's update flow (`service-knowledge drift` shows what drifted). When code and the knowledge disagree, fix the knowledge in the same
+     cycle (rule 33).
+   - `sb help <group>` before a `sb` verb you have not used this session (rule 55).
 
 ## 0. The manager's job
 
 - GOs, release windows, merges across workstreams (§15, SKILL.md rule 49), rulings, the operator channel (§8). It is not a message router: leads
   talk to each other directly, the board helper routes operator comments, workers report to their lead.
 - Keep the team staffed: one lead per workstream (`references/lead.md` §8), one board helper
-  (`xt pi board-helper --window --role board-audit-runner`, role file `board_helper`), and its own successor at the day boundary
+  (`xt pi board-helper --window --role board-audit-runner`; the launch role gives `board_helper`), and its own successor at the day boundary
   (`references/handover.md`). The manager
   launches no builders (SKILL.md rule 2.3).
 - Read lead journals once per hourly cycle (`sb journal since <ref> <seq>`); answer a lead's proposal within the hour.

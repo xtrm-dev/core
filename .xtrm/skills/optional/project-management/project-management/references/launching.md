@@ -19,8 +19,9 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 | worker role (default) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--bead` is the prompt. |
 | `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Default `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high; never Muse Spark (it stops mid-task, operator 2026-10-30). `--skill <name>` repeats. |
 | Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's; `--bead` and `--prompt` exclude each other. |
-| Manager or lead | `xt claude <name> --window --role project-manager --bead <ref> --model opus\|sonnet -- --effort high` | The role file picks the mode (SKILL.md "Who does what"): write it right after launch ("Role file" below). Any name. |
-| Board helper | `xt pi board-helper --window --role board-audit-runner` | The only Jira writer; one per project. Write its role file `board_helper` right after launch. |
+| Manager | `xt claude <name> --window --role manager --bead <ref> --model opus -- --effort high` | The launch role gives the role; any name. Then the session kit ("Session kit" below). |
+| Lead | `xt claude <name> --window --role lead --bead <epic-ref> --model sonnet -- --effort high` | One per workstream; any name. |
+| Board helper | `xt pi board-helper --window --role board-audit-runner` | The only Jira writer; one per project; the launch role gives `board_helper`. |
 | Resume, hotfix base | `xt attach <slug\|dir\|branch>` (name only); `--base origin/stable` | Default base is fresh `origin/<default>`. |
 | Specialist | `specialist_list` -> `specialist_dispatch {specialist, issue_ref}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | One of `issue_ref` or `contract`; the issue must be READY. An inline `contract` needs `parent_ref`. |
 
@@ -34,18 +35,23 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 - Open fixes (specialists `surface_models` override; core `FOREIGN_MODEL_PROVIDERS`) wait for a design session: do not change the specialists or core
   repos from a project session.
 
-### Role file
+### Session kit
 
-Every manager, lead and board-helper launch writes the session's role file right after the launch command, before any message to the session:
+The launch role is the session's role: `--role manager`, `--role lead`, `--role worker`, `--role board-audit-runner` (mapped by the
+`launch_roles` setting; `references/setup.md`, "Routing roles"). `--bead <ref>` binds the issue. Right after the launch command, before any message
+to the session, the launcher checks the kit and adds what the launch did not give:
 
 ```
-python3 <pack>/project-management/scripts/pm_role.py set manager|lead|board_helper --dir <worktree>
-python3 <pack>/project-management/scripts/pm_role.py show --dir <worktree>        # prints "<role> (file)"
+python3 <pack>/project-management/scripts/pm_session.py show --dir <worktree>      # role (source), project, bound issue, KIT lines, goal
+                                                                                  # (launch role from the agent host, or --launch-role <r>)
+python3 <pack>/project-management/scripts/pm_session.py init --dir <worktree> [--role <r>] [--issue <ref>]
 ```
 
 `<pack>` is the pack directory (`~/.xtrm/skills/optional/project-management`); `<worktree>` is the session's worktree, which `xt` creates under
-`<repo>/.xtrm/worktrees/`. A worker gets no role file. Without the file the role falls back to the name (`references/setup.md`, "Routing
-roles"). CORE-2702 tracks an `xt` launch flag that will write the file; until then the launcher writes it.
+`<repo>/.xtrm/worktrees/`. `init --role` writes the role file `.pm-role` only when the launch role does not already give that role: a session
+launched under the shared `project-manager` role, or a running session from before the split. A role file always wins over the launch role.
+`init --issue` writes `.substrate-issue`; both files stay out of git (info/exclude). The worker's own first step (`pm_session.py show`,
+`references/worker.md`) prints the common goal, so the prompt needs no paste; the contract names the goal section it serves (step 1 below).
 
 ## Launch
 
@@ -71,7 +77,8 @@ specialists and consult the advisor.
    `sb issue create --project <id> --title <t> --kind task --parent <ref> --scrutiny LOW|MEDIUM|HIGH|CRITICAL --contract <file>`; `validation` is
    `{check}` objects, `output` `{artifact}` objects. The contract is the prompt, so it names files, the branch base (`origin/master`), the tests to
    run and the stop conditions. OUTPUT follows SKILL.md "The rule: two systems, bound files": rulings and reviews go into the journal (`--semantic`)
-   and a Jira comment text; a durable document is committed and bound.
+   and a Jira comment text; a durable document is committed and bound. CONTEXT names the part of the common goal the issue serves
+   (`sb issue edit <ref> --context-refs <file|json>` before attesting, naming `<goal document>#<section>`; SKILL.md rule 56).
 2. **Attest:** `sb issue attest <ref> --outcome ready --policy default --attested-by <you>`; `sb issue show <ref> --json` must show `readinessState`
    `ready`, `dispatchable` `true`.
 3. **Launch from the main checkout** (after the rule 2.2 preflight):

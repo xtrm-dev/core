@@ -20,7 +20,8 @@ import post_compact  # noqa: E402
 import action_gate  # noqa: E402
 import checkpoint_warn  # noqa: E402
 
-CLEARED = ("PM_PROJECT", "SUBSTRATE_HOLDER", "XTRM_SESSION_NAME", "SUBSTRATE_ISSUE_REF", "TMUX_PANE", "XTRM_ROLE",
+CLEARED = ("PM_PROJECT", "XTMUX_AGENT_ROLE", "PM_GOAL_DOC", "PM_JIRA_EPIC", "PM_GOAL_REFS", "PM_LAUNCH_ROLES",
+           "SUBSTRATE_HOLDER", "XTRM_SESSION_NAME", "SUBSTRATE_ISSUE_REF", "TMUX_PANE", "XTRM_ROLE",
            "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "ANTHROPIC_BASE_URL", "PM_CLAIM_TTL_MS", "PM_EPIC", "PM_MANAGER_ISSUE",
            "PM_LANE_DIR", "PM_REFREAD_FILES", "PM_GATED_COMMANDS", "PM_GATED_TOOLS", "PM_POST_COMPACT_EXTRA",
            "PM_POST_COMPACT_NUDGE", "PM_POST_COMPACT_NUDGE_TEXT", "PM_PENDING_MAX_AGE_S", "PM_CHECKPOINT_THRESHOLDS",
@@ -121,6 +122,25 @@ def test_role_file_gates_every_hook(env, role, acts):
     assert bool(denied(pre(env))) is acts
 
 
+@pytest.mark.parametrize("launch,acts", [("manager", True), ("lead", True), ("worker", False),
+                                         ("board-audit-runner", False)])
+def test_launch_role_gates_without_a_file(env, launch, acts, monkeypatch):
+    monkeypatch.setenv("XTMUX_AGENT_ROLE", launch)
+    assert bool(compact(env)) is acts
+    assert bool(denied(pre(env))) is acts
+
+
+def test_common_goal_in_both_modes(env):
+    env.role_file("lead")
+    (env.wt / "PRD.md").write_text("# Product\n\nThe product answers every market question in one place.\n")
+    env.set(goal_doc="PRD.md", epic="SB-1", jira_epic="PROJ-9")
+    for mode in ("compact", "startup"):
+        out = compact(env, mode)
+        assert "COMMON GOAL" in out
+        assert "answers every market question" in out
+        assert "Jira epic: PROJ-9" in out
+
+
 @pytest.mark.parametrize("name,acts", [("p-xt-claude-thu13-manager", True), ("EP-1-api-lead", True),
                                        ("p-xt-pi-board-helper", False), ("EP-1-fix-parser", False)])
 def test_name_patterns_gate(env, name, acts, monkeypatch):
@@ -218,7 +238,9 @@ def test_unbound_manager_uses_manager_issue_then_epic(env):
 def test_unbound_lead_is_told_to_bind_its_epic(env):
     env.role_file("lead")
     out = compact(env)
-    assert "A lead binds its own epic" in out and "EP-1" not in out
+    step1 = next(line for line in out.splitlines() if line.startswith("1. "))
+    assert "A lead binds its own epic" in step1 and "EP-1" not in step1
+    assert "Substrate epic: EP-1" in out  # the project epic appears only as the common goal
 
 
 def test_missing_extra_file_is_ignored(env):

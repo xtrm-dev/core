@@ -21,7 +21,7 @@ references them, on the refs in ``operator_question_refs`` (default: ``epic``); 
 assistant message (a direct question to the operator, or an A/B/C choice block; Italian or English).
 
 Only the manager and the leads are gated: the role comes from the pack's one resolver, scripts/pm_role.py
-(``.pm-role`` file in the worktree root, else the ``route_roles`` name patterns, else worker). The board helper and
+(``.pm-role`` file in the worktree root, else the launch role, else the ``route_roles`` name patterns, else worker). The board helper and
 workers are untouched.
 
 Config (pm_config, ~/.config/xtrm/project-management.json): ``operator_question_turns`` (default 5, 0 = off),
@@ -196,7 +196,7 @@ def session_ident(cwd: str) -> str:
 
 
 def is_coordinator() -> bool:
-    """True for the manager and the leads (pm_role.current(): role file, else name patterns, else worker)."""
+    """True for the manager and the leads (pm_role.current(): role file, else launch role, else name patterns, else worker)."""
     return pm_role.current() in COORDINATOR_ROLES
 
 

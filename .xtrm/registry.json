@@ -961,7 +961,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/SKILL.md": {
-          "hash": "47331f3184e1b80088e7b9012965c1abc5b1494055b0ae950b3b20a6b8ca6647",
+          "hash": "d30927ce03a9adacdc6d79fbc863f37a3069210c52edf8eb675e63ceb558766e",
           "version": "0.15.3"
         },
         "project-management/board-audit/workflows/board-batch-verdicts-v3.json": {
@@ -972,8 +972,16 @@
           "hash": "7f770dc3de2b26e7a23f7e73ec8033ce44e30770bfc228d73460303a1d8c9529",
           "version": "0.15.3"
         },
+        "project-management/journal-search/scripts/jsearch.py": {
+          "hash": "7f8b8c689c4c8a0100558706dd61b131c96919bab20e22f5594182bbb2465de8",
+          "version": "0.15.3"
+        },
+        "project-management/journal-search/SKILL.md": {
+          "hash": "001184f1fc8d5d57fbb27db48b69240a20fdd7316b6c6ae69e709a07a4c54c4b",
+          "version": "0.15.3"
+        },
         "project-management/PACK.json": {
-          "hash": "93db79c594353de9e3581f0600a04db09e8ff2e8ea56d54c3516fdf5343fd5a2",
+          "hash": "910727adbb81c660b82b7b92de566862de16a8ba29a80f5daa226755d8027e3a",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/action_gate.py": {
@@ -985,15 +993,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
-          "hash": "a8b6bf569608d9eb84b513c54da8e6be896f2983021241b59d775a5aee9480f3",
+          "hash": "0989180024518b247040c9ee1eefa79d1b8cea2d840511c8725e105b78f9ce6d",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/pm_hook_common.py": {
-          "hash": "43ff419189119ef2a9ee61d758b10d598e13365514b2dd98513c26e47908bfb6",
+          "hash": "4129e7c5105767f1f98e982a279638fc5ce78441f4872bb27444cee7d4bfc989",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/post_compact.py": {
-          "hash": "a2cbdadbdb17ec03cd985139067b19be8d2c4ee8f02ab3be691b9920a7e87079",
+          "hash": "1c12c4c8a91c70d593887fdfd27379f0d46dcd443b2ebed0e7499275483e2294",
           "version": "0.15.3"
         },
         "project-management/project-management/references/agentrun.md": {
@@ -1001,11 +1009,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/continuity.md": {
-          "hash": "10f4453b2594fec95126282ed2071755dea84e9acc6c01d501f41f07273e7000",
+          "hash": "d8addc0852268997516412c36cc1a992f87d3901746d69a3c776396244c499c5",
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
-          "hash": "96ba498d266e43799d1e1bb6351cd80bd83f58b22f7fe38e4aaa816fdb32bdb9",
+          "hash": "b810716d6ae8027eb61973db1e38a88a1238cb4a36ad5090567dd1c0c47d3f6f",
           "version": "0.15.3"
         },
         "project-management/project-management/references/jira.md": {
@@ -1013,15 +1021,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "2bb38534038ecaed1580a107a4bfe06fea2a5165a2869e8ac716c61c000359ff",
+          "hash": "6b3011883c6e614b4cfbef9b32c0a6a6b526a8dd4e8003f45ab6271b0ed1714e",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "760d3b3b34bcef10ea46d8ddb59ea3bd0fa34ed9bb95912b260d44dd629adf8c",
+          "hash": "a8ee912c6ac1ece0a317fc95b7c39307e0946914c0e7e0bca16d90bac16ae211",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "be07e45434eaa5d338ce4f98d5a837fbf17005bd715c349836ced91070a1f594",
+          "hash": "d5b0c91b13f68d4495cbe1ae4909c6a8829f459200094981bdd496e9a90c4847",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1029,7 +1037,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/setup.md": {
-          "hash": "ac08d7fcd5daa727ae906c721a6b315a9047fbfd62065124470fdd2024dff0b0",
+          "hash": "d2bacc70d5d38563aaf6384b7d95323058fba2ce27ec151cff431b1e24e1e0db",
           "version": "0.15.3"
         },
         "project-management/project-management/references/substrate.md": {
@@ -1041,7 +1049,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/worker.md": {
-          "hash": "ec0b720a0a94b380b7e699a6d0fd4e89309815468ac682d089335684556e33b9",
+          "hash": "5d1fe14eed5f3518469f437fd92981952d63574a279f0de0f377e5176b0c2ae6",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/jira.py": {
@@ -1049,7 +1057,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_check.py": {
-          "hash": "718045dac2dfb27cb0299d1cb4972be9dae497d5fdc785bd16d8d01f3fd0bf2d",
+          "hash": "c130f803c8fe56ad0691e60f2684cbf14bccf5700ccf111e639d7dd104d4dcc7",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_config.py": {
@@ -1061,7 +1069,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_role.py": {
-          "hash": "b68a866fe159e2baeab24073dbc546994955de5905c971770528c9b7ed4b8520",
+          "hash": "2086fc9f01f6d819882868abb32d34606043af3d248e16a26264e0d3fb0676da",
+          "version": "0.15.3"
+        },
+        "project-management/project-management/scripts/pm_session.py": {
+          "hash": "11089b540201126c6c80ba694fac841f50e075c8167a03fee2f35db578591200",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/post-guard.py": {
@@ -1069,7 +1081,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/route_target.py": {
-          "hash": "b6e69215b449a8424447006c67ea7b32886b9151bcd3eb777470a7cb79dd2f4e",
+          "hash": "a02e20bcda54e0a88f8dc34774325121e3cff71e5496ae334b029fad768898d0",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/window-lineage.py": {
@@ -1077,7 +1089,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "94e80db5d4658175ac49f20921cb8ba606416b7e88e0bfc2f49961e1ba33fd5a",
+          "hash": "63927a5efaa410c6dc56a82e5176d233f8c7858a8607fa3f38cf26307a3627c9",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {

@@ -1,8 +1,25 @@
 # Lead: one workstream, end to end
 
-Read when you are a lead, or launch, resume or work with one, together with `references/worker.md`. A lead is the `project-manager` role in a
-session whose role file says `lead` (name fallback `*-lead`, for example `MMD-4416-options-lead`): SKILL.md "Who does what" and rule 28. A build
-lane is a lead. A legacy `*-coord` session with no role file acts as a lead until relaunch, unless `route_roles` names it the manager.
+Read when you are a lead, or launch, resume or work with one, together with `references/worker.md`. A lead is a session launched with
+`--role lead` (or whose role file says `lead`; name fallback `*-lead`, for example `PROJ-4416-options-lead`): SKILL.md "Who does what" and rule 28.
+A build lane is a lead. A legacy `*-coord` session with no role file acts as a lead until relaunch, unless `route_roles` names it the manager.
+
+## Start: session kit, common goal, tools (first, and after every compaction)
+
+1. `python3 <pack>/project-management/scripts/pm_session.py show` prints your role and where it came from, the project, your bound issue
+   and the COMMON GOAL. Clear every `KIT:` line before other work (`pm_session.py init --role <r> --issue <ref>`). You launch with `--role lead`; bind your workstream epic (`init --issue <epic>`) when `--bead` did not.
+2. The common goal is what the whole project must achieve; your issue is your part of it (SKILL.md rule 56). Read the goal document once per
+   session. When your work and the goal disagree, stop and ask: a worker asks its lead, a lead the manager, the manager the operator.
+   Your workstream epic names the part of the goal it serves (a context ref to the goal document's section). Every contract you write names the
+   goal section it serves (`references/launching.md`, "Dispatch a builder"); the worker reads the goal at its own start.
+3. Tools for every role:
+   - `journal-search` (skill; `python3 <pack>/journal-search/scripts/jsearch.py "<words>"`): find where something was decided, reported or
+     handed off before you ask a peer; a hit is a pointer, so open it with `sb journal show` and re-check the fact live.
+   - `service-knowledge` (skill and CLI): before reading a service's source, load its expert skill (`/service-knowledge`, `/scope`) and query
+     the evidence index (`service-knowledge index query "<text>"`); after a change that touches a service, update its knowledge through the
+     skill's update flow (`service-knowledge drift` shows what drifted). When code and the knowledge disagree, fix the knowledge in the same
+     cycle (rule 33).
+   - `sb help <group>` before a `sb` verb you have not used this session (rule 55).
 
 ## 1. Who owns what
 
@@ -87,16 +104,16 @@ moves and closes from the board helper.
 ## 8. Launching a lead
 
 The manager launches it from the main checkout, in its own tmux session:
-`xt claude <epic>-<area>-lead --window --role project-manager --bead <workstream ref> --model sonnet -- --effort high`, then the role file:
-`python3 <pack>/project-management/scripts/pm_role.py set lead --dir <worktree>` (`references/launching.md`, "Role file"). Branch `xt/<name>`;
-session and holder names match. The `<epic>-<area>-lead` name is a convention and the routing fallback; the role file routes it. The workstream issue's SCOPE
+`xt claude <epic>-<area>-lead --window --role lead --bead <workstream ref> --model sonnet -- --effort high`, then the kit check
+`pm_session.py show --dir <worktree>` (`references/launching.md`, "Session kit"). Branch `xt/<name>`; session and holder names match. The
+`<epic>-<area>-lead` name is a convention and the routing fallback; the launch role routes it. The workstream issue's SCOPE
 includes the section 3 audit. Every lead launch prompt and resume line says: "Load project-management; read references/lead.md and
 references/worker.md first."
 
 A lead compacts at a clear checkpoint (`references/continuity.md`) and rotates at 24 h or when its context is rotted (SKILL.md rules 35, 40): a
-`handoff` entry first, then the lead itself launches its successor on the same issue (`xt attach <name>`, then `sb issue resume <ref>`) and
-writes `lead` into the successor's role file; it releases its claim, the successor claims, the outgoing deletes its own role file
-(`pm_role.py clear --dir <its worktree>`) and exits, and the successor reaps it, as in `references/handover.md`.
+`handoff` entry first, then the lead itself launches its successor on the same issue with `--role lead` and checks its kit; it releases its
+claim, the successor claims, the outgoing deletes its own role file if it has one (`pm_role.py clear --dir <its worktree>`) and exits, and the
+successor reaps it, as in `references/handover.md`.
 
 ## Why (2026-10-31, MMD-3012)
 
