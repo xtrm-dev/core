@@ -26,7 +26,7 @@ before the first production window. A lead reads `references/lead.md` instead.
 - GOs, release windows, merges across workstreams (§15, SKILL.md rule 49), rulings, the operator channel (§8). It is not a message router: leads
   talk to each other directly, the board helper routes operator comments, workers report to their lead.
 - Keep the team staffed: one lead per workstream (`references/lead.md` §8), one board helper
-  (`xt pi board-helper --window --role board-audit-runner`; the launch role gives `board_helper`), and its own successor at the day boundary
+  (`xt pi board-helper --window --role board-helper`; the launch role gives `board_helper`), and its own successor at the day boundary
   (`references/handover.md`). The manager
   launches no builders (SKILL.md rule 2.3).
 - Read lead journals once per hourly cycle (`sb journal since <ref> <seq>`); answer a lead's proposal within the hour.

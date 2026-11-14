@@ -2,7 +2,7 @@
 
 Standard handover between two managers of one project. It is autonomous: the outgoing manager launches its successor itself, the successor reaps
 the outgoing, and no operator word is needed. The outgoing feeds its lessons back into this skill before it leaves. Leads rotate the same way with
-the launch role `lead` (`references/lead.md` §8); the board helper's successor launches as `board-audit-runner`; workers rotate by SKILL.md rule 35.
+the launch role `lead` (`references/lead.md` §8); the board helper's successor launches as `board-helper`; workers rotate by SKILL.md rule 35.
 
 ## 0. When, and settle (outgoing)
 

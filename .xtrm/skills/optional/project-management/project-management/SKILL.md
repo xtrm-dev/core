@@ -57,7 +57,7 @@ names and paths are settings (env var or `~/.config/xtrm/project-management.json
 
 Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
 
-**Roles come from the launch.** `--role manager`, `--role lead`, `--role worker`, `--role board-audit-runner`; a `.pm-role` file overrides
+**Roles come from the launch.** `--role manager`, `--role lead`, `--role worker`, `--role board-helper`; a `.pm-role` file overrides
 (for `project-manager` and older sessions), names are the last fallback (`references/setup.md`, "Routing roles"). Every session starts with
 `scripts/pm_session.py show`: role, bound issue, kit, common goal (`references/launching.md`, "Session kit"). A build lane is a lead.
 
@@ -65,7 +65,7 @@ Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operat
 |---|---|---|
 | **Manager** (Opus, one per project) | GOs (merge, window, promotion), release windows, merges across workstreams, calendar, escalations, advisor and quant rulings, the operator channel (rules 15, 36), keeping the team staffed: launches the leads, the board helper and its own successor (`references/handover.md`). Answers a lead's proposal within one hourly cycle or 60 min; silence is not agreement. | Route messages between peers, launch builders, write fix lists, relay reviews, tail operator inboxes. Asks for proposals, not status. |
 | **Lead** (Sonnet high, one per workstream) | Its workstream end to end: build order, workers within caps, rule-44 reviews, test dispatch, fix lists, merge-ready records, reaping; self-GO inside the workstream; closes its own Substrate issues and orders its own Jira moves through the board helper (operator ruling 2026-11-12, journal seq 2870); settles a cross-workstream dependency with the other lead directly. Opens each batch with the no-trust audit. Messages the manager only for a GO, merge-ready, blocker, data-correctness finding or production anomaly. | Merge, write Jira, hand over a PR it believes is not ready. |
-| **Board helper** (`xt pi board-helper`, role `board-audit-runner`) | The only Jira writer (an `@operator` comment too, rule 36), on the order of the manager or the owning lead, with before/after re-reads. Decides alone where each operator comment goes (no routing table). Sends close-sweep mismatches to the owning lead; to the manager only items with no workstream parent (rule 54). | Mutate Jira on its own; let other agents write Jira or read the operator inbox. |
+| **Board helper** (`xt pi board-helper`, role `board-helper`) | The only Jira writer (an `@operator` comment too, rule 36), on the order of the manager or the owning lead, with before/after re-reads. Decides alone where each operator comment goes (no routing table). Sends close-sweep mismatches to the owning lead; to the manager only items with no workstream parent (rule 54). | Mutate Jira on its own; let other agents write Jira or read the operator inbox. |
 | **Worker** (`--role worker`, `<story>-<slug>`) | One attested issue: build, journal, `result`; closes it when the contract grants closure (rule 54). | Pick its next issue, review its own PR, write Jira. |
 
 **Address peers by role or name, never by socket path.** `python3 scripts/route_target.py manager|board_helper` prints the one live address;

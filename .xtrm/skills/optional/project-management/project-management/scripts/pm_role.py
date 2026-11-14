@@ -38,9 +38,10 @@ DEFAULT_PATTERNS = {
 ORDER = ("board_helper", "manager", "lead")  # a configured manager pattern wins over the legacy -coord lead default
 # Launch role (specialist name) -> pack role. A role absent here says nothing and resolution falls through to the name
 # patterns: project-manager (it serves both modes) and worker (worker is the final fallback anyway, and a legacy
-# coordinator launched as worker must keep its name-pattern role).
-DEFAULT_LAUNCH_ROLES = {"manager": "manager", "lead": "lead", "board-audit-runner": "board_helper",
-                        "board-helper": "board_helper"}
+# coordinator launched as worker must keep its name-pattern role). board-audit-runner is the board helper's launch role
+# before its rename to board-helper (2026-11-14), kept for sessions launched under it.
+DEFAULT_LAUNCH_ROLES = {"manager": "manager", "lead": "lead", "board-helper": "board_helper",
+                        "board-audit-runner": "board_helper"}
 
 
 def patterns() -> dict[str, list[str]]:
