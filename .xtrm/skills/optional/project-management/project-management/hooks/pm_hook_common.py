@@ -2,7 +2,7 @@
 
 - Settings come from scripts/pm_config.py (env > config file > default). A config error never crashes a hook: the
   setting helpers below fall back to the default.
-- The role comes from scripts/pm_role.py (role file `.pm-role`, else route_roles name patterns, else worker). Only
+- The role comes from scripts/pm_role.py (role file `.pm-role`, else the launch role, else route_roles name patterns, else worker). Only
   the manager and the leads are acted on.
 - Project scope: a hook acts only in a session of a configured project (see project_scope).
 - Errors are appended to $XDG_STATE_HOME/xtrm-pm-hooks/errors.log (default ~/.local/state; PM_HOOK_STATE_DIR overrides); hooks fail open.
@@ -152,7 +152,7 @@ def project_scope(cwd: str) -> tuple[str, str]:
 
 
 def role() -> str:
-    """This session's role: pm_role.current() (role file, else name patterns, else worker)."""
+    """This session's role: pm_role.current() (role file, else launch role, else name patterns, else worker)."""
     return pm_role.current()
 
 

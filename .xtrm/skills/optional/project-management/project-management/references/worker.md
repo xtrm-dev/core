@@ -3,6 +3,23 @@
 Read at launch and after every compaction. Applies to every worker (`xt claude` and `xt pi` builders, helpers, board agents, investigators,
 specialists). The manager and lead parts are in `references/manager.md` and `references/lead.md`.
 
+## Start: session kit, common goal, tools (first, and after every compaction)
+
+1. `python3 <pack>/project-management/scripts/pm_session.py show` prints your role and where it came from, the project, your bound issue
+   and the COMMON GOAL. Clear every `KIT:` line before other work (`pm_session.py init --role <r> --issue <ref>`). Workers launch with `--role worker` and need no role file.
+2. The common goal is what the whole project must achieve; your issue is your part of it (SKILL.md rule 56). Read the goal document once per
+   session. When your work and the goal disagree, stop and ask: a worker asks its lead, a lead the manager, the manager the operator.
+   Your contract names the goal section it serves. Before you plan, check that your work serves the goal; a contract that works against it
+   is a question for your lead, not a reason to stop silently.
+3. Tools for every role:
+   - `journal-search` (skill; `python3 <pack>/journal-search/scripts/jsearch.py "<words>"`): find where something was decided, reported or
+     handed off before you ask a peer; a hit is a pointer, so open it with `sb journal show` and re-check the fact live.
+   - `service-knowledge` (skill and CLI): before reading a service's source, load its expert skill (`/service-knowledge`, `/scope`) and query
+     the evidence index (`service-knowledge index query "<text>"`); after a change that touches a service, update its knowledge through the
+     skill's update flow (`service-knowledge drift` shows what drifted). When code and the knowledge disagree, fix the knowledge in the same
+     cycle (rule 33).
+   - `sb help <group>` before a `sb` verb you have not used this session (rule 55).
+
 ## 1. Your contract and your reports
 
 1. Your Substrate issue is your brief. Claim with `--holder <your name>` and a TTL covering your next checkpoint; renew at each with
@@ -25,8 +42,8 @@ specialists). The manager and lead parts are in `references/manager.md` and `ref
    - No full local suite or full `make ci-light`: targeted tests; the hosted Light gate on the pushed head is the gate.
 8. Quote a window's or ticket's vehicle (commit, PR, image) only from that row's own description or a gh/git read, never a summary or neighbouring row
    (2026-10-31).
-9. You have no role file, or one that says `worker`. A session whose role file says `lead` (or, with no role file, whose name ends in `-lead`) is a
-   lead and reads `references/lead.md`; if your name ends in `-manager` or `-lead`, ask your launcher for a `worker` role file.
+9. You are launched with `--role worker`. If `pm_session.py show` reports another role (a stray role file, or a name ending in `-manager` or
+   `-lead` with no launch role), ask your launcher to fix it (`pm_session.py init --role worker`).
 10. When your contract names a specialist in VALIDATION, dispatch it and put its activation id in your result; without it the result is partial. On
     2026-11-01 six builders loaded the worker role and used no specialist.
 11. Close your issue in the turn you write its `result` when your contract grants closure (SKILL.md rule 54); else your lead closes it.

@@ -2,7 +2,7 @@
 
 Standard handover between two managers of one project. It is autonomous: the outgoing manager launches its successor itself, the successor reaps
 the outgoing, and no operator word is needed. The outgoing feeds its lessons back into this skill before it leaves. Leads rotate the same way with
-the role `lead` (`references/lead.md` §8); the board helper's successor gets `board_helper`; workers rotate by SKILL.md rule 35 and get no role file.
+the launch role `lead` (`references/lead.md` §8); the board helper's successor launches as `board-audit-runner`; workers rotate by SKILL.md rule 35.
 
 ## 0. When, and settle (outgoing)
 
@@ -41,12 +41,13 @@ Record each lesson as a `finding` or `decision` on the epic; draft as scratch un
 ## 4. Launch the successor (outgoing)
 
 From the manager's pane, so the window joins the same tmux session (never a raw `tmux new-window`; it keeps dispatcher identity):
-`xt claude <name> --window --role project-manager --bead <epic> --model opus -- --effort high` (any name). When `--window` refuses, restore
-`TMUX` first (`references/launching.md`, "When --window refuses"). Then write `manager` into the successor's role file:
-`python3 <pack>/project-management/scripts/pm_role.py set manager --dir <successor worktree>` (`references/launching.md`, "Role file").
+`xt claude <name> --window --role manager --bead <manager_issue> --model opus -- --effort high` (any name). When `--window` refuses, restore
+`TMUX` first (`references/launching.md`, "When --window refuses"). Then check its kit: `pm_session.py show --dir <successor worktree>`
+(`references/launching.md`, "Session kit"); the launch role gives `manager`, no role file is needed.
 
 While both managers live, `scripts/route_target.py manager` sends to the holder of the claim on `manager_issue` (default: the epic): the
-outgoing keeps the role until it releases the claim in §5, then the successor takes it by claiming. Keep the overlap short.
+outgoing keeps the role until it releases the claim in §5, then the successor takes it by claiming. Both are managers by their launch role, so
+the claim is the only tie-break: keep the overlap short and release the claim before you exit.
 
 ## 5. Hand over crons, monitors and claims in order (outgoing + incoming)
 
@@ -56,8 +57,8 @@ outgoing keeps the role until it releases the claim in §5, then the successor t
 3. Outgoing deletes its crons, stops its Monitors, confirms CronList is empty, tells the incoming, then releases its claim on `manager_issue`.
 4. Incoming claims `manager_issue`, renews with `sb issue renew <ref>` every 2 h, journals a `handoff` ("taken over by <holder>") and tells the
    predecessor.
-5. Outgoing deletes its own role file (`pm_role.py clear --dir <its worktree>`) and exits. `pm_check.py` warns while the live manager does not
-   hold the claim.
+5. Outgoing deletes its own role file if it has one (`pm_role.py clear --dir <its worktree>`) and exits. `pm_check.py` warns while the live
+   manager does not hold the claim.
 
 ## 6. Reap and announce (incoming)
 

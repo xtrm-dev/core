@@ -9,10 +9,10 @@ Read after every compaction, before a resume or a day-boundary handover.
   (`sb journal append <ref> --kind handoff`), compact, re-arm `/goal`.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
 - Resume: `sb issue resume <ref>` (the epic for the manager, the workstream issue for a lead). Set `SUBSTRATE_ISSUE_REF` to it; bind the
-  worktree with `echo <ref> > .substrate-issue` (in `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.
+  worktree with `pm_session.py init --issue <ref>` (kept out of git by `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.
 - **Session hooks** (operator, 2026-10-31) are part of the pack, in `project-management/hooks/`, wired by the operator in
-  `~/.claude/settings.json` (`references/setup.md`, "8. Session hooks"). They act by the session role (`scripts/pm_role.py`: role file, then
-  name). Workers and reviewers get no checkpoint or resume steps.
+  `~/.claude/settings.json` (`references/setup.md`, "8. Session hooks"). They act by the session role (`scripts/pm_role.py`: role file, launch role,
+  then name). Workers and reviewers get no checkpoint or resume steps.
    - `checkpoint_warn.py` warns at the `checkpoint_thresholds` (default 70% EARLY, 85% FINAL) of the window and asks for ONE structured
      `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, next
      action), verified against live state, then `/compact`.

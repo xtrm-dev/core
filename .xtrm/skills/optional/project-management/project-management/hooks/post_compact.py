@@ -8,6 +8,7 @@ Stdout becomes session context. Acts only for role manager or lead (scripts/pm_r
 configured project (pm_config: PM_PROJECT, or the cwd inside a project's repo_dir/match_dirs). No project: silent.
 A config error: one warning line, then the steps without the project's issue.
 
+Both modes print the project's common goal (scripts/pm_session.py: goal_doc, epic, jira_epic, goal_refs).
 Compact mode prints: role line; the bound issue (.substrate-issue; an unbound manager gets manager_issue, else
 epic; an unbound lead is told to bind its own epic) with `sb issue renew --ttl-ms <claim_ttl_ms>`; goal refresh,
 timers, workers, journal; the references to re-read (refread_files); a stale-checkout check against the
@@ -116,6 +117,18 @@ def goal_step(cwd: str) -> str:
             "twice). If the /goal is gone, re-set it the same way.")
 
 
+def common_goal() -> list[str]:
+    """The project's common goal (scripts/pm_session.py), without the sb read, so the hook stays fast."""
+    try:
+        import pm_session
+        lines = pm_session.goal_lines(read_epic=False)
+    except Exception as exc:  # noqa: BLE001 - the hook never fails the session
+        common.log_error(HOOK, "common_goal", exc)
+        return []
+    return [*lines, "  (full block with the epic's success criteria: python3 %s goal)"
+            % (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pm_session.py")]
+
+
 def references_line(role: str) -> str:
     files = common.refread_files(role)
     if not files:
@@ -195,6 +208,7 @@ def run(argv: list[str], out=None) -> None:
     refs = references_line(role)
     if mode == "startup":
         lines += ["SESSION START (%s, %s). Read this before your first dispatch:" % (name, now), step0(role, ref)]
+        lines += common_goal()
         if refs:
             lines.append(refs)
         out.write("\n".join(lines) + "\n")
@@ -203,6 +217,7 @@ def run(argv: list[str], out=None) -> None:
         "POST-COMPACTION RESUME (%s, %s). Do these in order:" % (name, now),
         step0(role, ref),
         step1(role, ref, cwd, scope == "ok"),
+        *common_goal(),
         goal_step(cwd),
         "3. Re-check timers: CronList (crons survive compaction), re-arm expired Monitors, systemctl --user list-timers.",
         "4. If you run workers (manager or lead): list panes (tmux list-panes -s), resume any worker that compacted and "

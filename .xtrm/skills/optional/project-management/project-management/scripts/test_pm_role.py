@@ -1,4 +1,4 @@
-"""Tests for pm_role (role file > name patterns > worker). Run: python3 test_pm_role.py"""
+"""Tests for pm_role (role file > launch role > name patterns > worker). Run: python3 test_pm_role.py"""
 import json
 import os
 import pathlib
@@ -54,6 +54,36 @@ class Role(unittest.TestCase):
     def test_invalid_file_falls_back(self):
         (self.wt / ".pm-role").write_text("captain\n")
         self.assertEqual(pm_role.resolve("x-lead", self.wt), "lead")
+
+    def test_launch_role_needs_no_file(self):
+        for launch, role in (("manager", "manager"), ("lead", "lead"), ("board-audit-runner", "board_helper")):
+            self.assertEqual(pm_role.source("anything", self.wt, launch), (role, "launch"), launch)
+
+    def test_worker_launch_keeps_a_legacy_name_role(self):
+        # worker is not mapped: a coordinator launched as worker before the split keeps its name-pattern role
+        self.assertEqual(pm_role.source("old-coord", self.root / "nowhere", "worker"), ("lead", "name"))
+        self.assertEqual(pm_role.source("PROJ-7-fix", self.root / "nowhere", "worker"), ("worker", "default"))
+
+    def test_file_overrides_launch_role(self):
+        pm_role.write("manager", self.wt)  # a manager launched under an older role reports worker
+        self.assertEqual(pm_role.source("wed11-coord", self.wt, "worker"), ("manager", "file"))
+
+    def test_unmapped_launch_role_falls_to_name(self):
+        self.assertEqual(pm_role.source("acme-lead", self.root / "nowhere", "project-manager"), ("lead", "name"))
+        self.assertEqual(pm_role.source("x", self.root / "nowhere", "project-manager"), ("worker", "default"))
+
+    def test_config_maps_a_launch_role(self):
+        (self.root / "pm.json").write_text(json.dumps({"launch_roles": {"chief": "manager", "bad": "captain"}}))
+        pm_config._RAW = pm_config._CACHE = None
+        self.assertEqual(pm_role.by_launch("chief"), "manager")
+        self.assertIsNone(pm_role.by_launch("bad"))
+        self.assertEqual(pm_role.by_launch("lead"), "lead")
+
+    def test_current_reads_the_launch_env(self):
+        os.environ["CLAUDE_PROJECT_DIR"] = str(self.root / "nowhere")
+        os.environ["XTMUX_AGENT_ROLE"] = "lead"
+        os.environ.pop("SUBSTRATE_HOLDER", None)
+        self.assertEqual(pm_role.current_source(), ("lead", "launch"))
 
     def test_write_rejects_unknown_role(self):
         with self.assertRaises(ValueError):

@@ -13,9 +13,9 @@ import route_target as rt  # noqa: E402
 REPO = "/srv/projects/alpha"
 
 
-def sess(name, cwd, state="working", repository=None):
+def sess(name, cwd, state="working", repository=None, role=None):
     return {"name": name, "cwd": cwd, "state": state, "repository": repository, "sessionId": name + "-id",
-            "tmux": {"paneId": "%1"}}
+            "tmux": {"paneId": "%1"}, "role": role}
 
 
 class Resolve(unittest.TestCase):
@@ -58,6 +58,20 @@ class Resolve(unittest.TestCase):
         os.environ["PM_REPO_DIR"] = ""                    # in_project falls back to the slug check
         live = [sess("SB-4416", tmp, repository="org/alpha")]
         self.assertEqual(rt.resolve("manager", live)["name"], "SB-4416")
+
+    def test_launch_role_from_the_host_record(self):
+        live = [sess("sat14", self.wt("sat14"), role="manager"), sess("api", self.wt("api"), role="lead"),
+                sess("SB-7-fix", self.wt("SB-7-fix"), role="worker")]
+        self.assertEqual(rt.resolve("manager", live)["name"], "sat14")
+        self.assertEqual(rt.resolve("lead", live)["name"], "api")
+
+    def test_role_file_beats_the_launch_role(self):
+        tmp = tempfile.mkdtemp()
+        (pathlib.Path(tmp) / ".git").write_text("gitdir: x")
+        (pathlib.Path(tmp) / ".pm-role").write_text("manager\n")
+        os.environ["PM_REPO_DIR"] = ""
+        live = [sess("wed11-coord", tmp, repository="org/alpha", role="worker")]
+        self.assertEqual(rt.resolve("manager", live)["name"], "wed11-coord")
 
     def test_claim_breaks_a_manager_tie(self):
         live = [sess("thu13-manager", self.wt("thu13-manager")), sess("fri14-manager", self.wt("fri14-manager"))]

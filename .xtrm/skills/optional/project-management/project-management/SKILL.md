@@ -37,6 +37,8 @@ index:
     - {path: scripts/jira.py, when: "Jira REST reads, moves, links, attachments (never comments)", see: [run]}
     - {path: scripts/post-guard.py, when: "Every Jira comment; --mention-first for the operator", see: [run]}
     - {path: scripts/route_target.py, when: "Addressing the manager, a lead, the board helper or the team by role", see: [roles]}
+    - {path: scripts/pm_session.py, when: "First step of every session and after compaction: role, bound issue, kit, common goal", see: [roles, operations]}
+    - {path: ../journal-search/SKILL.md, when: "Finding where something was decided, reported or handed off without knowing the issue", see: [run]}
 ---
 
 # Project coordination
@@ -55,10 +57,9 @@ names and paths are settings (env var or `~/.config/xtrm/project-management.json
 
 Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
 
-**One role, two modes.** Manager and lead launch with `--role project-manager`; the session role picks the mode. The role comes from the role
-file `.pm-role` in the session's worktree (`manager`, `lead`, `board_helper`), written right after launch (`references/launching.md`, "Role
-file"); names are a fallback (`*-manager`, `*-lead`, legacy `*-coord`), else `worker` (`references/setup.md`, "Routing roles"). A build lane
-is a lead; there is no separate build mode.
+**Roles come from the launch.** `--role manager`, `--role lead`, `--role worker`, `--role board-audit-runner`; a `.pm-role` file overrides
+(for `project-manager` and older sessions), names are the last fallback (`references/setup.md`, "Routing roles"). Every session starts with
+`scripts/pm_session.py show`: role, bound issue, kit, common goal (`references/launching.md`, "Session kit"). A build lane is a lead.
 
 | Role | Owns | Does not |
 |---|---|---|
@@ -150,7 +151,7 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
   with `sb issue renew <ref>` (`references/substrate.md`, "Renew a claim"); it claims again only after the lease expired. Put this in the prompt.
 - Name a worker `<story-key>-<slug>` (`PROJ-260-pi-runtime`): branch `xt/<name>`, window `claude-<name>` lower case, so the Jira key reaches
   branches, PRs and commits.
-- **Roles come from the role file** (`scripts/pm_role.py`), the session name only as a fallback; peers resolve them at send time
+- **Roles come from the launch** (`scripts/pm_role.py`: role file, launch role, then name); peers resolve them at send time
   (`references/setup.md`, "Routing roles"). Never hand out a socket path.
 - **Several projects in one config:** every launch, timer and lead sets `PM_PROJECT=<name>` (`references/setup.md`, "Several projects");
   the scripts stop rather than guess.
@@ -160,12 +161,8 @@ judgment over many items is an AgentRun workflow (`references/agentrun.md`), nev
 
 ## Daily operations (added 2026-10-22)
 
-The manager reads `references/manager.md` before the first production window; a lead reads `references/lead.md`. The rules below hold, each
-learned from a failure or an operator ruling; where an older rule is heavier, rules 48-50 win.
-
-Rhythm, journal discipline, crons, production windows, Jira windows, workers and specialists, monitoring, operator talk, the status board, cleanup,
-the handoff checklist and merge lists live in `references/manager.md` §1-§15 (daily report 22:17Z, claim renewal every 2 h, close sweep hourly,
-rule 47); the old items 1-13 were that summary, so the rules start at 14.
+Each rule below was learned from a failure or an operator ruling; where an older rule is heavier, rules 48-50 win. The daily items (rhythm, crons,
+windows, operator talk, cleanup, handoff, merge lists) are `references/manager.md` §1-§15 and `references/lead.md`, so the rules start at 14.
 
 14. **Status board** (operator, 2026-10-26; skill `status-board-keeper`): one page whose data changes only through its store, written by the
     `status_board_sync` timer and by the keeper (each hourly cycle one Haiku subagent with the cycle's verified facts: `workers`, `schedule`,
@@ -234,8 +231,9 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
     reap (a 2-row pane read as GONE, 2026-10-28).
 32. **A worker refused by its Edit hook never works around it through the shell:** its lead (or the manager) launches a short session in the
     protected repo, the hook being the only guard against cross-repository writes (a sibling repository, 2026-10-28).
-33. **Service operating knowledge lives in service-knowledge** (operator, 2026-11-07, D39): what a service is, its tables, readers, checks and traps go into
-    the service-knowledge pack through its update flow, never into this skill and never into `DEPLOY.md` (which keeps standing deploy rules only).
+33. **Service operating knowledge lives in service-knowledge** (operator, 2026-11-07, D39; skill and CLI for every role, 2026-11-14): read a
+    service through its skill and `service-knowledge index query` before its source; what a service is, its tables, readers, checks and traps go
+    into the pack through its update flow, never into this skill and never into `DEPLOY.md` (which keeps standing deploy rules only).
     `service-knowledge-sync` is REQUIRED for every promotion to stable (operator, 2026-10-29): dispatch it from the stable SHA after promote-merge; the
     promotion is done only when its result is journaled (interim until the GitHub app exists).
 34. **A window's PASS/STOP criteria come from a traced artefact** (PR-head output plus a live read-only count), never a message; store its path in the
@@ -406,7 +404,10 @@ rule 47); the old items 1-13 were that summary, so the rules start at 14.
 55. **Read the help before a new `sb` verb** (operator, 2026-11-13): before a `sb` verb you have not used this session, run `sb help <group>`
     (`sb help issue`, `sb help journal`). Underused verbs: `sb issue renew` (keep a lease), `sb links check|sync` (close-gate rows),
     `sb provenance trace` (PR and commit spine), `sb issue tree`, `sb issue relate`, `sb issue edit --context-refs` (bind a document),
-    `sb journal since <ref> <cursor>` (read only what changed).
+    `sb journal since <ref> <cursor>` (read only what changed); `journal-search` finds an entry when the issue is unknown.
+56. **One common goal, known to every session** (operator, 2026-11-14; goal awareness and an explicit charter raise team results in the
+    multi-agent studies). The goal document, the project epic and the Jira epic (`references/setup.md`, "Common goal") are printed by
+    `pm_session.py`; every contract names the goal section it serves. The manager keeps them current; work against the goal is a question.
 
 ## The rule: two systems, bound files
 
@@ -492,7 +493,6 @@ Compaction, resume, handover, the pack session hooks: `references/continuity.md`
   the newest of two crossed peer messages.
 
 ## Shape of a project
-
 Epics, themes, stories, sprints, the Jira mapping and an Epic with more than ~20 children: `references/project-start.md`.
 
 ## 1. Start
