@@ -81,8 +81,9 @@ session ends. A session has one role, `manager`, `lead`, `board_helper` or `work
    (`references/launching.md`, "Session kit").
 2. **Else the launch role:** the specialist role of `xt claude|pi --role <name>`, which the session sees as
    `XTMUX_AGENT_ROLE` and the agent host reports as the session's `role`. Defaults: `manager` -> manager, `lead` -> lead,
-   `board-audit-runner` (or `board-helper`) -> board_helper, `worker` -> worker; the `launch_roles` setting adds or
-   changes entries (`{"chief": "manager"}`). A role not listed (`project-manager`) says nothing.
+   `board-audit-runner` (or `board-helper`) -> board_helper; the `launch_roles` setting adds or changes entries
+   (`{"chief": "manager"}`). A role not listed (`project-manager`, `worker`) says nothing, so a coordinator launched
+   under one keeps its name-pattern role.
 3. **Else the session name** against the `route_roles` patterns (defaults below).
 4. **Else `worker`.**
 
@@ -193,7 +194,7 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_CHECKPOINT_THRESHOLDS` | `checkpoint_thresholds` | `[fraction]` | context fractions of the EARLY and FINAL checkpoint warnings (default `[0.70, 0.85]`) | hooks |
 | `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
 | `PM_GOAL_REFS` | `goal_refs` | `[text]` | further pointers to the common goal, printed as they are | hooks, doc |
-| `PM_LAUNCH_ROLES` | `launch_roles` | `{launch role: role}` | launch role (specialist name) -> pack role, merged over the defaults (`manager`, `lead`, `worker`, `board-audit-runner`) | all |
+| `PM_LAUNCH_ROLES` | `launch_roles` | `{launch role: role}` | launch role (specialist name) -> pack role, merged over the defaults (`manager`, `lead`, `board-audit-runner`, `board-helper`) | all |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |

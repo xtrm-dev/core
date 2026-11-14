@@ -43,6 +43,7 @@ to the session, the launcher checks the kit and adds what the launch did not giv
 
 ```
 python3 <pack>/project-management/scripts/pm_session.py show --dir <worktree>      # role (source), project, bound issue, KIT lines, goal
+                                                                                  # (launch role from the agent host, or --launch-role <r>)
 python3 <pack>/project-management/scripts/pm_session.py init --dir <worktree> [--role <r>] [--issue <ref>]
 ```
 

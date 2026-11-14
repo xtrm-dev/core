@@ -4,8 +4,8 @@
 Every manager, lead and worker runs `pm_session.py show` as its first step (and after every compaction); whoever
 launches a session runs `pm_session.py init` in the new worktree when the launch alone does not say everything.
 
-  pm_session.py show [--dir D]                       role and its source, project, bound issue, kit warnings, goal
-  pm_session.py init [--role R] [--issue REF] [--dir D]
+  pm_session.py show [--dir D] [--launch-role R]     role and its source, project, bound issue, kit warnings, goal
+  pm_session.py init [--role R] [--issue REF] [--dir D] [--launch-role R]
                                                      write what the launch did not: .pm-role only when the launch
                                                      role does not already give R; .substrate-issue for REF; both
                                                      kept out of git (info/exclude)
@@ -15,6 +15,10 @@ The common goal is what every session of the project serves beyond its own issue
 goal_doc, a path relative to repo_dir, for example a PRD), the Substrate epic (epic) with its success criteria, the
 Jira epic (jira_epic) and any extra pointers (goal_refs). The text lives in those sources; this script only points at
 them and quotes the goal document's opening paragraph. Reads only; `init` writes the two kit files.
+
+Whose session: without --dir, this session (its environment: XTMUX_AGENT_ROLE, SUBSTRATE_HOLDER, SUBSTRATE_ISSUE_REF).
+With --dir, the session in that worktree: the caller's environment is ignored, the launch role comes from --launch-role or
+from the agent host's record of the session running there, and the bound issue from the worktree's .substrate-issue.
 """
 from __future__ import annotations
 
@@ -68,19 +72,30 @@ def goal_doc_path() -> pathlib.Path | None:
 
 
 def statement(path: pathlib.Path) -> str:
-    """The goal document's opening paragraph: the first prose block after its title."""
+    """The goal document's opening paragraph: the first prose block after its front matter and title."""
     try:
-        text = path.read_text()
+        lines = path.read_text().splitlines()
     except OSError:
         return ""
+    if lines and lines[0].strip() == "---":  # YAML front matter
+        end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
+        lines = lines[end + 1:] if end is not None else lines
     para: list[str] = []
-    for line in text.splitlines():
+    fence = False
+    for line in lines:
         s = line.strip()
+        if s.startswith("```"):
+            if para:
+                break
+            fence = not fence
+            continue
+        if fence:
+            continue
         if not s:
             if para:
                 break
             continue
-        if s.startswith(("#", "---", "|", "```", ">")) and not para:
+        if not para and s.startswith(("#", "|", ">", "<!--", "---")):
             continue
         para.append(s)
     out = " ".join(para)
@@ -120,7 +135,8 @@ def goal_lines(read_epic: bool = True) -> list[str]:
     jira_epic = _setting("PM_JIRA_EPIC")
     if jira_epic:
         lines.append(f"  Jira epic: {jira_epic}")
-    for ref in _setting_data("PM_GOAL_REFS", []) or []:
+    refs = _setting_data("PM_GOAL_REFS", []) or []
+    for ref in [refs] if isinstance(refs, str) else refs:
         lines.append(f"  also: {ref}")
     if not lines:
         return [("COMMON GOAL: none configured. The manager sets goal_doc (and epic, jira_epic) in the project's "
@@ -131,8 +147,23 @@ def goal_lines(read_epic: bool = True) -> list[str]:
     return [head, *lines]
 
 
-def bound_issue(directory) -> str | None:
-    ref = os.environ.get("SUBSTRATE_ISSUE_REF") or os.environ.get("SUBSTRATE_ISSUE")
+def host_launch_role(directory) -> str | None:
+    """The launch role the agent host records for the live session whose cwd is `directory`, if any."""
+    try:
+        import route_target
+        want = pathlib.Path(directory).resolve()
+        for s in route_target.sessions():
+            if s.get("state") in route_target.NOT_LIVE or not s.get("cwd"):
+                continue
+            if pathlib.Path(s["cwd"]).resolve() == want and s.get("role"):
+                return str(s["role"])
+    except Exception:  # noqa: BLE001 - the host is optional here; no record means no launch role
+        return None
+    return None
+
+
+def bound_issue(directory, own: bool = True) -> str | None:
+    ref = (os.environ.get("SUBSTRATE_ISSUE_REF") or os.environ.get("SUBSTRATE_ISSUE")) if own else None
     if ref:
         return ref.strip()
     root = pm_role.worktree_root(directory)
@@ -146,15 +177,21 @@ def bound_issue(directory) -> str | None:
     return None
 
 
-def kit(directory) -> list[str]:
-    launch = os.environ.get("XTMUX_AGENT_ROLE")
-    role, src = pm_role.source(os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME"),
-                               directory, launch)
+def kit(directory, own: bool = True, launch: str | None = None) -> list[str]:
+    """Kit report for this session (own) or for the session in `directory` (launch role passed or looked up)."""
+    if own:
+        launch = launch or os.environ.get("XTMUX_AGENT_ROLE")
+        name = os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME")
+    else:
+        launch = launch or host_launch_role(directory)
+        name = None
+    role, src = pm_role.source(name, directory, launch)
     try:
         project, why = pm_config.select_project()
+        several = len(pm_config.project_names()) > 1
     except SystemExit as exc:
-        project, why = None, str(exc)
-    issue = bound_issue(directory)
+        project, why, several = None, f"config error: {exc}", False
+    issue = bound_issue(directory, own)
     lines = [f"role: {role} (from {src}" + (f", launched as {launch}" if launch else "") + ")",
              f"project: {project or '-'} ({why})", f"bound issue: {issue or '-'}"]
     warn = []
@@ -166,19 +203,20 @@ def kit(directory) -> list[str]:
     if not issue:
         warn.append("no bound issue: pm_session.py init --issue <ref> (a worker: its issue; a lead: its workstream "
                     "epic; the manager: manager_issue)")
-    if len(pm_config.project_names()) > 1 and not os.environ.get("PM_PROJECT"):
+    if several and not os.environ.get("PM_PROJECT"):
         warn.append(f"several projects in the config and PM_PROJECT unset: export PM_PROJECT={project or '<name>'}")
     lines += [f"KIT: {w}" for w in warn] or ["kit: complete"]
     return lines
 
 
-def init(role: str | None, issue: str | None, directory) -> list[str]:
+def init(role: str | None, issue: str | None, directory, own: bool = True, launch: str | None = None) -> list[str]:
     done = []
     root = pm_role.worktree_root(directory) or pathlib.Path(directory)
     if role:
         if role not in pm_role.ROLES:
             raise ValueError(f"role must be one of {', '.join(pm_role.ROLES)}")
-        launched = pm_role.by_launch(os.environ.get("XTMUX_AGENT_ROLE"))
+        launch = launch or (os.environ.get("XTMUX_AGENT_ROLE") if own else host_launch_role(directory))
+        launched = pm_role.by_launch(launch)
         if launched == role and not pm_role.declared(directory):
             done.append(f"role {role} comes from the launch; no role file needed")
         else:
@@ -200,7 +238,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--dir", default=None)
     ap.add_argument("--role", default=None)
     ap.add_argument("--issue", default=None)
+    ap.add_argument("--launch-role", default=None, help="with --dir: the role the session there was launched with")
     a = ap.parse_args(argv)
+    own = a.dir is None
     directory = a.dir or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     if a.action == "goal":
         print("\n".join(goal_lines()))
@@ -208,9 +248,9 @@ def main(argv: list[str]) -> int:
     if a.action == "init":
         if not (a.role or a.issue):
             ap.error("init needs --role and/or --issue")
-        for line in init(a.role, a.issue, directory):
+        for line in init(a.role, a.issue, directory, own, a.launch_role):
             print(line)
-    print("\n".join(kit(directory)))
+    print("\n".join(kit(directory, own, a.launch_role)))
     print("\n".join(goal_lines()))
     return 0
 

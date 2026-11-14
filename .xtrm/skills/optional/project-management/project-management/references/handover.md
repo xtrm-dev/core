@@ -46,7 +46,8 @@ From the manager's pane, so the window joins the same tmux session (never a raw 
 (`references/launching.md`, "Session kit"); the launch role gives `manager`, no role file is needed.
 
 While both managers live, `scripts/route_target.py manager` sends to the holder of the claim on `manager_issue` (default: the epic): the
-outgoing keeps the role until it releases the claim in §5, then the successor takes it by claiming. Keep the overlap short.
+outgoing keeps the role until it releases the claim in §5, then the successor takes it by claiming. Both are managers by their launch role, so
+the claim is the only tie-break: keep the overlap short and release the claim before you exit.
 
 ## 5. Hand over crons, monitors and claims in order (outgoing + incoming)
 

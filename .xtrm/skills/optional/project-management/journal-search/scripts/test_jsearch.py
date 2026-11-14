@@ -16,13 +16,13 @@ def make_store(path, rows):
     db.executescript(
         "CREATE TABLE projects(id TEXT, prefix TEXT);"
         "CREATE TABLE issues(id TEXT, project_id TEXT, human_number INTEGER, title TEXT);"
-        "CREATE TABLE issue_journal(issue_id TEXT, sequence INTEGER, kind TEXT, participant_id TEXT, created_at INTEGER,"
+        "CREATE TABLE issue_journal(id TEXT, issue_id TEXT, sequence INTEGER, kind TEXT, participant_id TEXT, created_at INTEGER,"
         " semantic_json TEXT, result_json TEXT, mechanical_json TEXT, refs_json TEXT);"
         "INSERT INTO projects VALUES ('p1','PROJ');"
         "INSERT INTO issues VALUES ('i1','p1',120,'Rollout of the parser');")
     for seq, kind, who, ts, summary in rows:
-        db.execute("INSERT INTO issue_journal VALUES ('i1',?,?,?,?,?,NULL,NULL,NULL)",
-                   (seq, kind, who, ts, json.dumps({"summary": summary})))
+        db.execute("INSERT INTO issue_journal VALUES (?,'i1',?,?,?,?,?,NULL,NULL,NULL)",
+                   (f"jrn_{seq}", seq, kind, who, ts, json.dumps({"summary": summary})))
     db.commit()
     db.close()
 
@@ -61,12 +61,31 @@ class Search(unittest.TestCase):
     def test_index_is_incremental_and_source_untouched(self):
         self.assertIn("+2 entries", self.run_js())
         db = sqlite3.connect(self.store)
-        db.execute("INSERT INTO issue_journal VALUES ('i1',3,'result','worker-a',1790000200000,?,NULL,NULL,NULL)",
+        db.execute("INSERT INTO issue_journal VALUES ('jrn_3','i1',3,'result','worker-a',1790000200000,?,NULL,NULL,NULL)",
                    (json.dumps({"summary": "Parser fix merged"}),))
         db.commit()
         db.close()
         self.assertIn("+1 entries, total 3", self.run_js())
         self.assertTrue((self.root / "cache" / "journal-search").is_dir())
+
+    def test_entries_sharing_the_last_millisecond_are_not_lost(self):
+        self.run_js()
+        db = sqlite3.connect(self.store)  # a late entry with the same timestamp as the newest indexed one
+        db.execute("INSERT INTO issue_journal VALUES ('jrn_9','i1',9,'note','worker-b',1790000100000,?,NULL,NULL,NULL)",
+                   (json.dumps({"summary": "Same millisecond entry about zebras"}),))
+        db.commit()
+        db.close()
+        self.assertIn("+1 entries, total 3", self.run_js())
+        self.assertIn("seq9", self.run_js("zebras"))
+        self.assertIn("+0 entries, total 3", self.run_js())
+
+    def test_missing_store_is_a_clean_error(self):
+        self.env["SUBSTRATE_DB"] = str(self.root / "none.db")
+        r = subprocess.run([sys.executable, str(HERE / "jsearch.py")], env=self.env, capture_output=True, text=True,
+                           check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no Substrate store", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
 
     def test_source_is_opened_read_only(self):
         self.store.chmod(0o444)

@@ -8,14 +8,14 @@ $XDG_CACHE_HOME/journal-search/index.db (default ~/.cache), incremental by creat
   jsearch.py --rebuild
 FTS5 query syntax: words AND by default, "exact phrase", OR, NOT, prefix*.
 """
-import argparse, datetime as dt, json, os, sqlite3, sys, zlib
+import argparse, datetime as dt, json, os, sqlite3, sys, urllib.parse, zlib
 
 SRC = os.path.expanduser(os.environ.get("SUBSTRATE_DB") or "~/.xtrm/state.db")
 _CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
 # One index per source store, so a second Substrate database never mixes into the first one's index.
 IDX = os.path.join(_CACHE, "journal-search",
                    "index.db" if SRC == os.path.expanduser("~/.xtrm/state.db")
-                   else "index-%08x.db" % zlib.crc32(os.path.realpath(SRC).encode()))
+                   else f"index-{zlib.crc32(os.path.realpath(SRC).encode()):08x}.db")
 
 
 def text_of(raw):
@@ -46,26 +46,34 @@ def text_of(raw):
 def sync(rebuild=False):
     os.makedirs(os.path.dirname(IDX), exist_ok=True)
     ix = sqlite3.connect(IDX)
-    if rebuild:
+    if not os.path.isfile(SRC):
+        sys.exit(f"jsearch: no Substrate store at {SRC} (set SUBSTRATE_DB)")
+    cols = [r[1] for r in ix.execute("PRAGMA table_info(j)")]
+    if rebuild or (cols and "jid" not in cols):  # an index from before the jid column is rebuilt once
         ix.executescript("DROP TABLE IF EXISTS j; DROP TABLE IF EXISTS meta;")
     ix.executescript(
         "CREATE VIRTUAL TABLE IF NOT EXISTS j USING fts5("
         "body, ref UNINDEXED, prefix UNINDEXED, seq UNINDEXED, kind UNINDEXED, who UNINDEXED,"
-        "ts UNINDEXED, title, tokenize='unicode61 remove_diacritics 2');"
+        "ts UNINDEXED, title, jid UNINDEXED, tokenize='unicode61 remove_diacritics 2');"
         "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v INTEGER);"
     )
     last = (ix.execute("SELECT v FROM meta WHERE k='last_ts'").fetchone() or [0])[0]
-    src = sqlite3.connect(f"file:{SRC}?mode=ro", uri=True)
+    # The cursor is inclusive: entries sharing the last millisecond are re-read and skipped by journal id.
+    seen = {r[0] for r in ix.execute("SELECT jid FROM j WHERE ts = ?", (last,))}
+    uri = "file:" + urllib.parse.quote(os.path.realpath(SRC)) + "?mode=ro"
+    src = sqlite3.connect(uri, uri=True)
     rows = src.execute(
         "SELECT p.prefix||'-'||i.human_number, p.prefix, j.sequence, j.kind, j.participant_id, j.created_at,"
-        " i.title, j.semantic_json, j.result_json, j.mechanical_json, j.refs_json"
+        " i.title, j.semantic_json, j.result_json, j.mechanical_json, j.refs_json, j.id"
         " FROM issue_journal j JOIN issues i ON i.id=j.issue_id JOIN projects p ON p.id=i.project_id"
-        " WHERE j.created_at > ? ORDER BY j.created_at",
+        " WHERE j.created_at >= ? ORDER BY j.created_at",
         (last,),
     ).fetchall()
+    rows = [r for r in rows if r[11] not in seen]
     for r in rows:
         body = "\n".join(t for t in (text_of(r[7]), text_of(r[8]), text_of(r[9]), text_of(r[10])) if t)
-        ix.execute("INSERT INTO j VALUES (?,?,?,?,?,?,?,?)", (body, r[0], r[1], r[2], r[3], r[4] or "", r[5], r[6]))
+        ix.execute("INSERT INTO j VALUES (?,?,?,?,?,?,?,?,?)",
+                   (body, r[0], r[1], r[2], r[3], r[4] or "", r[5], r[6], r[11]))
     if rows:
         ix.execute("INSERT OR REPLACE INTO meta VALUES ('last_ts', ?)", (rows[-1][5],))
     ix.commit()
@@ -93,7 +101,7 @@ def main():
     if o.ref:
         where.append("ref = ?"); args.append(o.ref.upper())
     if o.kind:
-        ks = o.kind.split(",")
+        ks = [k.strip().lower() for k in o.kind.split(",") if k.strip()]
         where.append(f"kind IN ({','.join('?' * len(ks))})"); args += ks
     if o.who:
         where.append("who LIKE ?"); args.append(f"%{o.who}%")

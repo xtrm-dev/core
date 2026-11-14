@@ -11,6 +11,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import pm_config  # noqa: E402
 import pm_session  # noqa: E402
 
+HOST_LAUNCH_ROLE = pm_session.host_launch_role
+
 PRD = """# Product definition
 
 The product is one server that answers questions about markets. This file states what it must do.
@@ -41,6 +43,7 @@ class Kit(unittest.TestCase):
         pm_config._RAW = pm_config._CACHE = None
 
     def tearDown(self):
+        pm_session.host_launch_role = HOST_LAUNCH_ROLE
         os.environ.clear()
         os.environ.update(self.old)
         pm_config._RAW = pm_config._CACHE = None
@@ -88,6 +91,39 @@ class Kit(unittest.TestCase):
         lines = pm_session.kit(self.repo)
         self.assertEqual(lines[0], "role: manager (from launch, launched as manager)")
         self.assertTrue(any(line.startswith("KIT: no bound issue") for line in lines))
+
+    def test_dir_ignores_the_callers_environment(self):
+        os.environ["XTMUX_AGENT_ROLE"] = "manager"         # the launcher is a manager
+        os.environ["SUBSTRATE_ISSUE_REF"] = "SB-1"         # bound to its own issue
+        other = self.root / "other"
+        (other).mkdir()
+        (other / ".git").write_text("gitdir: x\n")
+        pm_session.host_launch_role = lambda d: None       # no agent host in the test
+        lines = pm_session.kit(other, own=False)
+        self.assertEqual(lines[0], "role: worker (from default)")
+        self.assertIn("bound issue: -", lines)
+        self.assertEqual(pm_session.kit(other, own=False, launch="lead")[0], "role: lead (from launch, launched as lead)")
+
+    def test_init_for_another_worktree_writes_the_role_file(self):
+        os.environ["XTMUX_AGENT_ROLE"] = "lead"            # the caller's own launch role must not count
+        pm_session.host_launch_role = lambda d: "project-manager"
+        out = pm_session.init("lead", None, self.repo, own=False)
+        self.assertEqual((self.repo / ".pm-role").read_text().strip(), "lead")
+        self.assertTrue(out[0].startswith("wrote"))
+
+    def test_statement_skips_front_matter_and_code(self):
+        doc = self.repo / "docs" / "FM.md"
+        doc.write_text("---\ntitle: PRD\nstatus: draft\n---\n# Title\n\n```\ncode\n```\n\nThe real goal.\n")
+        self.assertEqual(pm_session.statement(doc), "The real goal.")
+
+    def test_goal_refs_as_a_string(self):
+        self.write_config({"repo_dir": str(self.repo), "goal_refs": "https://example.com/one"})
+        self.assertIn("  also: https://example.com/one", pm_session.goal_lines())
+
+    def test_kit_reports_a_broken_config(self):
+        (self.root / "pm.json").write_text("{not json")
+        pm_config._RAW = pm_config._CACHE = None
+        self.assertTrue(any("config error" in line for line in pm_session.kit(self.repo)))
 
     def test_kit_complete_with_issue_env(self):
         os.environ["XTMUX_AGENT_ROLE"] = "worker"

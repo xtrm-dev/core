@@ -56,9 +56,13 @@ class Role(unittest.TestCase):
         self.assertEqual(pm_role.resolve("x-lead", self.wt), "lead")
 
     def test_launch_role_needs_no_file(self):
-        for launch, role in (("manager", "manager"), ("lead", "lead"), ("board-audit-runner", "board_helper"),
-                             ("worker", "worker")):
+        for launch, role in (("manager", "manager"), ("lead", "lead"), ("board-audit-runner", "board_helper")):
             self.assertEqual(pm_role.source("anything", self.wt, launch), (role, "launch"), launch)
+
+    def test_worker_launch_keeps_a_legacy_name_role(self):
+        # worker is not mapped: a coordinator launched as worker before the split keeps its name-pattern role
+        self.assertEqual(pm_role.source("old-coord", self.root / "nowhere", "worker"), ("lead", "name"))
+        self.assertEqual(pm_role.source("PROJ-7-fix", self.root / "nowhere", "worker"), ("worker", "default"))
 
     def test_file_overrides_launch_role(self):
         pm_role.write("manager", self.wt)  # a manager launched under an older role reports worker
