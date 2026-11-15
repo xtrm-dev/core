@@ -1016,6 +1016,10 @@
           "hash": "14223a318173cd3c1e3a3793f76a2de559ef2f8f0f9315d80c8aa709a726b327",
           "version": "0.15.3"
         },
+        "project-management/project-management/references/instructions.md": {
+          "hash": "cb5570f215fc2559e7777d162091fe17c2a2781f8a36f9d360ec970bb6dac1ba",
+          "version": "0.15.3"
+        },
         "project-management/project-management/references/jira.md": {
           "hash": "911f3716df23ea1cb4b93a61fd1249b12d131ce3b0727fb87fe5c7358fa1cf40",
           "version": "0.15.3"
@@ -1089,7 +1093,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "5909d909b44f5a2ad564a99d2aa62bebf87ef5ce4d55e1a879d50c9b5699ec9a",
+          "hash": "d459ad6dd0efa55d73beecd91aed1645eff1dcfab98b372274937a772dbb0e9a",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {

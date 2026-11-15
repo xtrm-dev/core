@@ -22,6 +22,7 @@ index:
     - {id: pitfalls, title: "Pitfalls", when: "Before fan-out, Jira creates, approvals"}
     - {id: operations, title: "Daily operations (added 2026-10-22)", when: "Rules 14-55 (48-50 are the slim way, 55 the sb habit); manager.md holds the daily items"}
   paths:
+    - {path: references/instructions.md, when: "Lost, new to the system, or explaining it to a human: the whole system end to end, what to run", see: [roles, two-systems, run]}
     - {path: references/manager.md, when: "Acting as manager: rhythm, crons, production windows, operator talk, status board, merges, wind-down", see: [roles, operations, run]}
     - {path: references/lead.md, when: "Launching, resuming or acting as a workstream lead", see: [roles, operations]}
     - {path: references/worker.md, when: "Every worker, at launch and after every compaction", see: [fleet]}
@@ -47,11 +48,11 @@ A project is work of days or weeks that needs several workers. The manager and t
 reviewers review. Neither builds or reviews code. Before a critical or unexpected decision, ask the advisor (Agent, Opus, read-only) with
 VERIFIED/UNVERIFIED facts and numbered questions. It counts toward the 2-subagent cap and does not replace specialist verification.
 
-**First-time setup.** The pack holds no instance data: the Jira site, project key, Substrate prefix, epic, repo, operator identity, status
-names and paths are settings (env var or `~/.config/xtrm/project-management.json`). Read `references/setup.md` and run
-`scripts/pm_check.py` before the first command; below, `$PM_*` and `$JIRA_*` name those settings.
-
-**Slim way (operator, 2026-11-07).** Rules 48-50 batch by code area, merge on arrival and batch the rulings; where an older rule is heavier, they win.
+**Lost?** `references/instructions.md` explains the whole system end to end. **First-time setup.** The pack holds no instance data: the Jira site,
+project key, Substrate prefix, epic, repo, operator identity, status names and paths are settings (env var or
+`~/.config/xtrm/project-management.json`). Read `references/setup.md` and run `scripts/pm_check.py` before the first command; below, `$PM_*` and
+`$JIRA_*` name those settings. **Slim way (operator, 2026-11-07).** Rules 48-50 batch by code area, merge on arrival and batch the rulings; where an
+older rule is heavier, they win.
 
 ## Who does what
 
@@ -301,8 +302,7 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
      not a trigger: every wake re-reads the whole context, so a smaller context is cheaper on every message, timer and Monitor wake.
    - When only time-gated work remains, arm ONE background wake for the next item and end the turn; a goal check-in or Stop-hook
      nudge gets a one-line answer, not a full state restatement.
-   - Re-homed duties carry their premises as UNVERIFIED: check the one load-bearing premise with one command; drop the duty when it is
-     stale.
+   - Re-homed duties carry their premises as UNVERIFIED: check the one load-bearing premise with one command; drop the duty when it is stale.
 41. **Reconstruct the window lineage before every deploy or window GO** (operator, 2026-11-04: "no work that might be newer, already
     merged, or planned"). The manager and the owning lead, at the 60-minute check and again just before the make target:
    - Run `scripts/window-lineage.py --repo <repo> --service <service-registry key> --vehicle <SHA> --term <service word>` (read-only).
