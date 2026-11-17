@@ -1264,7 +1264,7 @@ describe("grayscale row ladder (CORE-2502 follow-ups)", async () => {
 
 describe("working indicator + turn summary", async () => {
   const mod = await import("./index.ts");
-  const { sumUsageTokens, formatTokenCount, formatTurnSummary, applyWorkingIndicator, workingFrames, startTurnClock, stopTurnClockAndSummarize, WORKING_FRAMES, WORKING_FRAME_MS, WORKING_FRAME_TOKENS, XTRM_TURN_SUMMARY_ENTRY } = mod;
+  const { sumUsageTokens, formatTokenCount, formatTurnSummary, applyWorkingIndicator, startTurnClock, stopTurnClockAndSummarize, XTRM_TURN_SUMMARY_ENTRY } = mod;
   const test = (await import("bun:test")).test;
   const expect = (await import("bun:test")).expect;
 
@@ -1283,47 +1283,15 @@ describe("working indicator + turn summary", async () => {
     expect(formatTurnSummary({ seconds: 12, tokens: 4120 })).toBe("worked for 12s, used 4,120 tokens");
   });
 
-  test("frames walk the dingbat block at 115ms, one cell each, no blanks", () => {
-    expect(WORKING_FRAMES).toEqual(["\u2733", "\u2734", "\u2735", "\u2737", "\u2738", "\u2739", "\u273a", "\u273b", "\u273c", "\u273d"]);
-    expect(WORKING_FRAMES).not.toContain("\u2736");
-    expect(WORKING_FRAME_MS).toBe(115);
-    for (const frame of WORKING_FRAMES) {
-      expect(frame.trim().length > 0).toBe(true);
-      expect([...frame]).toHaveLength(1);
-      expect(frame.startsWith("\t")).toBe(false);
-    }
+  test("the working row carries no spinner: an empty frame list, applied once", () => {
     const seen: unknown[] = [];
     applyWorkingIndicator({ setWorkingIndicator: (o) => { seen.push(o); } });
-    expect(seen).toEqual([{ frames: WORKING_FRAMES, intervalMs: WORKING_FRAME_MS }]);
-  });
-
-  test("the pulse uses our grayscale tiers, never a hue or a baked colour", () => {
-    expect(WORKING_FRAME_TOKENS).toHaveLength(WORKING_FRAMES.length);
-    expect(new Set(WORKING_FRAME_TOKENS)).toEqual(new Set(["dim", "muted", "toolTitle"]));
-    const tokens: string[] = [];
-    const theme = { fg: (token: string, text: string) => { tokens.push(token); return `<${token}>${text}</${token}>`; } };
-    const frames = workingFrames(theme as never);
-    expect(frames).toHaveLength(WORKING_FRAMES.length);
-    expect(tokens).toEqual(WORKING_FRAME_TOKENS);
-    frames.forEach((frame, index) => {
-      expect(frame).toContain(WORKING_FRAMES[index]!);
-      expect(frame).not.toMatch(/#[0-9a-fA-F]{3,6}/);
-    });
-    // Never brighter than the tool-name tier the message sits under.
-    expect(WORKING_FRAME_TOKENS).not.toContain("text");
-    expect(WORKING_FRAME_TOKENS).not.toContain("accent");
-    expect(WORKING_FRAME_TOKENS).not.toContain("warning");
-  });
-
-  test("a no-colour terminal gets the plain glyphs", () => {
-    const previous = process.env.NO_COLOR;
-    process.env.NO_COLOR = "1";
-    try {
-      const theme = { fg: (token: string, text: string) => `<${token}>${text}</${token}>` };
-      expect(workingFrames(theme as never)).toEqual(WORKING_FRAMES);
-    } finally {
-      if (previous === undefined) delete process.env.NO_COLOR; else process.env.NO_COLOR = previous;
-    }
+    expect(seen).toEqual([{ frames: [] }]);
+    // No animation interval, no glyph: pi omits the indicator cell entirely, so
+    // a frame at any width (ambiguous or emoji-presented) can never reach the
+    // terminal and shift the elapsed text.
+    expect(seen[0]).not.toHaveProperty("intervalMs");
+    expect(JSON.stringify(seen)).not.toMatch(/[\u2731-\u273f\u2800-\u28ff]/);
   });
 
   test("ticker messages carry elapsed seconds; settle summarizes the turn alone", () => {
@@ -1333,10 +1301,12 @@ describe("working indicator + turn summary", async () => {
     const realNow = Date.now;
     try {
       startTurnClock(ui, 1000, 5000, (fn) => { timers.push(fn); return 1 as unknown as ReturnType<typeof setInterval>; });
-      expect(messages).toEqual(["elapsed 0s"]);
+      // One leading space: pi pads the row by one column, and the grid's text
+      // column is the third, so the message supplies the second.
+      expect(messages).toEqual([" elapsed 0s"]);
       Date.now = () => 5000 + 12_300;
       timers.forEach((fn) => fn());
-      expect(messages.at(-1)).toBe("elapsed 12s");
+      expect(messages.at(-1)).toBe(" elapsed 12s");
       const { freezeTurnClock } = mod;
       freezeTurnClock(5000 + 12_300);
       // Turn used 340 tokens alone (1340 end - 1000 start), took 12s.
@@ -1362,7 +1332,7 @@ describe("working indicator + turn summary", async () => {
       sessionManager: { getEntries: () => entries },
     });
     await handlers["agent_start"]({ type: "agent_start" }, ctx(startEntries));
-    expect(messages).toEqual(["elapsed 0s"]);
+    expect(messages).toEqual([" elapsed 0s"]);
     await handlers["agent_end"]({ type: "agent_end", messages: [] }, ctx(endEntries));
     expect(appended).toEqual([]);
     await handlers["agent_settled"]({ type: "agent_settled" }, ctx(endEntries));

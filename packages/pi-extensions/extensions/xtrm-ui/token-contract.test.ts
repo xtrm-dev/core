@@ -4,7 +4,6 @@ import {
   expandedThinkingStyle,
   renderUltraRow,
   styledText,
-  workingFrames,
 } from "./index.ts";
 import { renderRichDiffPreview, renderToolSummary } from "./format.ts";
 import { REQUIRED } from "./themes.test.ts";
@@ -40,8 +39,6 @@ describe("extension reads only documented theme tokens", () => {
     const expanded = expandedThinkingStyle(() => theme);
     expanded.label("label");
     expanded.recap("recap");
-
-    workingFrames(theme);
 
     renderRichDiffPreview(theme, "@@ -1,2 +1,2 @@\n-old line\n+new line\n context\n", 10);
 
