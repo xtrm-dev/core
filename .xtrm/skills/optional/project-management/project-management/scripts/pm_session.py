@@ -179,8 +179,8 @@ def bound_issue(directory, own: bool = True) -> str | None:
     return None
 
 
-def kit(directory, own: bool = True, launch: str | None = None) -> list[str]:
-    """Kit report for this session (own) or for the session in `directory` (launch role passed or looked up)."""
+def session_role(directory, own: bool = True, launch: str | None = None) -> tuple[str, str, str | None]:
+    """(role, source, launch role) of this session (own) or of the session in `directory` (launch role passed or looked up)."""
     if own:
         launch = launch or os.environ.get("XTMUX_AGENT_ROLE")
         name = os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME")
@@ -188,6 +188,12 @@ def kit(directory, own: bool = True, launch: str | None = None) -> list[str]:
         launch = launch or host_launch_role(directory)
         name = None
     role, src = pm_role.source(name, directory, launch)
+    return role, src, launch
+
+
+def kit(directory, own: bool = True, launch: str | None = None) -> list[str]:
+    """Kit report for this session (own) or for the session in `directory` (launch role passed or looked up)."""
+    role, src, launch = session_role(directory, own, launch)
     try:
         project, why = pm_config.select_project()
         several = len(pm_config.project_names()) > 1
@@ -248,19 +254,17 @@ def main(argv: list[str]) -> int:
         print("\n".join(goal_lines()))
         return 0
     if a.action == "tools":
-        launch = a.launch_role if not own else (a.launch_role or os.environ.get("XTMUX_AGENT_ROLE"))
-        name = (os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME")) if own else None
-        print("\n".join(pm_tools.block(pm_role.source(name, directory, launch)[0])))
+        print("\n".join(pm_tools.block(session_role(directory, own, a.launch_role)[0])))
         return 0
     if a.action == "init":
         if not (a.role or a.issue):
             ap.error("init needs --role and/or --issue")
         for line in init(a.role, a.issue, directory, own, a.launch_role):
             print(line)
-    lines = kit(directory, own, a.launch_role)
-    print("\n".join(lines))
+    role = session_role(directory, own, a.launch_role)[0]
+    print("\n".join(kit(directory, own, a.launch_role)))
     print("\n".join(goal_lines()))
-    print("\n".join(pm_tools.block(lines[0].split()[1])))
+    print("\n".join(pm_tools.block(role)))
     return 0
 
 

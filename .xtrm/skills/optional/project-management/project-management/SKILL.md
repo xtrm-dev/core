@@ -127,7 +127,7 @@ Operator, 2026-11-01 and 2026-11-17: less micro-management. Leads decide and jou
    - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44.
    - Before a production-impacting, data-meaning or irreversible decision: native subagents and the advisor. A builder may coordinate both within the
      cap.
-   - The lead launches the rule-44 review for every PR, never the builder whose PR it is.
+   - The lead launches the rule-44 review of every PR that needs one (rule 44), never the builder whose PR it is.
 
 The same judgment over many items is an AgentRun workflow (`references/agentrun.md`), never per-item API loops.
 
@@ -283,7 +283,7 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
      manager wake that re-reads a context of a few hundred thousand tokens. The advisor's answer settles most doubts; journal it.
    - **Watch your own efficiency** (manager and leads): gaps, contradictions and wasted work are findings; measure cost, not impressions, with
      `ccusage` (below) or `scripts/pm_wakes.py` on a transcript (wakes by source, messages sent and received).
-   - The manager or the owning lead orders Jira by intent (what changes, why, which rows); the board helper words it in plain language and reports
+   - The manager or the owning lead orders Jira by intent (what changes, why, which rows); the board helper words it in plain language and journals
      ids once per order batch. Dictating comment text is micro-management; use it only for an operator-facing @operator comment.
    - Ask before answering: a peer message that needs no decision gets no reply.
    - Choose the builder per task (rule 1): a kept-alive `worker` specialist by default; `xt pi` or `xt claude` Sonnet only for what rule 1
@@ -361,7 +361,7 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
     and one deploy per objective. No compatibility shim and no per-reader flag while there are no users: the reader reads the new source in code, the old
     switch and the old views go in the same branch, and a reader that cannot switch stops cleanly until its PR arrives. One Opus review covers the batch.
 49. **Merge on arrival** (same ruling; lead merges 2026-11-17): a master-only PR (no window, no promotion of its own) is merged by its lead once the
-    rule-44 review passes at the exact head, memory gate and `--match-head-commit` in the same command, then journaled; the manager merges PRs that
+    rule-44 review (if rule 44 needs one) passes at the exact head, memory gate and `--match-head-commit` in the same command, then journaled; the manager merges PRs that
     deploy, ride a promotion or span workstreams. No merge queue. Only a merge that itself deploys needs a window; one window per objective (rule 48).
 50. **Batch the rulings** (operator, 2026-11-07, D39; MMD-2331 seq 2424): one Opus quant session per batch of questions, not one per PR; one review of the
     whole batch (rule 44). A contract revision is a diff the lead checks and attests within minutes, not a new planning cycle.
@@ -434,7 +434,7 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
   journal entry.
 - **A PR that itself deploys needs a window Task; a master-only PR does not** (rule 49): it rides the promotion in its body, with a `no-window` note
   (`references/jira.md`, "PR readiness rule").
-- **Every PR:** review, decision, fix, delta check, then merge on arrival with `--match-head-commit`. After the merge confirm main equals the head CI tested; if
+- **Every PR:** review (unless rule 44 exempts it), decision, fix, delta check, then merge on arrival with `--match-head-commit`. After the merge confirm main equals the head CI tested; if
   another PR merged between, the next CI or a canary must prove the combination (with no CI on push to main, nothing else will).
 - **Review at the exact head you merge.** A push after the review makes it stale; the merge guard (`xt identity merge-check`, run by the `gh`
   shim on every `gh pr merge`) refuses a stale or missing review. The marker's `run=` is the agent session id, never `XTRM_SESSION_ID`

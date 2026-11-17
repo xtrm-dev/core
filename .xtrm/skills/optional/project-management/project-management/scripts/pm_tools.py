@@ -42,7 +42,7 @@ CARDS = {
     "lead": [
         "decide and journal: a decision, merge or status goes to your journal (decision, result); message the manager only "
         "for what cannot wait an hour (rule 40)",
-        SPECIALISTS + "; keep one pr-reviewer specialist alive for every PR of your workstream (rule 44)",
+        SPECIALISTS + "; keep one pr-reviewer specialist alive for the PRs of your workstream that need review (rule 44)",
         "merge: your master-only PRs after the rule-44 review, gh pr merge --match-head-commit <sha> with the memory gate (rule 49)",
         "route_target.py --team: another lead's session name for a cross-workstream question",
     ],
@@ -62,12 +62,15 @@ def cards(role: str) -> list[str]:
     out = list(CARDS.get(role, [])) + list(COMMON)
     try:
         extra = pm_config.get_data("PM_TOOL_CARDS_EXTRA", {}) or {}
-    except SystemExit:
+    except (SystemExit, ValueError, TypeError):  # a broken setting never hides the pack's cards
         extra = {}
     if isinstance(extra, dict):
         for key in (role, "all"):
             val = extra.get(key) or []
-            out += [val] if isinstance(val, str) else [str(v) for v in val]
+            if isinstance(val, str):
+                out.append(val)
+            elif isinstance(val, list):
+                out += [str(v) for v in val if isinstance(v, (str, int, float))]
     return out
 
 

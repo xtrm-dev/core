@@ -8,7 +8,8 @@ Stdout becomes session context. Acts only for role manager or lead (scripts/pm_r
 configured project (pm_config: PM_PROJECT, or the cwd inside a project's repo_dir/match_dirs). No project: silent.
 A config error: one warning line, then the steps without the project's issue.
 
-Both modes print the project's common goal (scripts/pm_session.py: goal_doc, epic, jira_epic, goal_refs).
+Both modes print the project's common goal (scripts/pm_session.py: goal_doc, epic, jira_epic, goal_refs) and the role's tool cards
+(scripts/pm_tools.py). Only managers and leads get this hook; a worker sees its cards in pm_session.py show and the tools reminder.
 Compact mode prints: role line; the bound issue (.substrate-issue; an unbound manager gets manager_issue, else
 epic; an unbound lead is told to bind its own epic) with `sb issue renew --ttl-ms <claim_ttl_ms>`; goal refresh,
 timers, workers, journal; the references to re-read (refread_files); a stale-checkout check against the

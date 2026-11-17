@@ -157,7 +157,8 @@ same-scope follow-up may stay, at most three issues).
 
 - **By role, never by a stored address.** `python3 <pack>/project-management/scripts/route_target.py manager` (or
   `board_helper`, `--team`, `--all`) prints the live session name; send to it with `SendMessage`.
-- **Worker to lead:** decisions, blockers, done and merge-ready reports. Progress goes to the journal.
+- **Worker to lead:** a decision, a blocker, a contract conflict or a scope deviation (SKILL.md rule 40). Done, merge-ready and progress go
+  to the journal; a specialist's result is its report.
 - **Lead to manager:** almost never by message. A lead decides inside its workstream and journals it; the manager reads every
   lead journal once an hour and rules there. A message only for what cannot wait an hour: a production anomaly, a
   data-correctness finding, a blocker the lead cannot settle, a decision due within 2 h (SKILL.md rule 40). The manager never

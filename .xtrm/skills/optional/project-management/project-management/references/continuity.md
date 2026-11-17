@@ -10,9 +10,10 @@ Read after every compaction, before a resume or a day-boundary handover.
 - **Compact yourself** (operator, 2026-11-17): the manager and every lead decide when to compact, without waiting for the operator. After the
   handoff entry, run in one command, then end the turn (the detached shell types `/compact` into your own pane once the turn is over):
   ```
-  (setsid sh -c 'sleep 20; tmux send-keys -t "$TMUX_PANE" -l /compact; sleep 1; tmux send-keys -t "$TMUX_PANE" Enter' >/dev/null 2>&1 &)
+  (setsid sh -c 'sleep 20; tmux send-keys -t "${TMUX_PANE:?}" -l /compact; sleep 1; tmux send-keys -t "${TMUX_PANE:?}" Enter' >/dev/null 2>&1 &)
   ```
   The post-compact hook prints the resume checklist and the nudge types the resume prompt. A Pi session compacts the same way.
+  The command needs `tmux` outside a sandbox: if your shell runs sandboxed, run it with the sandbox off, or nothing is typed.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
 - Resume: `sb issue resume <ref>` (the epic for the manager, the workstream issue for a lead). Set `SUBSTRATE_ISSUE_REF` to it; bind the
   worktree with `pm_session.py init --issue <ref>` (kept out of git by `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.

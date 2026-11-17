@@ -33,8 +33,8 @@ DEFAULT_TOOLS_THRESHOLDS = [0.35, 0.60]
 TOOLS_ROLES = ("manager", "lead", "worker")
 REARM_MARGIN = 0.15
 # A session compacts itself: a detached shell types /compact into its own pane once the current turn has ended.
-SELF_COMPACT = ("(setsid sh -c 'sleep 20; tmux send-keys -t \"$TMUX_PANE\" -l /compact; sleep 1; "
-                "tmux send-keys -t \"$TMUX_PANE\" Enter' >/dev/null 2>&1 &)")
+SELF_COMPACT = ("(setsid sh -c 'sleep 20; tmux send-keys -t \"${TMUX_PANE:?}\" -l /compact; sleep 1; "
+                "tmux send-keys -t \"${TMUX_PANE:?}\" Enter' >/dev/null 2>&1 &)")
 
 
 def thresholds() -> list[float]:
@@ -58,7 +58,7 @@ def tools_thresholds() -> list[float]:
 
 def tools_message(role: str, frac: float) -> str:
     import pm_tools
-    lines = pm_tools.block(role, head="TOOLS CHECK at %d%% context" % round(frac * 100))
+    lines = pm_tools.block(role, head=f"TOOLS CHECK at {round(frac * 100)}% context")
     return "\n".join(lines + ["Use the one that fits your next step; no reply needed."])
 
 
@@ -173,16 +173,18 @@ def run(out=None) -> None:
         st["tools"] = []
     due = [t for t in ths if frac >= t and t not in st["fired"]]
     tdue = [t for t in tths if frac >= t and t not in st["tools"]]
-    st["fired"] += due
-    st["tools"] += tdue
-    st["last"] = frac
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps(st))
-    parts = []
+    parts = []  # build the text first: a failure here must not mark a threshold as delivered
     if due:
         parts.append(message(used, window, frac, max(due) >= ths[-1], handoff_ref(role, cwd, scope == "ok"), fold_hint()))
     if tdue and not due:  # a checkpoint warning already asks for the handoff; one message per turn
         parts.append(tools_message(role, frac))
+    st["fired"] += due
+    st["tools"] += tdue
+    st["last"] = frac
+    state.parent.mkdir(parents=True, exist_ok=True)
+    tmp = state.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(st))
+    os.replace(tmp, state)  # atomic: parallel PostToolUse calls never read a half-written state
     if not parts:
         return
     event = inp.get("hook_event_name", "PostToolUse")

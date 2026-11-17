@@ -189,5 +189,6 @@ republished; a host-load Monitor reporting high/ok transitions only.
 ## 15. Merge lists
 
 Judge each PR by draft status, review head against current head, alembic single head, and the FIRST window that carries it to production (stable moves
-only by promotion). Merge each merge-ready record on arrival (SKILL.md rule 49) once its `xtrm-reviewer[bot]` review at the head carries
-"Ledger check: exit 0" (rule 44).
+only by promotion). Merge each merge-ready record you own (SKILL.md rule 49) when you read it in the lead's journal, or on the lead's message
+when a window is due within 2 h, once its `xtrm-reviewer[bot]` review at the head carries "Ledger check: exit 0" (rule 44, which exempts
+doc-only and service-knowledge-only PRs).

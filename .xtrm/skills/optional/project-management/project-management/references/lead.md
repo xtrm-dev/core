@@ -80,7 +80,8 @@ Merge-ready means: head SHA pasted from `gh`, checks green on that head, an `xtr
   ceiling above it.
 - Builders: a `worker` specialist by default, kept alive for the next issue of its role (rule 3); an `xt` worker only for what rule 1 lists.
   Each launch runs the preflight (rule 2; line on the worker's issue). Syntax: `references/launching.md`, "Dispatch a builder".
-- Reviews (rule 44): launch the review of every PR; keep one `pr-reviewer` specialist alive and give it each new PR. `test-engineer` by scrutiny.
+- Reviews (rule 44): launch the review of every PR that needs one (not doc-only or service-knowledge-only); keep one `pr-reviewer` specialist
+  alive and give it each new PR. `test-engineer` by scrutiny.
 - Each contract names in VALIDATION its specialist chain (rule 52) and wants the activation ids in the result. A contract listing only deliverables
   got no specialist use (2026-11-01: six of six).
 - Liveness every cycle (`references/launching.md`, "Liveness"): every check ends in an action. The operator answers destructive, privileged or
