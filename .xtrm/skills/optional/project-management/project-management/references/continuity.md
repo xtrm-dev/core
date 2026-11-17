@@ -14,6 +14,13 @@ Read after every compaction, before a resume or a day-boundary handover.
   ```
   The post-compact hook prints the resume checklist and the nudge types the resume prompt. A Pi session compacts the same way.
   The command needs `tmux` outside a sandbox: if your shell runs sandboxed, run it with the sandbox off, or nothing is typed.
+- The hooks enforce this, not a line in this file (operator 2026-11-16, XTRM-802/XTRM-804): `checkpoint_warn.py`'s FINAL message requires the
+  checkpoint `handoff` to carry the goal prompt (key `goal`) and `open_promises[{promise,due_utc,timer_id}]`, and reads the session's bound issue
+  in state.db to say whether the newest GOAL PROMPT handoff is newer than its newest `decision` (it is not when the goal was left for after the
+  compaction); `post_compact.py` step 2 prints that saved goal prompt back for re-injection, with a WARNING naming both seqs when it is stale,
+  instead of asking for a rewrite after the compaction; `promise-check.py` (Stop) flags an "I will … <time or event>" promise with no later
+  CronCreate and no journal entry naming its key time. Each of them resolves the session's own bound issue (`.substrate-issue`,
+  `SUBSTRATE_ISSUE_REF`): a lead gets its workstream epic, never another issue's ref.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
 - Resume: `sb issue resume <ref>` (the epic for the manager, the workstream issue for a lead). Set `SUBSTRATE_ISSUE_REF` to it; bind the
   worktree with `pm_session.py init --issue <ref>` (kept out of git by `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.
@@ -21,8 +28,10 @@ Read after every compaction, before a resume or a day-boundary handover.
   `~/.claude/settings.json` (`references/setup.md`, "8. Session hooks"). They act by the session role (`scripts/pm_role.py`: role file, launch role,
   then name). Workers and reviewers get no checkpoint or resume steps.
    - `checkpoint_warn.py` warns at the `checkpoint_thresholds` (default 70% EARLY, 85% FINAL) of the window and asks for ONE structured
-     `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, next
-     action), verified against live state, then the self-compaction above.
+     `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, goal prompt,
+     open promises, next action), verified against live state, then the self-compaction above.
+   - `promise-check.py` is the Stop hook for the promise rule above (settings: `promise_check_turns`, default 3, 0 = off); the operator wires it
+     next to `operator-questions.py --event stop` in the `Stop` block.
    - `post_compact.py` prints the resume steps after a compaction or a start, then the project's private `post_compact_extra` text file (its
      own fleet rules); with `post_compact_nudge` true it also types `post_compact_nudge_text` into `$TMUX_PANE`.
    - `action_gate.py` blocks the gated actions (merges, launches, attests, dispatches) until the session has re-read its role references.

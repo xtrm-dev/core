@@ -25,7 +25,7 @@ CLEARED = ("PM_PROJECT", "XTMUX_AGENT_ROLE", "PM_GOAL_DOC", "PM_JIRA_EPIC", "PM_
            "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "ANTHROPIC_BASE_URL", "PM_CLAIM_TTL_MS", "PM_EPIC", "PM_MANAGER_ISSUE",
            "PM_LANE_DIR", "PM_REFREAD_FILES", "PM_GATED_COMMANDS", "PM_GATED_TOOLS", "PM_POST_COMPACT_EXTRA",
            "PM_POST_COMPACT_NUDGE", "PM_POST_COMPACT_NUDGE_TEXT", "PM_PENDING_MAX_AGE_S", "PM_CHECKPOINT_THRESHOLDS",
-           "PM_STATUS_BOARD_SITE", "PM_QUESTION_OWNER", "PM_ROUTE_ROLES", "PM_OPERATOR_QUESTION_REFS")
+           "PM_STATUS_BOARD_SITE", "PM_QUESTION_OWNER", "PM_ROUTE_ROLES", "PM_OPERATOR_QUESTION_REFS", "SUBSTRATE_DB")
 
 
 def iso(dt):
@@ -505,3 +505,210 @@ def test_tools_reminder_off_and_project_extra(env, monkeypatch):
     env.role_file("board_helper")
     env.set(tools_reminder_thresholds=[0.35])
     assert warn(env, 90_000) == ""                       # the board helper runs on pi; no reminder from this hook
+
+
+# ---------------------------------------------------------------- goal and promises (XTRM-804)
+GOAL_DB_SCHEMA = """
+CREATE TABLE projects (id TEXT PRIMARY KEY, prefix TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at INT);
+CREATE TABLE issues (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, human_number INT NOT NULL, kind TEXT,
+                     title TEXT, lifecycle_state TEXT, created_at INT, updated_at INT);
+CREATE TABLE issue_journal (id TEXT PRIMARY KEY, issue_id TEXT NOT NULL, sequence INT NOT NULL, kind TEXT NOT NULL,
+                            semantic_json TEXT, created_at INT, UNIQUE (issue_id, sequence));
+CREATE TABLE issue_aliases (alias TEXT PRIMARY KEY, issue_id TEXT NOT NULL, kind TEXT, created_at INT);
+CREATE TABLE issue_locator_history (project_id TEXT, locator TEXT, issue_id TEXT, created_at INT,
+                                    PRIMARY KEY (project_id, locator));
+"""
+
+
+def goal_db(env, journal, prefix="EP", number=7):
+    """A fake state.db with one issue EP-7 and the given journal rows [(seq, kind, semantic)]."""
+    import sqlite3
+    db = env.tmp / "state.db"
+    if db.exists():
+        db.unlink()
+    con = sqlite3.connect(str(db))
+    con.executescript(GOAL_DB_SCHEMA)
+    con.execute("insert into projects values (?,?,?,0)", ("prj_t", prefix, "t"))
+    con.execute("insert into issues values (?,?,?,?,?,?,0,0)", ("iss_7", "prj_t", number, "task", "t", "open"))
+    for seq, kind, semantic in journal:
+        con.execute("insert into issue_journal values (?,?,?,?,?,?)",
+                    ("j%d" % seq, "iss_7", seq, kind, json.dumps(semantic), 1_763_400_000_000 + seq))
+    con.commit()
+    con.close()
+    env.mp.setenv("SUBSTRATE_DB", str(db))
+    (env.wt / ".substrate-issue").write_text("%s-%d\n" % (prefix, number))
+    return db
+
+
+def goal_row(seq, text, **extra):
+    return (seq, "handoff", {"summary": "GOAL PROMPT %s" % text, **extra})
+
+
+def decision(seq, summary="a decision"):
+    return (seq, "decision", {"summary": summary})
+
+
+def test_checkpoint_final_demands_the_goal_and_says_it_is_missing(env, monkeypatch):
+    env.role_file("manager")
+    goal_db(env, [decision(4)])
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    msg = warn(env, 90_000)
+    assert "GOAL PROMPT, in this SAME handoff entry" in msg
+    assert "open_promises[{promise, due_utc, timer_id}]" in msg
+    assert "GOAL: NOT satisfied — no GOAL PROMPT handoff on this issue" in msg
+    assert "seq 4" in msg
+    assert "OPEN PROMISES: none recorded in the goal handoff" in msg
+
+
+def test_checkpoint_final_reports_a_satisfied_goal_and_its_promises(env, monkeypatch):
+    env.role_file("lead")
+    goal_db(env, [decision(4), goal_row(9, "LEAD of EP-7: ship the hooks.",
+                                       open_promises=[{"promise": "ask about E1", "due_utc": "2026-11-16T18:00Z",
+                                                       "timer_id": "4d01d735"}])])
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    msg = warn(env, 90_000)
+    assert "GOAL: satisfied now — GOAL PROMPT handoff seq 9" in msg
+    assert "newer than the newest decision (seq 4)" in msg
+    assert "OPEN PROMISES carried: ask about E1 (due 2026-11-16T18:00Z, timer 4d01d735)" in msg
+
+
+def test_checkpoint_final_flags_a_goal_older_than_the_newest_decision(env, monkeypatch):
+    env.role_file("manager")
+    goal_db(env, [goal_row(3, "GOAL before the last decisions"), decision(8, "later")])
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    msg = warn(env, 90_000)
+    assert "GOAL: NOT satisfied — the newest GOAL PROMPT handoff is seq 3" in msg
+    assert "the newest decision is seq 8" in msg
+
+
+def test_checkpoint_early_does_not_run_the_goal_check(env, monkeypatch):
+    env.role_file("manager")
+    goal_db(env, [decision(4)])
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    msg = warn(env, 72_000)
+    assert "CONTEXT CHECKPOINT (EARLY)" in msg and "GOAL: " not in msg
+
+
+def test_checkpoint_goal_check_is_unverified_without_a_store(env, monkeypatch):
+    env.role_file("manager")
+    env.mp.setenv("SUBSTRATE_DB", str(env.tmp / "absent.db"))
+    (env.wt / ".substrate-issue").write_text("EP-7\n")
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    assert "GOAL: unverified" in warn(env, 90_000)
+
+
+def test_post_compact_warns_when_the_saved_goal_is_stale(env):
+    env.role_file("lead")
+    goal_db(env, [goal_row(3, "GOAL PROMPT BODY: ship the hooks before 18:00Z"), decision(8, "moved on")])
+    out = compact(env)
+    assert "2. GOAL RELOAD" in out
+    assert "WARNING: the goal is STALE — the newest GOAL PROMPT handoff is seq 3" in out
+    assert "the newest decision is seq 8" in out
+    assert "| GOAL PROMPT BODY: ship the hooks before 18:00Z" in out   # re-injected, not rewritten
+
+
+def test_post_compact_reloads_the_newest_goal_without_a_warning(env):
+    env.role_file("lead")
+    goal_db(env, [goal_row(2, "OLD GOAL"), decision(3, "d"), goal_row(5, "NEW GOAL: close EP-7")])
+    out = compact(env)
+    assert "GOAL: satisfied now — GOAL PROMPT handoff seq 5" in out
+    assert "WARNING" not in out
+    assert "| NEW GOAL: close EP-7" in out and "OLD GOAL" not in out
+
+
+def test_post_compact_warns_when_no_goal_was_saved(env):
+    env.role_file("manager")
+    goal_db(env, [decision(8)])
+    out = compact(env)
+    assert "WARNING: no GOAL PROMPT handoff on this issue (newest decision seq 8)" in out
+    assert "No goal prompt found" in out and "self-inject.sh --goal <file>" in out
+
+
+def test_post_compact_fails_open_on_a_broken_store(env):
+    env.role_file("manager")
+    (env.tmp / "broken.db").write_bytes(b"not a database")
+    env.mp.setenv("SUBSTRATE_DB", str(env.tmp / "broken.db"))
+    (env.wt / ".substrate-issue").write_text("EP-7\n")
+    out = compact(env)
+    assert "2. GOAL RELOAD" in out and "GOAL: unverified" in out
+
+
+def test_goal_helpers_fail_open(env):
+    env.mp.setenv("SUBSTRATE_DB", str(env.tmp / "absent.db"))
+    assert common.journal_rows("EP-7") == []
+    assert common.goal_check(None)["state"] == "unknown"
+    assert common.goal_check("EP-7")["state"] == "unknown"
+    assert common.goal_reload("EP-7") == []
+    assert "unverified" in common.goal_check_line("EP-7")
+
+
+def test_goal_rows_are_handoffs_with_a_marker_or_a_goal_key(env):
+    assert common.is_goal_row({"kind": "handoff", "semantic": {"summary": "GOAL PROMPT (07:46Z):\nLEAD of EP-7"}})
+    assert common.is_goal_row({"kind": "handoff", "semantic": {"goal": "LEAD of EP-7"}})
+    assert not common.is_goal_row({"kind": "handoff", "semantic": {"summary": "handover, goal: see file"}})
+    assert not common.is_goal_row({"kind": "decision", "semantic": {"summary": "GOAL PROMPT x"}})
+    assert common.goal_body({"semantic": {"summary": "GOAL PROMPT (07:46Z):\nLEAD of EP-7"}}) == "LEAD of EP-7"
+    assert common.goal_body({"semantic": {"goal": "LEAD of EP-7"}}) == "LEAD of EP-7"
+
+
+def test_journal_rows_are_read_only_and_ordered(env):
+    import sqlite3
+    db = goal_db(env, [decision(2), goal_row(1, "g"), decision(3)])
+    first = common.journal_rows("EP-7")
+    assert [r["seq"] for r in first] == [1, 2, 3]
+    assert first[0]["utc"].endswith("Z") and first[0]["kind"] == "handoff" and first[0]["at_ms"]
+    assert common.journal_rows("EP-7") == first                       # a second read works
+    assert db.exists() and not list(env.tmp.glob("state.db-*"))      # no WAL/journal side files written
+    con = common._db()                                                # mode=ro: a write is refused, not silently done
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            con.execute("delete from issue_journal")
+        assert con.execute("select count(*) from issue_journal").fetchone()[0] == 3
+    finally:
+        con.close()
+
+
+def test_an_issue_with_no_journal_is_missing_not_unknown(env):
+    goal_db(env, [])                                     # the issue exists, it has no entries at all
+    check = common.goal_check("EP-7")
+    assert check["state"] == "missing" and check["newest_decision"] is None
+    assert common.goal_check("EP-9")["state"] == "unknown"          # no such issue
+
+
+def test_goal_check_reads_only_the_rows_it_needs(env, monkeypatch):
+    """The budget is a property of the QUERY, not of the clock: a big issue must not be read whole.
+
+    The live store's MMD-2331 holds 3.5k entries / 2.7 MB, where a full journal read cost 1.5 s. So: a 3.5k-row issue
+    still answers in one SQL-filtered read per question, and the rows parsed never exceed what those questions need.
+    1500 decision rows + 1 goal row - a clock assertion would be flaky, so count the parsed rows instead.
+    """
+    rows = [decision(n, "d%d" % n) for n in range(1, 1500)] + [goal_row(1500, "the goal")]
+    goal_db(env, rows)
+    parsed = []
+    real = common._rows
+
+    def counted(where, ref, extra=(), desc=False, limit=0):
+        got = real(where, ref, extra, desc, limit)
+        parsed.append(len(got))
+        return got
+
+    monkeypatch.setattr(common, "_rows", counted)
+    check = common.goal_check("EP-7")
+    assert check["state"] == "satisfied" and check["goal_seq"] == 1500
+    assert parsed and max(parsed) <= 1                   # the issue lookup, the newest decision, the newest goal
+
+
+def test_goal_reload_prefers_the_newer_of_journal_and_file(env):
+    """A .goal-file written after the handoff wins: the reload shows the most recent save, not the oldest source."""
+    import os as _os
+    goal_db(env, [goal_row(2, "JOURNAL GOAL (older)")])
+    gf = env.tmp / "goal-body.txt"
+    gf.write_text("FILE GOAL (newer)\n")
+    (env.wt / ".goal-file").write_text(str(gf) + "\n")
+    future = time.time() + 3600
+    _os.utime(gf, (future, future))
+    got = common.goal_reload("EP-7", str(env.wt))
+    assert [g["source"].split()[0] for g in got][0] == "goal"
+    assert "FILE GOAL (newer)" in got[0]["text"]
+    _os.utime(gf, (1, 1))                                  # and the older one loses
+    assert "JOURNAL GOAL (older)" in common.goal_reload("EP-7", str(env.wt))[0]["text"]

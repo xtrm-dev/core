@@ -845,7 +845,7 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/cycle/cycle.py": {
-          "hash": "725588f74bfe54ea84da4d0808fb6e3f679a8156d572ecb973bc11a595905d04",
+          "hash": "00d7f3e042ad71ffe592ff7e08093d449008a19e33568d889e214fa9cedde874",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/cycle/jiratext.py": {
@@ -989,19 +989,23 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/checkpoint_warn.py": {
-          "hash": "4fac290452f76ae5e882812fab48032742debee5e39fed6288c4b7a3a66930f4",
+          "hash": "2677662e0347be8c5982334da6ac288ce2054595c209e107783eafeb8b4064e9",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
-          "hash": "0989180024518b247040c9ee1eefa79d1b8cea2d840511c8725e105b78f9ce6d",
+          "hash": "030423c907c5590091843bb3eff141a6eaeec9b762578568be6cd7e33239b7de",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/pm_hook_common.py": {
-          "hash": "4129e7c5105767f1f98e982a279638fc5ce78441f4872bb27444cee7d4bfc989",
+          "hash": "df079d6d18f74410cead1e486038bca7f70cdabc1e46a68ab343690b140817f3",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/post_compact.py": {
-          "hash": "a254b550c004a4cb06183ef1f3677db55caab328357a2b367f440abc4cd985d9",
+          "hash": "35af75b0aef5a400ed9ddfd06944a2e7f88f180716f57040004f4c43b0d4b090",
+          "version": "0.15.3"
+        },
+        "project-management/project-management/hooks/promise-check.py": {
+          "hash": "2b3e2268780edf341472c14a4052ad9b39ca44b36d4f953901157a766bb8ee24",
           "version": "0.15.3"
         },
         "project-management/project-management/references/agentrun.md": {
@@ -1009,7 +1013,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/continuity.md": {
-          "hash": "d98638fa32e128102f850df4e7bd0d1863db700fbb2618b36e302fc494b4a108",
+          "hash": "c1795967fa6566533ba68017c95741cd87affaa2f05987249790bb243ce2e402",
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
@@ -1102,6 +1106,10 @@
         },
         "project-management/project-management/SKILL.md": {
           "hash": "1cb0743d19a061d17798648548a4cfbb20a18f0b1c5ecd658c6a8f3e402e17de",
+          "version": "0.15.3"
+        },
+        "project-management/status-board-keeper/references/integration.md": {
+          "hash": "fa9f8ce64c71224a54e3d3b5f5a48a15324057541b4c42cf7f6264e91804e088",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/setup.md": {

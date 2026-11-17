@@ -15,7 +15,11 @@ context drops by REARM_MARGIN or more, which is what a compaction does.
 The handoff entry goes on the bound issue (SUBSTRATE_ISSUE_REF or .substrate-issue); an unbound manager uses the
 config's manager_issue, else epic; an unbound lead is told to bind its own epic. Setting checkpoint_fold_hint
 (true, false or "auto": on when ANTHROPIC_BASE_URL points at a local folding proxy; default false) adds a step that
-folds transport chatter before the handoff. Never blocks: any error exits 0 (logged to the hook state dir (pm_hook_common.cache_dir)).
+folds transport chatter before the handoff. The FINAL message also carries the goal rule (XTRM-804): the SAME handoff
+entry must hold the goal prompt (key ``goal``) and ``open_promises[{promise, due_utc, timer_id}]``, because the goal is
+refreshed BEFORE the compaction; it then states whether that is satisfied now — the newest GOAL PROMPT handoff older
+than the newest ``decision`` entry is not — from one read-only state.db query (pm_hook_common.goal_check).
+Never blocks: any error exits 0 (logged to the hook state dir (pm_hook_common.cache_dir)).
 """
 from __future__ import annotations
 
@@ -113,12 +117,22 @@ def compact_window(model) -> int:
         or int(s.get("autoCompactWindow") or 0) or 200_000
 
 
-def message(used: int, window: int, frac: float, final: bool, ref: str, fold: bool) -> str:
+def message(used: int, window: int, frac: float, final: bool, ref: str, fold: bool, check: dict | None = None) -> str:
     step0 = ("0. Context folding is active: first fold transport chatter (dispatch/report traffic, raw command output, "
              "audited worker reports) with ONE batched `compress` call at a boundary; keep verbatim in each summary: "
              "Jira keys and comment ids, SHAs, transition/sprint/field ids, window ids and UTC times, contract "
              "SUCCESS/SCOPE/VALIDATION lines, file paths, open questions. Never fold an unapplied WORD or a contract "
              "you work against. If still above this level after folding, do steps 1-4.\n") if fold else ""
+    goal = ("3. GOAL PROMPT, in this SAME handoff entry: the goal is refreshed BEFORE the compaction, while the context "
+            "that produced today's decisions is still present (never after it). Keys: goal (the /goal-prompt text, "
+            "<=4000 chars including '/goal ') and open_promises[{promise, due_utc, timer_id}] (empty list = none, never "
+            "omit the key): "
+            "every promise made to the operator in chat — 'I ask you after X', 'by 12:30Z I will', 'I will merge when' "
+            "— with its UTC due time and the timer (CronCreate id) that fires it. A promise with no timer is lost at "
+            "compaction.\n")
+    status = ""
+    if final and check is not None:
+        status = common.goal_check_line(ref, check) + " " + common.promises_line(check) + "\n"
     return (f"CONTEXT CHECKPOINT ({'FINAL' if final else 'EARLY'}): {used:,}/{window:,} tokens ({frac:.0%}). "
             "A manager or lead compacts; it does not hand off by context percentage. Finish the current atomic step, "
             "then:\n" + step0 +
@@ -128,10 +142,10 @@ def message(used: int, window: int, frac: float, final: bool, ref: str, fold: bo
             "workers[{pane, name, issue, state, reap_when}], specialists[{activation, issue, state}], "
             "crons[{prompt_head, schedule}], monitors_to_rearm[], pending_replies[{from_or_to, about, due}], "
             "operator_questions[{ref, q, status_board_row}], open_prs[{n, head, state, next}], decisions_today[seq], "
-            "non_actions[], next_action. The entry IS the handover: no separate handover file.\n"
+            "non_actions[], next_action, goal, open_promises. The entry IS the handover: no separate handover file, "
+            "and the goal belongs in it, not only in .goal-file.\n"
             "2. Verify each list against live state, not memory: CronList, tmux list-panes -s, ListAgents, "
-            "specialist_status, gh pr list.\n"
-            "3. Refresh the goal file (.goal-file) if the work moved on (<=4000 chars).\n"
+            "specialist_status, gh pr list.\n" + goal + status +
             "4. Compact at a quiet point, never within 20 min of a window: compact yourself by typing /compact into your own "
             "pane, then end the turn: " + SELF_COMPACT + (" NOW (auto-compact is close)." if final else " when the current "
             "step ends.") + " The post-compact hook and nudge resume you.")
@@ -175,7 +189,10 @@ def run(out=None) -> None:
     tdue = [t for t in tths if frac >= t and t not in st["tools"]]
     parts = []  # build the text first: a failure here must not mark a threshold as delivered
     if due:
-        parts.append(message(used, window, frac, max(due) >= ths[-1], handoff_ref(role, cwd, scope == "ok"), fold_hint()))
+        final = max(due) >= ths[-1]
+        ref = handoff_ref(role, cwd, scope == "ok")
+        check = common.goal_check(ref) if final else None  # XTRM-804: the FINAL warning reports the goal and promises
+        parts.append(message(used, window, frac, final, ref, fold_hint(), check))
     if tdue and not due:  # a checkpoint warning already asks for the handoff; one message per turn
         parts.append(tools_message(role, frac))
     st["fired"] += due
