@@ -73,6 +73,11 @@ class Resolve(unittest.TestCase):
         live = [sess("wed11-coord", tmp, repository="org/alpha", role="worker")]
         self.assertEqual(rt.resolve("manager", live)["name"], "wed11-coord")
 
+    def test_specialist_session_is_not_a_lead(self):
+        live = [sess("api", self.wt("api"), role="lead"),
+                sess("rev", REPO + "/.xtrm/worktrees/alpha-sp-pr-reviewer-ep-12", role="lead")]
+        self.assertEqual(rt.resolve("lead", live)["name"], "api")
+
     def test_claim_breaks_a_manager_tie(self):
         live = [sess("thu13-manager", self.wt("thu13-manager")), sess("fri14-manager", self.wt("fri14-manager"))]
         rt.claim_holder = lambda ref: "thu13-manager"

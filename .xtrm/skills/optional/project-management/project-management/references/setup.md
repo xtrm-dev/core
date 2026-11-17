@@ -79,13 +79,15 @@ session ends. A session has one role, `manager`, `lead`, `board_helper` or `work
    launch does not say the role: a session launched under the shared `project-manager` role, or one from before the
    role split. Write it with `python3 <pack>/project-management/scripts/pm_session.py init --role <role> --dir <worktree>`
    (`references/launching.md`, "Session kit").
-2. **Else the launch role:** the specialist role of `xt claude|pi --role <name>`, which the session sees as
+2. **A specialist session is a worker:** a session whose worktree is named `<repo>-sp-<name>-...` inherits its launcher's
+   environment (launch role and holder), so it is never read as a coordinator.
+3. **Else the launch role:** the specialist role of `xt claude|pi --role <name>`, which the session sees as
    `XTMUX_AGENT_ROLE` and the agent host reports as the session's `role`. Defaults: `manager` -> manager, `lead` -> lead,
    `board-helper` (and its old name `board-audit-runner`) -> board_helper; the `launch_roles` setting adds or changes entries
    (`{"chief": "manager"}`). A role not listed (`project-manager`, `worker`) says nothing, so a coordinator launched
    under one keeps its name-pattern role.
-3. **Else the session name** against the `route_roles` patterns (defaults below).
-4. **Else `worker`.**
+4. **Else the session name** against the `route_roles` patterns (defaults below).
+5. **Else `worker`.**
 
 `<pack>` is the pack directory, for example `~/.xtrm/skills/optional/project-management`. Check a session with
 `pm_role.py show [--dir <worktree>] [--name <session name>] [--launch-role <role>]`; it prints the role and its source
