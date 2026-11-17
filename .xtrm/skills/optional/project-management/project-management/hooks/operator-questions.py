@@ -45,6 +45,7 @@ sys.path.insert(0, str(SCRIPTS))
 import pm_config  # noqa: E402
 import pm_question  # noqa: E402
 import pm_role  # noqa: E402
+import pm_hook_common  # noqa: E402
 
 DEFAULT_TURNS = 5
 COORDINATOR_ROLES = ("manager", "lead")  # pm_role roles that get the reminder; board_helper and worker do not
@@ -301,7 +302,16 @@ def blocker_questions(refs: list[str], journal=None) -> list[dict]:
     return out
 
 
-def question_refs() -> list[str]:
+def question_refs(role: str | None = None, cwd: str = "") -> list[str]:
+    """Issues whose open operator blockers this session is reminded of.
+
+    The manager owns the project's questions: PM_OPERATOR_QUESTION_REFS, else the project epic. A lead owns only the
+    questions on its own bound issue (SUBSTRATE_ISSUE_REF / .substrate-issue); it is never reminded of the manager's
+    epic questions (operator 2026-11-17: the hook nudged every lead with the manager's questions).
+    """
+    if role == "lead":
+        own = pm_hook_common.bound_ref(cwd)
+        return [own] if own else []
     refs = pm_config.get_data("PM_OPERATOR_QUESTION_REFS", None)
     if refs is None:
         epic = pm_config.get("PM_EPIC")
@@ -412,8 +422,9 @@ def cached_blockers(owner, refs, now, journal):
 
 def _due_reminder(st, chat, reminded, n_turns, now, fetch, journal, payload):
     turns = st["turns"]
-    owner = pm_question.owner_of(session_ident(payload.get("cwd") or ""), pm_role.current())
-    refs = question_refs()
+    role = pm_role.current()
+    owner = pm_question.owner_of(session_ident(payload.get("cwd") or ""), role)
+    refs = question_refs(role, payload.get("cwd") or "")
     cands = list(cached_blockers(owner, refs, now, journal))
     known = {b["qid"] for b in cands}
     # a chat question is due N turns after it was asked (rule 15: "5 turns after the ask")

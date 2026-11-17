@@ -33,6 +33,7 @@ def fake(tmp_path, monkeypatch):
     monkeypatch.setenv("PM_CONFIG", str(cfg))
     monkeypatch.setenv("SUBSTRATE_HOLDER", "p-xt-claude-alpha-api-lead")
     monkeypatch.delenv("PM_QUESTION_OWNER", raising=False)
+    monkeypatch.delenv("XTMUX_AGENT_ROLE", raising=False)   # the launch role of the session running the tests must not count
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))   # no role file: the name decides
     pm_config._RAW = pm_config._CACHE = None
     FakeHn.docs, FakeHn.writes = {}, 0

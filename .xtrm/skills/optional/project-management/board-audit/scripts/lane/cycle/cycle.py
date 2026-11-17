@@ -350,7 +350,17 @@ def to_utc(stored):
 
 
 def gh(args, timeout=150):
-    p = subprocess.run(["gh"] + args, capture_output=True, text=True, cwd=REPO, timeout=timeout)
+    # A slow `gh` call must not destroy the whole pass. Under host load (2026-11-16: load1 86,
+    # `gh pr view` was taking 5-6 s idle) one call can exceed the ceiling, and an uncaught
+    # TimeoutExpired propagated out of this function and aborted every remaining check: the lane
+    # wrote four 0-byte reports in two hours and no section was produced at all.
+    # Every caller already degrades correctly on a non-list return ("gh failed" / "instrument
+    # failed" / UNKNOWN), so return a marker and let that existing handling report the section as
+    # unmeasured, instead of raising. Fail-closed: a timeout is never read as an empty list.
+    try:
+        p = subprocess.run(["gh"] + args, capture_output=True, text=True, cwd=REPO, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return f"unmeasured (timeout): gh {args[0]} exceeded {timeout}s under host load"
     if p.returncode != 0:
         return p.stderr.strip()[:300]
     try:

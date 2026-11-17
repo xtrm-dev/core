@@ -85,7 +85,7 @@ class RoleLine(unittest.TestCase):
         self.wt.mkdir()
         (self.wt / ".git").write_text("gitdir: x\n")
         self.old = dict(os.environ)
-        for k in [k for k in os.environ if k.startswith(("PM_", "SUBSTRATE_", "XTRM_", "CLAUDE_"))]:
+        for k in [k for k in os.environ if k.startswith(("PM_", "SUBSTRATE_", "XTRM_", "CLAUDE_", "XTMUX_"))]:
             del os.environ[k]
         os.environ["PM_CONFIG"] = str(pathlib.Path(self.tmp.name) / "pm.json")
         os.environ["CLAUDE_PROJECT_DIR"] = str(self.wt)

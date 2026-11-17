@@ -29,12 +29,15 @@ def env(tmp_path, monkeypatch):
     cfg = tmp_path / "pm.json"
     cfg.write_text(json.dumps({"state_dir": str(tmp_path / "state"), "status_board_site": "site-x", "epic": "EP-1",
                                "operator_question_turns": 5}))
-    for k in ("PM_PROJECT", "XTRM_ROLE", "PM_STATE_DIR", "PM_OPERATOR_QUESTION_TURNS", "PM_QUESTION_OWNER"):
+    for k in ("PM_PROJECT", "XTRM_ROLE", "XTMUX_AGENT_ROLE", "PM_STATE_DIR", "PM_OPERATOR_QUESTION_TURNS", "PM_QUESTION_OWNER",
+              "SUBSTRATE_ISSUE_REF", "SUBSTRATE_ISSUE"):
         monkeypatch.setenv(k, "_")   # so monkeypatch restores the original (absent) value after a test sets it directly
         monkeypatch.delenv(k)
     monkeypatch.setenv("PM_CONFIG", str(cfg))
     monkeypatch.setenv("SUBSTRATE_HOLDER", IDENT)
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))   # role file lookup stays inside the test dir
+    # IDENT is a lead, and a lead is reminded only of its own bound issue (13f1afa): bind it to its workstream epic EP-1.
+    monkeypatch.setenv("SUBSTRATE_ISSUE_REF", "EP-1")
     pm_config._RAW = pm_config._CACHE = oq._NAME_RE = None
     yield tmp_path
     pm_config._RAW = pm_config._CACHE = oq._NAME_RE = None
@@ -436,3 +439,20 @@ def test_stuck_answering_flag_expires(env):
     oq.save_state("s1", st)
     oq.on_stop(stop(), 1000.0 + 7200)
     assert oq.load_state("s1")["turns"] == 1
+
+
+# regression: operator 2026-11-17 — every lead was reminded of the manager's epic questions
+def test_lead_refs_are_its_own_bound_issue_not_the_epic(env, monkeypatch):
+    (env / ".substrate-issue").write_text("EP-7\n")
+    monkeypatch.delenv("SUBSTRATE_ISSUE_REF", raising=False)
+    assert oq.question_refs("lead", str(env)) == ["EP-7"]
+
+
+def test_lead_without_bound_issue_gets_no_refs(env, monkeypatch):
+    monkeypatch.delenv("SUBSTRATE_ISSUE_REF", raising=False)
+    assert oq.question_refs("lead", str(env / "nowhere")) == []
+
+
+def test_manager_refs_stay_the_project_epic(env, monkeypatch):
+    (env / ".substrate-issue").write_text("EP-7\n")
+    assert oq.question_refs("manager", str(env)) == ["EP-1"]

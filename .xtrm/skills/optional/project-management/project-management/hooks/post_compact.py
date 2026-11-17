@@ -11,8 +11,11 @@ A config error: one warning line, then the steps without the project's issue.
 Both modes print the project's common goal (scripts/pm_session.py: goal_doc, epic, jira_epic, goal_refs) and the role's tool cards
 (scripts/pm_tools.py). Only managers and leads get this hook; a worker sees its cards in pm_session.py show and the tools reminder.
 Compact mode prints: role line; the bound issue (.substrate-issue; an unbound manager gets manager_issue, else
-epic; an unbound lead is told to bind its own epic) with `sb issue renew --ttl-ms <claim_ttl_ms>`; goal refresh,
-timers, workers, journal; the references to re-read (refread_files); a stale-checkout check against the
+epic; an unbound lead is told to bind its own epic) with `sb issue renew --ttl-ms <claim_ttl_ms>`; GOAL RELOAD (the
+goal was saved BEFORE the compaction, so step 2 prints the newest GOAL PROMPT handoff of the bound issue, else
+.goal-file, for re-injection, with a WARNING naming both seqs when that handoff is older than the newest `decision`
+entry — one read-only state.db read, pm_hook_common.goal_check/goal_reload); timers, workers, journal; the references
+to re-read (refread_files); a stale-checkout check against the
 upstream default branch; then the text of the file in setting post_compact_extra, verbatim.
 With setting post_compact_nudge true and TMUX_PANE set, it types post_compact_nudge_text into the pane after 12 s
 so the session does not idle (compact mode only). Unset TMUX_PANE to run it by hand without the keystroke.
@@ -97,26 +100,49 @@ def step1(role: str, ref: str | None, cwd: str, scope_ok: bool) -> str:
             "--holder %s --ttl-ms %d." % (cwd, h, ttl, h, ttl))
 
 
-def goal_step(cwd: str) -> str:
-    gf = ""
-    try:
-        line = (pathlib.Path(cwd) / ".goal-file").read_text().splitlines()[0].strip()
-        gf = os.path.expanduser(line)
-    except (OSError, IndexError):
-        pass
-    if gf and os.path.isfile(gf):
-        stamp = time.strftime("%m-%dT%H:%MZ", time.gmtime(os.path.getmtime(gf)))
-        return ("2. GOAL REFRESH. Goal file: %s (last written %s). Compare it with the journal since then "
-                "(sb journal since <ref> <seq>): tasks finished? next work clearer? If yes, rewrite it now: update the "
-                "delta in its source file, rebuild (/goal-prompt, <=4000 chars incl. '/goal '), store as a handoff "
-                "entry, then self-inject at idle: goal-prompt scripts/self-inject.sh --goal %s --delay 25 (run in "
-                "background; types '/goal ', pastes the body, Enter twice). If the /goal is gone, re-set it the same "
-                "way. If nothing changed, keep it and say so in one line." % (gf, stamp, gf))
-    return ("2. GOAL REFRESH. No .goal-file here (one line: path to your goal body file; git-excluded). Find your goal "
-            "in the latest handoff entry. If tasks in the last /goal are finished or the next work is clearer, rewrite "
-            "it (/goal-prompt, <=4000 chars), store it as a handoff entry, write .goal-file, and self-inject at idle "
-            "with goal-prompt scripts/self-inject.sh --goal <file> --delay 25 (background; '/goal ' then body, Enter "
-            "twice). If the /goal is gone, re-set it the same way.")
+def goal_step(cwd: str, ref: str | None) -> str:
+    """Step 2, GOAL RELOAD: print the goal prompt saved BEFORE the compaction, never ask for a rewrite after it."""
+    check = common.goal_check(ref)
+    goals = common.goal_reload(ref, cwd)
+    stale = check["state"] in ("stale", "missing")
+    head = ("2. GOAL RELOAD. The goal was saved BEFORE the compaction; re-inject it, do not rewrite it from memory. "
+            + common.goal_check_line(ref, check) + " " + common.promises_line(check))
+    warn = ""
+    if check["state"] == "stale":
+        warn = ("\n   WARNING: the goal is STALE — the newest GOAL PROMPT handoff is seq %s (%s) and the newest decision "
+                "is seq %s. The goal was not refreshed in the pre-compaction checkpoint. Rebuild it NOW from this "
+                "context (/goal-prompt, <=4000 chars incl. '/goal ') and store it as a handoff entry."
+                % (check["goal_seq"], check["goal_utc"] or "time unknown", check["newest_decision"]))
+    elif check["state"] == "missing":
+        warn = ("\n   WARNING: no GOAL PROMPT handoff on this issue (newest decision seq %s). Rebuild the goal NOW "
+                "(/goal-prompt, <=4000 chars incl. '/goal ') and store it as a handoff entry." % check["newest_decision"])
+    if not goals:
+        return (head + warn + "\n   No goal prompt found (no GOAL PROMPT handoff on %s, no .goal-file in %s). Find it in "
+                "the latest handoff entry, rewrite it now (/goal-prompt, <=4000 chars incl. '/goal '), store it as a "
+                "handoff entry, write .goal-file (one line: path to the goal body, git-excluded) and self-inject: "
+                "goal-prompt scripts/self-inject.sh --goal <file> --delay 25 (background; '/goal ', paste, Enter "
+                "twice)." % (ref or "the bound issue", cwd))
+    top = goals[0]
+    body = top["text"]
+    quoted = "\n".join("   | " + ln for ln in body.splitlines())
+    if top["seq"] is not None:
+        lines = (head + warn + "\n   Re-inject this, source %s (%s), %d chars%s"
+                 % (top["source"], top["utc"] or "time unknown", len(body),
+                    ":" if len(goals) > 1 else ""))
+        if not common.goal_file(cwd):
+            lines += ("\n   Write it to .goal-file first (one line: path to the goal body, git-excluded) so the next "
+                      "compaction reloads it without a journal read.")
+    else:
+        lines = head + warn + "\n   Re-inject this, source %s, %d chars:" % (top["source"], len(body))
+    lines += "\n" + quoted
+    if stale:
+        lines += ("\n   The text above is what was saved; it is NOT current. Rebuild it from this context first (see the "
+                  "WARNING), store the new goal as a handoff entry, then self-inject: goal-prompt "
+                  "scripts/self-inject.sh --goal <file> --delay 25.")
+    else:
+        lines += ("\n   Re-inject it as saved: goal-prompt scripts/self-inject.sh --goal <file> --delay 25 (background; "
+                  "types '/goal ', pastes the body, Enter twice). Update its delta as you work, not now.")
+    return lines
 
 
 def common_goal() -> list[str]:
@@ -231,7 +257,7 @@ def run(argv: list[str], out=None) -> None:
         step0(role, ref),
         step1(role, ref, cwd, scope == "ok"),
         *common_goal(),
-        goal_step(cwd),
+        goal_step(cwd, ref),
         "3. Re-check timers: CronList (crons survive compaction), re-arm expired Monitors, systemctl --user list-timers.",
         "4. If you run workers (manager or lead): list panes (tmux list-panes -s), resume any worker that compacted and "
         "went idle (send: sb issue resume <ref>, renew the claim, report), reap workers whose issue closed (kill-pane "
