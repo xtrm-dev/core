@@ -30,7 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_hook_common as common  # noqa: E402
 
 HOOK = "post_compact"
-DEFAULT_NUDGE = "/project-management continue: follow the POST-COMPACTION RESUME steps, then your next scheduled item"
+DEFAULT_NUDGE = ("/project-management POST-COMPACTION: do the RESUME checklist from the hook, in order; this command already reloaded the "
+                 "doctrine, so do not load it again; then your next scheduled item")
 NUDGE_DELAY_S = 12
 
 
@@ -129,6 +130,16 @@ def common_goal() -> list[str]:
             % (pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pm_session.py")]
 
 
+def tool_cards(role: str) -> list[str]:
+    """The role's tool cards (scripts/pm_tools.py), the one source shared with pm_session and the tools reminder."""
+    try:
+        import pm_tools
+        return pm_tools.block(role)
+    except Exception as exc:  # noqa: BLE001 - the hook never fails the session
+        common.log_error(HOOK, "tool_cards", exc)
+        return []
+
+
 def references_line(role: str) -> str:
     files = common.refread_files(role)
     if not files:
@@ -211,6 +222,7 @@ def run(argv: list[str], out=None) -> None:
         lines += common_goal()
         if refs:
             lines.append(refs)
+        lines += tool_cards(role)
         out.write("\n".join(lines) + "\n")
         return
     lines += [
@@ -228,6 +240,7 @@ def run(argv: list[str], out=None) -> None:
     ]
     if refs:
         lines.append(refs)
+    lines += tool_cards(role)
     lines += stale_check(cwd)
     out.write("\n".join(lines) + "\n")
     extra = extra_text()

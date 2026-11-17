@@ -8,6 +8,10 @@ the transcript tail and compares it with the compaction window: env CLAUDE_CODE_
 per-model autoCompactWindow in ~/.claude/settings.json, else 200k. Emits additionalContext once per threshold
 (setting checkpoint_thresholds, default [0.70, 0.85]; the last one is FINAL); re-arms after a compaction.
 
+Tools reminder (same hook, no extra wiring): at each fraction in setting tools_reminder_thresholds (default [0.35, 0.60]; [] turns
+it off) the role's tool cards (scripts/pm_tools.py) are added once, for the manager, the leads and the workers. Both re-arm when the
+context drops by REARM_MARGIN or more, which is what a compaction does.
+
 The handoff entry goes on the bound issue (SUBSTRATE_ISSUE_REF or .substrate-issue); an unbound manager uses the
 config's manager_issue, else epic; an unbound lead is told to bind its own epic. Setting checkpoint_fold_hint
 (true, false or "auto": on when ANTHROPIC_BASE_URL points at a local folding proxy; default false) adds a step that
@@ -25,7 +29,12 @@ import pm_hook_common as common  # noqa: E402
 
 HOOK = "checkpoint_warn"
 DEFAULT_THRESHOLDS = [0.70, 0.85]
+DEFAULT_TOOLS_THRESHOLDS = [0.35, 0.60]
+TOOLS_ROLES = ("manager", "lead", "worker")
 REARM_MARGIN = 0.15
+# A session compacts itself: a detached shell types /compact into its own pane once the current turn has ended.
+SELF_COMPACT = ("(setsid sh -c 'sleep 20; tmux send-keys -t \"$TMUX_PANE\" -l /compact; sleep 1; "
+                "tmux send-keys -t \"$TMUX_PANE\" Enter' >/dev/null 2>&1 &)")
 
 
 def thresholds() -> list[float]:
@@ -35,6 +44,22 @@ def thresholds() -> list[float]:
     except (TypeError, ValueError):
         vals = []
     return vals or list(DEFAULT_THRESHOLDS)
+
+
+def tools_thresholds() -> list[float]:
+    raw = common.setting_data("PM_TOOLS_REMINDER_THRESHOLDS", DEFAULT_TOOLS_THRESHOLDS)
+    if raw == []:
+        return []
+    try:
+        return sorted({float(x) for x in (raw if isinstance(raw, list) else [raw]) if 0 < float(x) < 1.5})
+    except (TypeError, ValueError):
+        return list(DEFAULT_TOOLS_THRESHOLDS)
+
+
+def tools_message(role: str, frac: float) -> str:
+    import pm_tools
+    lines = pm_tools.block(role, head="TOOLS CHECK at %d%% context" % round(frac * 100))
+    return "\n".join(lines + ["Use the one that fits your next step; no reply needed."])
 
 
 def handoff_ref(role: str, cwd: str, scope_ok: bool) -> str:
@@ -107,8 +132,9 @@ def message(used: int, window: int, frac: float, final: bool, ref: str, fold: bo
             "2. Verify each list against live state, not memory: CronList, tmux list-panes -s, ListAgents, "
             "specialist_status, gh pr list.\n"
             "3. Refresh the goal file (.goal-file) if the work moved on (<=4000 chars).\n"
-            "4. Compact at a quiet point, never within 20 min of a window: tell the operator in one line (entry seq) "
-            "and run /compact" + (" NOW (auto-compact is close)." if final else " when the current step ends."))
+            "4. Compact at a quiet point, never within 20 min of a window: compact yourself by typing /compact into your own "
+            "pane, then end the turn: " + SELF_COMPACT + (" NOW (auto-compact is close)." if final else " when the current "
+            "step ends.") + " The post-compact hook and nudge resume you.")
 
 
 def run(out=None) -> None:
@@ -119,7 +145,7 @@ def run(out=None) -> None:
     if scope == "none":
         return
     role = common.role()
-    if role not in common.GATED_ROLES:
+    if role not in common.GATED_ROLES and role not in TOOLS_ROLES:
         return
     tpath = inp.get("transcript_path")
     if not tpath or not os.path.exists(tpath):
@@ -129,26 +155,38 @@ def run(out=None) -> None:
         return
     window = compact_window(model)
     frac = used / window
-    ths = thresholds()
+    ths = thresholds() if role in common.GATED_ROLES else []
+    tths = tools_thresholds() if role in TOOLS_ROLES else []
     sid = "".join(c if c.isalnum() or c in "._-" else "_" for c in str(inp.get("session_id") or "x"))
     state = common.cache_dir() / "ctx-warn" / f"{sid}.json"
     try:
         st = json.loads(state.read_text())
         st["fired"] = [float(x) for x in st.get("fired") or []]
+        st["tools"] = [float(x) for x in st.get("tools") or []]
+        last = float(st.get("last") or 0.0)
     except (OSError, ValueError, AttributeError, TypeError):
-        st = {"fired": []}
-    if frac < min(ths) - REARM_MARGIN:  # compacted or folded: re-arm
+        st, last = {"fired": [], "tools": []}, 0.0
+    dropped = frac < last - REARM_MARGIN  # compacted or folded since the last call
+    if dropped or (ths and frac < min(ths) - REARM_MARGIN):
         st["fired"] = []
+    if dropped or (tths and frac < min(tths) - REARM_MARGIN):
+        st["tools"] = []
     due = [t for t in ths if frac >= t and t not in st["fired"]]
+    tdue = [t for t in tths if frac >= t and t not in st["tools"]]
+    st["fired"] += due
+    st["tools"] += tdue
+    st["last"] = frac
     state.parent.mkdir(parents=True, exist_ok=True)
-    if due:
-        st["fired"] += due
     state.write_text(json.dumps(st))
-    if not due:
+    parts = []
+    if due:
+        parts.append(message(used, window, frac, max(due) >= ths[-1], handoff_ref(role, cwd, scope == "ok"), fold_hint()))
+    if tdue and not due:  # a checkpoint warning already asks for the handoff; one message per turn
+        parts.append(tools_message(role, frac))
+    if not parts:
         return
-    msg = message(used, window, frac, max(due) >= ths[-1], handoff_ref(role, cwd, scope == "ok"), fold_hint())
     event = inp.get("hook_event_name", "PostToolUse")
-    out.write(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": msg}}) + "\n")
+    out.write(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": "\n\n".join(parts)}}) + "\n")
 
 
 def main() -> int:

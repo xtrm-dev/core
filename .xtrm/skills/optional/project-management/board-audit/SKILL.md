@@ -176,14 +176,13 @@ Every cycle (default every 30 min; the manager sets the interval in the helper's
    the cursor (`$PM_LANE_DIR/comment-cursor`), and route it: see "The router role" below. Mechanical
    board effects are applied only within a class the manager allowed in writing; everything else is a
    proposal. Own PR-link timeline comments advance the cursor and are never self-flagged.
-6. **Cycle report** to the manager every 2 h (`SendMessage` to the session that
-   `project-management/scripts/route_target.py manager` resolves, plus a `result` journal entry on the
-   helper's issue; the lane file `$PM_LANE_DIR/CYCLE-<HHMM>Z.md`, stamped from `date -u` in the same
+6. **Cycle report** every 2 h as a `result` journal entry on the helper's issue, which the manager reads at its
+   hourly cycle; no message (project-management rule 40). The lane file `$PM_LANE_DIR/CYCLE-<HHMM>Z.md`, stamped from `date -u` in the same
    command, is state the scripts read, not the record): counts per check, rows needing action, fixes
    applied with old->new, comments needing a decision. A clean cycle is one line.
-   Between cycles, message the manager (or the owning lead, for its workstream) only for a decision, an operator comment that needs one, a defect that changes a
-   window today, a production anomaly or a data-correctness finding; write confirmations of ordered writes as ONE message per order batch (ids, re-read result), and put self-corrections
-   and instrument changes in the journal and the next cycle report, not in separate messages (project-management rule 40). The
+   Message the owning lead (or the manager, for an item with no workstream) only by project-management rule 40: a routed operator decision,
+   a defect that changes a window within 2 h, a production anomaly or a data-correctness finding. Confirmations of ordered writes,
+   self-corrections and instrument changes go to the journal and the next cycle report, not to messages. The
    orderer orders by intent; you word the Jira text in plain language unless the order says "verbatim".
    Journal one `note` per hour and on every state change (see step 5). Pin paths:
    cursor `$PM_LANE_DIR/comment-cursor`, reports `$PM_LANE_DIR/CYCLE-<HHMM>Z.md` —

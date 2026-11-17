@@ -442,6 +442,7 @@ def warn(env, used, event="PostToolUse"):
 
 def test_checkpoint_thresholds_fire_once_and_rearm(env, monkeypatch):
     env.role_file("manager")
+    env.set(tools_reminder_thresholds=[])
     monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
     assert warn(env, 50_000) == ""
     early = warn(env, 72_000)
@@ -455,7 +456,7 @@ def test_checkpoint_thresholds_fire_once_and_rearm(env, monkeypatch):
 
 def test_checkpoint_thresholds_from_config(env, monkeypatch):
     env.role_file("lead")
-    env.set(checkpoint_thresholds=[0.5])
+    env.set(checkpoint_thresholds=[0.5], tools_reminder_thresholds=[])
     monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
     assert "FINAL" in warn(env, 55_000)
 
@@ -463,7 +464,7 @@ def test_checkpoint_thresholds_from_config(env, monkeypatch):
 def test_checkpoint_ref_fallback(env, monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
     env.role_file("manager")
-    env.set(manager_issue="EP-3")
+    env.set(manager_issue="EP-3", tools_reminder_thresholds=[])
     assert "handoff entry on EP-3 (the manager issue from the project config" in warn(env, 80_000)
     env.role_file("lead")
     msg = warn(env, 99_000)
@@ -476,7 +477,31 @@ def test_checkpoint_ref_fallback(env, monkeypatch):
 def test_checkpoint_skips_workers_and_no_project(env, monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
     env.role_file("worker")
-    assert warn(env, 90_000) == ""
+    out = warn(env, 90_000)
+    assert "CHECKPOINT" not in out and "TOOLS CHECK" in out  # a worker gets the tools reminder only
     env.role_file("manager")
     env.set(repo_dir=str(env.tmp / "elsewhere"))
     assert warn(env, 90_000) == ""
+
+
+def test_tools_reminder_fires_once_per_threshold_and_rearms(env, monkeypatch):
+    env.role_file("lead")
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    assert warn(env, 20_000) == ""
+    first = warn(env, 36_000)
+    assert "TOOLS CHECK at 36% context (lead)" in first and "journal-search" in first and "pr-reviewer" in first
+    assert warn(env, 40_000) == ""
+    assert "TOOLS CHECK" in warn(env, 61_000)
+    assert "EARLY" in warn(env, 71_000) and "TOOLS CHECK" not in warn(env, 72_000)
+    assert warn(env, 15_000) == ""                       # compacted: re-armed
+    assert "TOOLS CHECK" in warn(env, 36_000)
+
+
+def test_tools_reminder_off_and_project_extra(env, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "100000")
+    env.role_file("worker")
+    env.set(tools_reminder_thresholds=[0.35], tool_cards_extra={"all": ["make targets: production only through make"]})
+    assert "make targets: production only through make" in warn(env, 40_000)
+    env.role_file("board_helper")
+    env.set(tools_reminder_thresholds=[0.35])
+    assert warn(env, 90_000) == ""                       # the board helper runs on pi; no reminder from this hook

@@ -4,22 +4,11 @@ Read when you are the manager: a session launched with `--role manager` (or whos
 project (SKILL.md "Who does what"; `references/setup.md`, "Routing roles"). Added 2026-10-22 from the first coordinator session (MMD-2331); each rule was learned from a failure or repeated operator request. Read
 before the first production window. A lead reads `references/lead.md` instead.
 
-## Start: session kit, common goal, tools (first, and after every compaction)
+## Start (first, and after every compaction)
 
-1. `python3 <pack>/project-management/scripts/pm_session.py show` prints your role and where it came from, the project, your bound issue
-   and the COMMON GOAL. Clear every `KIT:` line before other work (`pm_session.py init --role <r> --issue <ref>`). You launch with `--role manager`, so you need no role file.
-2. The common goal is what the whole project must achieve; your issue is your part of it (SKILL.md rule 56). Read the goal document once per
-   session. When your work and the goal disagree, stop and ask: a worker asks its lead, a lead the manager, the manager the operator.
-   You own the common goal: keep `goal_doc`, `epic` and `jira_epic` in the project's config profile current. When the goal document changes,
-   rewrite the project epic's SUCCESS from it (a new revision) and order the Jira epic's description from the board helper, in plain words.
-3. Tools for every role:
-   - `journal-search` (skill; `python3 <pack>/journal-search/scripts/jsearch.py "<words>"`): find where something was decided, reported or
-     handed off before you ask a peer; a hit is a pointer, so open it with `sb journal show` and re-check the fact live.
-   - `service-knowledge` (skill and CLI): before reading a service's source, load its expert skill (`/service-knowledge`, `/scope`) and query
-     the evidence index (`service-knowledge index query "<text>"`); after a change that touches a service, update its knowledge through the
-     skill's update flow (`service-knowledge drift` shows what drifted). When code and the knowledge disagree, fix the knowledge in the same
-     cycle (rule 33).
-   - `sb help <group>` before a `sb` verb you have not used this session (rule 55).
+`python3 <pack>/project-management/scripts/pm_session.py show` prints your role, project, bound issue, the COMMON GOAL and your TOOLS. Clear
+every `KIT:` line first. You own the common goal (SKILL.md rule 56): keep `goal_doc`, `epic` and `jira_epic` in the project's config profile
+current; when the goal document changes, revise the project epic's SUCCESS and order the Jira epic's description from the board helper.
 
 ## 0. The manager's job
 
@@ -29,7 +18,13 @@ before the first production window. A lead reads `references/lead.md` instead.
   (`xt pi board-helper --window --role board-helper`; the launch role gives `board_helper`), and its own successor at the day boundary
   (`references/handover.md`). The manager
   launches no builders (SKILL.md rule 2.3).
-- Read lead journals once per hourly cycle (`sb journal since <ref> <seq>`); answer a lead's proposal within the hour.
+- **Rule from the journals, not the chat** (rule 40; operator 2026-11-17: a manager sent 388 messages in 34 h, and every one woke a lead):
+  - Read every lead journal once per hourly cycle (`sb journal since <ref> <seq>`). A lead's journaled decision stands unless you overrule it
+    there with evidence.
+  - Send a lead at most one batched message per cycle, only for a ruling or an overrule. Never ask for status, never acknowledge, never confirm
+    an order was received: silence is consent.
+  - Every Monitor, timer or goal check-in that wakes you costs a full read of your context. Arm a watch only where no lead, board helper or
+    specialist already watches; prefer a watcher specialist that messages you only on a finding.
 
 ## 1. Daily rhythm (UTC)
 
@@ -37,7 +32,8 @@ before the first production window. A lead reads `references/lead.md` instead.
 |---|---|---|
 | Start / resume | `sb issue resume <epic>`; `sb journal latest <epic> --kind handoff`; `CronList`; re-arm Monitors; `tmux list-panes -s` | handoff seq in the first message |
 | Every hour | Team check: `python3 scripts/route_target.py --team`; no live board helper, or two, means relaunch it from its issue and journal it | team line |
-| Every 30 min | Re-arm the file-watch Monitor (30 min life) on helper and board output folders | `NEW FILE:` lines |
+| Every hour | Read every lead journal since its last seq; rule in one batched message per lead, or not at all (§0) | seqs read |
+| Every 30 min | Only while a window or incident needs it: re-arm the file-watch Monitor on helper and board output folders | `NEW FILE:` lines |
 | Every 2 h | Renew the claim: `sb issue renew <epic> --ttl-ms 14400000`; claim again only after the lease expired | `renewed` line |
 | Before each window | `date -u`; `/proc/loadavg`, `/proc/pressure/memory`; DRY run; GO/DRY comment on the window's Jira Task | Jira comment |
 | After each window | Data check (specialist or script), Jira transition, journal `result` | check output + comment id |
@@ -87,21 +83,20 @@ ahead of the host clock (2026-10-28).
 
 ## 6. Workers, specialists, subagents
 
-- Workers use specialists in turn for bounded roles and do not review themselves. A second issue for an existing
-  worker follows SKILL.md rule 3: same scope may continue after /compact (max 3
-  issues), a different scope gets a fresh worker.
+- Builders are `worker` specialists by default, kept alive for the next issue of their role; `xt` workers only for what SKILL.md rule 1 lists.
+  A new scope gets its own contract (rule 3). Workers never review themselves.
 - Never use beads or `bd` (legacy Dolt workspace); `bead_id` in tool output is a compatibility alias.
 - Roles:
   - quant-methodologist: ONLY an Agent subagent, Opus for rulings, Sonnet otherwise; never the specialist plugin (small models).
-  - Reviews: SKILL.md rule 44 (three Claude paths: `xt claude --role pr-reviewer`, the native `reviewer` subagent in PR mode, the `pr-reviewer` specialist); the owning lead launches them. A critical production verification (not a PR
-    review) stays a specialist.
+  - Reviews: SKILL.md rule 44; the owning lead launches them. A critical production verification (not a PR review) is a specialist too.
 - Board audit pair (workflow v3 + fact script + majority aggregator), measured 2026-10-22: skill `board-audit`, `scripts/` (`run-audit.sh`;
   `facts.py --selftest` is the correctness gate; `aggregate.py` the stability measure). 3 runs: 0 verdict flips between approve and reject (2
   labelling differences, `not_applicable` vs `approve`). Review against `/agentrun-author` and `/typesafe-ai`:
   the review record in `$PM_LANE_DIR`.
 
 - Specialist supervision: after `specialist_dispatch` read `specialist_status` (never poll in a loop), answer asks with `specialist_reply`, read
-  `specialist_result` once settled so the stop hook clears; a fresh dispatch can reuse the issue.
+  `specialist_result` once settled so the stop hook clears. Give a kept-alive specialist its next issue with `specialist_reply` /
+  `specialist_resume`; stop it with `specialist_stop_activation` when its role has no queued work.
 - The dispatch result prints a build line: a mismatch or empty template slots means a stale plugin; reload or restart, dispatch again. A stale module
   can be bypassed once by answering the ask with the missing contract fields.
 
@@ -113,8 +108,8 @@ ahead of the host clock (2026-10-28).
   the dead time: write the contract early, attest it, dispatch when the slot is free; do not wait for the operator to ask.
 - `git fetch origin` before reading files; branch every change from `origin/master`. A change ends on `master` via a PR merged with
   `--match-head-commit`, then `git fetch origin master:master` and re-detach the primary on `origin/stable`.
-- Before starting an `xt` worker call `specialist_list`: most bounded jobs (executor, explorer, debugger, test-runner, sync-docs,
-  service-knowledge-sync) fit a specialist. `xt claude` only for build ownership, `gh`, push, docker or a rule-44 review; `xt pi` for light continuous work.
+- Before any launch call `specialist_list`: most work fits a specialist (worker, pr-reviewer, executor, explorer, debugger, test-runner,
+  sync-docs, service-knowledge-sync). `xt` sessions only for what SKILL.md rule 1 lists.
 
 ## 7. Monitoring that the manager arms
 
@@ -177,6 +172,10 @@ republished; a host-load Monitor reporting high/ok transitions only.
 6. Report any failing worktree; do not clean it without the operator.
 
 ## 14. Shell and tool traps
+
+- Sunset rule (MMD-3751 seq 189): no capacity on a part with a dated retirement unless it is served-and-wrong-and-persists, a removal, the
+  replacement imports its code (grep-proved) or a free rider; carry its requirement into the replacement's VALIDATION before closing.
+- Hold stable merges while a window's GO checks "primary HEAD == origin/stable": a moving stable breaks that GO.
 
 - zsh: `$R:path` applies the `:r` modifier; write `git show "${R}:path"`.
 - zsh `set -- $H` does not split: run merge scripts under `bash -c` with `read -r head base <<<"$H"` (11-04).

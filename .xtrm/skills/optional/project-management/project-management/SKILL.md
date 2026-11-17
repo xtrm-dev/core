@@ -56,7 +56,7 @@ older rule is heavier, they win.
 
 ## Who does what
 
-Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operator, 2026-11-01: less micro-management, more cooperation.
+Operator, 2026-11-01 and 2026-11-17: less micro-management. Leads decide and journal; the manager rules at its hourly read (rule 40).
 
 **Roles come from the launch.** `--role manager`, `--role lead`, `--role worker`, `--role board-helper`; a `.pm-role` file overrides
 (for `project-manager` and older sessions), names are the last fallback (`references/setup.md`, "Routing roles"). Every session starts with
@@ -64,10 +64,10 @@ Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operat
 
 | Role | Owns | Does not |
 |---|---|---|
-| **Manager** (Opus, one per project) | GOs (merge, window, promotion), release windows, merges across workstreams, calendar, escalations, advisor and quant rulings, the operator channel (rules 15, 36), keeping the team staffed: launches the leads, the board helper and its own successor (`references/handover.md`). Answers a lead's proposal within one hourly cycle or 60 min; silence is not agreement. | Route messages between peers, launch builders, write fix lists, relay reviews, tail operator inboxes. Asks for proposals, not status. |
-| **Lead** (Sonnet high, one per workstream) | Its workstream end to end: build order, workers within caps, rule-44 reviews, test dispatch, fix lists, merge-ready records, reaping; self-GO inside the workstream; closes its own Substrate issues and orders its own Jira moves through the board helper (operator ruling 2026-11-12, journal seq 2870); settles a cross-workstream dependency with the other lead directly. Opens each batch with the no-trust audit. Messages the manager only for a GO, merge-ready, blocker, data-correctness finding or production anomaly. | Merge, write Jira, hand over a PR it believes is not ready. |
+| **Manager** (Opus, one per project) | Production GOs (window, promotion, deploy), release windows, merges that deploy, ride a promotion or span workstreams, calendar, escalations, advisor and quant rulings, the operator channel (rules 15, 36), keeping the team staffed: launches the leads, the board helper and its own successor (`references/handover.md`). Reads every lead journal once per hourly cycle and rules there (rule 40). | Route messages between peers, launch builders, write fix lists, relay reviews, tail operator inboxes, ask a lead for status, acknowledge a message, send a lead more than one message per cycle. |
+| **Lead** (Sonnet high, one per workstream) | Its workstream end to end: build order, agents within caps, rule-44 reviews, test dispatch, fix lists, reaping; self-GO inside the workstream; merges its own master-only PRs (rule 49); closes its own Substrate issues and orders its own Jira moves through the board helper (rule 54); settles a cross-workstream dependency with the other lead directly. Opens each batch with the no-trust audit. Decides, journals, and wakes the manager only by rule 40. | Merge a PR that deploys or rides a promotion, write Jira, wait for an answer it does not need. |
 | **Board helper** (`xt pi board-helper`, role `board-helper`) | The only Jira writer (an `@operator` comment too, rule 36), on the order of the manager or the owning lead, with before/after re-reads. Decides alone where each operator comment goes (no routing table). Sends close-sweep mismatches to the owning lead; to the manager only items with no workstream parent (rule 54). | Mutate Jira on its own; let other agents write Jira or read the operator inbox. |
-| **Worker** (`--role worker`, `<story>-<slug>`) | One attested issue: build, journal, `result`; closes it when the contract grants closure (rule 54). | Pick its next issue, review its own PR, write Jira. |
+| **Worker** (a kept-alive `worker` specialist, or `--role worker`) | One attested issue at a time: build, journal, `result`; closes it when the contract grants closure (rule 54). | Pick its next issue, review its own PR, write Jira. |
 
 **Address peers by role or name, never by socket path.** `python3 scripts/route_target.py manager|board_helper` prints the one live address;
 `route_target.py lead` resolves only while one lead is live; `route_target.py --team` lists the project's live sessions by role. Else
@@ -75,25 +75,23 @@ Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operat
 
 ## Read-when index (references are NOT loaded with this skill; open what the trigger names)
 
-- After every compaction and before any launch: `launching.md` "Specialists and AgentRun", "Limits and health"; then the role file: `manager.md`
-  (manager), `lead.md` (lead), `worker.md` (worker).
-- Manager, before a window, cron or report: `manager.md` §1, §3, §6, §6a, §11; production window, operator talk, cleanup, wind-down: §4, §5, §8,
-  §10, §12, §13. Handover: `handover.md`. Board-scale audit: `agentrun.md`.
-- Status board: skill `status-board-keeper` (rule 14). New project: `project-start.md`, `worked-example.md`.
-- Before a merge, a close or a link repair: `substrate.md` "Merges: the review at the exact head", "Links and the close gate".
+- Start and every compaction: `pm_session.py show`, your role file (`manager.md`, `lead.md`, `worker.md`), `launching.md`. Lost: `instructions.md`.
+- Manager: window, cron, report §1, §3, §6, §11; production window §4, §5; operator, cleanup, wind-down §8, §10, §12, §13; `handover.md`.
+- Status board: `status-board-keeper` (rule 14). New project: `project-start.md`, `worked-example.md`. Board audit: `agentrun.md`. Merge, close,
+  link repair: `substrate.md` "Merges: the review at the exact head", "Links and the close gate".
 
 ## 3. Workers (fleet)
 
 **Mandatory fleet rules (operator, 2026-10-23: they were ignored).** Re-read this section and "Daily operations" after every compaction and every 4 h.
 
-1. **Check the worker shape before every launch** (syntax: `references/launching.md`, "Dispatch surface").
-   - `xt pi`: light, continuous work (board helper, watchers, timers, host health). Default `commandcode/deepseek/deepseek-v4.1-flash`; never Muse
-     Spark, it stops mid-task (operator, 2026-10-30).
-   - Specialists (`specialist_dispatch`, attested issue): bounded heavy work (heavy reads, test runs, audits, investigations, and reviews by rule 44) of ANY role in
-     `specialist_list`, never `xt claude` panes, the manager or a lead.
-   - `xt claude`: only critical work, heavy building, or `gh`, push, docker with long ownership (operator, 2026-10-28); else `xt pi`, which the
-     operator can talk to.
-   - State `--model` and `-- --effort <level>`: Opus or Sonnet high for heavy reasoning, Sonnet for routine build and review.
+1. **Choose the agent shape before every launch** (syntax: `references/launching.md`, "Dispatch surface"; operator 2026-11-17: specialists on par
+   with `xt`, preferred for most work).
+   - **Specialist** (`specialist_dispatch`, attested issue), the default: building (`worker`), reviews (`pr-reviewer`, rule 44), tests, audits,
+     investigations. Keep it alive and give it the next task of its role with `specialist_reply` / `specialist_resume`: a warm agent costs far less
+     than a cold start, an Opus reviewer most. Stop it when its role has no queued work.
+   - **`xt claude`**: only what a specialist lacks: a session the operator talks to, `gh`/push/docker with long ownership, tmux, Jira.
+   - **`xt pi`**: light continuous work (board helper, watchers, timers). Default `commandcode/deepseek/deepseek-v4.1-flash`; never Muse Spark.
+   - State the model and effort: Opus or Sonnet high for heavy reasoning, Sonnet for routine build and review.
 2. **Run the budget preflight before ANY launch** (worker, specialist, subagent) and keep its line:
    ```
    read l1 _ </proc/loadavg; f=$(sed -n 's/^full avg10=\([0-9.]*\).*/\1/p' /proc/pressure/memory); echo "preflight $(date -u +%H:%MZ) load1=$l1 nproc=$(nproc) psi_full_avg10=$f agents_host=$(ps -u "$USER" -o comm= | grep -cxE 'claude|pi')"
@@ -102,47 +100,43 @@ Restates rules 28, 36, 37, 40, 54 and `references/lead.md`; adds no rule. Operat
       - Merges and promote-merge: memory gate only (PSI full avg10 <= 10, MemAvailable >= 4 GB), read in the same command.
       - Launches: load1 <= 15 plus the memory gate. Fan-out and per-item loops: load1 <= 10, concurrency <= 2.
       - Production jobs: memory gate, fail closed; log load1; refuse above 2 x nproc.
-      - Why: one load1 gate blocked every launch for hours on 2026-10-28; production alone holds load1 at 15-23 in trading hours on this 12-vCPU host.
    - **2.3 Caps** (operator, 2026-10-24; host cap 2026-11-13):
-      - Per lead: 3 own worker windows, 2 subagents, 1 test run; specialists count. The manager launches no builders: its windows are the leads,
-        the board helper and its helpers; 2 subagents.
+      - Per lead: 3 live agents it launched (specialists and `xt` sessions alike), 2 subagents, 1 test run. The manager launches no builders:
+        its agents are the leads, the board helper and its helpers; 2 subagents.
       - The cap counts every live agent process (idle sessions included), not issues; `agents_host` counts the whole host. Over a cap: refuse, reap
         first.
       - Host cap (operator, 2026-11-13, replaces q-night-builders): up to 18 live agent processes at any hour while the memory gate holds (PSI full
         avg10 <= 10, MemAvailable >= 4 GB) in the same command as the launch; the load1 <= 15 launch gate still applies. A launch that would pass 18
         is refused even when the lead's own cap allows it.
-   - **2.4** Put the preflight line in the launch journal entry. Reap a worker with no journal entry 2 h after its handoff.
+   - **2.4** Put the preflight line in the launch journal entry. Reap an `xt` worker, or stop an idle specialist, 2 h after its last result.
       - Incident 2026-10-23 22:30Z: 15 claude, 12 pi, a Paseo daemon: `user-1000.slice` over `memory.high` (14 GiB), load 125, PSI full 77%.
 3. **Save context and tokens.**
-   - A finished worker whose next task has a different scope gets a fresh session (`sb issue resume`), not a longer chat.
-   - Never hand a new task of a different scope to an existing worker, idle or not: it gets its own contract and a new worker (operator,
-     2026-10-30: "FRESH CONTEXT, EACH WORK, ALL THE TIME").
+   - Fresh context per scope (operator, 2026-10-30): a new scope gets its own contract. An `xt` session ends with its scope. A kept-alive specialist
+     keeps its role, not its scope: it takes the next issue of its role through `specialist_reply` and re-reads the new contract first.
    - Same scope may stay with the same worker (operator, 2026-11-04, cost): a fix lane on the same PR, a delta fix after review, or the next
-     issue on the same files. The worker writes its `result`, runs `/compact`, claims the next issue and continues; a fresh warm-up per
-     issue cost more than the work on small follow-ups. Different files or a different service still get a fresh worker.
-     Guards: the lead assigns the next issue (the worker never picks it); one claim at a time, the done report on the old
-     issue is sent before the new claim; after `/compact` the worker re-reads worker.md and the new contract and journals
-     `continues-from <old ref>`; at most 3 issues or the 60% context line per worker, then a fresh one; the PR reviewer checks the diff
-     against the new contract's SCOPE.
+     issue on the same files. The worker writes its `result`, runs `/compact`, claims the next issue and continues; a fresh warm-up per issue
+     cost more than the work on small follow-ups. Different files or a different service get a new issue. Guards: the lead assigns the
+     next issue (the worker never picks it); one claim at a time, the done report on the old issue is sent before the new claim; after `/compact`
+     the worker re-reads worker.md and the new contract and journals `continues-from <old ref>`; at most 3 issues or the 60% context line per
+     worker, then a fresh one; the PR reviewer checks the diff against the new contract's SCOPE.
    - The manager and leads compact; they do not rotate by context percentage (operator, 2026-10-31): rule 35 and `references/continuity.md`.
    - Routine Opus steps at effort low; rules in skills, not CLAUDE.md; disable unused MCP servers; subagent only to isolate large output.
 4. **Do Jira hygiene every cycle** (`manager.md` §12).
 5. **Run the wind-down** when the operator ends the day (`manager.md` §13).
 6. **Workers, leads and the manager MUST delegate heavy and critical work** to specialists (operator, 2026-10-29).
-   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44 (three Claude paths).
+   - Long test runs, large code or production reads, investigations: `/using-specialists`. Reviews: rule 44.
    - Before a production-impacting, data-meaning or irreversible decision: native subagents and the advisor. A builder may coordinate both within the
      cap.
    - The lead launches the rule-44 review for every PR, never the builder whose PR it is.
 
-The worker shapes of rule 1 are interim; XT-132 decides the final one. A long owned job needing no network, `gh` or tmux is a specialist; the same
-judgment over many items is an AgentRun workflow (`references/agentrun.md`), never per-item API loops.
+The same judgment over many items is an AgentRun workflow (`references/agentrun.md`), never per-item API loops.
 
 - Every worker gets its own attested issue before launch; the contract is its brief.
 - **Roster.** One tmux session per project, the manager's: the manager window holds the manager and its helpers (board helper, timers) as
-  panes; each lead has its own window; workers go in tiled `workers` windows (at most 4 panes each), never one window per worker.
+  panes; each lead has its own window; `xt` workers go in tiled `workers` windows (at most 4 panes each); specialists have no pane.
 - Launch `xt pi <name> --window` from the MAIN checkout, then `tmux join-pane -d -s <pane> -t <target>` and `tmux select-layout tiled`.
-- **Reaping.** When its issue closes with a result, or it is `done` and collected: confirm the `result` entry, then `tmux kill-pane -t <pane-id>`;
-  never `kill-window`, it can close the manager.
+- **Reaping.** When its issue closes with a result: confirm the `result` entry, then `tmux kill-pane -t <pane-id>` (never `kill-window`, it can
+  close the manager), or keep a specialist for its role's next issue and stop it when none is queued.
 - Every handoff lists each live pane's reap condition and the open windows (`references/launching.md`, "Reaping").
 - **Superseding a manager or lead:** collect its full report as a `handoff` entry, take over every live duty, journal the takeover list, then
   `kill-pane` its panes one by one.
@@ -266,28 +260,34 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
      (rule 15). Worker rule: `references/worker.md` section 2.
 37. **Every dispatch points the worker to its rules** (operator, 2026-10-30): each launch prompt, specialist contract and post-compaction resume line
     names `project-management` and `references/worker.md`, or a worker reports nowhere and tags nobody.
-   - Launch with `--role worker` (`xt claude|pi <name> --window --role worker --bead <ref>`; MMD-3200; `references/launching.md`, "Dispatch a builder
-     (worker role)"): attested contract is the prompt.
-   - Other roles get this prompt line: "Load project-management and read references/worker.md first; you may coordinate specialists
-     (/specialists:using-specialists) and consult the advisor."
+   - Launch a worker as a `worker` specialist or with `--role worker` (`references/launching.md`, "Dispatch a builder"): the attested contract is
+     the prompt.
 38. **Providers are interchangeable** (operator, 2026-10-30, c15942: "when one stops working, we just switch it"): on quota, 401 or stalls
     switch to a working one, journal it, do not ask or park. Default commandcode DeepSeek V4.1 Flash; opencode-go unused.
 39. **Token economy** (operator, 2026-10-30 20:15Z: "we're wasting a lot of tokens"), binding for all:
    - Every launch prompt loads the specialists skill; heavy reads, test runs and investigations go to specialists; reviews follow rule 44.
    - Chat output is minimal ASD-STE100: state, decision, next step. Operator items go to Jira comments.
    - One script per step, filtered in the script, returning counts and matching lines. Peer messages: one fact per line, pointers not pastes.
+   - **MANDATORY: batch tool calls.** Independent calls go in one step: Code Mode JavaScript where it is on (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE`),
+     else parallel calls in one message and chained shell commands; never one round trip per independent call.
 40. **Report by journal, message by exception** (operator, 2026-11-04: 13% of the weekly budget used by 09:00Z on day 1; every message wakes
     the receiver and costs a full read of its context):
-   - A lead messages the manager only for a GO request, a merge-ready record, a blocker, a data-correctness finding or a production anomaly (a
-     secret exposure, a usage limit or provider stop, or shared state changed by mistake is a blocker). A worker messages its lead for those and
-     for a decision, a contract conflict or a scope deviation. Pane-liveness monitors (rule 31) stay on: a silent dead worker must not wait for the
-     hourly read. Status, "done, reaped", "record kept" and progress go to their own journal; the manager reads lead journals once per hourly cycle
-     (`sb journal since <ref> <seq>`). One message carries every decision of the hour.
+   - **The single source for who wakes whom** (operator, 2026-11-17: a manager sent 388 messages in 34 h). A lead decides inside its workstream,
+     journals the decision, and messages the manager only for what cannot wait for the manager's hourly read: a production anomaly, a
+     data-correctness finding, a blocker it cannot settle, or a decision due within 2 h (a window or promotion GO). Proposals, merge-ready and
+     merged records, done, status and progress go to its journal. The manager reads every lead journal once per hourly cycle (`sb journal since
+     <ref> <seq>`), rules in one batched message per lead or not at all, never asks for status and never acknowledges. A worker messages its lead
+     for the lead's wake reasons and for a decision, a contract conflict or a scope deviation. A secret exposure, a usage limit or provider stop,
+     or shared state changed by mistake is a blocker. Pane-liveness monitors (rule 31) stay on.
+   - **Before you wake the manager, ask the advisor** (the `advisor` specialist, kept alive and reused): even a cold start costs less than a
+     manager wake that re-reads a context of a few hundred thousand tokens. The advisor's answer settles most doubts; journal it.
+   - **Watch your own efficiency** (manager and leads): gaps, contradictions and wasted work are findings; measure cost, not impressions, with
+     `ccusage` (below) or `scripts/pm_wakes.py` on a transcript (wakes by source, messages sent and received).
    - The manager or the owning lead orders Jira by intent (what changes, why, which rows); the board helper words it in plain language and reports
      ids once per order batch. Dictating comment text is micro-management; use it only for an operator-facing @operator comment.
    - Ask before answering: a peer message that needs no decision gets no reply.
-   - Choose the builder shape per task (operator, 2026-11-04, replacing "mandatory Sonnet"): `xt pi` or `xt claude` Sonnet, judged
-     on how complicated the task is, how long it runs, and whether the worker can be reused after a compaction (rule 3). The best
+   - Choose the builder per task (rule 1): a kept-alive `worker` specialist by default; `xt pi` or `xt claude` Sonnet only for what rule 1
+     lists, judged on how complicated the task is and how long it runs. The best
      results come from the contract: a clear, well-scoped Substrate issue (`/planning`, `/substrate:using-substrate`) is the main
      lever, for pi more than for Sonnet. A pi builder is managed: tight SCOPE and VALIDATION, a check of its first journal entry and
      its first diff, and a rule-44 review (Claude, never pi) before merge-ready. Opus only for the manager and for quant/advisor rulings,
@@ -297,7 +297,7 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
      handoff entry first, then a fresh session from it, never mid-window.
    - Usage: every ~3 h rank sessions by cost (`bunx ccusage@20.0.48 session --since <YYYYMMDD> --json`, top 6) and act on the top one;
      the ranking, not a guess, says where the budget goes.
-   - The manager and leads compact at a clear checkpoint (operator, 2026-11-04: not a hard threshold): after a decision batch, a
+   - The manager and leads compact themselves (`references/continuity.md`) at a clear checkpoint (operator, 2026-11-04): after a decision batch, a
      window close or a handoff entry, never mid-window or mid-ruling. Context size (~150k) is a cue to look for the next checkpoint,
      not a trigger: every wake re-reads the whole context, so a smaller context is cheaper on every message, timer and Monitor wake.
    - When only time-gated work remains, arm ONE background wake for the next item and end the turn; a goal check-in or Stop-hook
@@ -313,16 +313,11 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
    - Put the four answers in the GO entry. A GO without them is not a GO. gh or sb failure prints UNKNOWN, never zero.
    - The script once printed a false 0 open PRs (glob bug MMD-3928, 11-04): pass a literal `--paths`, or answer (c) with `gh`.
 42. **Lessons of 2026-11-04.** Shell and tool traps: `references/manager.md` §14.
-   - Cooperation is a rule (operator): the manager, the leads and the board helper decide together, propose with evidence and answer within the
-     hour; within 20 min of a window the manager decides alone and records (`references/lead.md` §5).
+   - Cooperation is a rule (operator): a lead decides inside its workstream and journals it; the manager ratifies or overrules at its hourly
+     read; within 20 min of a window the manager decides alone and records (`references/lead.md` §5).
    - A faster or better way toward the project goal changes the schedule: do it, journal the decision, order the board to match the same
      day; never wait for a successor.
    - Never hand over a stale board: apply every ruling to the Jira windows and Substrate issues before the handoff entry.
-   - Sunset rule (MMD-3751 seq 189): no capacity on a part with a dated retirement unless it is served-and-wrong-and-persists, a removal, the
-     replacement imports its code (grep-proved) or a free rider; carry its requirement into the replacement's VALIDATION before closing.
-   - Service-knowledge first: query it before source; when code and docs disagree fix the doc (`service-knowledge-sync`) in the same cycle and
-     journal the marker.
-   - Hold stable merges while a window's GO checks "primary HEAD == origin/stable": a moving stable breaks that GO.
    - Verify each peer claim with one live read before it drives an action (Run section).
 43. **Prerequisite check is the GO owner's duty (operator, 2026-11-05, c17078: "not mechanically merging whatever a 3 weeks old
     session decided").** Before a window is scheduled, at its T-60 and before every GO or merge, the manager (or the lead, for a self-GO inside
@@ -335,11 +330,13 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
    - Incident 11-05: one window slotted with a database mirror OFF and a crashing parity script; another with an unverified C5; a
      write-mode roll check broke 18 roots for 41 h; CI runners refused for hours before anyone looked.
    - Look-ahead for the next 48 h: rule 45.
-44. **Reviews run on Claude as `pr-reviewer`** (operator 2026-11-06, seq 2885, 3023; three paths allowed 2026-11-13), any of: `xt claude --role
-    pr-reviewer --model opus|sonnet`; the native `reviewer` subagent in PR review mode (it sets `XTRM_ROLE=reviewer` on every `gh` call, so the
-    shim posts as the reviewer bot); the `pr-reviewer` specialist through `claude-bridge` (`model_override` for Opus). Opus for HIGH/CRITICAL,
-    data-meaning, production or schema PRs. Merge-ready needs an `xtrm-reviewer[bot]` review at the head with "Ledger check: exit 0".
+44. **Reviews run on Claude as `pr-reviewer`** (operator 2026-11-06, seq 2885, 3023; three paths 2026-11-13; specialist preferred 2026-11-17; the
+    single source for review paths), in order of preference: the `pr-reviewer` specialist through `claude-bridge`, kept alive and reused across
+    PRs (`model_override` for Opus); the native `reviewer` subagent in PR review mode (it sets `XTRM_ROLE=reviewer` on every `gh` call, so the shim
+    posts as the reviewer bot); `xt claude --role pr-reviewer --model opus|sonnet`. Opus for HIGH/CRITICAL, data-meaning, production or schema PRs.
+    Merge-ready needs an `xtrm-reviewer[bot]` review at the head with "Ledger check: exit 0".
    - Never an `xt pi` worker, a non-Claude model, or a `gh pr comment` verdict (a comment pins no head).
+   - No review for a PR that changes only documentation or only service-knowledge files (operator, 2026-11-17): green CI, then the lead merges it.
    - The lead launches the review; the builder never reviews its own PR.
    - A second opinion is a second rule-44 review (any path), never a `seconder`.
 45. **Window look-ahead: rule 43 extended** (operator, 2026-11-06: the precondition checks found missing items and nobody tried to land them early).
@@ -363,9 +360,9 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
 48. **Batch by code area** (operator, 2026-11-07, MMD-2331 seq 2414, 2415): one PR per code area, never one per reader, family or file set; one promotion
     and one deploy per objective. No compatibility shim and no per-reader flag while there are no users: the reader reads the new source in code, the old
     switch and the old views go in the same branch, and a reader that cannot switch stops cleanly until its PR arrives. One Opus review covers the batch.
-49. **Merge on arrival** (same ruling): the manager merges each merge-ready record at once, memory gate and `--match-head-commit` in the same command;
-    there is no merge queue to a window. A master-only merge needs no window of its own: it rides the promotion that carries it. Only a merge that itself
-    deploys needs a window, and one window carries the objective (rule 48).
+49. **Merge on arrival** (same ruling; lead merges 2026-11-17): a master-only PR (no window, no promotion of its own) is merged by its lead once the
+    rule-44 review passes at the exact head, memory gate and `--match-head-commit` in the same command, then journaled; the manager merges PRs that
+    deploy, ride a promotion or span workstreams. No merge queue. Only a merge that itself deploys needs a window; one window per objective (rule 48).
 50. **Batch the rulings** (operator, 2026-11-07, D39; MMD-2331 seq 2424): one Opus quant session per batch of questions, not one per PR; one review of the
     whole batch (rule 44). A contract revision is a diff the lead checks and attests within minutes, not a new planning cycle.
 51. **Land as soon as ready; never cut the operator's scope** (operator, 2026-11-09, MMD-2331 seq 2523-2525). A release ships complete: no
@@ -386,8 +383,10 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
      | HIGH, or approach unknown | `explorer`/`researcher`/`overthinker` evidence first if the approach is unclear; build -> `seconder` -> `test-engineer` -> `obligations-scanner` -> Claude review |
      | unknown cause | `debugger` first, then the chain of its scrutiny; a regression test is mandatory |
      | CRITICAL or sensitive (migrations, secrets, auth, MCP or agent config) | `security-deep`: `security-auditor` before and after the build, `seconder`, `test-engineer`, `obligations-scanner`, Claude review |
-     | risky decision (production, data, irreversible) | `overthinker` (premortem) plus the `advisor` agent for the final call |
-   - The review follows rule 44 (any of its three Claude paths). Specialists run on Claude models
+     | risky decision (production, data, irreversible) | `overthinker` (premortem) plus the `advisor` (kept alive) for the final call |
+     | production symptom, incident, unexplained behaviour | `/sre-ops` first (live health, causal trace), then `debugger`; never source-reading alone |
+     | after every deploy, promotion or window | `production-monitor` or `deploy-watcher` from the reopen to +60 min (rule 27) |
+   - The review follows rule 44. Specialists run on Claude models
      through `claude-bridge` since 2026-11-13: a step that needs Claude may now be a specialist (set it in the bridge allow list).
    - The lead does not attest a build contract whose VALIDATION does not name the chain. The merge-ready record lists the activation id of each
      step, or the scrutiny reason for a skipped step.

@@ -10,6 +10,7 @@ launches a session runs `pm_session.py init` in the new worktree when the launch
                                                      role does not already give R; .substrate-issue for REF; both
                                                      kept out of git (info/exclude)
   pm_session.py goal [--dir D]                       the common-goal block alone, to paste into a launch prompt
+  pm_session.py tools [--dir D]                      the tool cards of the session's role (scripts/pm_tools.py)
 
 The common goal is what every session of the project serves beyond its own issue: the goal document (setting
 goal_doc, a path relative to repo_dir, for example a PRD), the Substrate epic (epic) with its success criteria, the
@@ -31,6 +32,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pm_config  # noqa: E402
 import pm_role  # noqa: E402
+import pm_tools  # noqa: E402
 
 ISSUE_FILE = ".substrate-issue"
 STATEMENT_MAX = 700
@@ -234,7 +236,7 @@ def init(role: str | None, issue: str | None, directory, own: bool = True, launc
 def main(argv: list[str]) -> int:
     import argparse
     ap = argparse.ArgumentParser(prog="pm_session.py", description=__doc__.splitlines()[0])
-    ap.add_argument("action", choices=("show", "init", "goal"))
+    ap.add_argument("action", choices=("show", "init", "goal", "tools"))
     ap.add_argument("--dir", default=None)
     ap.add_argument("--role", default=None)
     ap.add_argument("--issue", default=None)
@@ -245,13 +247,20 @@ def main(argv: list[str]) -> int:
     if a.action == "goal":
         print("\n".join(goal_lines()))
         return 0
+    if a.action == "tools":
+        launch = a.launch_role if not own else (a.launch_role or os.environ.get("XTMUX_AGENT_ROLE"))
+        name = (os.environ.get("SUBSTRATE_HOLDER") or os.environ.get("XTRM_SESSION_NAME")) if own else None
+        print("\n".join(pm_tools.block(pm_role.source(name, directory, launch)[0])))
+        return 0
     if a.action == "init":
         if not (a.role or a.issue):
             ap.error("init needs --role and/or --issue")
         for line in init(a.role, a.issue, directory, own, a.launch_role):
             print(line)
-    print("\n".join(kit(directory, own, a.launch_role)))
+    lines = kit(directory, own, a.launch_role)
+    print("\n".join(lines))
     print("\n".join(goal_lines()))
+    print("\n".join(pm_tools.block(lines[0].split()[1])))
     return 0
 
 

@@ -12,10 +12,11 @@ context percentage (operator, 2026-10-31, MMD-2331 seq 1913; `continuity.md`).
 2. Stop new work; finish or park dispatches; settle or stop every activation you started (a restart orphans them).
 3. Renew the project claim with a long TTL (`sb issue renew <epic> --ttl-ms <n>`) until the successor acknowledges.
 
-## 1. Collect reports before any restart (outgoing asks, leads and helpers answer)
+## 1. Collect reports before any restart (from the journals; ask only for what is missing)
 
-Ask each lead and helper for state and open items as a `finding` or `handoff` entry on its own issue, never a file:
-- Each lead: workstream state, open PRs and merge-ready records, open questions, its worker panes with reap conditions.
+Read each lead's and helper's journal for state and open items; ask one batched question only for what the journal lacks (rule 40). Expected
+there, as `finding` or `handoff` entries on their own issues, never a file:
+- Each lead: workstream state, open PRs and merge-ready records, open questions, its live agents (panes and specialist activations).
 - Board helper: stale-date and zero-comment windows, open PRs without a window, hygiene JQL rows, operator comments still unanswered.
 - Other helpers: unanswered comments and questions, work without a window, undecided decisions, with evidence ids.
 
@@ -63,7 +64,8 @@ the claim is the only tie-break: keep the overlap short and release the claim be
 ## 6. Reap and announce (incoming)
 
 1. The incoming reaps the outgoing pane by id after the final handoff and an empty CronList (never `kill-window` or `$TMUX_PANE`).
-2. The incoming tells every lead and the board helper its session name; peers that resolve the manager by role find it once it holds the claim.
+2. Peers resolve the manager by role (`route_target.py manager`) once it holds the claim; the incoming journals its name on the epic and sends no
+   announcement messages.
 3. After send-keys into a Claude pane send `C-m` and check the input line is empty (`references/launching.md`, "Liveness").
 
 ## 7. First hour and dead time (incoming)

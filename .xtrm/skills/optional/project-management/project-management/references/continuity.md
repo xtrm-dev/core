@@ -7,6 +7,12 @@ Read after every compaction, before a resume or a day-boundary handover.
   `references/handover.md`.
 - Compact 2-3 times a day at a quiet point, never within 20 min of a window: write a checkpoint `handoff` first
   (`sb journal append <ref> --kind handoff`), compact, re-arm `/goal`.
+- **Compact yourself** (operator, 2026-11-17): the manager and every lead decide when to compact, without waiting for the operator. After the
+  handoff entry, run in one command, then end the turn (the detached shell types `/compact` into your own pane once the turn is over):
+  ```
+  (setsid sh -c 'sleep 20; tmux send-keys -t "$TMUX_PANE" -l /compact; sleep 1; tmux send-keys -t "$TMUX_PANE" Enter' >/dev/null 2>&1 &)
+  ```
+  The post-compact hook prints the resume checklist and the nudge types the resume prompt. A Pi session compacts the same way.
 - Why: a takeover costs about 4x the output tokens of a compaction recovery, and rotations lost an operator question and moved windows mid-flight.
 - Resume: `sb issue resume <ref>` (the epic for the manager, the workstream issue for a lead). Set `SUBSTRATE_ISSUE_REF` to it; bind the
   worktree with `pm_session.py init --issue <ref>` (kept out of git by `.git/info/exclude`); keep a long-TTL claim for the edit gate, renewed with `sb issue renew`.
@@ -15,7 +21,7 @@ Read after every compaction, before a resume or a day-boundary handover.
   then name). Workers and reviewers get no checkpoint or resume steps.
    - `checkpoint_warn.py` warns at the `checkpoint_thresholds` (default 70% EARLY, 85% FINAL) of the window and asks for ONE structured
      `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, next
-     action), verified against live state, then `/compact`.
+     action), verified against live state, then the self-compaction above.
    - `post_compact.py` prints the resume steps after a compaction or a start, then the project's private `post_compact_extra` text file (its
      own fleet rules); with `post_compact_nudge` true it also types `post_compact_nudge_text` into `$TMUX_PANE`.
    - `action_gate.py` blocks the gated actions (merges, launches, attests, dispatches) until the session has re-read its role references.
