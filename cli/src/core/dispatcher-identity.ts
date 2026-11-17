@@ -54,10 +54,20 @@ export const DISPATCHER_ENV_KEYS = [
 
 const MAX_ANCESTOR_HOPS = 64;
 
+/**
+ * Runtime processes (D5): the nearest of these in the ancestor chain IS the
+ * dispatcher, with or without a messaging socket. `comm` holds exactly these
+ * names for `pi`, `claude` and `codex` sessions (jira-identity.ts walks the
+ * same three names).
+ */
+export const AGENT_PROCESS_COMMS = new Set(['pi', 'claude', 'codex']);
+
 export interface ProcessInfo {
     ppid: number;
     /** Kernel start time (clock ticks); Claude Code records it as `procStart`. */
     startTime?: string;
+    /** Process name from /proc/<pid>/comm (Linux) or `ps -o comm=` (macOS). */
+    comm?: string;
 }
 
 export interface DispatcherIdentityDeps {
@@ -79,6 +89,22 @@ export interface DispatcherIdentityDeps {
      * computed, exported next to SUBSTRATE_HOLDER. Omitted keeps it absent.
      */
     agentName?: string | null;
+    /**
+     * CORE-2726 (D5): one pid's environment, read for the ancestor's
+     * SUBSTRATE_HOLDER. Default: /proc/<pid>/environ on Linux, absent elsewhere.
+     */
+    readEnviron?: (pid: number) => NodeJS.ProcessEnv | null;
+    /** Boot time in epoch seconds (/proc/stat `btime`), for a `ps lstart` procStart. */
+    bootTime?: () => number | null;
+    /** Kernel clock ticks per second (`getconf CLK_TCK`); null when unknowable. */
+    clockTicks?: () => number | null;
+    /**
+     * CORE-2726: false skips the inherited `XTRM_DISPATCHER_*` fallback. An
+     * in-process caller (the specialists MCP server, an in-process activation)
+     * carries the launched session's env, so its inherited dispatcher value
+     * belongs to someone else and must not be read.
+     */
+    inherit?: boolean;
 }
 
 export interface DispatcherIdentity {
@@ -113,64 +139,338 @@ export function readProcessInfo(pid: number): ProcessInfo | null {
     try {
         const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
         // comm may contain spaces and parens; fields resume after the last ')'.
-        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        const close = stat.lastIndexOf(')');
+        const comm = stat.slice(stat.indexOf('(') + 1, close).trim();
+        const fields = stat.slice(close + 2).split(' ');
         const ppid = Number(fields[1]);
-        if (Number.isInteger(ppid)) return { ppid, startTime: fields[19] };
+        if (Number.isInteger(ppid)) return { ppid, startTime: fields[19], ...(comm ? { comm } : {}) };
     } catch { /* not Linux, or the process is gone */ }
     try {
-        const result = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8', stdio: 'pipe' });
-        const ppid = Number(String(result.stdout ?? '').trim());
-        if (result.status === 0 && Number.isInteger(ppid) && ppid > 0) return { ppid };
+        const result = spawnSync('ps', ['-o', 'ppid=,comm=', '-p', String(pid)], { encoding: 'utf8', stdio: 'pipe' });
+        const match = /^(\d+)\s+(.+)$/.exec(String(result.stdout ?? '').trim());
+        if (result.status === 0 && match) {
+            const ppid = Number(match[1]);
+            const comm = path.basename(match[2].trim());
+            if (Number.isInteger(ppid) && ppid > 0) return { ppid, ...(comm ? { comm } : {}) };
+        }
     } catch { /* absent */ }
     return null;
 }
 
-function readSessionEntry(sessionsDir: string, pid: number, startTime: string | undefined): DispatcherIdentity | null {
+/**
+ * One process's environment (Linux /proc/<pid>/environ). Absent when the host
+ * has no /proc, the pid is gone, or the process is not ours to read. Never
+ * throws: an unreadable environment means unknown, not empty.
+ */
+function readProcessEnvironment(pid: number): NodeJS.ProcessEnv | null {
+    try {
+        const raw = readFileSync(`/proc/${pid}/environ`, 'utf8');
+        const env: NodeJS.ProcessEnv = {};
+        for (const pair of raw.split('\0')) {
+            const eq = pair.indexOf('=');
+            if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
+        }
+        return env;
+    } catch {
+        return null;
+    }
+}
+
+/** Boot time in epoch seconds (/proc/stat `btime`), null when unreadable. */
+function bootTimeSeconds(): number | null {
+    try {
+        const match = /^btime\s+(\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'));
+        return match ? Number(match[1]) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Kernel clock ticks per second (`getconf CLK_TCK`), null when unknowable.
+ * Never a guessed default: a wrong value would silently mis-date every
+ * converted start time, so an unreadable CLK_TCK means "not checked".
+ */
+function clockTicksPerSecond(): number | null {
+    try {
+        const result = spawnSync('getconf', ['CLK_TCK'], { encoding: 'utf8', stdio: 'pipe' });
+        const ticks = Number(String(result.stdout ?? '').trim());
+        if (result.status === 0 && Number.isInteger(ticks) && ticks > 0) return ticks;
+    } catch { /* absent */ }
+    return null;
+}
+
+/** A start-time comparison: did it happen, and did it agree. */
+interface StartCheck {
+    checked: boolean;
+    agrees: boolean;
+}
+
+/** `ps lstart` has one-second resolution; the btime conversion truncates to a second. */
+const LSTART_TOLERANCE_SECONDS = 2;
+/** Every real UTC offset and DST step is a multiple of 15 minutes. */
+const QUARTER_HOUR_SECONDS = 900;
+/** The largest zone difference any host can show (UTC-12..UTC+14). */
+const MAX_ZONE_OFFSET_SECONDS = 14 * 3600;
+
+/**
+ * Pid-reuse guard for one registry entry.
+ *
+ * A numeric `procStart` (clock ticks, what Claude Code writes) is compared to
+ * the live start time directly. A `ps lstart` date string (pre-M1 Claude
+ * writers, and Pi entries) is converted to epoch seconds through
+ * boot time + CLK_TCK when both are readable, so a Pi entry is guarded too
+ * (CORE-2726); when that conversion is impossible the entry is kept and the
+ * caller reports `procStartChecked: false` — unknown, not stale.
+ */
+function compareStartTime(
+    procStart: string | null,
+    startTime: string | undefined,
+    deps: DispatcherIdentityDeps,
+): StartCheck {
+    if (!procStart || !startTime) return { checked: false, agrees: true };
+    if (/^\d+$/.test(procStart)) return { checked: true, agrees: procStart === startTime };
+    const lstart = Date.parse(procStart);
+    if (!Number.isFinite(lstart)) return { checked: false, agrees: true };
+    const ticks = /^\d+$/.test(startTime) ? Number(startTime) : null;
+    const boot = (deps.bootTime ?? bootTimeSeconds)();
+    const perSecond = (deps.clockTicks ?? clockTicksPerSecond)();
+    if (ticks === null || boot === null || perSecond === null || !Number.isInteger(perSecond) || perSecond <= 0) {
+        return { checked: false, agrees: true };
+    }
+    const live = boot + ticks / perSecond;
+    const delta = Math.abs(live - lstart / 1000);
+    if (delta <= LSTART_TOLERANCE_SECONDS) return { checked: true, agrees: true };
+    // Time-zone artifact (CORE-2726 fix 1, option B). The lstart string was
+    // formatted by the WRITER's process, and `Date.parse` reads it as the
+    // READER's local time, so two different zones — or a DST change between the
+    // writer and the reader — shift the parsed instant by a whole number of
+    // quarter hours (every real UTC offset and DST step is a multiple of 15
+    // minutes). Option A (spawn `ps -o lstart=` for the live pid and compare
+    // strings) would cost a spawn per registry entry and cannot help when the
+    // writer's zone was different anyway; option C (always report unchecked)
+    // would drop the reuse guard exactly when it matters. So an offset that is a
+    // whole quarter hour (|offset| <= 14 h) is treated as a zone difference: the
+    // entry stays live and the check is reported as done. The residual gap is a
+    // reused pid that started exactly N*15 min after the old one; anything else
+    // still disagrees.
+    const remainder = delta % QUARTER_HOUR_SECONDS;
+    const zoneAligned = delta <= MAX_ZONE_OFFSET_SECONDS
+        && (remainder <= LSTART_TOLERANCE_SECONDS || QUARTER_HOUR_SECONDS - remainder <= LSTART_TOLERANCE_SECONDS);
+    return { checked: true, agrees: zoneAligned };
+}
+
+/** What one pid's registry file says, and whether it may name a dispatcher. */
+interface RegistryProbe {
+    address?: string;
+    name?: string;
+    sessionId?: string;
+    /** Why the entry cannot name a dispatcher; reported in `skipped`. */
+    rejection?: string;
+    /** The entry was written by a Pi session (`entrypoint: 'pi'`). */
+    agentEntrypoint?: boolean;
+    startCheck: StartCheck;
+}
+
+function probeRegistryEntry(
+    sessionsDir: string,
+    pid: number,
+    info: ProcessInfo | null,
+    deps: DispatcherIdentityDeps,
+): RegistryProbe | null {
     let entry: Record<string, unknown>;
     try {
         entry = JSON.parse(readFileSync(path.join(sessionsDir, `${pid}.json`), 'utf8')) as Record<string, unknown>;
     } catch {
         return null;
     }
-    const socket = clean(entry.messagingSocketPath);
-    if (!socket) return null;
+    const startCheck = compareStartTime(clean(entry.procStart), info?.startTime, deps);
     // A stale file whose pid was reused by an unrelated ancestor is not a dispatcher.
-    if (typeof entry.pid === 'number' && entry.pid !== pid) return null;
-    // Claude Code writes procStart as /proc clock ticks; pre-M1 writers wrote a
-    // `ps lstart` date string, which cannot be compared to ticks.
-    // ponytail: Pi entries rely on the pid match alone; convert lstart via btime + CLK_TCK if pid reuse bites.
-    const procStart = clean(entry.procStart);
-    if (procStart && /^\d+$/.test(procStart) && startTime && procStart !== startTime) return null;
-    const identity: DispatcherIdentity = { address: `uds:${socket}` };
+    if (typeof entry.pid === 'number' && entry.pid !== pid) {
+        return { rejection: 'pid reused: the registry entry names another pid', startCheck };
+    }
+    if (startCheck.checked && !startCheck.agrees) {
+        return { rejection: 'pid reused: procStart disagrees with the live process start time', startCheck };
+    }
+    const probe: RegistryProbe = { startCheck };
+    const sessionId = clean(entry.sessionId);
+    if (sessionId) probe.sessionId = sessionId;
     const name = clean(entry.name);
-    if (name) identity.name = name;
-    return identity;
+    if (name) probe.name = name;
+    const entrypoint = clean(entry.entrypoint);
+    if (entrypoint && AGENT_PROCESS_COMMS.has(entrypoint)) probe.agentEntrypoint = true;
+    const socket = clean(entry.messagingSocketPath);
+    if (socket) probe.address = `uds:${socket}`;
+    return probe;
+}
+
+/** True when this pid is an agent runtime process (D5), from comm or the registry entrypoint. */
+function isAgentAncestor(info: ProcessInfo | null, probe: RegistryProbe | null): boolean {
+    const comm = clean(info?.comm);
+    if (comm && AGENT_PROCESS_COMMS.has(comm)) return true;
+    return probe?.agentEntrypoint === true;
+}
+
+/** The dispatcher candidate a resolution came from. */
+export type DispatcherSource = 'explicit' | 'ancestor' | 'inherited' | 'none';
+
+/** One ancestor that was walked past, and why. */
+export interface SkippedAncestor {
+    pid: number;
+    reason: string;
 }
 
 /**
- * Nearest ancestor Claude Code session with a messaging socket; inherited
- * `XTRM_DISPATCHER_*` only when no ancestor resolves. Never throws.
+ * A full dispatcher resolution (CORE-2726): the identity plus its provenance.
+ * Unknown stays absent, exactly as `DispatcherIdentity`.
  */
-export function resolveDispatcher(deps: DispatcherIdentityDeps = {}): DispatcherIdentity {
+export interface DispatcherResolution {
+    /** The dispatcher's SUBSTRATE_HOLDER; absent when unreadable. */
+    participant?: string;
+    /** Display-only agent name, never the participant. */
+    name?: string;
+    address?: string;
+    source: DispatcherSource;
+    /** The ancestor pid that resolved the dispatcher. */
+    pid?: number;
+    sessionId?: string;
+    /** Whether a pid-reuse start-time check was possible for the entry that resolved. */
+    procStartChecked: boolean;
+    skipped: SkippedAncestor[];
+}
+
+const NO_SOCKET_REASON = 'agent ancestor without a messaging socket';
+
+/**
+ * The ancestor walk plus its diagnostics (CORE-2726).
+ *
+ * Stops at the nearest agent ancestor (D5): a Pi or Codex lead that publishes
+ * no messaging socket is the dispatcher all the same, so its participant is
+ * taken, its address stays absent and it is listed in `skipped`. The walk
+ * never continues to a grandparent or an inherited value behind it, because
+ * both name someone who did not dispatch.
+ */
+export function resolveDispatcherResolution(deps: DispatcherIdentityDeps = {}): DispatcherResolution {
     const env = deps.env ?? process.env;
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
+    const readEnviron = deps.readEnviron ?? readProcessEnvironment;
+    const skipped: SkippedAncestor[] = [];
     let pid = deps.startPid ?? process.ppid;
     try {
         for (let hop = 0; hop < MAX_ANCESTOR_HOPS && pid > 1; hop++) {
             const info = readProcess(pid);
-            const hit = readSessionEntry(sessionsDir, pid, info?.startTime);
-            if (hit) return hit;
+            const probe = probeRegistryEntry(sessionsDir, pid, info, deps);
+            if (probe?.rejection) skipped.push({ pid, reason: probe.rejection });
+            // A rejected entry is stale: its name, session and socket name another process.
+            const hit = probe && !probe.rejection ? probe : null;
+            if (hit?.address) {
+                const resolution: DispatcherResolution = {
+                    address: hit.address,
+                    source: 'ancestor',
+                    pid,
+                    procStartChecked: hit.startCheck.checked,
+                    skipped,
+                };
+                if (hit.name) resolution.name = hit.name;
+                if (hit.sessionId) resolution.sessionId = hit.sessionId;
+                const participant = clean(holderOf(readEnviron, pid));
+                if (participant) resolution.participant = participant;
+                return resolution;
+            }
+            if (isAgentAncestor(info, probe)) {
+                const participant = clean(holderOf(readEnviron, pid));
+                skipped.push({ pid, reason: NO_SOCKET_REASON });
+                const resolution: DispatcherResolution = {
+                    source: 'ancestor',
+                    pid,
+                    // A rejected entry still proved whether the check was possible.
+                    procStartChecked: probe?.startCheck.checked ?? false,
+                    skipped,
+                };
+                // No new env key (CORE-2725 non-goal): NAME keeps its display
+                // meaning and falls back to the participant only when the
+                // registry has no name for this ancestor.
+                const name = hit?.name ?? participant;
+                if (name) resolution.name = name;
+                if (participant) resolution.participant = participant;
+                return resolution;
+            }
             if (!info || info.ppid === pid) break;
             pid = info.ppid;
         }
     } catch { /* fall through to inherited */ }
-    const inherited: DispatcherIdentity = {};
+    const resolution: DispatcherResolution = { source: 'none', procStartChecked: false, skipped };
+    if (deps.inherit === false) return resolution;
     const name = clean(env[XTRM_DISPATCHER_NAME_VAR]);
     const address = clean(env[XTRM_DISPATCHER_ADDRESS_VAR]);
-    if (name) inherited.name = name;
-    if (address) inherited.address = address;
-    return inherited;
+    if (name) resolution.name = name;
+    if (address) resolution.address = address;
+    if (name || address) resolution.source = 'inherited';
+    return resolution;
+}
+
+/** The dispatcher's own SUBSTRATE_HOLDER, when that process's env is readable. */
+function holderOf(readEnviron: (pid: number) => NodeJS.ProcessEnv | null, pid: number): string | null {
+    try {
+        const env = readEnviron(pid);
+        return env ? clean(env[SUBSTRATE_HOLDER_VAR]) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Nearest ancestor agent session; inherited `XTRM_DISPATCHER_*` only when no
+ * ancestor resolves. Never throws.
+ */
+export function resolveDispatcher(deps: DispatcherIdentityDeps = {}): DispatcherIdentity {
+    const resolved = resolveDispatcherResolution(deps);
+    const identity: DispatcherIdentity = {};
+    if (resolved.name) identity.name = resolved.name;
+    if (resolved.address) identity.address = resolved.address;
+    return identity;
+}
+
+/** What `xt identity dispatcher` was asked for. */
+export interface DispatcherQuery {
+    /** Walk start pid; INCLUSIVE — the walk starts at and tests this pid. */
+    pid?: number | null;
+    /** Explicit participant; outranks the ancestor walk. */
+    participant?: string | null;
+    /** Explicit address (`uds:` or `activation:`); outranks the ancestor walk. */
+    address?: string | null;
+    /** false skips the inherited env fallback. */
+    inherit?: boolean;
+}
+
+/** The two address schemes a dispatcher may carry (CORE-2726). */
+export function isDispatcherAddress(value: string): boolean {
+    return /^uds:.+$/.test(value) || /^activation:\S+$/.test(value);
+}
+
+/**
+ * One dispatcher answer with its provenance, for callers outside xt
+ * (CORE-2726): explicit input outranks the ancestor walk, the walk reports its
+ * diagnostics, and `inherit: false` keeps an in-process caller from reading a
+ * launched session's inherited value. Never throws.
+ */
+export function resolveDispatcherReport(
+    query: DispatcherQuery = {},
+    deps: DispatcherIdentityDeps = {},
+): DispatcherResolution {
+    const participant = clean(query.participant);
+    const address = clean(query.address);
+    if (participant || address) {
+        const explicit: DispatcherResolution = { source: 'explicit', procStartChecked: false, skipped: [] };
+        if (participant) explicit.participant = participant;
+        if (address) explicit.address = address;
+        return explicit;
+    }
+    const walkDeps: DispatcherIdentityDeps = { ...deps, inherit: query.inherit ?? deps.inherit };
+    const startPid = query.pid ?? null;
+    if (typeof startPid === 'number') walkDeps.startPid = startPid;
+    return resolveDispatcherResolution(walkDeps);
 }
 
 /** The merge guard's switch; the launcher owns the default (CORE-2528). */
@@ -230,6 +530,22 @@ function findLiveDispatchers(
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
     const found: { pid: unknown; address: string }[] = [];
+    // CORE-2726 fix 6: the boot time and the clock ticks answer for the whole
+    // host, so read them at most once per call instead of once per registry
+    // file (getconf is a spawn).
+    let bootCache: number | null | undefined;
+    let tickCache: number | null | undefined;
+    const memoDeps: DispatcherIdentityDeps = {
+        ...deps,
+        bootTime: () => {
+            if (bootCache === undefined) bootCache = (deps.bootTime ?? bootTimeSeconds)();
+            return bootCache;
+        },
+        clockTicks: () => {
+            if (tickCache === undefined) tickCache = (deps.clockTicks ?? clockTicksPerSecond)();
+            return tickCache;
+        },
+    };
     let files: string[];
     try {
         files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
@@ -246,10 +562,12 @@ function findLiveDispatchers(
         if (clean(entry.name) !== participant) continue;
         const socket = clean(entry.messagingSocketPath);
         if (!socket) continue;
-        // Pid liveness with reuse protection, as readSessionEntry does: a
-        // dead pid is skipped, and a numeric procStart that disagrees with
-        // the live process start time means the pid was reused. A probe
-        // failure keeps the entry (unknown, not dead).
+        // Pid liveness with reuse protection, exactly as the ancestor walk does
+        // (compareStartTime): a dead pid is skipped, and a procStart — clock
+        // ticks, or a Pi entry's `ps lstart` date string when boot time and
+        // CLK_TCK are readable — that disagrees with the live process start time
+        // means the pid was reused. A probe failure keeps the entry (unknown,
+        // not dead).
         if (typeof entry.pid === 'number') {
             const filePid = Number(file.replace(/\.json$/, ''));
             if (Number.isInteger(filePid) && entry.pid !== filePid) continue;
@@ -258,8 +576,8 @@ function findLiveDispatchers(
                 info = readProcess(entry.pid);
             } catch { /* keep on probe failure */ }
             if (!info) continue;
-            const procStart = clean(entry.procStart);
-            if (procStart && /^\d+$/.test(procStart) && info.startTime && procStart !== info.startTime) continue;
+            const startCheck = compareStartTime(clean(entry.procStart), info.startTime, memoDeps);
+            if (startCheck.checked && !startCheck.agrees) continue;
         }
         found.push({ pid: entry.pid, address: `uds:${socket}` });
     }

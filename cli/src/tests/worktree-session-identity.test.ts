@@ -641,7 +641,14 @@ describe('xt/tmux launcher session-identity propagation', () => {
       installMock(h);
       const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
-      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk7' })).rejects.toThrow('exit:0');
+      // CORE-2726 fix 4: the walk is pinned to an empty process table and an
+      // unreadable environment, so this stays deterministic instead of resolving
+      // whatever agent session the developer's own shell hangs under.
+      await expect(launchWorktreeSession({
+        runtime: 'pi',
+        name: 'dwk7',
+        dispatcherDeps: { readProcess: () => null, readEnviron: () => null },
+      })).rejects.toThrow('exit:0');
 
       expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk7');
       expect(h.piSpawnEnv?.['XTRM_DISPATCHER_NAME']).toBeUndefined();

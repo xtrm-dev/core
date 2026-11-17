@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 import { runReceipt } from '../core/sb-receipt.js';
 
-import { SUBSTRATE_HOLDER_VAR, XTRM_AGENT_NAME_VAR } from '../core/dispatcher-identity.js';
+import { SUBSTRATE_HOLDER_VAR, XTRM_AGENT_NAME_VAR, isDispatcherAddress, resolveDispatcherReport } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import {
     DEFAULT_API_BASE,
@@ -261,6 +261,62 @@ export function createIdentityCommand(): Command {
                 return;
             }
             for (const [key, value] of Object.entries(report.env)) console.log(`${key}=${value}`);
+        });
+
+    identity
+        .command('dispatcher')
+        .description('Print the dispatcher that launched this process: side-effect-free, for callers outside xt')
+        .option('--pid <pid>', 'Pid the ancestor walk starts at and tests (INCLUSIVE; pid 1 is never probed, so it ends the walk); default: this process\'s parent')
+        .option('--participant <name>', 'Explicit dispatcher participant: outranks the ancestor walk')
+        .option('--address <address>', 'Explicit dispatcher address: uds:<socket> or activation:<id>')
+        .option(
+            '--no-inherit',
+            'Do not fall back to inherited XTRM_DISPATCHER_*; required for in-process callers, whose env is the launched session\'s, not the dispatcher\'s',
+        )
+        .option('--json', 'Emit JSON', false)
+        .action((opts: { pid?: string; participant?: string; address?: string; inherit: boolean; json: boolean }) => {
+            // CORE-2726: the caller's own dispatcher, without copying the walk.
+            // Side-effect-free: no writes, no git, no sb, no network. Exit 0
+            // whenever the question was asked (source: none included); only a bad
+            // argument is an error.
+            let pid: number | null = null;
+            if (opts.pid !== undefined) {
+                pid = Number(opts.pid);
+                if (!Number.isInteger(pid) || pid <= 0) fail(`--pid ${opts.pid} is not a positive process id`);
+            }
+            const address = (opts.address ?? '').trim();
+            if (address && !isDispatcherAddress(address)) {
+                fail(`--address ${address} is neither uds:<socket> nor activation:<id>`);
+            }
+            const resolution = resolveDispatcherReport({
+                pid,
+                participant: opts.participant ?? null,
+                address: address || null,
+                inherit: opts.inherit,
+            });
+            // Unknown stays absent: JSON.stringify drops an undefined field.
+            const out = {
+                participant: resolution.participant,
+                name: resolution.name,
+                address: resolution.address,
+                source: resolution.source,
+                pid: resolution.pid,
+                sessionId: resolution.sessionId,
+                procStartChecked: resolution.procStartChecked,
+                skipped: resolution.skipped,
+            };
+            if (opts.json) {
+                console.log(JSON.stringify(out, null, 2));
+                return;
+            }
+            console.log(`dispatcher source: ${resolution.source}`);
+            if (resolution.participant) console.log(`participant: ${resolution.participant}`);
+            if (resolution.name) console.log(`name: ${resolution.name}`);
+            if (resolution.address) console.log(`address: ${resolution.address}`);
+            if (typeof resolution.pid === 'number') console.log(`pid: ${resolution.pid}`);
+            if (resolution.sessionId) console.log(`session: ${resolution.sessionId}`);
+            if (resolution.source === 'none') console.log(kleur.dim('no dispatcher resolved'));
+            for (const skip of resolution.skipped) console.log(kleur.dim(`skipped ${skip.pid}: ${skip.reason}`));
         });
 
     identity
