@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     buildDispatcherEnv,
+    isDispatcherAddress,
     resolveDispatcher,
+    resolveDispatcherReport,
+    resolveDispatcherResolution,
     stripDispatcherEnv,
     type ProcessInfo,
 } from '../core/dispatcher-identity.js';
@@ -60,15 +63,17 @@ describe('resolveDispatcher', () => {
         expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} })).toEqual({});
     });
 
-    it('a Pi dispatcher entry with a legacy date-string procStart still resolves', () => {
+    it('a Pi dispatcher entry with a legacy date-string procStart still resolves when the host cannot convert it', () => {
         // Pre-M1 writers recorded a `ps lstart` date string instead of numeric
-        // ticks; the resolver tolerates it and relies on the pid match.
+        // ticks. CORE-2726 compares it through boot time + CLK_TCK when that is
+        // readable; when it is not, the entry is kept (unknown, not stale) and
+        // the pid match has to do.
         writeSession(200, {
             name: 'pi-coord', messagingSocketPath: '/run/cc/200.sock',
             procStart: 'Thu Oct 15 19:40:44 2026', entrypoint: 'pi', version: 'intercom 1.4.0',
         });
         writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
-        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, env: {} }))
+        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess, bootTime: () => null, env: {} }))
             .toEqual({ name: 'pi-coord', address: 'uds:/run/cc/200.sock' });
     });
 
@@ -160,5 +165,235 @@ describe('buildDispatcherEnv', () => {
         expect('XTRM_PARENT_SESSION_ID' in pane).toBe(false);
         const none = buildDispatcherEnv('w', { ...base, env: { TMUX_PANE: '%5' }, tmux: () => ({ status: 0, stdout: '$2' }) });
         expect(Object.keys(none).sort()).toEqual(['SUBSTRATE_HOLDER', 'XTRM_MERGE_GUARD']);
+    });
+});
+
+// CORE-2726 (D5) + the dispatcher report behind `xt identity dispatcher`.
+// The walk stops at the nearest AGENT ancestor even when it publishes no
+// messaging socket, and a Pi entry written with a `ps lstart` date string is
+// guarded against pid reuse through boot time + CLK_TCK.
+
+// worker xt (pid 300, bash) <- pi lead (pid 200, no socket) <- claude (pid 100, socket)
+const AGENT_TABLE: Record<number, ProcessInfo> = {
+    300: { ppid: 200, startTime: '30', comm: 'bash' },
+    200: { ppid: 100, startTime: '20', comm: 'pi' },
+    100: { ppid: 1, startTime: '10', comm: 'claude' },
+};
+const readAgentProcess = (pid: number): ProcessInfo | null => AGENT_TABLE[pid] ?? null;
+const readEnvironOf = (table: Record<number, Record<string, string>>) =>
+    (pid: number): NodeJS.ProcessEnv | null => table[pid] ?? null;
+
+const STALE_ENV = { XTRM_DISPATCHER_NAME: 'stale', XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/stale.sock' };
+
+describe('resolveDispatcher D5: an agent ancestor without a socket', () => {
+    it('takes the Pi lead, not the socketed grandparent and not the inherited value', () => {
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        const readEnviron = readEnvironOf({ 200: { SUBSTRATE_HOLDER: 'pi-lead' } });
+        // The env projection names the Pi lead and carries no address.
+        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess: readAgentProcess, readEnviron, env: STALE_ENV }))
+            .toEqual({ name: 'pi-lead' });
+    });
+
+    it('reports the participant, the pid and the skipped socket in the resolution', () => {
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        const report = resolveDispatcherResolution({
+            startPid: 300, sessionsDir, readProcess: readAgentProcess,
+            readEnviron: readEnvironOf({ 200: { SUBSTRATE_HOLDER: 'pi-lead' } }),
+            env: STALE_ENV,
+        });
+        expect(report).toEqual({
+            name: 'pi-lead',
+            participant: 'pi-lead',
+            source: 'ancestor',
+            pid: 200,
+            procStartChecked: false,
+            skipped: [{ pid: 200, reason: 'agent ancestor without a messaging socket' }],
+        });
+        expect(report.address).toBeUndefined();
+    });
+
+    it('keeps an unreadable environment absent instead of guessing', () => {
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        const report = resolveDispatcherResolution({
+            startPid: 300, sessionsDir, readProcess: readAgentProcess,
+            readEnviron: () => null, env: STALE_ENV,
+        });
+        expect(report.participant).toBeUndefined();
+        expect(report.address).toBeUndefined();
+        expect(report.source).toBe('ancestor');
+        expect(report.skipped).toEqual([{ pid: 200, reason: 'agent ancestor without a messaging socket' }]);
+        // Nothing to project: no name, no address — never the grandparent's.
+        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess: readAgentProcess, readEnviron: () => null, env: STALE_ENV }))
+            .toEqual({});
+    });
+
+    it('still walks past a non-agent ancestor to the nearest socket', () => {
+        const table: Record<number, ProcessInfo> = {
+            300: { ppid: 200, startTime: '30', comm: 'bash' },
+            200: { ppid: 100, startTime: '20', comm: 'bun' },
+            100: { ppid: 1, startTime: '10', comm: 'claude' },
+        };
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(resolveDispatcher({ startPid: 300, sessionsDir, readProcess: (pid) => table[pid] ?? null, env: {} }))
+            .toEqual({ name: 'coord', address: 'uds:/run/cc/100.sock' });
+    });
+
+    it('an agent ancestor with a socket keeps its address and gains the participant', () => {
+        writeSession(200, { name: 'pi-coord', messagingSocketPath: '/run/cc/200.sock', procStart: '20', sessionId: 'sess-2' });
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(resolveDispatcherResolution({
+            startPid: 300, sessionsDir, readProcess: readAgentProcess,
+            readEnviron: readEnvironOf({ 200: { SUBSTRATE_HOLDER: 'pi-coord' } }), env: {},
+        })).toEqual({
+            name: 'pi-coord',
+            participant: 'pi-coord',
+            address: 'uds:/run/cc/200.sock',
+            source: 'ancestor',
+            pid: 200,
+            sessionId: 'sess-2',
+            procStartChecked: true,
+            skipped: [],
+        });
+    });
+
+    it('a stale entry on an agent pid names nobody: the participant alone is taken', () => {
+        // The file says pid 4242 (reused), yet the live process 200 is a Pi lead.
+        fs.writeJsonSync(path.join(sessionsDir, '200.json'), { pid: 4242, name: 'stale-name', messagingSocketPath: '/x.sock' });
+        const report = resolveDispatcherResolution({
+            startPid: 300, sessionsDir, readProcess: readAgentProcess,
+            readEnviron: readEnvironOf({ 200: { SUBSTRATE_HOLDER: 'pi-lead' } }), env: {},
+        });
+        expect(report).toMatchObject({ participant: 'pi-lead', name: 'pi-lead', source: 'ancestor', pid: 200 });
+        expect(report.address).toBeUndefined();
+        expect(report.skipped).toEqual([
+            { pid: 200, reason: 'pid reused: the registry entry names another pid' },
+            { pid: 200, reason: 'agent ancestor without a messaging socket' },
+        ]);
+    });
+
+    it('buildDispatcherEnv follows D5: the Pi lead name, no address', () => {
+        writeSession(100, { name: 'grand', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(buildDispatcherEnv('worker-a', {
+            startPid: 300, sessionsDir, readProcess: readAgentProcess,
+            readEnviron: readEnvironOf({ 200: { SUBSTRATE_HOLDER: 'pi-lead' } }), env: {}, tmux: noTmux,
+        })).toEqual({
+            SUBSTRATE_HOLDER: 'worker-a',
+            XTRM_MERGE_GUARD: 'on',
+            XTRM_DISPATCHER_NAME: 'pi-lead',
+        });
+    });
+});
+
+describe('Pi registry entries and the pid-reuse guard', () => {
+    // Both live start times below are ticks of 100/s counted from a btime of 1_000_000 s.
+    const bootTime = () => 1_000_000;
+    const clockTicks = () => 100;
+    const liveStartEpoch = (ticks: number): number => 1_000_000 + ticks / 100;
+
+    function psLstart(epochSeconds: number): string {
+        const date = new Date(epochSeconds * 1000);
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const pad = (value: number): string => String(value).padStart(2, '0');
+        return `${days[date.getDay()]} ${months[date.getMonth()]} ${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${date.getFullYear()}`;
+    }
+
+    // worker xt (150) <- pi lead (120): 120 starts at tick 2000.
+    const table: Record<number, ProcessInfo> = {
+        150: { ppid: 120, startTime: '3000', comm: 'bash' },
+        120: { ppid: 1, startTime: '2000', comm: 'pi' },
+    };
+    // Built per test: `sessionsDir` is a fresh temp dir in every beforeEach.
+    const piDeps = (overrides: Record<string, unknown> = {}): Parameters<typeof resolveDispatcher>[0] => ({
+        startPid: 150, sessionsDir, readProcess: (pid: number): ProcessInfo | null => table[pid] ?? null,
+        bootTime, clockTicks, env: {}, ...overrides,
+    });
+
+    it('rejects a Pi entry whose lstart disagrees with the live start time', () => {
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 5_000),
+        });
+        // pid reuse: the entry is rejected and reported, so nothing resolves. The
+        // live process 120 is a Pi lead with no readable env, so no participant either.
+        expect(resolveDispatcher(piDeps())).toEqual({});
+        const report = resolveDispatcherResolution(piDeps());
+        expect(report.source).toBe('ancestor');
+        expect(report.address).toBeUndefined();
+        expect(report.procStartChecked).toBe(true);
+        expect(report.skipped.map((skip) => skip.reason)).toContain('pid reused: procStart disagrees with the live process start time');
+    });
+
+    it('accepts a Pi entry whose lstart agrees, and reports the check as done', () => {
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000)),
+        });
+        expect(resolveDispatcher(piDeps())).toEqual({ name: 'pi-coord', address: 'uds:/run/cc/120.sock' });
+        expect(resolveDispatcherResolution(piDeps()).procStartChecked).toBe(true);
+    });
+
+    it('keeps a Pi entry the host cannot convert, and reports procStartChecked: false', () => {
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 5_000),
+        });
+        const unconvertible = resolveDispatcherResolution(piDeps({ bootTime: () => null }));
+        expect(unconvertible).toMatchObject({ name: 'pi-coord', source: 'ancestor', pid: 120, procStartChecked: false });
+    });
+});
+
+describe('resolveDispatcherReport: the answer `xt identity dispatcher` prints', () => {
+    it('--pid is inclusive: the walk starts at and tests that pid', () => {
+        writeSession(300, { name: 'self-dispatch', messagingSocketPath: '/run/cc/300.sock', procStart: '30' });
+        expect(resolveDispatcherReport({ pid: 300 }, { sessionsDir, readProcess, env: {} })).toMatchObject({
+            name: 'self-dispatch', address: 'uds:/run/cc/300.sock', source: 'ancestor', pid: 300,
+        });
+    });
+
+    it('explicit flags outrank the ancestor walk', () => {
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        expect(resolveDispatcherReport(
+            { pid: 300, participant: 'lead-a', address: 'activation:act:3bb0e173' },
+            { sessionsDir, readProcess, env: {} },
+        )).toEqual({ participant: 'lead-a', address: 'activation:act:3bb0e173', source: 'explicit', procStartChecked: false, skipped: [] });
+    });
+
+    it('accepts only uds: and activation: as an explicit address scheme', () => {
+        expect(isDispatcherAddress('uds:/run/cc/1.sock')).toBe(true);
+        expect(isDispatcherAddress('activation:act:3bb0e173-52a')).toBe(true);
+        expect(isDispatcherAddress('uds:')).toBe(false);
+        expect(isDispatcherAddress('activation:')).toBe(false);
+        expect(isDispatcherAddress('/run/cc/1.sock')).toBe(false);
+        expect(isDispatcherAddress('http://example/sock')).toBe(false);
+    });
+
+    it('inherit: false returns none even with a stale inherited value set', () => {
+        expect(resolveDispatcherReport({ inherit: false }, {
+            startPid: 300, sessionsDir, readProcess, env: { ...STALE_ENV },
+        })).toEqual({ source: 'none', procStartChecked: false, skipped: [] });
+    });
+
+    it('inherits the stale env value only when inherit is left on', () => {
+        expect(resolveDispatcherReport({}, { startPid: 300, sessionsDir, readProcess, env: { ...STALE_ENV } })).toEqual({
+            name: 'stale', address: 'uds:/run/cc/stale.sock', source: 'inherited', procStartChecked: false, skipped: [],
+        });
+    });
+
+    it('an ancestor reports its SUBSTRATE_HOLDER as the participant, its name as display only', () => {
+        writeSession(100, { name: 'core-xt-claude-g04z', messagingSocketPath: '/run/cc/100.sock', procStart: '10', sessionId: 'sess-1' });
+        expect(resolveDispatcherReport({ pid: 300 }, {
+            sessionsDir, readProcess,
+            readEnviron: readEnvironOf({ 100: { SUBSTRATE_HOLDER: 'g04z' } }), env: {},
+        })).toEqual({
+            participant: 'g04z',
+            name: 'core-xt-claude-g04z',
+            address: 'uds:/run/cc/100.sock',
+            source: 'ancestor',
+            pid: 100,
+            sessionId: 'sess-1',
+            procStartChecked: true,
+            skipped: [],
+        });
     });
 });

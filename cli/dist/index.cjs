@@ -63704,6 +63704,7 @@ var DISPATCHER_ENV_KEYS = [
   ...GIT_IDENTITY_ENV_KEYS
 ];
 var MAX_ANCESTOR_HOPS = 64;
+var AGENT_PROCESS_COMMS = /* @__PURE__ */ new Set(["pi", "claude", "codex"]);
 function clean(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -63721,57 +63722,186 @@ function defaultTmux(args) {
 function readProcessInfo(pid) {
   try {
     const stat3 = (0, import_node_fs2.readFileSync)(`/proc/${pid}/stat`, "utf8");
-    const fields = stat3.slice(stat3.lastIndexOf(")") + 2).split(" ");
+    const close = stat3.lastIndexOf(")");
+    const comm = stat3.slice(stat3.indexOf("(") + 1, close).trim();
+    const fields = stat3.slice(close + 2).split(" ");
     const ppid = Number(fields[1]);
-    if (Number.isInteger(ppid)) return { ppid, startTime: fields[19] };
+    if (Number.isInteger(ppid)) return { ppid, startTime: fields[19], ...comm ? { comm } : {} };
   } catch {
   }
   try {
-    const result = (0, import_node_child_process3.spawnSync)("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", stdio: "pipe" });
-    const ppid = Number(String(result.stdout ?? "").trim());
-    if (result.status === 0 && Number.isInteger(ppid) && ppid > 0) return { ppid };
+    const result = (0, import_node_child_process3.spawnSync)("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8", stdio: "pipe" });
+    const match = /^(\d+)\s+(.+)$/.exec(String(result.stdout ?? "").trim());
+    if (result.status === 0 && match) {
+      const ppid = Number(match[1]);
+      const comm = import_node_path14.default.basename(match[2].trim());
+      if (Number.isInteger(ppid) && ppid > 0) return { ppid, ...comm ? { comm } : {} };
+    }
   } catch {
   }
   return null;
 }
-function readSessionEntry(sessionsDir, pid, startTime) {
+function readProcessEnvironment(pid) {
+  try {
+    const raw = (0, import_node_fs2.readFileSync)(`/proc/${pid}/environ`, "utf8");
+    const env3 = {};
+    for (const pair of raw.split("\0")) {
+      const eq = pair.indexOf("=");
+      if (eq > 0) env3[pair.slice(0, eq)] = pair.slice(eq + 1);
+    }
+    return env3;
+  } catch {
+    return null;
+  }
+}
+function bootTimeSeconds() {
+  try {
+    const match = /^btime\s+(\d+)$/m.exec((0, import_node_fs2.readFileSync)("/proc/stat", "utf8"));
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+function clockTicksPerSecond() {
+  try {
+    const result = (0, import_node_child_process3.spawnSync)("getconf", ["CLK_TCK"], { encoding: "utf8", stdio: "pipe" });
+    const ticks = Number(String(result.stdout ?? "").trim());
+    if (result.status === 0 && Number.isInteger(ticks) && ticks > 0) return ticks;
+  } catch {
+  }
+  return 100;
+}
+var LSTART_TOLERANCE_SECONDS = 2;
+function compareStartTime(procStart, startTime, deps) {
+  if (!procStart || !startTime) return { checked: false, agrees: true };
+  if (/^\d+$/.test(procStart)) return { checked: true, agrees: procStart === startTime };
+  const lstart = Date.parse(procStart);
+  if (!Number.isFinite(lstart)) return { checked: false, agrees: true };
+  const ticks = /^\d+$/.test(startTime) ? Number(startTime) : null;
+  const boot = (deps.bootTime ?? bootTimeSeconds)();
+  const perSecond = (deps.clockTicks ?? clockTicksPerSecond)();
+  if (ticks === null || boot === null || !Number.isInteger(perSecond) || perSecond <= 0) return { checked: false, agrees: true };
+  const live = boot + ticks / perSecond;
+  return { checked: true, agrees: Math.abs(live - lstart / 1e3) <= LSTART_TOLERANCE_SECONDS };
+}
+function probeRegistryEntry(sessionsDir, pid, info, deps) {
   let entry;
   try {
     entry = JSON.parse((0, import_node_fs2.readFileSync)(import_node_path14.default.join(sessionsDir, `${pid}.json`), "utf8"));
   } catch {
     return null;
   }
-  const socket = clean(entry.messagingSocketPath);
-  if (!socket) return null;
-  if (typeof entry.pid === "number" && entry.pid !== pid) return null;
-  const procStart = clean(entry.procStart);
-  if (procStart && /^\d+$/.test(procStart) && startTime && procStart !== startTime) return null;
-  const identity = { address: `uds:${socket}` };
+  const startCheck = compareStartTime(clean(entry.procStart), info?.startTime, deps);
+  if (typeof entry.pid === "number" && entry.pid !== pid) {
+    return { rejection: "pid reused: the registry entry names another pid", startCheck };
+  }
+  if (startCheck.checked && !startCheck.agrees) {
+    return { rejection: "pid reused: procStart disagrees with the live process start time", startCheck };
+  }
+  const probe2 = { startCheck };
+  const sessionId = clean(entry.sessionId);
+  if (sessionId) probe2.sessionId = sessionId;
   const name = clean(entry.name);
-  if (name) identity.name = name;
-  return identity;
+  if (name) probe2.name = name;
+  const entrypoint = clean(entry.entrypoint);
+  if (entrypoint && AGENT_PROCESS_COMMS.has(entrypoint)) probe2.agentEntrypoint = true;
+  const socket = clean(entry.messagingSocketPath);
+  if (socket) probe2.address = `uds:${socket}`;
+  return probe2;
 }
-function resolveDispatcher(deps = {}) {
+function isAgentAncestor(info, probe2) {
+  const comm = clean(info?.comm);
+  if (comm && AGENT_PROCESS_COMMS.has(comm)) return true;
+  return probe2?.agentEntrypoint === true;
+}
+var NO_SOCKET_REASON = "agent ancestor without a messaging socket";
+function resolveDispatcherResolution(deps = {}) {
   const env3 = deps.env ?? process.env;
   const sessionsDir = deps.sessionsDir ?? import_node_path14.default.join(import_node_os7.default.homedir(), ".claude", "sessions");
   const readProcess = deps.readProcess ?? readProcessInfo;
+  const readEnviron = deps.readEnviron ?? readProcessEnvironment;
+  const skipped = [];
   let pid = deps.startPid ?? process.ppid;
   try {
     for (let hop = 0; hop < MAX_ANCESTOR_HOPS && pid > 1; hop++) {
       const info = readProcess(pid);
-      const hit = readSessionEntry(sessionsDir, pid, info?.startTime);
-      if (hit) return hit;
+      const probe2 = probeRegistryEntry(sessionsDir, pid, info, deps);
+      if (probe2?.rejection) skipped.push({ pid, reason: probe2.rejection });
+      const hit = probe2 && !probe2.rejection ? probe2 : null;
+      if (hit?.address) {
+        const resolution2 = {
+          address: hit.address,
+          source: "ancestor",
+          pid,
+          procStartChecked: hit.startCheck.checked,
+          skipped
+        };
+        if (hit.name) resolution2.name = hit.name;
+        if (hit.sessionId) resolution2.sessionId = hit.sessionId;
+        const participant = clean(holderOf(readEnviron, pid));
+        if (participant) resolution2.participant = participant;
+        return resolution2;
+      }
+      if (isAgentAncestor(info, probe2)) {
+        const participant = clean(holderOf(readEnviron, pid));
+        skipped.push({ pid, reason: NO_SOCKET_REASON });
+        const resolution2 = {
+          source: "ancestor",
+          pid,
+          // A rejected entry still proved whether the check was possible.
+          procStartChecked: probe2?.startCheck.checked ?? false,
+          skipped
+        };
+        const name2 = hit?.name ?? participant;
+        if (name2) resolution2.name = name2;
+        if (participant) resolution2.participant = participant;
+        return resolution2;
+      }
       if (!info || info.ppid === pid) break;
       pid = info.ppid;
     }
   } catch {
   }
-  const inherited = {};
+  const resolution = { source: "none", procStartChecked: false, skipped };
+  if (deps.inherit === false) return resolution;
   const name = clean(env3[XTRM_DISPATCHER_NAME_VAR]);
   const address = clean(env3[XTRM_DISPATCHER_ADDRESS_VAR]);
-  if (name) inherited.name = name;
-  if (address) inherited.address = address;
-  return inherited;
+  if (name) resolution.name = name;
+  if (address) resolution.address = address;
+  if (name || address) resolution.source = "inherited";
+  return resolution;
+}
+function holderOf(readEnviron, pid) {
+  try {
+    const env3 = readEnviron(pid);
+    return env3 ? clean(env3[SUBSTRATE_HOLDER_VAR]) : null;
+  } catch {
+    return null;
+  }
+}
+function resolveDispatcher(deps = {}) {
+  const resolved = resolveDispatcherResolution(deps);
+  const identity = {};
+  if (resolved.name) identity.name = resolved.name;
+  if (resolved.address) identity.address = resolved.address;
+  return identity;
+}
+function isDispatcherAddress(value) {
+  return /^uds:.+$/.test(value) || /^activation:\S+$/.test(value);
+}
+function resolveDispatcherReport(query = {}, deps = {}) {
+  const participant = clean(query.participant);
+  const address = clean(query.address);
+  if (participant || address) {
+    const explicit = { source: "explicit", procStartChecked: false, skipped: [] };
+    if (participant) explicit.participant = participant;
+    if (address) explicit.address = address;
+    return explicit;
+  }
+  const walkDeps = { ...deps, inherit: query.inherit ?? deps.inherit };
+  const startPid = query.pid ?? null;
+  if (typeof startPid === "number") walkDeps.startPid = startPid;
+  return resolveDispatcherResolution(walkDeps);
 }
 var MERGE_GUARD_VAR = "XTRM_MERGE_GUARD";
 function buildDispatcherEnv(workerName, deps = {}) {
@@ -63831,8 +63961,8 @@ function findLiveDispatchers(participant, deps = {}) {
       } catch {
       }
       if (!info) continue;
-      const procStart = clean(entry.procStart);
-      if (procStart && /^\d+$/.test(procStart) && info.startTime && procStart !== info.startTime) continue;
+      const startCheck = compareStartTime(clean(entry.procStart), info.startTime, deps);
+      if (startCheck.checked && !startCheck.agrees) continue;
     }
     found.push({ pid: entry.pid, address: `uds:${socket}` });
   }
@@ -80106,6 +80236,48 @@ function createIdentityCommand() {
       return;
     }
     for (const [key, value] of Object.entries(report.env)) console.log(`${key}=${value}`);
+  });
+  identity.command("dispatcher").description("Print the dispatcher that launched this process: side-effect-free, for callers outside xt").option("--pid <pid>", "Pid the ancestor walk starts at and tests (INCLUSIVE); default: this process's parent").option("--participant <name>", "Explicit dispatcher participant: outranks the ancestor walk").option("--address <address>", "Explicit dispatcher address: uds:<socket> or activation:<id>").option(
+    "--no-inherit",
+    "Do not fall back to inherited XTRM_DISPATCHER_*; required for in-process callers, whose env is the launched session's, not the dispatcher's"
+  ).option("--json", "Emit JSON", false).action((opts) => {
+    let pid = null;
+    if (opts.pid !== void 0) {
+      pid = Number(opts.pid);
+      if (!Number.isInteger(pid) || pid <= 0) fail2(`--pid ${opts.pid} is not a positive process id`);
+    }
+    const address = (opts.address ?? "").trim();
+    if (address && !isDispatcherAddress(address)) {
+      fail2(`--address ${address} is neither uds:<socket> nor activation:<id>`);
+    }
+    const resolution = resolveDispatcherReport({
+      pid,
+      participant: opts.participant ?? null,
+      address: address || null,
+      inherit: opts.inherit
+    });
+    const out = {
+      participant: resolution.participant,
+      name: resolution.name,
+      address: resolution.address,
+      source: resolution.source,
+      pid: resolution.pid,
+      sessionId: resolution.sessionId,
+      procStartChecked: resolution.procStartChecked,
+      skipped: resolution.skipped
+    };
+    if (opts.json) {
+      console.log(JSON.stringify(out, null, 2));
+      return;
+    }
+    console.log(`dispatcher source: ${resolution.source}`);
+    if (resolution.participant) console.log(`participant: ${resolution.participant}`);
+    if (resolution.name) console.log(`name: ${resolution.name}`);
+    if (resolution.address) console.log(`address: ${resolution.address}`);
+    if (typeof resolution.pid === "number") console.log(`pid: ${resolution.pid}`);
+    if (resolution.sessionId) console.log(`session: ${resolution.sessionId}`);
+    if (resolution.source === "none") console.log(kleur_default.dim("no dispatcher resolved"));
+    for (const skip of resolution.skipped) console.log(kleur_default.dim(`skipped ${skip.pid}: ${skip.reason}`));
   });
   identity.command("role-map").description("Show the role map in effect and the role this process resolves to").option("--json", "Emit JSON", false).action((opts) => {
     const file2 = roleMapPath();
