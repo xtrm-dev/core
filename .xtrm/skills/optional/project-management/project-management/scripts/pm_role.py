@@ -5,11 +5,13 @@ One resolver for every consumer (route_target.py and the pack hooks), so they ca
 Resolution order:
 1. The role file: a one-word `.pm-role` in the session's worktree root. An explicit override, for a session launched
    under a role that does not say what it is (`python3 pm_role.py set <role>`, or `pm_session.py init`).
-2. The launch role: the specialist role the session was launched with (`xt claude|pi --role <name>`), read from
+2. A specialist session (worktree `<repo>-sp-<name>-...`) is a worker: it inherits its launcher's environment, so the
+   launch role and holder it carries are its launcher's.
+3. The launch role: the specialist role the session was launched with (`xt claude|pi --role <name>`), read from
    XTMUX_AGENT_ROLE in the session and from the agent host's session record, mapped by `launch_roles` (defaults
    below). `--role manager` or `--role lead` therefore needs no role file.
-3. The session name against the project's `route_roles` patterns (a pattern or a list per role; defaults below).
-4. worker.
+4. The session name against the project's `route_roles` patterns (a pattern or a list per role; defaults below).
+5. worker.
 
 The claim is not a role source (a new manager holds none at start, and a lapsed lease would drop the role); it only
 breaks a tie between two live managers, in route_target.py.
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import pathlib
 import sys
 
@@ -55,6 +58,18 @@ def patterns() -> dict[str, list[str]]:
         if role in DEFAULT_PATTERNS:
             out[role] = [pat] if isinstance(pat, str) else list(pat)
     return out
+
+
+# A specialist session runs in a worktree named <repo>-sp-<specialist>-<issue> and inherits its launcher's environment
+# (XTMUX_AGENT_ROLE, SUBSTRATE_HOLDER), so the environment would make a pr-reviewer launched by a lead look like that lead.
+SPECIALIST_WORKTREE = re.compile(r"-sp-[a-z0-9]")
+
+
+def is_specialist(directory) -> bool:
+    """True when `directory` lies in a specialist session's worktree (its name carries `-sp-`)."""
+    root = worktree_root(directory) if directory else None
+    name = (root or pathlib.Path(str(directory or ""))).name
+    return bool(SPECIALIST_WORKTREE.search(name))
 
 
 def launch_roles() -> dict[str, str]:
@@ -111,6 +126,8 @@ def source(name: str | None = None, directory=None, launch_role: str | None = No
     role = declared(directory)
     if role:
         return role, "file"
+    if is_specialist(directory):  # never a coordinator, whatever it inherited
+        return "worker", "specialist"
     role = by_launch(launch_role)
     if role:
         return role, "launch"

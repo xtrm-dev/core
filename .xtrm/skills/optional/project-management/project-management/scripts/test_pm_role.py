@@ -86,6 +86,15 @@ class Role(unittest.TestCase):
         os.environ.pop("SUBSTRATE_HOLDER", None)
         self.assertEqual(pm_role.current_source(), ("lead", "launch"))
 
+    def test_specialist_session_is_a_worker_whatever_it_inherited(self):
+        sp = self.root / "alpha-sp-pr-reviewer-ep-12"
+        sp.mkdir()
+        (sp / ".git").write_text("gitdir: x\n")
+        self.assertEqual(pm_role.source("EP-1-api-lead", sp, "lead"), ("worker", "specialist"))
+        (sp / ".pm-role").write_text("lead\n")  # an explicit file still wins
+        self.assertEqual(pm_role.source("x", sp, "lead"), ("lead", "file"))
+        self.assertFalse(pm_role.is_specialist(self.wt))
+
     def test_write_rejects_unknown_role(self):
         with self.assertRaises(ValueError):
             pm_role.write("captain", self.wt)

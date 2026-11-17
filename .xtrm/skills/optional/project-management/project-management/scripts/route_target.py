@@ -50,6 +50,8 @@ def roles() -> dict:
 
 def session_role(s: dict) -> str:
     """The session's role by the shared resolver: role file, else launch role (host record), else name patterns."""
+    if not pm_role.declared(s.get("cwd")) and (pm_role.is_specialist(s.get("cwd")) or pm_role.SPECIALIST_WORKTREE.search(address(s))):
+        return "worker"  # a specialist session carries its launcher's launch role
     return (pm_role.declared(s.get("cwd")) or pm_role.by_launch(s.get("role"))
             or pm_role.by_name(address(s), s.get("name")) or "worker")
 
