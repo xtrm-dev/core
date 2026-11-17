@@ -1684,6 +1684,17 @@ export function withPaneUnsets(command: string, env: Record<string, string>): st
     return prefix ? `${prefix} ${command}` : command;
 }
 
+/**
+ * The same D7 unsets for an argv command (a tmux `--` launch passes argv, not a
+ * shell string): `env -u KEY ...` in front of the runtime argv, for exactly the
+ * keys `absentDispatcherEnvKeys` reports. Unchanged when there are none.
+ */
+export function withPaneUnsetsArgv(argv: string[], env: Record<string, string>): string[] {
+    const absent = absentDispatcherEnvKeys(env);
+    if (absent.length === 0) return argv;
+    return ['env', ...absent.flatMap((key) => ['-u', key]), ...argv];
+}
+
 /** POSIX single-quote for one argv token; shared with the Codex launcher. */
 export function shellQuote(s: string): string {
     return `'${s.replace(/'/g, `'\\''`)}'`;

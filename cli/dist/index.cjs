@@ -66960,6 +66960,11 @@ function withPaneUnsets(command, env3) {
   const prefix = paneUnsetPrefix(env3);
   return prefix ? `${prefix} ${command}` : command;
 }
+function withPaneUnsetsArgv(argv, env3) {
+  const absent = absentDispatcherEnvKeys(env3);
+  if (absent.length === 0) return argv;
+  return ["env", ...absent.flatMap((key) => ["-u", key]), ...argv];
+}
 function shellQuote(s) {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
@@ -91269,12 +91274,20 @@ var AgentHostLauncher = class {
   }
   async launchPi(cwd, options, parent) {
     const sessionName = options.name ?? `pi-${(0, import_node_crypto20.randomBytes)(3).toString("hex")}`;
-    const envArgs = ["-e", `${LAUNCH_ENV}=gui`];
-    envArgs.push("-e", `${INITIAL_PROMPT_ENV}=${options.prompt ? 1 : 0}`);
-    for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
-      if (key !== LAUNCH_ENV) envArgs.push("-e", `${key}=${value}`);
-    }
-    envArgs.push("-e", `PATH=${panePath(this.env)}`);
+    const paneEnv = {
+      [LAUNCH_ENV]: "gui",
+      // CORE-2454: a --prompt option is the initial prompt (XTRM_INITIAL_PROMPT=1);
+      // without one, an explicit 0 overrides any inherited tmux server value.
+      [INITIAL_PROMPT_ENV]: options.prompt ? "1" : "0",
+      ...forwardedLaunchEnv(this.env),
+      // CORE-2524.4: a tmux new-session pane inherits the SERVER's PATH, which
+      // need not hold the gh shim directory. Forward the launcher's PATH with
+      // the shim directory first so `gh` in the pane is the shim.
+      PATH: panePath(this.env)
+    };
+    const envArgs = [];
+    for (const [key, value] of Object.entries(paneEnv)) envArgs.push("-e", `${key}=${value}`);
+    const paneArgv = withPaneUnsetsArgv([this.piCommand, ...buildPiArgs(options, sessionName)], paneEnv);
     const created = await this.run("tmux", [
       "new-session",
       "-d",
@@ -91287,8 +91300,7 @@ var AgentHostLauncher = class {
       cwd,
       ...envArgs,
       "--",
-      this.piCommand,
-      ...buildPiArgs(options, sessionName)
+      ...paneArgv
     ], { env: this.env, timeoutMs: 1e4 });
     const [tmuxSessionId, paneId] = created.stdout.trim().split(" ");
     if (created.status !== 0 || !/^\$[0-9]+$/.test(tmuxSessionId ?? "") || !/^%[0-9]+$/.test(paneId ?? "")) {

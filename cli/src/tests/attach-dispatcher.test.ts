@@ -5,6 +5,7 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     DISPATCHER_ENV_KEYS,
@@ -18,6 +19,7 @@ import { AgentHostRegistry, type ProducerConnection } from '../core/agent-host-r
 import type { AgentEventV1 } from '@xtrm/contracts';
 
 let sessionsDir = '';
+const worktrees: string[] = [];
 
 function writeSession(pid: number, entry: Record<string, unknown>): void {
     fs.writeJsonSync(path.join(sessionsDir, `${pid}.json`), { pid, ...entry });
@@ -40,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
     fs.removeSync(sessionsDir);
+    for (const worktree of worktrees.splice(0)) fs.removeSync(worktree);
 });
 
 function stubConnection() {
@@ -197,7 +200,17 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
 
     it('CORE-2727 decision: a resumed session carries its OWN holder identity, never the attacher\'s', () => {
         const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
-        const worktreePath = '/w/core/.xtrm/worktrees/repo-xt-pi-worker-b';
+        // A real git config for the resumed worktree, so the email is a value the
+        // test asserts exactly instead of "not the attacher's" (which also passes
+        // when the key is absent).
+        const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-attach-wt-'));
+        worktrees.push(worktreeRoot);
+        // The launcher's worktree naming: <repo>-xt-<runtime>-<slug>, which is where
+        // XTRM_AGENT_NAME and the holder both come from.
+        const worktreePath = path.join(worktreeRoot, 'repo-xt-pi-worker-b');
+        fs.ensureDirSync(worktreePath);
+        spawnSync('git', ['init', '-q', worktreePath], { encoding: 'utf8' });
+        spawnSync('git', ['config', 'user.email', 'worker-b@agents.example'], { cwd: worktreePath, encoding: 'utf8' });
         const attacher: NodeJS.ProcessEnv = {
             PATH: '/bin',
             SUBSTRATE_HOLDER: 'attacher',
@@ -215,14 +228,16 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             GIT_COMMITTER_NAME: 'worker-b',
             XTRM_AGENT_NAME: 'repo-xt-pi-worker-b',
         });
-        expect(env.GIT_AUTHOR_EMAIL).not.toBe('attacher@example.com');
-        expect(env.GIT_COMMITTER_EMAIL).not.toBe('attacher@example.com');
+        // The exact address of the resumed worktree, not merely "not the attacher's".
+        expect(env.GIT_AUTHOR_EMAIL).toBe('worker-b@agents.example');
+        expect(env.GIT_COMMITTER_EMAIL).toBe('worker-b@agents.example');
         // Nothing of the attacher's identity survives.
         expect(env.XTRM_AGENT_NAME).not.toBe('core-xt-pi-attacher');
         expect(env.GIT_AUTHOR_NAME).not.toBe('attacher');
         // Unknown holder: no identity at all rather than the attacher's.
         const noHolder = buildAttachEnv(attacher, 'pi', deps, null, worktreePath);
         expect(noHolder.GIT_AUTHOR_NAME).toBeUndefined();
+        expect(noHolder.GIT_AUTHOR_EMAIL).toBeUndefined();
         expect(noHolder.XTRM_AGENT_NAME).toBeUndefined();
     });
 
