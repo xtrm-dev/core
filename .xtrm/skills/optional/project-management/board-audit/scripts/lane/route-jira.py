@@ -135,6 +135,30 @@ def flat(node, out):
             flat(v, out)
 
 
+def parent_asks_question(key, cm, by_id):
+    """True when this comment replies to a question the bot posted.
+
+    A Jira reply carries parentId (c18470 -> 18458, c18472 -> 18447) and its text is often a bare 'yes'; the
+    parent's text is the question. Only the bot's comments count: an operator replying to another operator is not
+    an answer to us. A parent outside the page of comments is read by id, once.
+    """
+    pid = str(cm.get('parentId') or '')
+    if not pid:
+        return False
+    parent = by_id.get(pid)
+    if parent is None:
+        st, b = jira.call('GET', f"/rest/api/3/issue/{key}/comment/{pid}")
+        if st >= 300:
+            return False
+        parent = b
+    author = parent.get('author') or {}
+    if author.get('accountId') in OPERATOR_IDS or (author.get('displayName') or '').strip().lower() in OPERATOR_NAMES:
+        return False
+    out = []
+    flat(parent.get('body'), out)
+    return '?' in ''.join(out)
+
+
 def recent_rows():
     jql = f'project = {PROJECT} AND updated >= -{LOOKBACK_H}h ORDER BY updated DESC'
     url = ('/rest/api/3/search/jql?jql=' + urllib.parse.quote(jql) +
@@ -186,6 +210,7 @@ def main():
     for i in rows:
         key = i['key']
         st, c = jira.call('GET', f"/rest/api/3/issue/{key}/comment?maxResults=100&orderBy=-created")
+        by_id = {str(x.get('id')): x for x in (c.get('comments') or [])}
         for cm in (c.get('comments') or []):
             try:
                 cid = int(cm['id'])
@@ -204,7 +229,8 @@ def main():
             # Jira returns +0100 local time. Appending 'Z' to a local timestamp was a one-hour lie, the same trap
             # recorded on 2026-11-01: convert with the offset, never slice and label.
             created = to_utc(cm.get('created'))
-            kind, trigger = classify(text, None, author_id=aid, author=who)
+            kind, trigger = classify(text, None, author_id=aid, author=who,
+                                     question=parent_asks_question(key, cm, by_id))
             seen.append(cid)
             newest = max(newest, cid)
             head = text[:200].replace('\n', ' ')

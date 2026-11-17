@@ -9,6 +9,7 @@ Regression MMD-3382: PROJ-558 was missing from Monday's schedule and only a pers
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -429,6 +430,90 @@ class AnswerRouting(unittest.TestCase):
     def test_answers_inbox_is_the_lane_path(self):
         self.assertEqual(ts.INBOX, str(ts.pm_config.answers_inbox()))
         self.assertEqual(os.path.dirname(ts.INBOX), ts.STATE_DIR)
+
+    def test_an_answer_is_delivered_even_when_its_target_is_file_only(self):
+        """An answer is never downgraded to a file-only record: the manager, its fallback target, is on the list."""
+        live = [self.sess("example-repo-xt-claude-thu13-manager")]
+        ts.FILE_ONLY = {"manager"}
+        self.assertEqual(ts.deliver("unknown", "text", live, answer=True),
+                         "xtmux:example-repo-xt-claude-thu13-manager")
+        self.assertEqual(ts.deliver("unknown", "text", live), "file-only", "non-answer traffic keeps the rule")
+
+
+class AnswerAskerRouting(unittest.TestCase):
+    """An answer goes to the asker named on its question row, not to the document name (MMD-2331 seq 3817).
+
+    The board keeps the row under the doc of the role that owns it (operator-waiting), which is no live session, so
+    the answer fell back to the manager; the manager role is on PM_STATUS_BOARD_FILE_ONLY, so 46 of 47 answers were
+    written to the board and delivered to nobody.
+    """
+
+    REPO = "/srv/example-repo/.xtrm/worktrees/"
+
+    def setUp(self):
+        self.saved = {k: getattr(ts, k) for k in ("DRY", "INBOX", "ANSWER_SEED_AT", "FILE_ONLY")}
+        self.saved_run, self.saved_sessions = ts.subprocess.run, ts.route_target.sessions
+        self.addCleanup(self.restore)
+        self.sent = []
+
+        class R:
+            returncode = 0
+
+        def run(cmd, **kw):
+            self.sent.append(cmd)
+            return R()
+        ts.subprocess.run = run
+        ts.INBOX = os.path.join(tempfile.mkdtemp(), "answers-inbox.jsonl")
+        ts.DRY, ts.ANSWER_SEED_AT = False, ""
+        ts.FILE_ONLY = {"manager"}   # the live setting that suppressed every answer
+        self.sessions = [self.sess("example-repo-xt-claude-tue17-manager"),
+                         self.sess("example-repo-xt-claude-tue17-engine-lead")]
+        ts.route_target.sessions = lambda: self.sessions
+
+    def restore(self):
+        for k, v in self.saved.items():
+            setattr(ts, k, v)
+        ts.subprocess.run, ts.route_target.sessions = self.saved_run, self.saved_sessions
+
+    def sess(self, wt):
+        return {"name": wt, "cwd": self.REPO + wt, "state": "working", "repository": "example-org/example-repo"}
+
+    def docs(self, rows, qid="q-publish-w2", answer="yes"):
+        return {"questions/operator-waiting": (None, {"rows": rows}),
+                "answers/" + qid: (None, {"at": "2026-11-17T21:08Z", "answer": answer, "comment": "",
+                                           "by": "Dawid"})}
+
+    def inbox(self):
+        with open(ts.INBOX, encoding="utf-8") as fh:
+            return [json.loads(line) for line in fh if line.strip()]
+
+    def test_the_answer_reaches_the_asker_named_on_the_row(self):
+        state = {}
+        docs = self.docs([{"id": "q-publish-w2", "by": "tue17-engine-lead"}])
+        self.assertEqual(ts.route_answers(docs, state), 1)
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0][:5], ["xtmux", "message-send", "--to",
+                                           "example-repo-xt-claude-tue17-engine-lead", "--text"])
+        entry = self.inbox()[0]
+        self.assertEqual(entry["owner"], "tue17-engine-lead")
+        self.assertEqual(entry["delivered"], "xtmux:example-repo-xt-claude-tue17-engine-lead")
+        self.assertNotEqual(entry["delivered"], "file-only")
+        self.assertEqual(state["routed_answer_ids"], ["q-publish-w2"])
+
+    def test_the_manager_fallback_is_delivered_not_file_only(self):
+        state = {}
+        self.assertEqual(ts.route_answers(self.docs([]), state), 1)
+        self.assertEqual(self.sent[0][:4], ["xtmux", "message-send", "--to",
+                                           "example-repo-xt-claude-tue17-manager"])
+        self.assertEqual(self.inbox()[0]["delivered"], "xtmux:example-repo-xt-claude-tue17-manager")
+        self.assertEqual(state["routed_answer_ids"], ["q-publish-w2"])
+
+    def test_a_live_asker_is_preferred_to_the_manager(self):
+        state = {}
+        docs = self.docs([{"id": "q-publish-w2", "by": "tue17-engine-lead"}], answer="later")
+        self.assertEqual(ts.route_answers(docs, state), 1)
+        self.assertIn("answer='later'", self.sent[0][-1])
+        self.assertEqual(self.sent[0][3], "example-repo-xt-claude-tue17-engine-lead")
 
 
 

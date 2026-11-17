@@ -47,15 +47,20 @@ here.now Site $PM_STATUS_BOARD_SITE (data API, key in $PM_STATUS_BOARD_KEY_FILE)
 
 (c) Answer routing: every answers/* row with an 'at' newer than last routed
     is appended to the answers inbox (pm_config.answers_inbox(), the file the
-    lane router reads) and delivered once. The owner is the questions/<owner>
-    doc that holds the row; the target is resolved now from the live sessions
-    (route_target): the live session named <owner> (or ending in -<owner>),
-    else the one live `manager`. No stored address. Owners, roles or names
-    listed in PM_STATUS_BOARD_FILE_ONLY are never typed into: the inbox line
-    IS the delivery, because typing into a Claude pane corrupts the input the
-    operator is tailing (coordinator ruling 2026-10-30). Other targets
-    get `xtmux message-send`, falling back to tmux send-keys ONLY on a pi pane
-    (a Claude pane is never typed into, whatever the fallback).
+    lane router reads) and delivered once. The asker is the question row's
+    'by' field (questions/<doc>.rows[] matched by the answer id); the document
+    name is only the fallback, because the board publishes a row under the doc
+    of the role that keeps it (operator-waiting), which is no session. The
+    target is resolved now from the live sessions (route_target): the live
+    session named <asker> (or ending in -<asker>), else the one live `manager`.
+    No stored address. An ANSWER IS NEVER FILE-ONLY: 46 of 47 answers were once
+    written to the board and delivered to nobody, because the fallback target
+    is the manager and PM_STATUS_BOARD_FILE_ONLY lists 'manager' (MMD-2331 seq
+    3817; the operator's YES to q-publish-w2, q-band4-551 and w-ISSUE-* died
+    there). Every other traffic keeps that rule: typing into a Claude pane
+    corrupts the input the operator is tailing (coordinator ruling 2026-10-30)
+    and the inbox line IS its delivery. Answers get `xtmux message-send`,
+    falling back to tmux send-keys ONLY on a pi pane.
     Message: question id, answer, comment, time. Seed: answers since
     PM_STATUS_BOARD_ANSWER_SEED_AT only (empty: all answers).
 
@@ -917,6 +922,25 @@ def owner_of(qid, live):
     return None
 
 
+def asker_of(qid, live):
+    """The question row's 'by' for this answer id, or None.
+
+    The questions/<doc> name is not the asker: the board keeps rows under the doc of the role that owns them
+    (operator-waiting), so the doc name resolves to no live session and the answer fell back to the manager, which
+    PM_STATUS_BOARD_FILE_ONLY lists and so was never delivered (MMD-2331 seq 3817).
+    """
+    for p in live:
+        if not p.startswith("questions/"):
+            continue
+        doc = live[p][1] or {}
+        for r in (doc.get("rows") or []):
+            if r.get("id") == qid:
+                by = str(r.get("by") or "").strip()
+                if by:
+                    return by
+    return None
+
+
 def is_pi_pane(title):
     t = (title or "").lstrip()
     if t.startswith(PI_GLYPH):
@@ -963,9 +987,12 @@ def file_only(owner, addr, why):
     return False
 
 
-def deliver(owner, text, live=None):
+def deliver(owner, text, live=None, answer=False):
     addr, why = answer_target(owner, live)
-    if file_only(owner, addr, why):
+    # An answer is a delivery, never a file-only record: its fallback target is the manager, and
+    # PM_STATUS_BOARD_FILE_ONLY lists 'manager', so the old check silently wrote every fallback answer to the board
+    # and the operator's YES reached nobody (MMD-2331 seq 3817). Non-answer traffic keeps the rule.
+    if not answer and file_only(owner, addr, why):
         return "file-only"
     if not addr:
         return "FAILED-no-route:" + why[:120]
@@ -1492,7 +1519,8 @@ def route_answers(live, state):
         at = str(doc.get("at") or "")
         if qid in done or at < ANSWER_SEED_AT:
             continue
-        owner = owner_of(qid, live)
+        # The asker (question row's 'by') before the document name: the doc is the role that keeps the row.
+        owner = asker_of(qid, live) or owner_of(qid, live)
         fresh.append((qid, owner or "unknown", at, doc))
     print("answers fresh since %s: %d" % (ANSWER_SEED_AT, len(fresh)))
     n = 0
@@ -1503,7 +1531,7 @@ def route_answers(live, state):
         if DRY:
             print("  DRY route %s" % text[:200])
             continue
-        where = deliver(owner, text)
+        where = deliver(owner, text, answer=True)
         if str(where).startswith("FAILED-"):
             # Not routed: leave it out of routed_answer_ids so the next run retries it (an answer marked routed after a
             # failed delivery is lost for good).
