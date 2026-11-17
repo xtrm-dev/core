@@ -989,7 +989,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/checkpoint_warn.py": {
-          "hash": "562f62d56b6e9b25d8e4b5756f79352828a690cfd03cff0109ab9e457bd20895",
+          "hash": "4fac290452f76ae5e882812fab48032742debee5e39fed6288c4b7a3a66930f4",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
