@@ -248,6 +248,16 @@ function bounded(value: unknown, max = 1024): string | undefined {
   return clean.length > 0 ? clean : undefined;
 }
 
+/**
+ * The role a session reports (CORE-2724). The session's own `XTMUX_AGENT_ROLE` wins; the tmux
+ * pane's `@agent_role` is the fallback for a session that sets none. A specialist launched by a
+ * lead shares the lead's pane, so letting the pane win made it report the lead's role even after
+ * it exported its own.
+ */
+export function resolveSessionRole(envRole: unknown, paneRole: unknown): string | undefined {
+  return bounded(envRole) ?? bounded(paneRole);
+}
+
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/;
 
 /** Drop trailing slashes, then one `.git` suffix. String scans, not regexes:
@@ -790,7 +800,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       const [name, paneRole, paneBead, parent, observedWorktree, observedBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
       tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
-      role = bounded(paneRole) ?? role;
+      role = resolveSessionRole(role, paneRole);
       bead = bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
       paneWorktree = bounded(observedWorktree, 4096);
