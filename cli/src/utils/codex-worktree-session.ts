@@ -18,7 +18,7 @@ import {
     writeCodexWorktreeSession,
     type CodexTrustProfile,
 } from '../core/codex-session.js';
-import { buildDispatcherEnv } from '../core/dispatcher-identity.js';
+import { buildDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -55,6 +55,12 @@ export interface CodexWorktreeSessionOptions {
     base?: string;
     /** Open as a detached new window in the caller's tmux session (CORE-2390). */
     window?: boolean;
+    /**
+     * Dispatcher-identity probing seam (CORE-2726), as in WorktreeSessionOptions:
+     * a launcher test pins its own process table and environment readers instead
+     * of depending on the host's real ancestors. Omitted in production.
+     */
+    dispatcherDeps?: DispatcherIdentityDeps;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -391,7 +397,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
         ...(windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {}),
-        ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }),
+        ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }),
         ...launchIdentity.env,
     };
     const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);

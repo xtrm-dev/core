@@ -343,7 +343,7 @@ describe('Pi registry entries and the pid-reuse guard', () => {
         expect(unconvertible).toMatchObject({ name: 'pi-coord', source: 'ancestor', pid: 120, procStartChecked: false });
     });
 
-    it('an unreadable CLK_TCK is unknown, never a guessed 100', () => {
+    it('an injected null CLK_TCK is unknown, never a guessed 100', () => {
         // CORE-2726 fix 2: the ticks used to default to 100, which would silently
         // mis-date every conversion on a host that answers something else.
         writeSession(120, {
@@ -352,6 +352,32 @@ describe('Pi registry entries and the pid-reuse guard', () => {
         });
         const unknownTicks = resolveDispatcherResolution(piDeps({ clockTicks: () => null }));
         expect(unknownTicks).toMatchObject({ name: 'pi-coord', source: 'ancestor', pid: 120, procStartChecked: false });
+    });
+
+    it('the REAL default (getconf unreadable) reports unchecked, not a guessed 100', () => {
+        // CORE-2726 fix round 2 (reviewer finding 1): the injected-null case above
+        // passes even when clockTicksPerSecond guesses 100, so this one exercises
+        // the module's own default — no clockTicks dep — with `getconf` made
+        // unrunnable by an empty PATH. The boot time stays injected so the fixture
+        // is deterministic; that is the only dep this test pins.
+        //   fixed: getconf fails -> clockTicksPerSecond() null -> procStartChecked false
+        //   reverted (return 100): the conversion happens, the fixture's exact
+        //   lstart agrees, and the report says procStartChecked true -> red.
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000)),
+        });
+        const emptyBin = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-no-getconf-'));
+        const realPath = process.env.PATH;
+        try {
+            process.env.PATH = emptyBin;
+            const report = resolveDispatcherResolution(piDeps({ clockTicks: undefined }));
+            // The entry is live and resolves; only the start-time check is unknown.
+            expect(report).toMatchObject({ name: 'pi-coord', address: 'uds:/run/cc/120.sock', source: 'ancestor', pid: 120, procStartChecked: false });
+        } finally {
+            process.env.PATH = realPath;
+            fs.removeSync(emptyBin);
+        }
     });
 
     it('a time-zone difference between the writer and the reader never rejects a live entry', () => {
