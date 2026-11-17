@@ -113,6 +113,14 @@ describe('xt identity dispatcher --json', () => {
         expect(result.stderr).toMatch(/is neither uds:<socket> nor activation:<id>/);
     });
 
+    it('says in --help that pid 1 ends the walk', () => {
+        // CORE-2726 fix 5: the walk never probes pid 1, so the help text says so
+        // instead of leaving a caller to infer it from the code.
+        const result = spawnSync(process.execPath, [CLI, 'identity', 'dispatcher', '--help'], { encoding: 'utf8', timeout: 15_000 });
+        expect(result.status).toBe(0);
+        expect(String(result.stdout)).toMatch(/pid 1 is never probed, so it ends the walk/);
+    });
+
     it('is side-effect-free: the plain form answers without a JSON parse and keeps exit 0', () => {
         const result = runDispatcher(['--pid', '1', '--no-inherit']);
         expect(result.status).toBe(0);

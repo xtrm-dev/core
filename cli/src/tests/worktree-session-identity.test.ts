@@ -636,20 +636,22 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'git' && a?.[0] === 'worktree')).toBe(false);
     });
 
-    it('no dispatcher registry: only the holder is exported, inherited values never leak', async () => {
+    it('no dispatcher: only the holder is exported, inherited holder never leaks', async () => {
       process.env.SUBSTRATE_HOLDER = 'someone-else';
       installMock(h);
       const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
-      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk7' })).rejects.toThrow('exit:0');
+      // CORE-2726 fix 4: the walk is pinned to an empty process table and an
+      // unreadable environment, so this stays deterministic instead of resolving
+      // whatever agent session the developer's own shell hangs under.
+      await expect(launchWorktreeSession({
+        runtime: 'pi',
+        name: 'dwk7',
+        dispatcherDeps: { readProcess: () => null, readEnviron: () => null },
+      })).rejects.toThrow('exit:0');
 
       expect(h.piSpawnEnv?.['SUBSTRATE_HOLDER']).toBe('dwk7');
-      // CORE-2726 (D5): with no registry entry the walk reaches whatever agent
-      // session this test process hangs under — on a developer host that is a
-      // real claude or pi lead, which is the dispatcher with a participant and
-      // no address. The name is therefore absent only on a tree with no agent
-      // ancestor; what must never happen is an inherited value leaking through.
-      expect(h.piSpawnEnv?.['XTRM_DISPATCHER_NAME']).not.toBe('someone-else');
+      expect(h.piSpawnEnv?.['XTRM_DISPATCHER_NAME']).toBeUndefined();
       expect(h.piSpawnEnv?.['XTRM_DISPATCHER_ADDRESS']).toBeUndefined();
     });
   });

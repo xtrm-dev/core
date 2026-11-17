@@ -96,8 +96,8 @@ export interface DispatcherIdentityDeps {
     readEnviron?: (pid: number) => NodeJS.ProcessEnv | null;
     /** Boot time in epoch seconds (/proc/stat `btime`), for a `ps lstart` procStart. */
     bootTime?: () => number | null;
-    /** Kernel clock ticks per second (`getconf CLK_TCK`), for the same conversion. */
-    clockTicks?: () => number;
+    /** Kernel clock ticks per second (`getconf CLK_TCK`); null when unknowable. */
+    clockTicks?: () => number | null;
     /**
      * CORE-2726: false skips the inherited `XTRM_DISPATCHER_*` fallback. An
      * in-process caller (the specialists MCP server, an in-process activation)
@@ -162,7 +162,7 @@ export function readProcessInfo(pid: number): ProcessInfo | null {
  * has no /proc, the pid is gone, or the process is not ours to read. Never
  * throws: an unreadable environment means unknown, not empty.
  */
-export function readProcessEnvironment(pid: number): NodeJS.ProcessEnv | null {
+function readProcessEnvironment(pid: number): NodeJS.ProcessEnv | null {
     try {
         const raw = readFileSync(`/proc/${pid}/environ`, 'utf8');
         const env: NodeJS.ProcessEnv = {};
@@ -177,7 +177,7 @@ export function readProcessEnvironment(pid: number): NodeJS.ProcessEnv | null {
 }
 
 /** Boot time in epoch seconds (/proc/stat `btime`), null when unreadable. */
-export function bootTimeSeconds(): number | null {
+function bootTimeSeconds(): number | null {
     try {
         const match = /^btime\s+(\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'));
         return match ? Number(match[1]) : null;
@@ -186,14 +186,18 @@ export function bootTimeSeconds(): number | null {
     }
 }
 
-/** Kernel clock ticks per second (`getconf CLK_TCK`), 100 when unknowable. */
-export function clockTicksPerSecond(): number {
+/**
+ * Kernel clock ticks per second (`getconf CLK_TCK`), null when unknowable.
+ * Never a guessed default: a wrong value would silently mis-date every
+ * converted start time, so an unreadable CLK_TCK means "not checked".
+ */
+function clockTicksPerSecond(): number | null {
     try {
         const result = spawnSync('getconf', ['CLK_TCK'], { encoding: 'utf8', stdio: 'pipe' });
         const ticks = Number(String(result.stdout ?? '').trim());
         if (result.status === 0 && Number.isInteger(ticks) && ticks > 0) return ticks;
     } catch { /* absent */ }
-    return 100;
+    return null;
 }
 
 /** A start-time comparison: did it happen, and did it agree. */
@@ -204,6 +208,10 @@ interface StartCheck {
 
 /** `ps lstart` has one-second resolution; the btime conversion truncates to a second. */
 const LSTART_TOLERANCE_SECONDS = 2;
+/** Every real UTC offset and DST step is a multiple of 15 minutes. */
+const QUARTER_HOUR_SECONDS = 900;
+/** The largest zone difference any host can show (UTC-12..UTC+14). */
+const MAX_ZONE_OFFSET_SECONDS = 14 * 3600;
 
 /**
  * Pid-reuse guard for one registry entry.
@@ -227,9 +235,29 @@ function compareStartTime(
     const ticks = /^\d+$/.test(startTime) ? Number(startTime) : null;
     const boot = (deps.bootTime ?? bootTimeSeconds)();
     const perSecond = (deps.clockTicks ?? clockTicksPerSecond)();
-    if (ticks === null || boot === null || !Number.isInteger(perSecond) || perSecond <= 0) return { checked: false, agrees: true };
+    if (ticks === null || boot === null || perSecond === null || !Number.isInteger(perSecond) || perSecond <= 0) {
+        return { checked: false, agrees: true };
+    }
     const live = boot + ticks / perSecond;
-    return { checked: true, agrees: Math.abs(live - lstart / 1000) <= LSTART_TOLERANCE_SECONDS };
+    const delta = Math.abs(live - lstart / 1000);
+    if (delta <= LSTART_TOLERANCE_SECONDS) return { checked: true, agrees: true };
+    // Time-zone artifact (CORE-2726 fix 1, option B). The lstart string was
+    // formatted by the WRITER's process, and `Date.parse` reads it as the
+    // READER's local time, so two different zones — or a DST change between the
+    // writer and the reader — shift the parsed instant by a whole number of
+    // quarter hours (every real UTC offset and DST step is a multiple of 15
+    // minutes). Option A (spawn `ps -o lstart=` for the live pid and compare
+    // strings) would cost a spawn per registry entry and cannot help when the
+    // writer's zone was different anyway; option C (always report unchecked)
+    // would drop the reuse guard exactly when it matters. So an offset that is a
+    // whole quarter hour (|offset| <= 14 h) is treated as a zone difference: the
+    // entry stays live and the check is reported as done. The residual gap is a
+    // reused pid that started exactly N*15 min after the old one; anything else
+    // still disagrees.
+    const remainder = delta % QUARTER_HOUR_SECONDS;
+    const zoneAligned = delta <= MAX_ZONE_OFFSET_SECONDS
+        && (remainder <= LSTART_TOLERANCE_SECONDS || QUARTER_HOUR_SECONDS - remainder <= LSTART_TOLERANCE_SECONDS);
+    return { checked: true, agrees: zoneAligned };
 }
 
 /** What one pid's registry file says, and whether it may name a dispatcher. */
@@ -502,6 +530,22 @@ function findLiveDispatchers(
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
     const found: { pid: unknown; address: string }[] = [];
+    // CORE-2726 fix 6: the boot time and the clock ticks answer for the whole
+    // host, so read them at most once per call instead of once per registry
+    // file (getconf is a spawn).
+    let bootCache: number | null | undefined;
+    let tickCache: number | null | undefined;
+    const memoDeps: DispatcherIdentityDeps = {
+        ...deps,
+        bootTime: () => {
+            if (bootCache === undefined) bootCache = (deps.bootTime ?? bootTimeSeconds)();
+            return bootCache;
+        },
+        clockTicks: () => {
+            if (tickCache === undefined) tickCache = (deps.clockTicks ?? clockTicksPerSecond)();
+            return tickCache;
+        },
+    };
     let files: string[];
     try {
         files = readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
@@ -532,7 +576,7 @@ function findLiveDispatchers(
                 info = readProcess(entry.pid);
             } catch { /* keep on probe failure */ }
             if (!info) continue;
-            const startCheck = compareStartTime(clean(entry.procStart), info.startTime, deps);
+            const startCheck = compareStartTime(clean(entry.procStart), info.startTime, memoDeps);
             if (startCheck.checked && !startCheck.agrees) continue;
         }
         found.push({ pid: entry.pid, address: `uds:${socket}` });

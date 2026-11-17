@@ -63769,9 +63769,11 @@ function clockTicksPerSecond() {
     if (result.status === 0 && Number.isInteger(ticks) && ticks > 0) return ticks;
   } catch {
   }
-  return 100;
+  return null;
 }
 var LSTART_TOLERANCE_SECONDS = 2;
+var QUARTER_HOUR_SECONDS = 900;
+var MAX_ZONE_OFFSET_SECONDS = 14 * 3600;
 function compareStartTime(procStart, startTime, deps) {
   if (!procStart || !startTime) return { checked: false, agrees: true };
   if (/^\d+$/.test(procStart)) return { checked: true, agrees: procStart === startTime };
@@ -63780,9 +63782,15 @@ function compareStartTime(procStart, startTime, deps) {
   const ticks = /^\d+$/.test(startTime) ? Number(startTime) : null;
   const boot = (deps.bootTime ?? bootTimeSeconds)();
   const perSecond = (deps.clockTicks ?? clockTicksPerSecond)();
-  if (ticks === null || boot === null || !Number.isInteger(perSecond) || perSecond <= 0) return { checked: false, agrees: true };
+  if (ticks === null || boot === null || perSecond === null || !Number.isInteger(perSecond) || perSecond <= 0) {
+    return { checked: false, agrees: true };
+  }
   const live = boot + ticks / perSecond;
-  return { checked: true, agrees: Math.abs(live - lstart / 1e3) <= LSTART_TOLERANCE_SECONDS };
+  const delta = Math.abs(live - lstart / 1e3);
+  if (delta <= LSTART_TOLERANCE_SECONDS) return { checked: true, agrees: true };
+  const remainder = delta % QUARTER_HOUR_SECONDS;
+  const zoneAligned = delta <= MAX_ZONE_OFFSET_SECONDS && (remainder <= LSTART_TOLERANCE_SECONDS || QUARTER_HOUR_SECONDS - remainder <= LSTART_TOLERANCE_SECONDS);
+  return { checked: true, agrees: zoneAligned };
 }
 function probeRegistryEntry(sessionsDir, pid, info, deps) {
   let entry;
@@ -63936,6 +63944,19 @@ function findLiveDispatchers(participant, deps = {}) {
   const sessionsDir = deps.sessionsDir ?? import_node_path14.default.join(import_node_os7.default.homedir(), ".claude", "sessions");
   const readProcess = deps.readProcess ?? readProcessInfo;
   const found = [];
+  let bootCache;
+  let tickCache;
+  const memoDeps = {
+    ...deps,
+    bootTime: () => {
+      if (bootCache === void 0) bootCache = (deps.bootTime ?? bootTimeSeconds)();
+      return bootCache;
+    },
+    clockTicks: () => {
+      if (tickCache === void 0) tickCache = (deps.clockTicks ?? clockTicksPerSecond)();
+      return tickCache;
+    }
+  };
   let files;
   try {
     files = (0, import_node_fs2.readdirSync)(sessionsDir).filter((f) => f.endsWith(".json"));
@@ -63961,7 +63982,7 @@ function findLiveDispatchers(participant, deps = {}) {
       } catch {
       }
       if (!info) continue;
-      const startCheck = compareStartTime(clean(entry.procStart), info.startTime, deps);
+      const startCheck = compareStartTime(clean(entry.procStart), info.startTime, memoDeps);
       if (startCheck.checked && !startCheck.agrees) continue;
     }
     found.push({ pid: entry.pid, address: `uds:${socket}` });
@@ -67931,7 +67952,8 @@ async function launchWorktreeSession(opts) {
     child,
     json: structuredOutput,
     window: Boolean(opts.window),
-    hasInitialPrompt
+    hasInitialPrompt,
+    dispatcherDeps: opts.dispatcherDeps
   };
   if (resolvedRole) {
     await launchTmuxSession({ ...common, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
@@ -67955,7 +67977,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process8.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path21.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path21.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -68061,7 +68083,7 @@ async function launchTmuxSession(args) {
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
   const agentEnv = buildAgentEnv(plan.paneOptions);
-  const dispatcherEnv = buildDispatcherEnv(sessionSlug, { gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path21.default.basename(worktreePath) });
+  const dispatcherEnv = buildDispatcherEnv(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path21.default.basename(worktreePath) });
   const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
@@ -80237,7 +80259,7 @@ function createIdentityCommand() {
     }
     for (const [key, value] of Object.entries(report.env)) console.log(`${key}=${value}`);
   });
-  identity.command("dispatcher").description("Print the dispatcher that launched this process: side-effect-free, for callers outside xt").option("--pid <pid>", "Pid the ancestor walk starts at and tests (INCLUSIVE); default: this process's parent").option("--participant <name>", "Explicit dispatcher participant: outranks the ancestor walk").option("--address <address>", "Explicit dispatcher address: uds:<socket> or activation:<id>").option(
+  identity.command("dispatcher").description("Print the dispatcher that launched this process: side-effect-free, for callers outside xt").option("--pid <pid>", "Pid the ancestor walk starts at and tests (INCLUSIVE; pid 1 is never probed, so it ends the walk); default: this process's parent").option("--participant <name>", "Explicit dispatcher participant: outranks the ancestor walk").option("--address <address>", "Explicit dispatcher address: uds:<socket> or activation:<id>").option(
     "--no-inherit",
     "Do not fall back to inherited XTRM_DISPATCHER_*; required for in-process callers, whose env is the launched session's, not the dispatcher's"
   ).option("--json", "Emit JSON", false).action((opts) => {

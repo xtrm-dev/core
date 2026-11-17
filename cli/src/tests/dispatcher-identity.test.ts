@@ -7,6 +7,7 @@ import {
     buildDispatcherEnv,
     isDispatcherAddress,
     resolveDispatcher,
+    resolveDispatcherByParticipant,
     resolveDispatcherReport,
     resolveDispatcherResolution,
     stripDispatcherEnv,
@@ -340,6 +341,79 @@ describe('Pi registry entries and the pid-reuse guard', () => {
         });
         const unconvertible = resolveDispatcherResolution(piDeps({ bootTime: () => null }));
         expect(unconvertible).toMatchObject({ name: 'pi-coord', source: 'ancestor', pid: 120, procStartChecked: false });
+    });
+
+    it('an unreadable CLK_TCK is unknown, never a guessed 100', () => {
+        // CORE-2726 fix 2: the ticks used to default to 100, which would silently
+        // mis-date every conversion on a host that answers something else.
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 5_000),
+        });
+        const unknownTicks = resolveDispatcherResolution(piDeps({ clockTicks: () => null }));
+        expect(unknownTicks).toMatchObject({ name: 'pi-coord', source: 'ancestor', pid: 120, procStartChecked: false });
+    });
+
+    it('a time-zone difference between the writer and the reader never rejects a live entry', () => {
+        // CORE-2726 fix 1 (option B): the writer formatted the lstart in its own
+        // zone, the reader parses it in its own. Every real offset and DST step is
+        // a whole number of quarter hours, so a live entry must survive it. This
+        // fixture is one hour off; on the pre-fix code it was rejected as a reused
+        // pid.
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 3_600),
+        });
+        expect(resolveDispatcher(piDeps())).toEqual({ name: 'pi-coord', address: 'uds:/run/cc/120.sock' });
+        expect(resolveDispatcherResolution(piDeps())).toMatchObject({ source: 'ancestor', pid: 120, procStartChecked: true, skipped: [] });
+    });
+
+    it('a half-hour zone offset is tolerated too, and a non-quarter-hour drift is still reuse', () => {
+        // The half-hour zones (UTC+05:30, +05:45, ...) and a 30-minute DST step.
+        writeSession(120, {
+            name: 'pi-coord', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 1_800),
+        });
+        expect(resolveDispatcher(piDeps())).toEqual({ name: 'pi-coord', address: 'uds:/run/cc/120.sock' });
+        // 9 hours and 60 seconds is not a zone offset: still a different process.
+        writeSession(120, {
+            name: 'reused', messagingSocketPath: '/run/cc/120.sock',
+            entrypoint: 'pi', procStart: psLstart(liveStartEpoch(2000) + 9 * 3_600 + 60),
+        });
+        expect(resolveDispatcher(piDeps())).not.toEqual({ name: 'reused', address: 'uds:/run/cc/120.sock' });
+    });
+});
+
+describe('findLiveDispatchers shares one boot-time and ticks reading', () => {
+    // worker xt (150) <- nothing; two live registry entries under one name.
+    const allAlive = (pid: number): ProcessInfo | null => ({ ppid: 1, startTime: pid === 100 ? '2000' : '3000', comm: 'pi' });
+
+    it('reads the boot time and the clock ticks once per lookup, not once per file', () => {
+        // CORE-2726 fix 6: getconf is a spawn, and the answer is a property of the
+        // host, so one reading serves every registry file in the same call.
+        const boot = () => 1_000_000;
+        const liveEpoch = (ticks: number): number => 1_000_000 + ticks / 100;
+        const stamp = (epochSeconds: number): string => {
+            const date = new Date(epochSeconds * 1000);
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const pad = (value: number): string => String(value).padStart(2, '0');
+            return `${days[date.getDay()]} ${months[date.getMonth()]} ${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${date.getFullYear()}`;
+        };
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', entrypoint: 'pi', procStart: stamp(liveEpoch(2000)) });
+        writeSession(200, { name: 'coord', messagingSocketPath: '/run/cc/200.sock', entrypoint: 'pi', procStart: stamp(liveEpoch(3000)) });
+        let boots = 0;
+        let ticks = 0;
+        expect(() => resolveDispatcherByParticipant('coord', {
+            sessionsDir,
+            readProcess: allAlive,
+            bootTime: () => { boots += 1; return boot(); },
+            clockTicks: () => { ticks += 1; return 100; },
+        })).toThrow(/ambiguous dispatcher participant "coord"/);
+        // Both entries reach the start check (they agree, so the ambiguity is real),
+        // and one reading served both.
+        expect(boots).toBe(1);
+        expect(ticks).toBe(1);
     });
 });
 

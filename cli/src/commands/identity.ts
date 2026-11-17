@@ -266,7 +266,7 @@ export function createIdentityCommand(): Command {
     identity
         .command('dispatcher')
         .description('Print the dispatcher that launched this process: side-effect-free, for callers outside xt')
-        .option('--pid <pid>', 'Pid the ancestor walk starts at and tests (INCLUSIVE); default: this process\'s parent')
+        .option('--pid <pid>', 'Pid the ancestor walk starts at and tests (INCLUSIVE; pid 1 is never probed, so it ends the walk); default: this process\'s parent')
         .option('--participant <name>', 'Explicit dispatcher participant: outranks the ancestor walk')
         .option('--address <address>', 'Explicit dispatcher address: uds:<socket> or activation:<id>')
         .option(
