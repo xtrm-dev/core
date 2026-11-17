@@ -63987,19 +63987,21 @@ function findLiveDispatchers(participant, deps = {}) {
     const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(", ");
     throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
   }
-  return found.map((f) => ({ name: participant, address: f.address }));
+  return found.map((f) => ({ ...typeof f.pid === "number" ? { pid: f.pid } : {}, address: f.address }));
 }
 function refreshDispatcherEnv(deps = {}) {
   const out = {};
   const env3 = deps.env ?? process.env;
+  const readEnviron = deps.readEnviron ?? readProcessEnvironment;
   const participant = clean(env3[XTRM_DISPATCHER_NAME_VAR]);
   if (participant) {
     try {
       const live = findLiveDispatchers(participant, deps)[0];
       if (live?.address) {
-        out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+        out[XTRM_DISPATCHER_NAME_VAR] = participant;
         out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
-        out[XTRM_DISPATCHER_PARTICIPANT_VAR] = live.name ?? participant;
+        const holder = typeof live.pid === "number" ? clean(holderOf(readEnviron, live.pid)) : null;
+        if (holder) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = holder;
         return out;
       }
     } catch (error62) {
@@ -68197,12 +68199,24 @@ async function launchTmuxSession(args) {
   }
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
   const newSessionIdentityEnv = windowIdentity ? buildSessionIdentityEnv(windowIdentity) : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+  const paneEnv = {
+    ...agentEnv,
+    ...newSessionIdentityEnv,
+    ...claudeMcpEnv(runtime),
+    ...dispatcherEnv,
+    ...launchIdentity.env,
+    ...initialPromptEnv,
+    // A tmux session started by `new-session` inherits the tmux SERVER's
+    // environment, not this process's, so exported launch context never
+    // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
+    ...forwardedLaunchEnv(),
+    // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
+    // the pane gets the launcher's PATH with the shim directory first. Without
+    // this, a launched review posts as the operator instead of the App.
+    PATH: panePath()
+  };
   const envArgs = [];
-  for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv })) {
-    envArgs.push("-e", `${k}=${v}`);
-  }
-  for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push("-e", `${k}=${v}`);
-  envArgs.push("-e", `PATH=${panePath()}`);
+  for (const [k, v] of Object.entries(paneEnv)) envArgs.push("-e", `${k}=${v}`);
   let runtimeBuffer = null;
   let windowPaneId = "";
   const discardLaunch = () => {
@@ -68228,7 +68242,7 @@ async function launchTmuxSession(args) {
   const createdSessionId = () => window ? null : resolveTmuxSessionId(plan.sessionName);
   const readyAfterMs = Date.now();
   if (args.mode === "bare") {
-    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, dispatcherEnv)], { stdio: "pipe", encoding: "utf8" });
+    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, paneEnv)], { stdio: "pipe", encoding: "utf8" });
     if (newSess.status !== 0) failNewSession((newSess.stderr ?? "").trim());
     if (window) windowPaneId = (newSess.stdout ?? "").trim();
     const bareSessionId = createdSessionId();
@@ -68237,7 +68251,7 @@ async function launchTmuxSession(args) {
     }
   } else {
     runtimeBuffer = createRuntimeBufferName();
-    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), dispatcherEnv)], {
+    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), paneEnv)], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -70977,15 +70991,6 @@ function readCodexWorktreeSession(worktreePath) {
 // src/utils/codex-worktree-session.ts
 var SESSION_DISCOVERY_TIMEOUT_MS = 15e3;
 var SESSION_DISCOVERY_POLL_MS = 100;
-function paneCommandWithUnsets(command, env3) {
-  const absent = absentDispatcherEnvKeys(env3);
-  if (absent.length === 0) return command;
-  const prefix = ["env", ...absent.flatMap((key) => ["-u", shellQuote2(key)])].join(" ");
-  return `${prefix} ${command}`;
-}
-function shellQuote2(value) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 function slugify2(value) {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug.slice(0, 64) || "codex";
@@ -71028,7 +71033,7 @@ function codexBufferCommand(buffer) {
     "if (result.error) throw result.error",
     "process.exit(result.status ?? 1)"
   ].join(";");
-  return [process.execPath, "-e", script, buffer].map(shellQuote2).join(" ");
+  return [process.execPath, "-e", script, buffer].map(shellQuote).join(" ");
 }
 function skillNames(paths) {
   return paths.map((skillPath) => {
@@ -71273,8 +71278,13 @@ async function launchCodexWorktreeSession(opts) {
     ...dispatcherEnv,
     ...launchIdentity.env
   };
-  const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
-  envArgs.push("-e", `PATH=${panePath()}`);
+  const paneEnv = {
+    ...agentEnv,
+    // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
+    // not hold the gh shim directory; forward the launcher's PATH with it first.
+    PATH: panePath()
+  };
+  const envArgs = Object.entries(paneEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
   let windowPaneId = "";
   const killWindow = () => {
     if (windowPaneId) (0, import_node_child_process14.spawnSync)("tmux", ["kill-pane", "-t", windowPaneId], { stdio: "ignore" });
@@ -71304,7 +71314,7 @@ async function launchCodexWorktreeSession(opts) {
     cleanupAndFail(error62 instanceof Error ? error62.message : String(error62));
   }
   const createArgs = window ? ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${parentSession}:`, "-n", sessionName, "-c", worktreePath] : ["new-session", "-d", "-s", sessionName, "-c", worktreePath];
-  const paneCommand = paneCommandWithUnsets(codexBufferCommand(buffer), dispatcherEnv);
+  const paneCommand = withPaneUnsets(codexBufferCommand(buffer), paneEnv);
   const launched = (0, import_node_child_process14.spawnSync)("tmux", [...createArgs, ...envArgs, paneCommand], { stdio: "pipe", encoding: "utf8" });
   if (launched.status !== 0) cleanupAndFail((launched.stderr ?? "").trim() || `tmux ${createArgs[0]} failed`);
   if (window) windowPaneId = (launched.stdout ?? "").trim();
@@ -78106,11 +78116,19 @@ function matchWorktree(worktrees, name) {
   const norm = shortBranch.startsWith("xt/") ? `refs/heads/${shortBranch}` : `refs/heads/xt/${shortBranch}`;
   return worktrees.find((wt) => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch) ?? worktrees.find((wt) => (0, import_node_path44.basename)(wt.path) === name) ?? worktrees.find((wt) => (0, import_node_path44.basename)(wt.path).endsWith(`-${name}`));
 }
-function buildAttachEnv(base, runtime, dispatcherDeps = {}, holder = null) {
+function buildAttachEnv(base, runtime, dispatcherDeps = {}, holder = null, worktreePath = null) {
   const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
   const stripped = stripDispatcherEnv(base);
-  const holderEnv = holder ? { [SUBSTRATE_HOLDER_VAR]: holder } : {};
-  return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...holderEnv };
+  const ownEnv = {};
+  const ownHolder = (holder ?? "").trim();
+  if (ownHolder) {
+    ownEnv[SUBSTRATE_HOLDER_VAR] = ownHolder;
+    const email3 = worktreePath ? resolveGitEmail({ cwd: worktreePath }) : null;
+    Object.assign(ownEnv, buildGitIdentityEnv({ holder: ownHolder, email: email3 }));
+    const ownAgentName = cleanAgentName(worktreePath ? (0, import_node_path44.basename)(worktreePath) : null);
+    if (ownAgentName) ownEnv[XTRM_AGENT_NAME_VAR] = ownAgentName;
+  }
+  return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...ownEnv };
 }
 function holderFromWorktreePath(worktreePath) {
   const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec((0, import_node_path44.basename)(worktreePath));
@@ -78191,7 +78209,7 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const result = (0, import_node_child_process21.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path)) });
+    const result = (0, import_node_child_process21.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path), target.path) });
     process.exit(result.status ?? 0);
   });
 }

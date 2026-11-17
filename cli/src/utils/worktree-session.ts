@@ -1679,12 +1679,13 @@ export function paneUnsetPrefix(env: Record<string, string>): string {
 }
 
 /** `command` behind the pane's `env -u` unsets (D7); unchanged when there are none. */
-function withPaneUnsets(command: string, env: Record<string, string>): string {
+export function withPaneUnsets(command: string, env: Record<string, string>): string {
     const prefix = paneUnsetPrefix(env);
     return prefix ? `${prefix} ${command}` : command;
 }
 
-function shellQuote(s: string): string {
+/** POSIX single-quote for one argv token; shared with the Codex launcher. */
+export function shellQuote(s: string): string {
     return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -3771,19 +3772,27 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const newSessionIdentityEnv = windowIdentity
         ? buildSessionIdentityEnv(windowIdentity)
         : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+    // One merged record is the single source of truth for the pane environment:
+    // every entry becomes `-e`, and (CORE-2727) the D7 unset list is computed from
+    // this same record, so a key that IS exported can never also be `env -u`-ed.
+    const paneEnv: Record<string, string> = {
+        ...agentEnv,
+        ...newSessionIdentityEnv,
+        ...claudeMcpEnv(runtime),
+        ...dispatcherEnv,
+        ...launchIdentity.env,
+        ...initialPromptEnv,
+        // A tmux session started by `new-session` inherits the tmux SERVER's
+        // environment, not this process's, so exported launch context never
+        // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
+        ...forwardedLaunchEnv(),
+        // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
+        // the pane gets the launcher's PATH with the shim directory first. Without
+        // this, a launched review posts as the operator instead of the App.
+        PATH: panePath(),
+    };
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv })) {
-        envArgs.push('-e', `${k}=${v}`);
-    }
-
-    // A tmux session started by `new-session` inherits the tmux SERVER's
-    // environment, not this process's, so exported launch context never
-    // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
-    for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push('-e', `${k}=${v}`);
-    // CORE-2524.4: the server's PATH need not hold the gh shim directory, so the
-    // pane gets the launcher's PATH with the shim directory first. Without this,
-    // a launched review posts as the operator instead of the App.
-    envArgs.push('-e', `PATH=${panePath()}`);
+    for (const [k, v] of Object.entries(paneEnv)) envArgs.push('-e', `${k}=${v}`);
 
     // Transport. The buffered handshake exists so a 50-1000KB role system
     // prompt never has to fit on a command line: tmux starts a consumer
@@ -3826,7 +3835,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const readyAfterMs = Date.now();
 
     if (args.mode === 'bare') {
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, dispatcherEnv)], { stdio: 'pipe', encoding: 'utf8' });
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, paneEnv)], { stdio: 'pipe', encoding: 'utf8' });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());
         if (window) windowPaneId = (newSess.stdout ?? '').trim();
         // Server-assigned id, now knowable: publish it onto the session
@@ -3838,7 +3847,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
     } else {
         runtimeBuffer = createRuntimeBufferName();
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), dispatcherEnv)], {
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), paneEnv)], {
             stdio: 'pipe', encoding: 'utf8',
         });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());

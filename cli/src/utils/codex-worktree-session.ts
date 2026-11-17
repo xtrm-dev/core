@@ -18,7 +18,7 @@ import {
     writeCodexWorktreeSession,
     type CodexTrustProfile,
 } from '../core/codex-session.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { buildDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -36,6 +36,8 @@ import {
     parseSpecialistJson,
     projectPackSkillName,
     resolveRequestedSkills,
+    shellQuote,
+    withPaneUnsets,
 } from './worktree-session.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
@@ -65,21 +67,6 @@ export interface CodexWorktreeSessionOptions {
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
 const SESSION_DISCOVERY_POLL_MS = 100;
-
-/**
- * D7 (CORE-2727): `env -u KEY` in front of the pane command for every dispatcher
- * key this launch exports no value for — a tmux `-e` cannot unset one.
- */
-function paneCommandWithUnsets(command: string, env: Record<string, string>): string {
-    const absent = absentDispatcherEnvKeys(env);
-    if (absent.length === 0) return command;
-    const prefix = ['env', ...absent.flatMap((key) => ['-u', shellQuote(key)])].join(' ');
-    return `${prefix} ${command}`;
-}
-
-function shellQuote(value: string): string {
-    return `'${value.replace(/'/g, `'\\''`)}'`;
-}
 
 function slugify(value: string): string {
     const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -412,10 +399,15 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         ...dispatcherEnv,
         ...launchIdentity.env,
     };
-    const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
-    // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
-    // not hold the gh shim directory; forward the launcher's PATH with it first.
-    envArgs.push('-e', `PATH=${panePath()}`);
+    // CORE-2727: one merged record drives both the `-e` args and the D7 unset list,
+    // so a key this launch exports is never also cleared.
+    const paneEnv: Record<string, string> = {
+        ...agentEnv,
+        // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
+        // not hold the gh shim directory; forward the launcher's PATH with it first.
+        PATH: panePath(),
+    };
+    const envArgs = Object.entries(paneEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
     let windowPaneId = '';
     const killWindow = (): void => {
         if (windowPaneId) spawnSync('tmux', ['kill-pane', '-t', windowPaneId], { stdio: 'ignore' });
@@ -450,7 +442,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // D7 (CORE-2727): `-e` only sets, so every dispatcher key this launch has no
     // value for is cleared in front of the pane command instead of left to
     // whatever the tmux server's environment still holds.
-    const paneCommand = paneCommandWithUnsets(codexBufferCommand(buffer), dispatcherEnv);
+    const paneCommand = withPaneUnsets(codexBufferCommand(buffer), paneEnv);
     const launched = spawnSync('tmux', [...createArgs, ...envArgs, paneCommand], { stdio: 'pipe', encoding: 'utf8' });
     if (launched.status !== 0) cleanupAndFail((launched.stderr ?? '').trim() || `tmux ${createArgs[0]} failed`);
     if (window) windowPaneId = (launched.stdout ?? '').trim();

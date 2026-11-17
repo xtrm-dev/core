@@ -537,7 +537,7 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
 function findLiveDispatchers(
     participant: string,
     deps: DispatcherIdentityDeps = {},
-): DispatcherIdentity[] {
+): Array<{ pid?: number; address: string }> {
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
     const found: { pid: unknown; address: string }[] = [];
@@ -596,7 +596,9 @@ function findLiveDispatchers(
         const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(', ');
         throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
     }
-    return found.map((f) => ({ name: participant, address: f.address }));
+    // CORE-2727: the matched PID travels with the address, because the participant
+    // is that process's own SUBSTRATE_HOLDER — never the name it was looked up by.
+    return found.map((f) => ({ ...(typeof f.pid === 'number' ? { pid: f.pid } : {}), address: f.address }));
 }
 
 /**
@@ -612,7 +614,8 @@ export function resolveDispatcherByParticipant(
 ): DispatcherIdentity | null {
     const want = clean(participant);
     if (!want) return null;
-    return findLiveDispatchers(want, deps)[0] ?? null;
+    const live = findLiveDispatchers(want, deps)[0];
+    return live ? { name: want, address: live.address } : null;
 }
 
 /**
@@ -626,16 +629,20 @@ export function resolveDispatcherByParticipant(
 export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
     const out: Record<string, string> = {};
     const env = deps.env ?? process.env;
+    const readEnviron = deps.readEnviron ?? readProcessEnvironment;
     const participant = clean(env[XTRM_DISPATCHER_NAME_VAR]);
     if (participant) {
         try {
             const live = findLiveDispatchers(participant, deps)[0];
             if (live?.address) {
-                out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+                out[XTRM_DISPATCHER_NAME_VAR] = participant;
                 out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
-                // CORE-2727: the resumed session keeps a participant too. The lookup
-                // matched this entry by that exact name, so the name IS its participant.
-                out[XTRM_DISPATCHER_PARTICIPANT_VAR] = live.name ?? participant;
+                // CORE-2727: the participant is the dispatcher PROCESS's own
+                // SUBSTRATE_HOLDER. The name this lookup was keyed on is only the
+                // inherited display name, so it is never promoted to a participant;
+                // an unreadable environment leaves it absent.
+                const holder = typeof live.pid === 'number' ? clean(holderOf(readEnviron, live.pid)) : null;
+                if (holder) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = holder;
                 return out;
             }
         } catch (error) {

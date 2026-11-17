@@ -9,7 +9,15 @@ import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
-import { SUBSTRATE_HOLDER_VAR, refreshDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import {
+    SUBSTRATE_HOLDER_VAR,
+    XTRM_AGENT_NAME_VAR,
+    cleanAgentName,
+    refreshDispatcherEnv,
+    stripDispatcherEnv,
+    type DispatcherIdentityDeps,
+} from '../core/dispatcher-identity.js';
+import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import type { WorktreeInfo } from './worktree.js';
 
 /** Last-activity timestamp, for recency ordering. */
@@ -44,20 +52,31 @@ export function buildAttachEnv(
     runtime: string,
     dispatcherDeps: DispatcherIdentityDeps = {},
     holder: string | null = null,
+    worktreePath: string | null = null,
 ): NodeJS.ProcessEnv {
     const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
     // D6 (CORE-2727): `base` is the ATTACHER's environment. Its dispatcher keys,
     // agent name, parent pane/session and git identity describe the session the
     // operator typed in, not the session being resumed, so they are stripped
     // before anything is re-added: only a freshly resolved value and the resumed
-    // worker's own holder may survive. Unknown stays absent.
+    // worker's own identity may survive. Unknown stays absent.
     const stripped = stripDispatcherEnv(base);
-    // `base` is the operator's shell, which never carries the worker's holder: set it again,
-    // overriding anything inherited. CORE-2536 (XT-184).
-    const holderEnv = holder ? { [SUBSTRATE_HOLDER_VAR]: holder } : {};
+    // Lead decision (CORE-2727): the resumed session is its own worker, so it gets
+    // its own holder identity back — SUBSTRATE_HOLDER, the git author of that
+    // holder, and XTRM_AGENT_NAME from the worktree directory — and never the
+    // attacher's. Without a holder there is nothing to re-add: absent, not wrong.
+    const ownEnv: Record<string, string> = {};
+    const ownHolder = (holder ?? '').trim();
+    if (ownHolder) {
+        ownEnv[SUBSTRATE_HOLDER_VAR] = ownHolder;
+        const email = worktreePath ? resolveGitEmail({ cwd: worktreePath }) : null;
+        Object.assign(ownEnv, buildGitIdentityEnv({ holder: ownHolder, email }));
+        const ownAgentName = cleanAgentName(worktreePath ? basename(worktreePath) : null);
+        if (ownAgentName) ownEnv[XTRM_AGENT_NAME_VAR] = ownAgentName;
+    }
     return runtime === 'claude'
-        ? { ...stripped, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) }
-        : { ...stripped, ...dispatcherEnv, ...holderEnv };
+        ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...claudeMcpEnv(runtime) }
+        : { ...stripped, ...dispatcherEnv, ...ownEnv };
 }
 
 /**
@@ -170,7 +189,7 @@ export function createAttachCommand(): Command {
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
             // CORE-2432 R8: a resumed session gets freshly resolved dispatcher
             // identity instead of stale inherited XTRM_DISPATCHER_* values.
-            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path)) });
+            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path), target.path) });
 
             process.exit(result.status ?? 0);
         });
