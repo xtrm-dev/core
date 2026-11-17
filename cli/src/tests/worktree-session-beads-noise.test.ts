@@ -1,3 +1,4 @@
+import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,18 @@ vi.mock('node:child_process', () => ({
 vi.mock('../core/skills-scaffold.js', () => ({
   ensureAgentsSkillsSymlink: mocked.ensureAgentsSkillsSymlink,
 }));
+
+/**
+ * CORE-2727 (D7): the bare pane command may start with `env -u '<KEY>'` unsets.
+ * Splits them off so the runtime command line is still asserted exactly, and
+ * returns the cleared keys for a dispatcher-env-only check.
+ */
+function splitUnsetPrefix(command: string): { unsets: string[]; command: string } {
+  const match = /^env((?: -u '[A-Za-z0-9_]+')+) (.*)$/s.exec(command);
+  if (!match) return { unsets: [], command };
+  const unsets = [...match[1].matchAll(/-u '([A-Za-z0-9_]+)'/g)].map((m) => m[1]);
+  return { unsets, command: match[2] };
+}
 
 describe('worktree session .beads handling (no symlink; skip-worktree only)', () => {
   let tempRoot = '';
@@ -272,9 +285,14 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     // Bare launches hand tmux the runtime command line directly — no buffer,
     // no consumer wrapper, no wait-for sync-points. xtrm-3xgs5.
     expect(usedBufferedTransport).toBe(false);
-    expect(newSessionArgs[newSessionArgs.length - 1]).toBe(
+    // CORE-2727 (D7): the pane command may carry `env -u '<KEY>'` unsets in front
+    // of the runtime argv. The runtime command line itself is asserted exactly, and
+    // whatever is cleared must be dispatcher env.
+    const bare = splitUnsetPrefix(newSessionArgs[newSessionArgs.length - 1] ?? '');
+    expect(bare.command).toBe(
       "'pi' '--name' 'repo-xt-pi-general' '--model' 'openai-codex/gpt-5.6-luna' '--thinking' 'high' 'echo hi'",
     );
+    expect(bare.unsets.every((key) => (DISPATCHER_ENV_KEYS as readonly string[]).includes(key))).toBe(true);
     expect(mocked.spawnSync).not.toHaveBeenCalledWith('sp', expect.anything(), expect.anything());
     expect(mocked.spawnSync).toHaveBeenCalledWith(
       'tmux',
@@ -367,7 +385,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     expect(mocked.spawnSync.mock.calls.some(([command, args]) =>
       command === 'tmux'
       && args[0] === 'new-session'
-      && args.at(-1) === `'${path.join(repoRoot, 'bin', 'pi')}' '--name' 'repo-xt-pi-json' 'echo hi'`
+      && splitUnsetPrefix(args.at(-1) ?? '').command === `'${path.join(repoRoot, 'bin', 'pi')}' '--name' 'repo-xt-pi-json' 'echo hi'`
     )).toBe(true);
     expect(mocked.spawnSync).toHaveBeenCalledWith(
       'git',

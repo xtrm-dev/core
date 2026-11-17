@@ -241,6 +241,22 @@ describe("dispatcher line (CORE-2390)", () => {
     expect(out).toContain("CONTRACT-BODY");
   });
 
+  test("CORE-2727: the dispatcher line names the participant, the name only as a label", () => {
+    const withBoth = dispatcherLine({
+      XTRM_DISPATCHER_NAME: "core-xt-claude-g04z",
+      XTRM_DISPATCHER_PARTICIPANT: "g04z",
+      SUBSTRATE_HOLDER: "worker-a",
+    }) as string;
+    expect(withBoth.startsWith("Dispatcher: g04z (core-xt-claude-g04z) launched you.")).toBe(true);
+    // Participant alone is enough: no display name needed.
+    expect(dispatcherLine({ XTRM_DISPATCHER_PARTICIPANT: "g04z" })).toContain("Dispatcher: g04z launched you.");
+    // Participant equal to the display name is not repeated.
+    expect(dispatcherLine({ XTRM_DISPATCHER_NAME: "g04z", XTRM_DISPATCHER_PARTICIPANT: "g04z" }))
+      .toContain("Dispatcher: g04z launched you.");
+    // Without a participant the line is exactly the pre-CORE-2727 one.
+    expect(dispatcherLine({ XTRM_DISPATCHER_NAME: "coord-1" })).toBe("Dispatcher: coord-1 launched you.");
+  });
+
   test("absent without dispatcher env, even with SUBSTRATE_HOLDER set", () => {
     expect(dispatcherLine({})).toBeNull();
     expect(dispatcherLine({ SUBSTRATE_HOLDER: "worker-a" })).toBeNull();

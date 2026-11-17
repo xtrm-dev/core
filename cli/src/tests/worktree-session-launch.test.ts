@@ -1,3 +1,4 @@
+import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -636,6 +637,22 @@ function expectClaudeLinkToWorktreeCopy(worktreePath: string, name: string, wtCo
 }
 
 /** Minimal POSIX-ish shell tokenizer for the launcher's shellQuote output. */
+/**
+ * CORE-2727 (D7): the pane command may start with `env -u '<KEY>' ...` unsets.
+ * Splits them off and returns the keys, so a caller asserts the runtime argv
+ * EXACTLY as before and additionally pins that only dispatcher keys are cleared.
+ */
+function splitUnsetPrefix(tokens: string[]): { keys: string[]; argv: string[] } {
+    if (tokens[0] !== 'env') return { keys: [], argv: tokens };
+    const keys: string[] = [];
+    let i = 1;
+    while (tokens[i] === '-u' && i + 1 < tokens.length) {
+        keys.push(tokens[i + 1]);
+        i += 2;
+    }
+    return { keys, argv: tokens.slice(i) };
+}
+
 function shellTokens(cmd: string): string[] {
     const tokens: string[] = [];
     let i = 0;
@@ -1040,9 +1057,11 @@ describe('launcher-level pack tables (830)', () => {
         // COMPLETE argv equality (reviewer 3be): exact command, option order,
         // exactly one --skill pointing at the absolute pack SKILL path, and
         // the positional boundary.
-        const tokens = shellTokens((r.newSessionArgs ?? []).at(-1) ?? '');
+        const { keys, argv: tokens } = splitUnsetPrefix(shellTokens((r.newSessionArgs ?? []).at(-1) ?? ''));
         const displayName = `${path.basename(r.repoRoot)}-xt-pi-demo`;
         expect(tokens).toEqual(['pi', '--name', displayName, '--skill', packSkillPathFor(r.repoRoot, form), 'smoke body']);
+        // D7: whatever the launch clears is dispatcher env, never the runtime argv.
+        expect(keys.every((key) => (DISPATCHER_ENV_KEYS as readonly string[]).includes(key))).toBe(true);
     });
 
     it.each(FORMS)('pi malformed/missing %s rejects before worktree mutation', async (form) => {
@@ -1063,8 +1082,9 @@ describe('launcher-level pack tables (830)', () => {
             extraSkills: [`.xtrm/skills/infra/${PACK_NAME}/SKILL.md`, '.xtrm/skills/infra/SKILL.md'],
         });
         expect(r.error).toMatch(/^exit:0/);
-        const tokens = shellTokens((r.newSessionArgs ?? []).at(-1) ?? '');
+        const { keys, argv: tokens } = splitUnsetPrefix(shellTokens((r.newSessionArgs ?? []).at(-1) ?? ''));
         const displayName = `${path.basename(r.repoRoot)}-xt-pi-demo`;
+        expect(keys.every((key) => (DISPATCHER_ENV_KEYS as readonly string[]).includes(key))).toBe(true);
         expect(tokens).toEqual([
             'pi',
             '--name', displayName,

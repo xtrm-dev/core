@@ -35,6 +35,12 @@ export const SUBSTRATE_HOLDER_VAR = 'SUBSTRATE_HOLDER';
 export const XTRM_AGENT_NAME_VAR = 'XTRM_AGENT_NAME';
 export const XTRM_DISPATCHER_NAME_VAR = 'XTRM_DISPATCHER_NAME';
 export const XTRM_DISPATCHER_ADDRESS_VAR = 'XTRM_DISPATCHER_ADDRESS';
+/**
+ * The dispatcher's Substrate participant (CORE-2727, operator decision
+ * 2026-11-18): the value a worker addresses by messaging and claims by name.
+ * `XTRM_DISPATCHER_NAME` stays display-only.
+ */
+export const XTRM_DISPATCHER_PARTICIPANT_VAR = 'XTRM_DISPATCHER_PARTICIPANT';
 export const XTRM_PARENT_SESSION_ID_VAR = 'XTRM_PARENT_SESSION_ID';
 export const XTRM_PARENT_PANE_ID_VAR = 'XTRM_PARENT_PANE_ID';
 
@@ -44,6 +50,7 @@ export const DISPATCHER_ENV_KEYS = [
     XTRM_AGENT_NAME_VAR,
     XTRM_DISPATCHER_NAME_VAR,
     XTRM_DISPATCHER_ADDRESS_VAR,
+    XTRM_DISPATCHER_PARTICIPANT_VAR,
     XTRM_PARENT_SESSION_ID_VAR,
     XTRM_PARENT_PANE_ID_VAR,
     // CORE-2525: the git author identity of the launched agent, so a nested
@@ -501,9 +508,13 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
     // this process's environment (CORE-2528 review).
     out[MERGE_GUARD_VAR] = clean(env[MERGE_GUARD_VAR]) ?? 'on';
 
-    const dispatcher = resolveDispatcher(deps);
+    // CORE-2727: the participant is the dispatcher's Substrate identity, taken from
+    // the same resolution the display name comes from, so the two can never name
+    // different sessions. Unknown stays absent.
+    const dispatcher = resolveDispatcherResolution(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+    if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
 
     const pane = env.TMUX ? clean(env.TMUX_PANE) : null;
     if (pane && /^%\d+$/.test(pane)) {
@@ -526,7 +537,7 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
 function findLiveDispatchers(
     participant: string,
     deps: DispatcherIdentityDeps = {},
-): DispatcherIdentity[] {
+): Array<{ pid?: number; address: string }> {
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
     const found: { pid: unknown; address: string }[] = [];
@@ -585,7 +596,9 @@ function findLiveDispatchers(
         const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(', ');
         throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
     }
-    return found.map((f) => ({ name: participant, address: f.address }));
+    // CORE-2727: the matched PID travels with the address, because the participant
+    // is that process's own SUBSTRATE_HOLDER — never the name it was looked up by.
+    return found.map((f) => ({ ...(typeof f.pid === 'number' ? { pid: f.pid } : {}), address: f.address }));
 }
 
 /**
@@ -601,7 +614,8 @@ export function resolveDispatcherByParticipant(
 ): DispatcherIdentity | null {
     const want = clean(participant);
     if (!want) return null;
-    return findLiveDispatchers(want, deps)[0] ?? null;
+    const live = findLiveDispatchers(want, deps)[0];
+    return live ? { name: want, address: live.address } : null;
 }
 
 /**
@@ -615,13 +629,20 @@ export function resolveDispatcherByParticipant(
 export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
     const out: Record<string, string> = {};
     const env = deps.env ?? process.env;
+    const readEnviron = deps.readEnviron ?? readProcessEnvironment;
     const participant = clean(env[XTRM_DISPATCHER_NAME_VAR]);
     if (participant) {
         try {
             const live = findLiveDispatchers(participant, deps)[0];
             if (live?.address) {
-                out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
+                out[XTRM_DISPATCHER_NAME_VAR] = participant;
                 out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+                // CORE-2727: the participant is the dispatcher PROCESS's own
+                // SUBSTRATE_HOLDER. The name this lookup was keyed on is only the
+                // inherited display name, so it is never promoted to a participant;
+                // an unreadable environment leaves it absent.
+                const holder = typeof live.pid === 'number' ? clean(holderOf(readEnviron, live.pid)) : null;
+                if (holder) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = holder;
                 return out;
             }
         } catch (error) {
@@ -629,10 +650,24 @@ export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<
             process.stderr.write(`xt attach: ${(error as Error).message}; falling back to ancestor resolution\n`);
         }
     }
-    const dispatcher = resolveDispatcher(deps);
+    const dispatcher = resolveDispatcherResolution(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+    if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
     return out;
+}
+
+/**
+ * The dispatcher keys `env` carries no value for (CORE-2727, D7). A tmux `-e`
+ * only ever sets: a pane whose launch exports no value for a key still inherits
+ * whatever the tmux server's environment holds, so the pane command must clear
+ * these with `env -u`.
+ */
+export function absentDispatcherEnvKeys(env: Record<string, string>): string[] {
+    return DISPATCHER_ENV_KEYS.filter((key) => {
+        const value = env[key];
+        return typeof value !== 'string' || value.trim() === '';
+    });
 }
 
 /** Copy of `env` without any dispatcher key, so an inherited value can never leak through. */

@@ -5,8 +5,10 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    DISPATCHER_ENV_KEYS,
     buildDispatcherEnv,
     refreshDispatcherEnv,
     resolveDispatcherByParticipant,
@@ -17,6 +19,7 @@ import { AgentHostRegistry, type ProducerConnection } from '../core/agent-host-r
 import type { AgentEventV1 } from '@xtrm/contracts';
 
 let sessionsDir = '';
+const worktrees: string[] = [];
 
 function writeSession(pid: number, entry: Record<string, unknown>): void {
     fs.writeJsonSync(path.join(sessionsDir, `${pid}.json`), { pid, ...entry });
@@ -39,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
     fs.removeSync(sessionsDir);
+    for (const worktree of worktrees.splice(0)) fs.removeSync(worktree);
 });
 
 function stubConnection() {
@@ -113,11 +117,21 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             sessionsDir,
             readProcess,
             tmux: noTmux,
+            // CORE-2727: the registry's display name differs from the dispatcher's
+            // SUBSTRATE_HOLDER, so the participant can only come from that
+            // process's own environment - never from the inherited name.
+            readEnviron: (pid: number): NodeJS.ProcessEnv | null => (pid === 100 ? { SUBSTRATE_HOLDER: 'coord-holder' } : null),
             // Stale inherited address for the same participant name: the live
             // session entry wins, with a pid liveness check (TABLE: 100 alive).
             env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
         };
         expect(refreshDispatcherEnv(deps)).toEqual({
+            XTRM_DISPATCHER_NAME: 'coord',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
+            XTRM_DISPATCHER_PARTICIPANT: 'coord-holder',
+        });
+        // An unreadable environment leaves the participant absent, never the name.
+        expect(refreshDispatcherEnv({ ...deps, readEnviron: () => null })).toEqual({
             XTRM_DISPATCHER_NAME: 'coord',
             XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
         });
@@ -136,7 +150,95 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         // xt attach was typed inside another worker: the resumed worker is not that worker.
         const inherited = buildAttachEnv({ PATH: '/bin', SUBSTRATE_HOLDER: 'dispatcher-session' }, 'pi', deps, 'wed2-coord');
         expect(inherited.SUBSTRATE_HOLDER).toBe('wed2-coord');
-        expect(buildAttachEnv({ SUBSTRATE_HOLDER: 'keep' }, 'codex', deps, null).SUBSTRATE_HOLDER).toBe('keep');
+        // CORE-2727 (D6): with no holder to give, the attacher's own holder does not
+        // survive either: unknown stays absent rather than naming the wrong worker.
+        expect(buildAttachEnv({ SUBSTRATE_HOLDER: 'keep' }, 'codex', deps, null)).not.toHaveProperty('SUBSTRATE_HOLDER');
+    });
+
+    it('D6 (CORE-2727): the attacher\'s identity keys never survive a resume', () => {
+        // The operator typed `xt attach` inside another agent session: none of that
+        // session's dispatcher, agent, parent or git-identity keys describe the
+        // session being resumed, and nothing resolved here re-adds them.
+        const attacherEnv: NodeJS.ProcessEnv = {
+            PATH: '/bin',
+            SUBSTRATE_HOLDER: 'attacher',
+            XTRM_AGENT_NAME: 'core-xt-pi-attacher',
+            XTRM_DISPATCHER_NAME: 'attacher',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/attacher.sock',
+            XTRM_DISPATCHER_PARTICIPANT: 'attacher',
+            XTRM_PARENT_PANE_ID: '%9',
+            XTRM_PARENT_SESSION_ID: '$3',
+            GIT_AUTHOR_NAME: 'attacher',
+            GIT_AUTHOR_EMAIL: 'attacher@example.com',
+            GIT_COMMITTER_NAME: 'attacher',
+            GIT_COMMITTER_EMAIL: 'attacher@example.com',
+        };
+        const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
+        const env = buildAttachEnv(attacherEnv, 'pi', deps, null);
+        for (const key of DISPATCHER_ENV_KEYS) expect(env[key]).toBeUndefined();
+        // Only the attacher's own shell context survives.
+        expect(env.PATH).toBe('/bin');
+    });
+
+    it('D6 (CORE-2727): a resolved dispatcher and the resumed holder are the only values re-added', () => {
+        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
+        const env = buildAttachEnv(
+            { PATH: '/bin', XTRM_DISPATCHER_NAME: 'attacher', GIT_AUTHOR_NAME: 'attacher' },
+            'pi', deps, 'worker-b',
+        );
+        expect(env).toMatchObject({
+            PATH: '/bin',
+            SUBSTRATE_HOLDER: 'worker-b',
+            XTRM_DISPATCHER_NAME: 'coord',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
+        });
+        // The attacher's git identity is gone: the resumed session commits as its own holder.
+        expect(env.GIT_AUTHOR_NAME).toBe('worker-b');
+        expect(env.GIT_COMMITTER_NAME).toBe('worker-b');
+    });
+
+    it('CORE-2727 decision: a resumed session carries its OWN holder identity, never the attacher\'s', () => {
+        const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
+        // A real git config for the resumed worktree, so the email is a value the
+        // test asserts exactly instead of "not the attacher's" (which also passes
+        // when the key is absent).
+        const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-attach-wt-'));
+        worktrees.push(worktreeRoot);
+        // The launcher's worktree naming: <repo>-xt-<runtime>-<slug>, which is where
+        // XTRM_AGENT_NAME and the holder both come from.
+        const worktreePath = path.join(worktreeRoot, 'repo-xt-pi-worker-b');
+        fs.ensureDirSync(worktreePath);
+        spawnSync('git', ['init', '-q', worktreePath], { encoding: 'utf8' });
+        spawnSync('git', ['config', 'user.email', 'worker-b@agents.example'], { cwd: worktreePath, encoding: 'utf8' });
+        const attacher: NodeJS.ProcessEnv = {
+            PATH: '/bin',
+            SUBSTRATE_HOLDER: 'attacher',
+            XTRM_AGENT_NAME: 'core-xt-pi-attacher',
+            GIT_AUTHOR_NAME: 'attacher',
+            GIT_COMMITTER_NAME: 'attacher',
+            GIT_AUTHOR_EMAIL: 'attacher@example.com',
+            GIT_COMMITTER_EMAIL: 'attacher@example.com',
+        };
+        const env = buildAttachEnv(attacher, 'pi', deps, 'worker-b', worktreePath);
+        // The resumed worker's own identity, resolved from its worktree.
+        expect(env).toMatchObject({
+            SUBSTRATE_HOLDER: 'worker-b',
+            GIT_AUTHOR_NAME: 'worker-b',
+            GIT_COMMITTER_NAME: 'worker-b',
+            XTRM_AGENT_NAME: 'repo-xt-pi-worker-b',
+        });
+        // The exact address of the resumed worktree, not merely "not the attacher's".
+        expect(env.GIT_AUTHOR_EMAIL).toBe('worker-b@agents.example');
+        expect(env.GIT_COMMITTER_EMAIL).toBe('worker-b@agents.example');
+        // Nothing of the attacher's identity survives.
+        expect(env.XTRM_AGENT_NAME).not.toBe('core-xt-pi-attacher');
+        expect(env.GIT_AUTHOR_NAME).not.toBe('attacher');
+        // Unknown holder: no identity at all rather than the attacher's.
+        const noHolder = buildAttachEnv(attacher, 'pi', deps, null, worktreePath);
+        expect(noHolder.GIT_AUTHOR_NAME).toBeUndefined();
+        expect(noHolder.GIT_AUTHOR_EMAIL).toBeUndefined();
+        expect(noHolder.XTRM_AGENT_NAME).toBeUndefined();
     });
 
     it('CORE-2536: holderFromWorktreePath reads the slug from the directory, not the branch', () => {
@@ -209,7 +311,8 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
         };
         // No live entry (pid dead) and no ancestor session: inherited values
-        // survive as the last resort, exactly as before.
+        // survive as the last resort, exactly as before. The participant is not
+        // inherited: an inherited NAME is not a participant (CORE-2727).
         expect(refreshDispatcherEnv({ ...deps, startPid: 999 })).toEqual({
             XTRM_DISPATCHER_NAME: 'coord',
             XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock',

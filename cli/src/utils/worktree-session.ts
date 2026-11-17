@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { buildDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -1664,7 +1664,39 @@ function slugifyForSession(input: string): string {
     return s.slice(0, 32) || 'x';
 }
 
-function shellQuote(s: string): string {
+/**
+ * D7 (CORE-2727): a tmux `-e` sets an environment entry, it cannot remove one, so
+ * a dispatcher key the launch exports no value for would keep whatever the tmux
+ * server's own environment still holds (a stale dispatcher from a previous
+ * launch, for example). The pane command therefore clears every such key with
+ * `env -u` before the runtime starts. Empty when the launch has a value for all
+ * of them.
+ */
+export function paneUnsetPrefix(env: Record<string, string>): string {
+    const absent = absentDispatcherEnvKeys(env);
+    if (absent.length === 0) return '';
+    return ['env', ...absent.flatMap((key) => ['-u', shellQuote(key)])].join(' ');
+}
+
+/** `command` behind the pane's `env -u` unsets (D7); unchanged when there are none. */
+export function withPaneUnsets(command: string, env: Record<string, string>): string {
+    const prefix = paneUnsetPrefix(env);
+    return prefix ? `${prefix} ${command}` : command;
+}
+
+/**
+ * The same D7 unsets for an argv command (a tmux `--` launch passes argv, not a
+ * shell string): `env -u KEY ...` in front of the runtime argv, for exactly the
+ * keys `absentDispatcherEnvKeys` reports. Unchanged when there are none.
+ */
+export function withPaneUnsetsArgv(argv: string[], env: Record<string, string>): string[] {
+    const absent = absentDispatcherEnvKeys(env);
+    if (absent.length === 0) return argv;
+    return ['env', ...absent.flatMap((key) => ['-u', key]), ...argv];
+}
+
+/** POSIX single-quote for one argv token; shared with the Codex launcher. */
+export function shellQuote(s: string): string {
     return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -3751,19 +3783,27 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const newSessionIdentityEnv = windowIdentity
         ? buildSessionIdentityEnv(windowIdentity)
         : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+    // One merged record is the single source of truth for the pane environment:
+    // every entry becomes `-e`, and (CORE-2727) the D7 unset list is computed from
+    // this same record, so a key that IS exported can never also be `env -u`-ed.
+    const paneEnv: Record<string, string> = {
+        ...agentEnv,
+        ...newSessionIdentityEnv,
+        ...claudeMcpEnv(runtime),
+        ...dispatcherEnv,
+        ...launchIdentity.env,
+        ...initialPromptEnv,
+        // A tmux session started by `new-session` inherits the tmux SERVER's
+        // environment, not this process's, so exported launch context never
+        // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
+        ...forwardedLaunchEnv(),
+        // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
+        // the pane gets the launcher's PATH with the shim directory first. Without
+        // this, a launched review posts as the operator instead of the App.
+        PATH: panePath(),
+    };
     const envArgs: string[] = [];
-    for (const [k, v] of Object.entries({ ...agentEnv, ...newSessionIdentityEnv, ...claudeMcpEnv(runtime), ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv })) {
-        envArgs.push('-e', `${k}=${v}`);
-    }
-
-    // A tmux session started by `new-session` inherits the tmux SERVER's
-    // environment, not this process's, so exported launch context never
-    // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
-    for (const [k, v] of Object.entries(forwardedLaunchEnv())) envArgs.push('-e', `${k}=${v}`);
-    // CORE-2524.4: the server's PATH need not hold the gh shim directory, so the
-    // pane gets the launcher's PATH with the shim directory first. Without this,
-    // a launched review posts as the operator instead of the App.
-    envArgs.push('-e', `PATH=${panePath()}`);
+    for (const [k, v] of Object.entries(paneEnv)) envArgs.push('-e', `${k}=${v}`);
 
     // Transport. The buffered handshake exists so a 50-1000KB role system
     // prompt never has to fit on a command line: tmux starts a consumer
@@ -3806,7 +3846,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const readyAfterMs = Date.now();
 
     if (args.mode === 'bare') {
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, runtimeCmdString], { stdio: 'pipe', encoding: 'utf8' });
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, paneEnv)], { stdio: 'pipe', encoding: 'utf8' });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());
         if (window) windowPaneId = (newSess.stdout ?? '').trim();
         // Server-assigned id, now knowable: publish it onto the session
@@ -3818,7 +3858,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
     } else {
         runtimeBuffer = createRuntimeBufferName();
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, buildBufferedRuntimeCommand(runtimeBuffer)], {
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), paneEnv)], {
             stdio: 'pipe', encoding: 'utf8',
         });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());

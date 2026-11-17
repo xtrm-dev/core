@@ -1,6 +1,7 @@
 // XTRM-566: POST /v1/launch — argv construction, request validation, parent resolution, and
 // binding the launched pane to the session whose extension reports it.
 
+import { absentDispatcherEnvKeys } from '../core/dispatcher-identity.js';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import http from 'node:http';
@@ -221,13 +222,30 @@ describe('AgentHostLauncher (XTRM-566)', () => {
         expect(result.outcome.identity).toEqual({ thread_id: null, session_name: 'gui-worker', tmux_session_id: '$5', pane_id: '%50' });
         expect(result.tmux).toEqual({ session: 'gui-worker', paneId: '%50' });
         const created = calls.find((c) => c.args[0] === 'new-session')!;
-        expect(created.args).toEqual([
+        // CORE-2727 (D7): the bare-pi pane clears every dispatcher key this launch
+        // carries no value for, in front of the runtime argv.
+        const separator = created.args.indexOf('--');
+        const runtimeStart = created.args.indexOf('/bin/pi', separator);
+        const prefix = created.args.slice(separator + 1, runtimeStart);
+        expect(prefix[0]).toBe('env');
+        const clearedKeys = prefix.filter((_arg, index) => index > 0 && prefix[index - 1] === '-u');
+        expect(clearedKeys).toEqual(absentDispatcherEnvKeys({
+            XTRM_AGENT_LAUNCH: 'gui',
+            XTRM_INITIAL_PROMPT: '1',
+            XTRM_AGENT_HOST_SOCKET: '/iso/host.sock',
+            PI_CODING_AGENT_DIR: '/iso/agent',
+            PATH: '/home/launcher/.local/bin:/bin',
+        }));
+        expect(clearedKeys.length).toBeGreaterThan(0);
+        const commandStart = runtimeStart;
+        expect(created.args.slice(0, separator + 1)).toEqual([
             'new-session', '-d', '-P', '-F', '#{session_id} #{pane_id}', '-s', 'gui-worker', '-c', dir,
             '-e', 'XTRM_AGENT_LAUNCH=gui', '-e', 'XTRM_INITIAL_PROMPT=1', '-e', 'XTRM_AGENT_HOST_SOCKET=/iso/host.sock', '-e', 'PI_CODING_AGENT_DIR=/iso/agent',
             // CORE-2524.4: the pane PATH carries the gh shim directory first.
             '-e', 'PATH=/home/launcher/.local/bin:/bin',
-            '--', '/bin/pi', ...buildPiArgs(options, 'gui-worker'),
+            '--',
         ]);
+        expect(created.args.slice(commandStart)).toEqual(['/bin/pi', ...buildPiArgs(options, 'gui-worker')]);
         expect(calls.find((c) => c.args[0] === 'set-option')!.args).toEqual(['set-option', '-p', '-t', '%50', '@agent_parent_session', '$7']);
     });
 

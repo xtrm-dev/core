@@ -22,7 +22,7 @@ import type { AgentHostApiV1, CommandOutcomeV1 } from '@xtrm/contracts';
 import { action } from './launch-outcome.js';
 import { panePath } from './pane-path.js';
 import { XTRM_AGENT_NAME_VAR } from './dispatcher-identity.js';
-import { INITIAL_PROMPT_ENV, forwardedLaunchEnv } from '../utils/worktree-session.js';
+import { INITIAL_PROMPT_ENV, forwardedLaunchEnv, withPaneUnsetsArgv } from '../utils/worktree-session.js';
 
 export type LaunchRequest = Extract<AgentHostApiV1, { kind: 'launch_request' }>;
 export type LaunchResult = Extract<AgentHostApiV1, { kind: 'launch_result' }>;
@@ -230,21 +230,30 @@ export class AgentHostLauncher {
 
     private async launchPi(cwd: string, options: LaunchOptions, parent: string | null): Promise<LaunchResult> {
         const sessionName = options.name ?? `pi-${randomBytes(3).toString('hex')}`;
-        const envArgs: string[] = ['-e', `${LAUNCH_ENV}=gui`];
-        // CORE-2454: a --prompt option is the initial prompt (XTRM_INITIAL_PROMPT=1);
-        // without one, an explicit 0 overrides any inherited tmux server value.
-        envArgs.push('-e', `${INITIAL_PROMPT_ENV}=${options.prompt ? 1 : 0}`);
-        for (const [key, value] of Object.entries(forwardedLaunchEnv(this.env))) {
-            if (key !== LAUNCH_ENV) envArgs.push('-e', `${key}=${value}`);
-        }
-        // CORE-2524.4: a tmux new-session pane inherits the SERVER's PATH, which
-        // need not hold the gh shim directory. Forward the launcher's PATH with
-        // the shim directory first so `gh` in the pane is the shim.
-        envArgs.push('-e', `PATH=${panePath(this.env)}`);
+        // One merged record feeds both the `-e` args and the D7 unsets (CORE-2727),
+        // so a key this launch exports is never also cleared.
+        const paneEnv: Record<string, string> = {
+            [LAUNCH_ENV]: 'gui',
+            // CORE-2454: a --prompt option is the initial prompt (XTRM_INITIAL_PROMPT=1);
+            // without one, an explicit 0 overrides any inherited tmux server value.
+            [INITIAL_PROMPT_ENV]: options.prompt ? '1' : '0',
+            ...forwardedLaunchEnv(this.env),
+            // CORE-2524.4: a tmux new-session pane inherits the SERVER's PATH, which
+            // need not hold the gh shim directory. Forward the launcher's PATH with
+            // the shim directory first so `gh` in the pane is the shim.
+            PATH: panePath(this.env),
+        };
+        const envArgs: string[] = [];
+        for (const [key, value] of Object.entries(paneEnv)) envArgs.push('-e', `${key}=${value}`);
+        // CORE-2727 (D7): a bare-pi pane is a tmux `new-session` too, so a
+        // dispatcher key this launch carries no value for would keep whatever the
+        // tmux server's environment holds. This launch passes argv, so the unsets
+        // ride the shared argv form of the same rule.
+        const paneArgv = withPaneUnsetsArgv([this.piCommand, ...buildPiArgs(options, sessionName)], paneEnv);
         const created = await this.run('tmux', [
             'new-session', '-d', '-P', '-F', '#{session_id} #{pane_id}',
             '-s', sessionName, '-c', cwd, ...envArgs,
-            '--', this.piCommand, ...buildPiArgs(options, sessionName),
+            '--', ...paneArgv,
         ], { env: this.env, timeoutMs: 10_000 });
         const [tmuxSessionId, paneId] = created.stdout.trim().split(' ');
         if (created.status !== 0 || !/^\$[0-9]+$/.test(tmuxSessionId ?? '') || !/^%[0-9]+$/.test(paneId ?? '')) {

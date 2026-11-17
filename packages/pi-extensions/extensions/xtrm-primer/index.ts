@@ -128,13 +128,23 @@ export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.HOME || env.USERPROFILE || homedir();
 }
 
-/** One line naming the dispatcher, its reply address and this worker's holder; null without dispatcher env. */
+/**
+ * One line naming the dispatcher, its reply address and this worker's holder;
+ * null without dispatcher env. CORE-2727: the dispatcher's Substrate participant
+ * (XTRM_DISPATCHER_PARTICIPANT) is the identity a worker addresses and claims
+ * by, so it is named when set; XTRM_DISPATCHER_NAME stays display-only and rides
+ * along in parentheses.
+ */
 export function dispatcherLine(env: NodeJS.ProcessEnv = process.env): string | null {
   const name = env.XTRM_DISPATCHER_NAME?.trim();
   const address = env.XTRM_DISPATCHER_ADDRESS?.trim();
-  if (!name && !address) return null;
+  const participant = env.XTRM_DISPATCHER_PARTICIPANT?.trim();
+  if (!name && !address && !participant) return null;
   const holder = env.SUBSTRATE_HOLDER?.trim();
-  const parts = [`Dispatcher: ${name || "an agent session"} launched you.`];
+  const who = participant
+    ? (name && name !== participant ? `${participant} (${name})` : participant)
+    : (name || "an agent session");
+  const parts = [`Dispatcher: ${who} launched you.`];
   if (address) parts.push(`Reply to it at ${address}.`);
   if (holder) parts.push(`Your Substrate participant name is ${holder} (SUBSTRATE_HOLDER); claim Issues with --holder ${holder}.`);
   return parts.join(" ");
