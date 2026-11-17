@@ -195,6 +195,8 @@ status-board-keeper. "doc" = named in the doctrine text only (an agent reads it;
 | `PM_OPERATOR_NAMES` | `operator_names` | `[name]` | every name that identifies the operator: the lane matches comment authors against it (lower case), the question hook treats it as addressing the operator. Default `[operator_name]` | BA (lane), hook |
 | `PM_GOAL_REFS` | `goal_refs` | `[text]` | further pointers to the common goal, printed as they are | hooks, doc |
 | `PM_LAUNCH_ROLES` | `launch_roles` | `{launch role: role}` | launch role (specialist name) -> pack role, merged over the defaults (`manager`, `lead`, `board-helper`, alias `board-audit-runner`) | all |
+| `PM_TOOLS_REMINDER_THRESHOLDS` | `tools_reminder_thresholds` | `[fraction]` | context fractions at which `checkpoint_warn.py` adds the role's tool cards (default `[0.35, 0.60]`; `[]` off); manager, leads, workers | hooks |
+| `PM_TOOL_CARDS_EXTRA` | `tool_cards_extra` | `{role or "all": [line]}` | the project's own tool cards, added to the pack's (`scripts/pm_tools.py`): for example the project's production-change rule | hooks, `pm_session.py` |
 | `PM_MATCH_DIRS` | `match_dirs` | `[path]` | extra directories that belong to the project (project choice, routing) | all |
 | `PM_AGENT_HOST_INFO` | `agent_host_info` | path | the agent host's info file (default `~/.xtrm/run/agent-host.json`; env `XTRM_AGENT_HOST_URL` overrides the URL) | PM, BA (lane), TK |
 | `PM_WAITING_PRODUCTION_STATUS` | `waiting_production_status` | name | status for merged, not yet in production | BA (lane) |
@@ -335,7 +337,7 @@ The pack ships four Claude Code hooks in `project-management/hooks/`. The operat
 |---|---|---|
 | `post_compact.py` | `SessionStart` (`compact`, `startup`) | prints the role's resume steps, then the text of `post_compact_extra`; types `post_compact_nudge_text` into the pane when `post_compact_nudge` is true |
 | `action_gate.py` | `SessionStart`, `PreToolUse` (`Bash\|Agent\|.*specialist_dispatch`), `PostToolUse` (`Read`) | blocks the `gated_commands` and `gated_tools` until the session has read its `refread_files` (reset at start and after compaction), and runs the pending-message guard |
-| `checkpoint_warn.py` | `PostToolUse` (`*`), `UserPromptSubmit` | warns at each `checkpoint_thresholds` fraction of the context window and asks for one structured `handoff` entry (`references/continuity.md`) |
+| `checkpoint_warn.py` | `PostToolUse` (`*`), `UserPromptSubmit` | warns at each `checkpoint_thresholds` fraction of the context window and asks for one structured `handoff` entry, then a self-compaction (`references/continuity.md`); adds the role's tool cards at each `tools_reminder_thresholds` fraction |
 | `operator-questions.py` | `UserPromptSubmit`, `Stop` | the operator-question reminder (SKILL.md rule 15) |
 
 The pending-message guard: before a gated action, the items pending for this session (routed operator comments not

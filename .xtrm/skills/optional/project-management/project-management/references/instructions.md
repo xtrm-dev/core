@@ -20,7 +20,8 @@ A project is work of days or weeks for a team of agent sessions, run for one hum
   closes its issues.
 - A **worker** (one per issue) builds one contract and reports to its lead.
 - The **board helper** (one per project) is the only writer to Jira and the router of the operator's comments.
-- **Specialists** do bounded heavy work on request: reviews, test runs, investigations.
+- **Specialists** are agents dispatched on an issue and kept alive for the next issue of their role: the default for building (`worker`),
+  reviews (`pr-reviewer`), tests and investigations. `xt` sessions are for work that needs a pane, tmux, `gh` or Jira (SKILL.md rule 1).
 
 Everything that matters is recorded in **Substrate** (`sb`): contracts, plans, decisions, questions, evidence, closure.
 **Jira** and the **status board** (a here.now page) are views for the operator. The pack holds no data about your instance:
@@ -69,7 +70,8 @@ Launch each role like this (full syntax and checks: `references/launching.md`):
 ```
 xt claude <name> --window --role manager --bead <manager_issue> --model opus -- --effort high
 xt claude <epic>-<area>-lead --window --role lead --bead <workstream ref> --model sonnet -- --effort high
-xt claude|pi <story>-<slug> --window --role worker --bead <issue ref> [--model sonnet|opus -- --effort high]
+specialist_dispatch {specialist: "worker", issue_ref}        # default; the next issue goes by specialist_reply
+xt claude|pi <story>-<slug> --window --role worker --bead <issue ref> [--model sonnet|opus -- --effort high]   # only by rule 1
 xt pi board-helper --window --role board-helper
 ```
 
@@ -122,9 +124,9 @@ All times are UTC, read from `date -u`.
 | Every 5 min | board helper lane | read new operator comments and route the decisions |
 | Every 5 min | `status_board_sync` timer | copy Jira windows and worker state to the status board |
 | Every 15 min | board helper lane | hygiene cycle, deploy snapshot, heavy-queue watch |
-| Every hour | manager | team check (`route_target.py --team`), lead journals, keeper pass on the status board, close sweep for issues without a workstream |
+| Every hour | manager | read every lead journal and rule in one batched message per lead, or none; team check (`route_target.py --team`); keeper pass; close sweep for issues without a workstream |
 | Every hour | each lead | its own close sweep, worker liveness |
-| Every 2 h | manager, leads | renew claims (`sb issue renew`); board helper cycle report |
+| Every 2 h | manager, leads | renew claims (`sb issue renew`); board helper cycle report (a journal entry, no message) |
 | Before each production window | manager | prerequisite check, preflight, GO or DRY comment on the window's Jira task |
 | 22:17 | manager | daily report: one `result` entry on the epic and one comment on the Jira epic |
 | Day boundary | manager | handover to the next day's manager (`references/handover.md`) |
@@ -138,26 +140,29 @@ The manager's full daily list is `references/manager.md` §1; the lead's is `ref
 | 1. Contract | lead | `sb issue create ... --contract <file>`: problem, scope, success, validation, output; name the goal section |
 | 2. Attest | lead | `sb issue attest <ref> --outcome ready ...`; the issue must show `ready` and `dispatchable` |
 | 3. Preflight | lead | the budget line (load, memory pressure, live agents) within the caps; it goes in the journal |
-| 4. Launch | lead | `xt ... --role worker --bead <ref>`; place the pane in a `workers` window |
+| 4. Launch | lead | a `worker` specialist (`specialist_dispatch`, or `specialist_reply` to a kept-alive one); an `xt` worker only by rule 1 |
 | 5. Claim | worker | `sb issue claim <ref> --holder <name> --ttl-ms <n>`; renew at every checkpoint |
 | 6. Build | worker | journal one fact per entry; checkpoint at each milestone |
 | 7. Receipt and PR | worker | `sb provenance dispatch` and `allocate`, then `gh pr create` with the issue marker, so the PR links to the issue |
-| 8. Review | lead | rule 44: a Claude `pr-reviewer` review at the exact head |
-| 9. Merge | manager | on arrival, with `--match-head-commit` and the memory gate |
+| 8. Review | lead | rule 44: the kept-alive `pr-reviewer` specialist, at the exact head |
+| 9. Merge | lead (master-only PR) or manager (deploys, promotion, several workstreams) | on arrival, with `--match-head-commit` and the memory gate (rule 49) |
 | 10. Result and close | worker or lead | a `result` entry, then `sb issue close --outcome completed`; the close gate checks the PR link rows |
 | 11. Jira Done | board helper | moves the ticket by transition id on the lead's order |
-| 12. Reap | lead | confirm the result, then `tmux kill-pane -t <pane-id>` (never `kill-window`) |
+| 12. Reap | lead | confirm the result; keep a specialist for its role's next issue, or `tmux kill-pane -t <pane-id>` for an `xt` worker |
 
-A different scope always gets a new issue and a new worker. A same-scope follow-up may stay with the same worker (at most
-three issues).
+A different scope always gets a new issue. A kept-alive specialist takes the next issue of its role; an `xt` worker ends with its scope (a
+same-scope follow-up may stay, at most three issues).
 
 ## 8. How messages travel
 
 - **By role, never by a stored address.** `python3 <pack>/project-management/scripts/route_target.py manager` (or
   `board_helper`, `--team`, `--all`) prints the live session name; send to it with `SendMessage`.
-- **Worker to lead:** decisions, blockers, done and merge-ready reports. Progress goes to the journal.
-- **Lead to manager:** only a GO outside the workstream, a merge-ready record, a blocker, a data-correctness finding or a
-  production anomaly. Leads settle cross-workstream questions with each other directly.
+- **Worker to lead:** a decision, a blocker, a contract conflict or a scope deviation (SKILL.md rule 40). Done, merge-ready and progress go
+  to the journal; a specialist's result is its report.
+- **Lead to manager:** almost never by message. A lead decides inside its workstream and journals it; the manager reads every
+  lead journal once an hour and rules there. A message only for what cannot wait an hour: a production anomaly, a
+  data-correctness finding, a blocker the lead cannot settle, a decision due within 2 h (SKILL.md rule 40). The manager never
+  asks for status and never acknowledges. Leads settle cross-workstream questions with each other directly.
 - **Anyone to Jira:** through the board helper, on the order of the manager or the owning lead.
 - **Operator comment to a session:** the lane's routers read new Jira comments every 5 minutes and put each decision in the
   outbox (`pending-routes.jsonl`). The board helper decides who gets it (`route-forward.py --to <name>`, default the
@@ -183,7 +188,7 @@ three issues).
 |---|---|---|
 | `post_compact.py` | session start, after compaction | role line, common goal, resume steps |
 | `action_gate.py` | before gated commands | blocks until the references are read; shows pending messages once |
-| `checkpoint_warn.py` | at 70 % and 85 % of context | asks for one `handoff` entry |
+| `checkpoint_warn.py` | at 35 % and 60 % of context; at 70 % and 85 % | the role's tool cards; one `handoff` entry, then compact yourself |
 | `operator-questions.py` | each turn | reminds about an unanswered operator question |
 
 **Handover** (`references/handover.md`): the outgoing manager settles, collects reports, writes the handoff, launches its
@@ -220,6 +225,8 @@ Several projects in one config: every launch, timer and cron sets `PM_PROJECT=<n
 | Is the status board sync healthy? | `journalctl --user -u status-board-sync` (look for `ASSERT-FAIL`) |
 | How does a service work? | its service-knowledge skill; `service-knowledge index query "<text>"` |
 | How does a `sb` verb work? | `sb help <group>` |
+| Which tools should I be using? | `pm_session.py tools` |
+| What wakes this session, and how much does it message others? | `python3 <pack>/project-management/scripts/pm_wakes.py --session <name>` |
 
 Common problems:
 

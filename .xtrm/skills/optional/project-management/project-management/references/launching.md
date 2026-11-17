@@ -15,8 +15,10 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 
 | Shape | Exact syntax | Notes |
 |---|---|---|
+| **Worker (default)** | `specialist_dispatch {specialist: "worker", issue_ref}`; next issue of its role: `specialist_reply` / `specialist_resume` | Kept alive and reused (SKILL.md rule 1); no pane. Stop with `specialist_stop_activation` when its role has no queued work. |
+| **PR review (default)** | `specialist_dispatch {specialist: "pr-reviewer", issue_ref[, model_override]}`; next PR: `specialist_reply` | Through `claude-bridge`; keep one alive per lead and give it each new PR (rule 44). |
 | `xt claude` worker | `xt claude <name> --window --model sonnet\|opus --prompt '/<skill> ... /goal ...' -- --effort low\|medium\|high\|xhigh\|max` | Effort goes after `--`. `--thinking` is dropped with a warning. |
-| worker role (default) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--bead` is the prompt. |
+| worker role (`xt`) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--bead` is the prompt. |
 | `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Default `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high; never Muse Spark (it stops mid-task, operator 2026-10-30). `--skill <name>` repeats. |
 | Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's; `--bead` and `--prompt` exclude each other. |
 | Manager | `xt claude <name> --window --role manager --bead <ref> --model opus -- --effort high` | The launch role gives the role; any name. Then the session kit ("Session kit" below). |
@@ -71,8 +73,8 @@ launched under the shared `project-manager` role, or a running session from befo
 
 ### Dispatch a builder (worker role)
 
-One fresh worker per Substrate issue (SKILL.md rules 37, 39; MMD-3200, operator 2026-10-31); it reads `references/worker.md` first and may coordinate
-specialists and consult the advisor.
+One issue per task, one contract per scope (SKILL.md rules 3, 37); the worker reads `references/worker.md` first and may coordinate specialists and
+consult the advisor.
 1. **Contract** (the issue is the prompt; a restart resumes from `sb issue resume <ref>`; no `briefs/` folder):
    `sb issue create --project <id> --title <t> --kind task --parent <ref> --scrutiny LOW|MEDIUM|HIGH|CRITICAL --contract <file>`; `validation` is
    `{check}` objects, `output` `{artifact}` objects. The contract is the prompt, so it names files, the branch base (`origin/master`), the tests to
@@ -81,18 +83,18 @@ specialists and consult the advisor.
    (`sb issue edit <ref> --context-refs <file|json>` before attesting, naming `<goal document>#<section>`; SKILL.md rule 56).
 2. **Attest:** `sb issue attest <ref> --outcome ready --policy default --attested-by <you>`; `sb issue show <ref> --json` must show `readinessState`
    `ready`, `dispatchable` `true`.
-3. **Launch from the main checkout** (after the rule 2.2 preflight):
+3. **Launch** (after the rule 2.2 preflight): by default a `worker` specialist, `specialist_dispatch {specialist: "worker", issue_ref: <ref>}`,
+   or the next issue to a kept-alive one with `specialist_reply`. Only for what SKILL.md rule 1 lists, from the main checkout:
    `xt claude <name> --window --role worker --bead <ref> --model sonnet|opus -- --effort high` or `xt pi <name> --window --role worker --bead <ref>`.
    Effort defaults to medium: pass high for builders (Opus for maths and data meaning). Pi or Sonnet builder: choose per task (SKILL.md rule 40); a
    pi builder needs a tight contract and a first-diff check. Refuse or queue when a cap or
    gate fails; a new builder launch waits for the operator's word when the operator has ruled so. A start-up line "could not read <ref>" is harmless.
-4. **Place the pane:** `tmux join-pane -d -s <pane> -t <session>:workers`, `tmux select-layout tiled`; at most 4 panes per `workers` window.
-5. **Supervise by exception:** arm the pane monitor; verify claims against the live tree. A different scope means a fresh issue and worker. **Reap**
-   with `kill-pane` by id when the issue closes.
+4. **Place an `xt` pane:** `tmux join-pane -d -s <pane> -t <session>:workers`, `tmux select-layout tiled`; at most 4 panes per `workers` window.
+5. **Supervise by exception:** `specialist_status` for a specialist, the pane monitor for an `xt` worker; verify claims against the live tree. A
+   different scope means a new issue. When the issue closes: reap an `xt` pane by id, or keep the specialist for its role's next issue.
 
 Another role (`--role executor`) is not a worker: on Claude it MUST pass `--model sonnet|opus` or the session dies at turn 1, and its prompt carries
-the rule-37 line. A bounded read or test run needs a specialist, not a window. A PR review follows SKILL.md rule 44: `xt claude --role pr-reviewer --model
-sonnet|opus`, the native `reviewer` subagent in PR mode, or the `pr-reviewer` specialist through `claude-bridge`.
+the rule-37 line. A PR review follows SKILL.md rule 44.
 
 ### When --window refuses
 
@@ -169,12 +171,15 @@ Forgotten windows keep runtimes alive: ten once pushed server load to about 700.
 
 ## Specialists and AgentRun
 
-Interim rules from the MMD-2331 project (October 2026); XT-132 replaces them.
+Specialists are on par with `xt` sessions and the default for most work (SKILL.md rule 1, operator 2026-11-17).
 
 **Specialists**
 - Dispatch through the plugin MCP, not the `sp` CLI; `specialist_status` is authoritative. Create the issue under its theme and attest it first: an
   inline `contract` makes a parentless issue and `sb` cannot set a parent later.
-- Default specialists have no network, `gh`, tmux, ListAgents or host writes: that work goes to a window worker. Exception `board-helper` (LOW +
+- **Keep-alive:** a specialist that finished its issue waits; give it the next issue of its role with `specialist_reply` (it re-reads the new
+  contract) or `specialist_resume`. A warm reviewer or builder skips the cold start, which for an Opus reviewer is the largest single cost. Stop it
+  with `specialist_stop_activation` when its role has no queued work, or 2 h after its last result.
+- Default specialists have no network, `gh`, tmux, ListAgents or host writes: that work goes to an `xt` worker. Exception `board-helper` (LOW +
   `execution.lease_waiver`, v1.7.0): per-Issue worktree with `gh pr view/list`, `git merge-base --is-ancestor`, `python3 scripts/jira.py` and `sb`
 reads; Jira writes only through the board helper, journal writes only on the order of the manager or the owning lead. A `board-helper`
 specialist does not write Jira: it proposes, and the board helper writes on that order (sun01-coord, 2026-11-01); `denied_bash_patterns` enforce it: still no tmux,
@@ -184,7 +189,7 @@ specialist does not write Jira: it proposes, and the board helper writes on that
   on a problem; read the output file with `read`, never tail it in the turn. Delegated-agent and fusion workflows are retired (CORE-2443 M1,
   host-memory pressure).
 - After editing a definition restart the host or rename it: the loader caches.
-- A specialist counts toward the worker cap. Before a restart settle or stop each activation; release a stopped one's claim with
+- A specialist counts toward the lead's agent cap (rule 2.3). Before a restart settle or stop each activation; release a stopped one's claim with
   `sb issue release <ref> --holder specialist::<name> --activation <id>`.
 
 **AgentRun**
@@ -197,13 +202,14 @@ specialist does not write Jira: it proposes, and the board helper writes on that
 - **Host memory, not worker count, is the hard limit.** On 2026-10-18 three coordinators fanned out subagents running full test suites beside 8 pi
   workers, the databases and feeds: the VPS swap-stormed for 4 hours (load 150, 9 GB swap, memory stall 52%) until the operator killed every Claude
   process.
-  - At most 2 in-process subagents per manager or lead, 1 running tests. Subagents die with their parent: long builds belong in window workers.
+  - At most 2 in-process subagents per manager or lead, 1 running tests. Subagents die with their parent: long builds belong in a specialist or an
+    `xt` worker.
   - No full suite or `make ci-light` locally while other workers are live: targeted files, one at a time, under `ulimit -v 4000000` and `timeout 600`;
     hosted CI is the full-suite evidence.
   - Before each dispatch run the preflight and the class gate (rule 2.2); do not dispatch when swap use rises or `full avg60` is above 5.
   - Hosted CI shares this VPS: stagger pushes, never re-trigger with empty commits or manual dispatches while runs queue, count running CI jobs in the
     memory check.
-- Caps: SKILL.md rule 2.3 (per lead 3 worker windows; host cap 18 while the memory gate holds; once 10 processes were live while one session
+- Caps: SKILL.md rule 2.3 (per lead 3 live agents; host cap 18 while the memory gate holds; once 10 processes were live while one session
   counted 3 workers). Quota 429: pause dispatch, tell the operator in one line (rule 30). Compacting a Pi worker: `references/continuity.md`.
-- Reviewer, investigator, release or monitor roles are ordinary workers with their own issue.
+- Reviewer, investigator, release or monitor roles are specialists (or `xt` workers by rule 1) with their own issue.
 
