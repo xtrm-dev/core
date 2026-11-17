@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+    absentDispatcherEnvKeys,
     buildDispatcherEnv,
     isDispatcherAddress,
     resolveDispatcher,
@@ -131,6 +132,29 @@ describe('buildDispatcherEnv', () => {
         // No name computed means no key at all, never an empty string.
         expect(buildDispatcherEnv('worker-a', { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux }))
             .not.toHaveProperty('XTRM_AGENT_NAME');
+    });
+
+    it('CORE-2727: exports XTRM_DISPATCHER_PARTICIPANT, and the key is stripped like the rest', () => {
+        writeSession(100, { name: 'core-xt-claude-g04z', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
+        const base = { startPid: 300, sessionsDir, readProcess, env: {}, tmux: noTmux };
+        const out = buildDispatcherEnv('worker-a', {
+            ...base,
+            readEnviron: readEnvironOf({ 100: { SUBSTRATE_HOLDER: 'g04z' } }),
+        });
+        expect(out).toMatchObject({
+            SUBSTRATE_HOLDER: 'worker-a',
+            // NAME stays display-only; the participant is the Substrate identity.
+            XTRM_DISPATCHER_NAME: 'core-xt-claude-g04z',
+            XTRM_DISPATCHER_PARTICIPANT: 'g04z',
+        });
+        // Unknown stays absent, and the key is stripped from an inherited env.
+        expect(buildDispatcherEnv('worker-a', base)).not.toHaveProperty('XTRM_DISPATCHER_PARTICIPANT');
+        expect(stripDispatcherEnv({ XTRM_DISPATCHER_PARTICIPANT: 'attacher' })).not.toHaveProperty('XTRM_DISPATCHER_PARTICIPANT');
+        // D7: the launcher can ask which of its keys the launch carries no value for.
+        expect(absentDispatcherEnvKeys(out)).toEqual([
+            'XTRM_AGENT_NAME', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID',
+            'GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL',
+        ]);
     });
 
     it('collapses a multi-line agent name to one line', () => {
@@ -281,6 +305,8 @@ describe('resolveDispatcher D5: an agent ancestor without a socket', () => {
             SUBSTRATE_HOLDER: 'worker-a',
             XTRM_MERGE_GUARD: 'on',
             XTRM_DISPATCHER_NAME: 'pi-lead',
+            // CORE-2727: the socketless lead still contributes its participant.
+            XTRM_DISPATCHER_PARTICIPANT: 'pi-lead',
         });
     });
 });

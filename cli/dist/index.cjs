@@ -63689,6 +63689,7 @@ var SUBSTRATE_HOLDER_VAR = "SUBSTRATE_HOLDER";
 var XTRM_AGENT_NAME_VAR = "XTRM_AGENT_NAME";
 var XTRM_DISPATCHER_NAME_VAR = "XTRM_DISPATCHER_NAME";
 var XTRM_DISPATCHER_ADDRESS_VAR = "XTRM_DISPATCHER_ADDRESS";
+var XTRM_DISPATCHER_PARTICIPANT_VAR = "XTRM_DISPATCHER_PARTICIPANT";
 var XTRM_PARENT_SESSION_ID_VAR = "XTRM_PARENT_SESSION_ID";
 var XTRM_PARENT_PANE_ID_VAR = "XTRM_PARENT_PANE_ID";
 var DISPATCHER_ENV_KEYS = [
@@ -63696,6 +63697,7 @@ var DISPATCHER_ENV_KEYS = [
   XTRM_AGENT_NAME_VAR,
   XTRM_DISPATCHER_NAME_VAR,
   XTRM_DISPATCHER_ADDRESS_VAR,
+  XTRM_DISPATCHER_PARTICIPANT_VAR,
   XTRM_PARENT_SESSION_ID_VAR,
   XTRM_PARENT_PANE_ID_VAR,
   // CORE-2525: the git author identity of the launched agent, so a nested
@@ -63887,13 +63889,6 @@ function holderOf(readEnviron, pid) {
     return null;
   }
 }
-function resolveDispatcher(deps = {}) {
-  const resolved = resolveDispatcherResolution(deps);
-  const identity = {};
-  if (resolved.name) identity.name = resolved.name;
-  if (resolved.address) identity.address = resolved.address;
-  return identity;
-}
 function isDispatcherAddress(value) {
   return /^uds:.+$/.test(value) || /^activation:\S+$/.test(value);
 }
@@ -63925,9 +63920,10 @@ function buildDispatcherEnv(workerName, deps = {}) {
   const agentName = cleanAgentName(deps.agentName);
   if (agentName) out[XTRM_AGENT_NAME_VAR] = agentName;
   out[MERGE_GUARD_VAR] = clean(env3[MERGE_GUARD_VAR]) ?? "on";
-  const dispatcher = resolveDispatcher(deps);
+  const dispatcher = resolveDispatcherResolution(deps);
   if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
   if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+  if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
   const pane = env3.TMUX ? clean(env3.TMUX_PANE) : null;
   if (pane && /^%\d+$/.test(pane)) {
     out[XTRM_PARENT_PANE_ID_VAR] = pane;
@@ -64003,6 +63999,7 @@ function refreshDispatcherEnv(deps = {}) {
       if (live?.address) {
         out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
         out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+        out[XTRM_DISPATCHER_PARTICIPANT_VAR] = live.name ?? participant;
         return out;
       }
     } catch (error62) {
@@ -64010,10 +64007,17 @@ function refreshDispatcherEnv(deps = {}) {
 `);
     }
   }
-  const dispatcher = resolveDispatcher(deps);
+  const dispatcher = resolveDispatcherResolution(deps);
   if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
   if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+  if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
   return out;
+}
+function absentDispatcherEnvKeys(env3) {
+  return DISPATCHER_ENV_KEYS.filter((key) => {
+    const value = env3[key];
+    return typeof value !== "string" || value.trim() === "";
+  });
 }
 function stripDispatcherEnv(env3) {
   const out = { ...env3 };
@@ -66945,6 +66949,15 @@ function slugifyForSession(input2) {
   const s = input2.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return s.slice(0, 32) || "x";
 }
+function paneUnsetPrefix(env3) {
+  const absent = absentDispatcherEnvKeys(env3);
+  if (absent.length === 0) return "";
+  return ["env", ...absent.flatMap((key) => ["-u", shellQuote(key)])].join(" ");
+}
+function withPaneUnsets(command, env3) {
+  const prefix = paneUnsetPrefix(env3);
+  return prefix ? `${prefix} ${command}` : command;
+}
 function shellQuote(s) {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
@@ -68215,7 +68228,7 @@ async function launchTmuxSession(args) {
   const createdSessionId = () => window ? null : resolveTmuxSessionId(plan.sessionName);
   const readyAfterMs = Date.now();
   if (args.mode === "bare") {
-    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, runtimeCmdString], { stdio: "pipe", encoding: "utf8" });
+    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, dispatcherEnv)], { stdio: "pipe", encoding: "utf8" });
     if (newSess.status !== 0) failNewSession((newSess.stderr ?? "").trim());
     if (window) windowPaneId = (newSess.stdout ?? "").trim();
     const bareSessionId = createdSessionId();
@@ -68224,7 +68237,7 @@ async function launchTmuxSession(args) {
     }
   } else {
     runtimeBuffer = createRuntimeBufferName();
-    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, buildBufferedRuntimeCommand(runtimeBuffer)], {
+    const newSess = (0, import_node_child_process8.spawnSync)("tmux", [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), dispatcherEnv)], {
       stdio: "pipe",
       encoding: "utf8"
     });
@@ -70964,6 +70977,12 @@ function readCodexWorktreeSession(worktreePath) {
 // src/utils/codex-worktree-session.ts
 var SESSION_DISCOVERY_TIMEOUT_MS = 15e3;
 var SESSION_DISCOVERY_POLL_MS = 100;
+function paneCommandWithUnsets(command, env3) {
+  const absent = absentDispatcherEnvKeys(env3);
+  if (absent.length === 0) return command;
+  const prefix = ["env", ...absent.flatMap((key) => ["-u", shellQuote2(key)])].join(" ");
+  return `${prefix} ${command}`;
+}
 function shellQuote2(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -71246,11 +71265,12 @@ async function launchCodexWorktreeSession(opts) {
   ];
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
   const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
+  const dispatcherEnv = buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path29.default.basename(worktreePath) });
   const agentEnv = {
     ...buildAgentEnv(paneOptions),
     XTMUX_AGENT_RUNTIME: "codex",
     ...windowIdentity ? buildSessionIdentityEnv(windowIdentity) : {},
-    ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path29.default.basename(worktreePath) }),
+    ...dispatcherEnv,
     ...launchIdentity.env
   };
   const envArgs = Object.entries(agentEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
@@ -71284,7 +71304,8 @@ async function launchCodexWorktreeSession(opts) {
     cleanupAndFail(error62 instanceof Error ? error62.message : String(error62));
   }
   const createArgs = window ? ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${parentSession}:`, "-n", sessionName, "-c", worktreePath] : ["new-session", "-d", "-s", sessionName, "-c", worktreePath];
-  const launched = (0, import_node_child_process14.spawnSync)("tmux", [...createArgs, ...envArgs, codexBufferCommand(buffer)], { stdio: "pipe", encoding: "utf8" });
+  const paneCommand = paneCommandWithUnsets(codexBufferCommand(buffer), dispatcherEnv);
+  const launched = (0, import_node_child_process14.spawnSync)("tmux", [...createArgs, ...envArgs, paneCommand], { stdio: "pipe", encoding: "utf8" });
   if (launched.status !== 0) cleanupAndFail((launched.stderr ?? "").trim() || `tmux ${createArgs[0]} failed`);
   if (window) windowPaneId = (launched.stdout ?? "").trim();
   const consumer = (0, import_node_child_process14.spawnSync)("tmux", ["wait-for", `${buffer}-consumer-ready`], {
@@ -78087,8 +78108,9 @@ function matchWorktree(worktrees, name) {
 }
 function buildAttachEnv(base, runtime, dispatcherDeps = {}, holder = null) {
   const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
+  const stripped = stripDispatcherEnv(base);
   const holderEnv = holder ? { [SUBSTRATE_HOLDER_VAR]: holder } : {};
-  return runtime === "claude" ? { ...base, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) } : { ...base, ...dispatcherEnv, ...holderEnv };
+  return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...holderEnv };
 }
 function holderFromWorktreePath(worktreePath) {
   const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec((0, import_node_path44.basename)(worktreePath));

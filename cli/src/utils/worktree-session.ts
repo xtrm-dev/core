@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { buildDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -1662,6 +1662,26 @@ export function renderRoleTask(args: {
 function slugifyForSession(input: string): string {
     const s = input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     return s.slice(0, 32) || 'x';
+}
+
+/**
+ * D7 (CORE-2727): a tmux `-e` sets an environment entry, it cannot remove one, so
+ * a dispatcher key the launch exports no value for would keep whatever the tmux
+ * server's own environment still holds (a stale dispatcher from a previous
+ * launch, for example). The pane command therefore clears every such key with
+ * `env -u` before the runtime starts. Empty when the launch has a value for all
+ * of them.
+ */
+export function paneUnsetPrefix(env: Record<string, string>): string {
+    const absent = absentDispatcherEnvKeys(env);
+    if (absent.length === 0) return '';
+    return ['env', ...absent.flatMap((key) => ['-u', shellQuote(key)])].join(' ');
+}
+
+/** `command` behind the pane's `env -u` unsets (D7); unchanged when there are none. */
+function withPaneUnsets(command: string, env: Record<string, string>): string {
+    const prefix = paneUnsetPrefix(env);
+    return prefix ? `${prefix} ${command}` : command;
 }
 
 function shellQuote(s: string): string {
@@ -3806,7 +3826,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const readyAfterMs = Date.now();
 
     if (args.mode === 'bare') {
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, runtimeCmdString], { stdio: 'pipe', encoding: 'utf8' });
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(runtimeCmdString, dispatcherEnv)], { stdio: 'pipe', encoding: 'utf8' });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());
         if (window) windowPaneId = (newSess.stdout ?? '').trim();
         // Server-assigned id, now knowable: publish it onto the session
@@ -3818,7 +3838,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
     } else {
         runtimeBuffer = createRuntimeBufferName();
-        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, buildBufferedRuntimeCommand(runtimeBuffer)], {
+        const newSess = spawnSync('tmux', [...createArgs, ...envArgs, withPaneUnsets(buildBufferedRuntimeCommand(runtimeBuffer), dispatcherEnv)], {
             stdio: 'pipe', encoding: 'utf8',
         });
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());

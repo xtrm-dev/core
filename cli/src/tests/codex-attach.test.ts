@@ -16,12 +16,18 @@ vi.mock('../commands/worktree.js', () => ({
 }));
 
 // CORE-2432 R8: hermetic dispatcher refresh; the live lookup is covered in attach-dispatcher.test.ts.
-vi.mock('../core/dispatcher-identity.js', () => ({
-    refreshDispatcherEnv: vi.fn(() => ({
-        XTRM_DISPATCHER_NAME: 'test-dispatcher',
-        XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
-    })),
-}));
+// CORE-2727: buildAttachEnv also strips the attacher's keys, so the strip helper is
+// kept real here rather than mocked away.
+vi.mock('../core/dispatcher-identity.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../core/dispatcher-identity.js')>();
+    return {
+        ...actual,
+        refreshDispatcherEnv: vi.fn(() => ({
+            XTRM_DISPATCHER_NAME: 'test-dispatcher',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
+        })),
+    };
+});
 
 const roots: string[] = [];
 

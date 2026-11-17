@@ -17,6 +17,10 @@ vi.mock('../core/skills-scaffold.js', () => ({
   ensureAgentsSkillsSymlink: vi.fn(async () => undefined),
 }));
 
+// CORE-2727 (D7): the pane-unset assertions are written against the key list the
+// launcher itself uses, so a key added there cannot quietly skip the unset.
+import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
+
 const ROLE_SPEC = JSON.stringify({
   specialist: {
     metadata: { name: 'testrole', version: '1.0.0', category: 'testing', description: 'd' },
@@ -634,6 +638,59 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
       await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk6', window: true })).rejects.toThrow('exit:1');
       expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'git' && a?.[0] === 'worktree')).toBe(false);
+    });
+
+    it('D7 (CORE-2727): every dispatcher key the launch has no value for is unset in the pane', async () => {
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      // An unknown dispatcher: nothing resolves, so the launch exports no value for
+      // any dispatcher key except the worker's own holder. A tmux `-e` cannot
+      // clear one, so the pane command must `env -u` the rest instead of letting
+      // the tmux server's environment decide.
+      await expect(launchWorktreeSession({
+        runtime: 'pi',
+        name: 'dwk8',
+        attach: false,
+        dispatcherDeps: { readProcess: () => null, readEnviron: () => null },
+      })).rejects.toThrow('exit:0');
+
+      const args = h.newSessionArgs ?? [];
+      const command = args[args.length - 1] ?? '';
+      const exported = envPairs(args);
+      expect(command.startsWith('env ')).toBe(true);
+      for (const key of DISPATCHER_ENV_KEYS) {
+        const carried = (exported[key] ?? '').trim() !== '';
+        if (carried) expect(command).not.toContain(`-u '${key}'`);
+        else expect(command).toContain(`-u '${key}'`);
+      }
+      // The three dispatch keys of the identity, named explicitly.
+      expect(command).toContain("-u 'XTRM_DISPATCHER_NAME'");
+      expect(command).toContain("-u 'XTRM_DISPATCHER_ADDRESS'");
+      expect(command).toContain("-u 'XTRM_DISPATCHER_PARTICIPANT'");
+      // The worker's own holder is exported, so it is never unset.
+      expect(exported['SUBSTRATE_HOLDER']).toBe('dwk8');
+    });
+
+    it('D7 (CORE-2727): a launch with a value for every key needs no unset prefix', async () => {
+      armDispatcher();
+      process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+      process.env.TMUX_PANE = '%9';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'dwk9', attach: false })).rejects.toThrow('exit:0');
+
+      const args = h.newSessionArgs ?? [];
+      const command = args[args.length - 1] ?? '';
+      const exported = envPairs(args);
+      const absent = DISPATCHER_ENV_KEYS.filter((key) => (exported[key] ?? '').trim() === '');
+      // Only the keys this launch genuinely has no value for are unset; a resolved
+      // dispatcher's name/address are exported and never unset.
+      expect(exported['XTRM_DISPATCHER_NAME']).toBe('coord-1');
+      expect(command).not.toContain("-u 'XTRM_DISPATCHER_NAME'");
+      expect(command).not.toContain("-u 'XTRM_DISPATCHER_ADDRESS'");
+      for (const key of absent) expect(command).toContain(`-u '${key}'`);
     });
 
     it('no dispatcher: only the holder is exported, inherited holder never leaks', async () => {

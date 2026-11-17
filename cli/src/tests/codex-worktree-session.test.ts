@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
+
 const mocked = vi.hoisted(() => ({ spawnSync: vi.fn() }));
 
 vi.mock('node:child_process', async (importOriginal) => {
@@ -275,7 +277,12 @@ describe('Codex worktree launcher', () => {
         exitByThrow();
         try {
             const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
-            await expect(launchCodexWorktreeSession({ name: 'win', attach: false, yolo: true, window: true })).rejects.toThrow('exit:0');
+            // CORE-2727: pin the one environment-dependent input, so the pane-unset
+            // expectations below do not depend on this host's /proc entries.
+            await expect(launchCodexWorktreeSession({
+                name: 'win', attach: false, yolo: true, window: true,
+                dispatcherDeps: { readEnviron: () => null },
+            })).rejects.toThrow('exit:0');
         } finally {
             for (const [k, v] of Object.entries(saved)) {
                 if (v === undefined) delete process.env[k];
@@ -311,6 +318,20 @@ describe('Codex worktree launcher', () => {
         });
         expect(mocked.spawnSync.mock.calls.some(([c, a]) => c === 'tmux' && a?.[0] === 'new-session')).toBe(false);
         expect(stdoutSpy).toHaveBeenCalledWith('coord-sess:%21\n');
+
+        // CORE-2727 (D7): a tmux `-e` cannot clear a key, so the Codex pane command
+        // unsets every dispatcher key this launch carries no value for.
+        const paneCommand = String(windowArgs[windowArgs.length - 1] ?? '');
+        expect(paneCommand.startsWith('env ')).toBe(true);
+        for (const key of DISPATCHER_ENV_KEYS) {
+            const carried = String(env[key] ?? '').trim() !== '';
+            if (carried) expect(paneCommand).not.toContain(`-u '${key}'`);
+            else expect(paneCommand).toContain(`-u '${key}'`);
+        }
+        // The dispatcher's participant is not readable here, so it is cleared -
+        // never inherited from the tmux server's environment.
+        expect(env.XTRM_DISPATCHER_PARTICIPANT).toBeUndefined();
+        expect(paneCommand).toContain("-u 'XTRM_DISPATCHER_PARTICIPANT'");
     });
 
     it('refuses an invalid role name before creating a worktree (CORE-2528)', async () => {

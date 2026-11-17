@@ -35,6 +35,12 @@ export const SUBSTRATE_HOLDER_VAR = 'SUBSTRATE_HOLDER';
 export const XTRM_AGENT_NAME_VAR = 'XTRM_AGENT_NAME';
 export const XTRM_DISPATCHER_NAME_VAR = 'XTRM_DISPATCHER_NAME';
 export const XTRM_DISPATCHER_ADDRESS_VAR = 'XTRM_DISPATCHER_ADDRESS';
+/**
+ * The dispatcher's Substrate participant (CORE-2727, operator decision
+ * 2026-11-18): the value a worker addresses by messaging and claims by name.
+ * `XTRM_DISPATCHER_NAME` stays display-only.
+ */
+export const XTRM_DISPATCHER_PARTICIPANT_VAR = 'XTRM_DISPATCHER_PARTICIPANT';
 export const XTRM_PARENT_SESSION_ID_VAR = 'XTRM_PARENT_SESSION_ID';
 export const XTRM_PARENT_PANE_ID_VAR = 'XTRM_PARENT_PANE_ID';
 
@@ -44,6 +50,7 @@ export const DISPATCHER_ENV_KEYS = [
     XTRM_AGENT_NAME_VAR,
     XTRM_DISPATCHER_NAME_VAR,
     XTRM_DISPATCHER_ADDRESS_VAR,
+    XTRM_DISPATCHER_PARTICIPANT_VAR,
     XTRM_PARENT_SESSION_ID_VAR,
     XTRM_PARENT_PANE_ID_VAR,
     // CORE-2525: the git author identity of the launched agent, so a nested
@@ -501,9 +508,13 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
     // this process's environment (CORE-2528 review).
     out[MERGE_GUARD_VAR] = clean(env[MERGE_GUARD_VAR]) ?? 'on';
 
-    const dispatcher = resolveDispatcher(deps);
+    // CORE-2727: the participant is the dispatcher's Substrate identity, taken from
+    // the same resolution the display name comes from, so the two can never name
+    // different sessions. Unknown stays absent.
+    const dispatcher = resolveDispatcherResolution(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+    if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
 
     const pane = env.TMUX ? clean(env.TMUX_PANE) : null;
     if (pane && /^%\d+$/.test(pane)) {
@@ -622,6 +633,9 @@ export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<
             if (live?.address) {
                 out[XTRM_DISPATCHER_NAME_VAR] = live.name ?? participant;
                 out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
+                // CORE-2727: the resumed session keeps a participant too. The lookup
+                // matched this entry by that exact name, so the name IS its participant.
+                out[XTRM_DISPATCHER_PARTICIPANT_VAR] = live.name ?? participant;
                 return out;
             }
         } catch (error) {
@@ -629,10 +643,24 @@ export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<
             process.stderr.write(`xt attach: ${(error as Error).message}; falling back to ancestor resolution\n`);
         }
     }
-    const dispatcher = resolveDispatcher(deps);
+    const dispatcher = resolveDispatcherResolution(deps);
     if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
+    if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
     return out;
+}
+
+/**
+ * The dispatcher keys `env` carries no value for (CORE-2727, D7). A tmux `-e`
+ * only ever sets: a pane whose launch exports no value for a key still inherits
+ * whatever the tmux server's environment holds, so the pane command must clear
+ * these with `env -u`.
+ */
+export function absentDispatcherEnvKeys(env: Record<string, string>): string[] {
+    return DISPATCHER_ENV_KEYS.filter((key) => {
+        const value = env[key];
+        return typeof value !== 'string' || value.trim() === '';
+    });
 }
 
 /** Copy of `env` without any dispatcher key, so an inherited value can never leak through. */

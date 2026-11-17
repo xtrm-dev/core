@@ -9,7 +9,7 @@ import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
-import { SUBSTRATE_HOLDER_VAR, refreshDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { SUBSTRATE_HOLDER_VAR, refreshDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import type { WorktreeInfo } from './worktree.js';
 
 /** Last-activity timestamp, for recency ordering. */
@@ -46,12 +46,18 @@ export function buildAttachEnv(
     holder: string | null = null,
 ): NodeJS.ProcessEnv {
     const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
+    // D6 (CORE-2727): `base` is the ATTACHER's environment. Its dispatcher keys,
+    // agent name, parent pane/session and git identity describe the session the
+    // operator typed in, not the session being resumed, so they are stripped
+    // before anything is re-added: only a freshly resolved value and the resumed
+    // worker's own holder may survive. Unknown stays absent.
+    const stripped = stripDispatcherEnv(base);
     // `base` is the operator's shell, which never carries the worker's holder: set it again,
     // overriding anything inherited. CORE-2536 (XT-184).
     const holderEnv = holder ? { [SUBSTRATE_HOLDER_VAR]: holder } : {};
     return runtime === 'claude'
-        ? { ...base, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) }
-        : { ...base, ...dispatcherEnv, ...holderEnv };
+        ? { ...stripped, ...dispatcherEnv, ...holderEnv, ...claudeMcpEnv(runtime) }
+        : { ...stripped, ...dispatcherEnv, ...holderEnv };
 }
 
 /**
