@@ -456,3 +456,17 @@ def test_lead_without_bound_issue_gets_no_refs(env, monkeypatch):
 def test_manager_refs_stay_the_project_epic(env, monkeypatch):
     (env / ".substrate-issue").write_text("EP-7\n")
     assert oq.question_refs("manager", str(env)) == ["EP-1"]
+
+
+# regression: MMD-2331 hook window
+def test_decision_older_than_the_newest_40_still_answers(env):
+    """The blocker window kept the question while its answer aged out of a fixed newest-40 decision window."""
+    blk = {"id": "jrn_1", "sequence": 10, "kind": "blocker", "semantic": {"for": "operator", "qid": "q-x", "q": "Q?"}}
+    decs = [{"id": "jrn_%d" % s, "sequence": s, "kind": "decision",
+             "semantic": {"answers": "q-x"} if s == 11 else {"summary": "decision %d" % s}}
+            for s in range(11, 111)]
+
+    def fake(ref, kind, limit=40):
+        return [blk] if kind == "blocker" else decs[-limit:]
+
+    assert oq.blocker_questions(["R"], journal=fake) == []
