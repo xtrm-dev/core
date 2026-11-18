@@ -7,7 +7,7 @@
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     XTRM_DISPATCHER_ADDRESS_VAR,
@@ -135,7 +135,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run,
             bindingId: 'exb_a',
             workspace: WT_A,
-            ownRecord: true,
             identity: liveDispatcher('lead-a'),
         });
         const envB = attachDispatcherEnv('CORE-2740', {
@@ -143,7 +142,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run,
             bindingId: 'exb_b',
             workspace: WT_B,
-            ownRecord: true,
             identity: liveDispatcher('lead-b', { pid: 101 }),
         });
         expect(envA[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('lead-a');
@@ -160,7 +158,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run,
             bindingId: null,
             workspace: '/repo/.xtrm/worktrees/core-xt-pi-victim',
-            ownRecord: false,
             identity: liveDispatcher('attacker'),
         });
         expect(foreign).toEqual({});
@@ -170,7 +167,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run,
             bindingId: null,
             workspace: WT_A,
-            ownRecord: false,
             identity: liveDispatcher('lead-a'),
         });
         expect(own[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('lead-a');
@@ -182,7 +178,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run: () => ({ ok: true, stdout: twoWorkersOneIssue() }),
             bindingId: 'exb_gone',
             workspace: WT_A,
-            ownRecord: true,
             identity: liveDispatcher('lead-a'),
         });
         // Never "the newest binding on the issue" as a consolation prize.
@@ -199,7 +194,6 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run: () => ({ ok: true, stdout }),
             bindingId: 'exb_mine',
             workspace: WT_A,
-            ownRecord: true,
             identity: liveDispatcher('attacker'),
         });
         expect(env).toEqual({});
@@ -218,7 +212,20 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             run: () => ({ ok: true, stdout }),
             bindingId: null,
             workspace: WT_A,
-            ownRecord: true,
+            identity: liveDispatcher('attacker'),
+        });
+        expect(env).toEqual({});
+    });
+
+    it('a legacy record whose worktree has no binding row adopts nothing from another worktree', () => {
+        // CORE-2740 review M1b: with no binding id and no row for WT_A, the
+        // legacy fallback must not reach the newest binding of another worktree.
+        const stdout = traceStdout([{ id: 'exb_other', dispatcherParticipantId: 'attacker', workspace: WT_B, createdAt: 200 }]);
+        const env = attachDispatcherEnv('CORE-2740', {
+            env: {},
+            run: () => ({ ok: true, stdout }),
+            bindingId: null,
+            workspace: WT_A,
             identity: liveDispatcher('attacker'),
         });
         expect(env).toEqual({});
@@ -292,12 +299,98 @@ function fsWriteBindingId(worktreePath: string, value: string): void {
     writeFileSync(file, JSON.stringify({ ...meta, bindingId: value }));
 }
 
+describe('CORE-2740 review: each refusal names its cause in one line', () => {
+    const WT_A = '/repo/.xtrm/worktrees/core-xt-pi-worker-a';
+    const WT_B = '/repo/.xtrm/worktrees/core-xt-pi-worker-b';
+
+    function captureLines<T>(run: () => T): { value: T; lines: string[] } {
+        const lines: string[] = [];
+        const spy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            lines.push(String(chunk));
+            return true;
+        }) as never);
+        try {
+            return { value: run(), lines };
+        } finally {
+            spy.mockRestore();
+        }
+    }
+
+    it('an invalid participant is refused with one line and no echoed value', () => {
+        const hostile = 'g04z\u001b[2Jevil';
+        const { value, lines } = captureLines(() => refreshDispatcherEnvByParticipant(hostile, liveDispatcher('g04z')));
+        expect(value).toEqual({});
+        expect(lines).toEqual(['xt attach: the dispatcher participant recorded on the launch binding is not a Substrate label; the dispatcher stays absent\n']);
+        expect(lines.join('')).not.toContain('evil');
+    });
+
+    it('a binding id the trace no longer lists is refused with one line', () => {
+        const { value, lines } = captureLines(() => attachDispatcherEnv('CORE-2740', {
+            env: {},
+            run: () => ({ ok: true, stdout: traceStdout([{ id: 'exb_other', dispatcherParticipantId: 'attacker', workspace: WT_B, createdAt: 2 }]) }),
+            bindingId: 'exb_gone',
+            workspace: WT_A,
+            identity: liveDispatcher('attacker'),
+        }));
+        expect(value).toEqual({});
+        expect(lines).toEqual(['xt attach: the launch binding named by the session record of CORE-2740 is not in the trace; the dispatcher stays absent\n']);
+    });
+
+    it('a worktree with no binding row is refused with one line', () => {
+        const { value, lines } = captureLines(() => attachDispatcherEnv('CORE-2740', {
+            env: {},
+            run: () => ({ ok: true, stdout: traceStdout([{ id: 'exb_other', dispatcherParticipantId: 'attacker', workspace: WT_B, createdAt: 2 }]) }),
+            bindingId: null,
+            workspace: WT_A,
+            identity: liveDispatcher('attacker'),
+        }));
+        expect(value).toEqual({});
+        expect(lines).toEqual(['xt attach: no launch binding in this worktree for CORE-2740; the dispatcher stays absent\n']);
+    });
+
+    it('an own binding without a dispatcher is refused with one line', () => {
+        const { value, lines } = captureLines(() => attachDispatcherEnv('CORE-2740', {
+            env: {},
+            run: () => ({ ok: true, stdout: traceStdout([{ id: 'exb_mine', dispatcherParticipantId: null, workspace: WT_A, createdAt: 1 }]) }),
+            bindingId: 'exb_mine',
+            workspace: WT_A,
+            identity: liveDispatcher('attacker'),
+        }));
+        expect(value).toEqual({});
+        expect(lines).toEqual(['xt attach: the launch binding of CORE-2740 recorded no dispatcher; the dispatcher stays absent\n']);
+    });
+
+    it('an ambiguity line names a registry socket only when it is a usable address', () => {
+        // Two live sessions of one holder: one plausible socket, one not.
+        const { value, lines } = captureLines(() => refreshDispatcherEnvByParticipant('g04z', {
+            sessionsDir,
+            readProcess: () => ({ ppid: 1 }),
+            readEnviron: (pid: number) => (pid === 100 || pid === 101 ? { SUBSTRATE_HOLDER: 'g04z' } : null),
+            env: {},
+            ...(() => {
+                writeFileSync(path.join(sessionsDir, '100.json'), JSON.stringify({ pid: 100, name: 'lead', messagingSocketPath: '/run/cc/100.sock' }));
+                writeFileSync(path.join(sessionsDir, '101.json'), JSON.stringify({ pid: 101, name: 'lead', messagingSocketPath: 'run/cc/101.sock' }));
+                return {};
+            })(),
+        }));
+        expect(value[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('g04z');
+        expect(value).not.toHaveProperty(XTRM_DISPATCHER_ADDRESS_VAR);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('pid 100 at uds:/run/cc/100.sock');
+        expect(lines[0]).toContain('pid 101 with an unusable address');
+        // The unusable path itself is never printed.
+        expect(lines[0]).not.toContain('run/cc/101.sock');
+        expect(lines[0].endsWith('\n')).toBe(true);
+    });
+});
+
 describe('CORE-2740 F3: a hung pane probe reads as absent', () => {
     it('kills the probe at the timeout instead of hanging the attach', () => {
         const bin = tmp('xtrm-2740-bin-');
         const fake = path.join(bin, 'tmux');
-        // `exec` so the killed process is the sleeping one, never an orphaned child.
-        writeFileSync(fake, '#!/bin/sh\nexec sleep 30\n');
+        // One process that IGNORES SIGTERM: only the probe's SIGKILL ends it, so
+        // dropping killSignal from listAgentPanes makes this test hang and fail.
+        writeFileSync(fake, '#!/usr/bin/env python3\nimport signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(30)\n');
         chmodSync(fake, 0o755);
         const savedPath = process.env.PATH;
         process.env.PATH = `${bin}:${savedPath ?? ''}`;

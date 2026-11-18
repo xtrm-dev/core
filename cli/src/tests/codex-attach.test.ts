@@ -143,7 +143,6 @@ describe('xt attach Codex resume', () => {
         expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith('CORE-2728', {
             bindingId: null,
             workspace: worktree,
-            ownRecord: true,
         });
     });
 
@@ -159,7 +158,6 @@ describe('xt attach Codex resume', () => {
         }
         expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith(null, expect.objectContaining({
             bindingId: null,
-            ownRecord: false,
         }));
     });
 });

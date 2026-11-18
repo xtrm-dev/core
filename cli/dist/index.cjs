@@ -64116,17 +64116,26 @@ function findLiveDispatchersByHolder(participant, deps = {}) {
   const readEnviron = deps.readEnviron ?? readProcessEnvironment;
   return collectLiveSocketSessions(deps).filter((entry) => typeof entry.pid === "number" && clean(holderOf(readEnviron, entry.pid)) === participant);
 }
+function refuseRestore(reason) {
+  process.stderr.write(`xt attach: ${oneLine(reason)}; the dispatcher stays absent
+`);
+  return null;
+}
 function refreshDispatcherEnvByParticipant(participant, deps = {}) {
   const out = {};
   const want = clean(participant);
-  if (!want || !isDispatcherLabel(want)) return out;
+  if (!want) return out;
+  if (!isDispatcherLabel(want)) {
+    refuseRestore("the dispatcher participant recorded on the launch binding is not a Substrate label");
+    return out;
+  }
   let live = [];
   try {
     live = findLiveDispatchersByHolder(want, deps);
   } catch {
   }
   if (live.length > 1) {
-    const candidates = live.map((entry) => `pid ${String(entry.pid)} at ${entry.address}`).join(", ");
+    const candidates = live.map((entry) => isDispatcherSocketAddress(entry.address) ? `pid ${String(entry.pid)} at ${entry.address}` : `pid ${String(entry.pid)} with an unusable address`).join(", ");
     process.stderr.write(`xt attach: ambiguous live dispatcher participant "${want}": ${candidates}; the address stays absent
 `);
     out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
@@ -64161,15 +64170,15 @@ var LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 function isLowercaseUuid(value) {
   return typeof value === "string" && LOWERCASE_UUID.test(value);
 }
+var DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
+function isDispatcherLabel(value) {
+  return typeof value === "string" && value.length <= 128 && DISPATCHER_LABEL.test(value);
+}
 function isDispatcherSocketAddress(value) {
   if (typeof value !== "string" || value.length > 512) return false;
   if (!value.startsWith("uds:")) return false;
   const socket = value.slice(4);
   return socket.startsWith("/") && !/[\u0000-\u001f\u007f]/.test(socket);
-}
-var DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
-function isDispatcherLabel(value) {
-  return typeof value === "string" && value.length <= 128 && DISPATCHER_LABEL.test(value);
 }
 var PROVENANCE_TIMEOUT_MS = 5e3;
 function defaultSbRunner(args, env3 = process.env, timeoutMs = PROVENANCE_TIMEOUT_MS) {
@@ -64236,20 +64245,23 @@ function bindingRecordOf(row) {
   if (row.sessionId) record2.sessionId = row.sessionId;
   return record2;
 }
-function selectRestoreBinding(rows, select) {
+function selectRestoreBinding(rows, select, ref) {
   const wantedId = clean(select.bindingId);
   if (wantedId) {
     const own2 = rows.find((row) => row.id === wantedId);
-    return own2 ? bindingRecordOf(own2) : null;
+    if (!own2) return refuseRestore(`the launch binding named by the session record of ${ref} is not in the trace`);
+    const record2 = bindingRecordOf(own2);
+    return record2 ?? refuseRestore(`the launch binding of ${ref} recorded no dispatcher`);
   }
   const workspace = clean(select.workspace);
   if (workspace) {
     const own2 = rows.find((row) => row.workspace === workspace);
-    return own2 ? bindingRecordOf(own2) : null;
+    if (!own2) return refuseRestore(`no launch binding in this worktree for ${ref}`);
+    const record2 = bindingRecordOf(own2);
+    return record2 ?? refuseRestore(`the launch binding in this worktree for ${ref} recorded no dispatcher`);
   }
-  if (select.ownRecord === false) return null;
   const legacy = rows.find((row) => row.participant);
-  return legacy ? bindingRecordOf(legacy) : null;
+  return legacy ? bindingRecordOf(legacy) : refuseRestore(`no launch binding with a dispatcher for ${ref}`);
 }
 function bindingCreatedAt(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -64278,7 +64290,7 @@ function readDispatcherBinding(ref, deps = {}) {
 `);
     return null;
   }
-  return selectRestoreBinding(trace.rows, deps);
+  return selectRestoreBinding(trace.rows, deps, wanted);
 }
 function findLaunchBindingId(ref, deps) {
   const wanted = clean(ref);
@@ -78664,8 +78676,7 @@ function createAttachCommand() {
     const issue2 = resolveWorkerIssue(target.path);
     const restoredDispatcher = attachDispatcherEnv(issue2?.ref ?? null, {
       bindingId: issue2?.bindingId ?? null,
-      workspace: target.path,
-      ownRecord: issue2?.source === "meta"
+      workspace: target.path
     });
     const result = (0, import_node_child_process23.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
     process.exit(result.status ?? 0);

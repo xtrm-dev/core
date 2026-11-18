@@ -690,6 +690,16 @@ export function resolveDispatcherByParticipant(
  * always survives; the address (and display name) only when a live session
  * carries a messaging socket. Unknown stays absent; never throws.
  */
+/**
+ * One operator-facing line for a restore that ends in an empty record (CORE-2740
+ * review, operator visibility). Same shape as the unreadable-binding line: it
+ * names the cause, never prints registry data, and stays on one line.
+ */
+function refuseRestore(reason: string): null {
+    process.stderr.write(`xt attach: ${oneLine(reason)}; the dispatcher stays absent\n`);
+    return null;
+}
+
 export function refreshDispatcherEnvByParticipant(
     participant: string,
     deps: DispatcherIdentityDeps = {},
@@ -700,13 +710,22 @@ export function refreshDispatcherEnvByParticipant(
     // (a newline, an ESC, an over-long string) is OMITTED, never trimmed into a
     // different identity: unknown stays absent and the caller falls back.
     const want = clean(participant);
-    if (!want || !isDispatcherLabel(want)) return out;
+    if (!want) return out;
+    if (!isDispatcherLabel(want)) {
+        // CORE-2740 F1: never echo the value itself, it failed validation.
+        refuseRestore('the dispatcher participant recorded on the launch binding is not a Substrate label');
+        return out;
+    }
     let live: LiveSessionEntry[] = [];
     try {
         live = findLiveDispatchersByHolder(want, deps);
     } catch { /* lookup failure means unknown, not absent participant */ }
     if (live.length > 1) {
-        const candidates = live.map((entry) => `pid ${String(entry.pid)} at ${entry.address}`).join(', ');
+        // CORE-2740 F1: the socket paths are registry data; name one only when it
+        // is a plausible address, and keep the whole line to one line.
+        const candidates = live.map((entry) => (isDispatcherSocketAddress(entry.address)
+            ? `pid ${String(entry.pid)} at ${entry.address}`
+            : `pid ${String(entry.pid)} with an unusable address`)).join(', ');
         process.stderr.write(`xt attach: ambiguous live dispatcher participant "${want}": ${candidates}; the address stays absent\n`);
         out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
         out[XTRM_DISPATCHER_NAME_VAR] = want;
@@ -759,11 +778,19 @@ export function isLowercaseUuid(value: unknown): boolean {
     return typeof value === 'string' && LOWERCASE_UUID.test(value);
 }
 
+const DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
+
 /**
  * A Substrate identity label: what `sb provenance dispatch --dispatcher-participant`
  * accepts (shell-safe, at most 128 characters). A value that would be refused is
- * never passed, so a launch cannot fail on it.
+ * never passed, so a launch cannot fail on it — and a value read back from a
+ * binding or a registry entry is checked against it before it is exported
+ * (CORE-2740 F1).
  */
+export function isDispatcherLabel(value: unknown): boolean {
+    return typeof value === 'string' && value.length <= 128 && DISPATCHER_LABEL.test(value);
+}
+
 /**
  * A dispatcher address as the restore exports it (CORE-2740 F1): the `uds:`
  * scheme and an absolute socket path, no control bytes, at most 512 characters.
@@ -775,11 +802,6 @@ export function isDispatcherSocketAddress(value: unknown): boolean {
     if (!value.startsWith('uds:')) return false;
     const socket = value.slice(4);
     return socket.startsWith('/') && !/[\u0000-\u001f\u007f]/.test(socket);
-}
-
-const DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
-export function isDispatcherLabel(value: unknown): boolean {
-    return typeof value === 'string' && value.length <= 128 && DISPATCHER_LABEL.test(value);
 }
 
 /** One `sb` call; injectable so tests never touch a real store. */
@@ -910,8 +932,6 @@ export interface DispatcherBindingSelect {
     bindingId?: string | null;
     /** The worker's own worktree: a binding created anywhere else is not its own. */
     workspace?: string | null;
-    /** false when the Issue ref came from a live pane, never from the worker's own record. */
-    ownRecord?: boolean;
 }
 
 /**
@@ -921,11 +941,17 @@ export interface DispatcherBindingSelect {
  * a live pane may never fall through to "the newest binding on the Issue",
  * because a same-user process could have written that pane.
  */
-function selectRestoreBinding(rows: TraceBindingRow[], select: DispatcherBindingSelect): DispatcherBindingRecord | null {
+function selectRestoreBinding(
+    rows: TraceBindingRow[],
+    select: DispatcherBindingSelect,
+    ref: string,
+): DispatcherBindingRecord | null {
     const wantedId = clean(select.bindingId);
     if (wantedId) {
         const own = rows.find((row) => row.id === wantedId);
-        return own ? bindingRecordOf(own) : null;
+        if (!own) return refuseRestore(`the launch binding named by the session record of ${ref} is not in the trace`);
+        const record = bindingRecordOf(own);
+        return record ?? refuseRestore(`the launch binding of ${ref} recorded no dispatcher`);
     }
     const workspace = clean(select.workspace);
     if (workspace) {
@@ -934,16 +960,14 @@ function selectRestoreBinding(rows: TraceBindingRow[], select: DispatcherBinding
         // worktree's binding, which is how a shared Issue leaked a foreign
         // dispatcher before CORE-2740.
         const own = rows.find((row) => row.workspace === workspace);
-        return own ? bindingRecordOf(own) : null;
+        if (!own) return refuseRestore(`no launch binding in this worktree for ${ref}`);
+        const record = bindingRecordOf(own);
+        return record ?? refuseRestore(`the launch binding in this worktree for ${ref} recorded no dispatcher`);
     }
-    // No workspace to match on: only a caller that names the worker's own record
-    // may read the newest binding that has a dispatcher; a ref taken from a live
-    // pane may not.
-    if (select.ownRecord === false) return null;
-    // Legacy caller (older code path, no workspace): the newest binding that
-    // names a dispatcher is the launch's own.
+    // No workspace to match on (a caller that names the worker's own record): the
+    // newest binding that HAS a dispatcher is the launch's own.
     const legacy = rows.find((row) => row.participant);
-    return legacy ? bindingRecordOf(legacy) : null;
+    return legacy ? bindingRecordOf(legacy) : refuseRestore(`no launch binding with a dispatcher for ${ref}`);
 }
 
 /** A binding's creation instant in epoch ms; a missing or unparseable value is oldest. */
@@ -990,7 +1014,7 @@ export function readDispatcherBinding(
         process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(trace.error ?? 'sb gave no reason')}); the dispatcher stays absent\n`);
         return null;
     }
-    return selectRestoreBinding(trace.rows, deps);
+    return selectRestoreBinding(trace.rows, deps, wanted);
 }
 
 /**

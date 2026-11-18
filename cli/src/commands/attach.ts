@@ -283,7 +283,6 @@ export function createAttachCommand(): Command {
             const restoredDispatcher = attachDispatcherEnv(issue?.ref ?? null, {
                 bindingId: issue?.bindingId ?? null,
                 workspace: target.path,
-                ownRecord: issue?.source === 'meta',
             });
             const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
 
