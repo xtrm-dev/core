@@ -178,6 +178,12 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
         if (command === 'sp' && args[0] === 'render-skill-prefix' && args[1] === '--help') {
             return h.oldSp ? { status: 1, stdout: '', stderr: "unknown option '--help'" } : { status: 0, stdout: '', stderr: '' };
         }
+        if (command === 'sp' && args[0] === 'render-task') {
+            // CORE-2728: a role + --bead launch renders the task body.
+            // render-task must carry the exact trusted prefix the launch verifies.
+            const skillPrefix = `${ROLE_SP_NAMES.map((n) => `/${n}`).join('\n')}\n\n`;
+            return { status: 0, stdout: JSON.stringify({ ok: true, initial_prompt: `${skillPrefix}smoke body`, prompt_hash: 'h', components: [] }), stderr: '' };
+        }
         if (command === 'sp' && args[0] === 'render-skill-prefix') {
             return h.oldSp
                 ? { status: 1, stdout: '', stderr: 'unknown option --surface' }
@@ -261,6 +267,10 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
         }
         if (command === 'tmux' && (args[0] === 'wait-for' || args[0] === 'delete-buffer' || args[0] === 'kill-session')) {
             return { status: 0, stdout: '', stderr: '' };
+        }
+        if (command === 'sb') {
+            // CORE-2728: a bead launch records who dispatched it. Never a real store.
+            return { status: 0, stdout: '{"schema":"substrate-cli/v1","command":"provenance.dispatch","ok":true,"data":{}}', stderr: '' };
         }
         if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
         if (command === 'pi') { piSpawnCalls.push(1); return { status: 0, stdout: '', stderr: '' }; }
@@ -1157,5 +1167,103 @@ describe('launcher-level pack tables (830)', () => {
         expect(path.normalize(ns[cIdx + 1])).toBe(path.normalize(r.worktreePath)); // pane runs in the worktree
         expectSingleLinkDir(r.worktreePath, RUNTIME_NAME_LONG, path.join(r.worktreePath, '.xtrm', 'skills', 'infra', PACK_NAME));
         expect(r.calls.worktreeCreateArgs).not.toHaveLength(0);
+    });
+});
+
+// CORE-2728 (D8): a launch with --bead persists WHO dispatched it on the
+// Substrate ExecutionBinding, from the same resolution the pane env exports.
+describe('launch records the dispatcher on the Substrate binding (CORE-2728)', () => {
+    const SESSION_UUID = '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce';
+
+    function dispatcherDeps(h: LaunchHarness, over: Record<string, unknown> = {}) {
+        const sessionsDir = path.join(h.homeRoot, '.claude', 'sessions');
+        fs.ensureDirSync(sessionsDir);
+        fs.writeJsonSync(path.join(sessionsDir, '100.json'), {
+            pid: 100,
+            name: 'g04z-lead',
+            messagingSocketPath: '/run/cc/100.sock',
+            sessionId: SESSION_UUID,
+        });
+        // worker xt (pid 300) <- shell 200 <- claude dispatcher 100
+        const table: Record<number, { ppid: number }> = { 300: { ppid: 200 }, 200: { ppid: 100 }, 100: { ppid: 1 } };
+        return {
+            sessionsDir,
+            startPid: 300,
+            readProcess: (pid: number) => table[pid] ?? null,
+            readEnviron: (pid: number) => (pid === 100 ? { SUBSTRATE_HOLDER: 'g04z' } : null),
+            env: {},
+            tmux: () => ({ status: 1, stdout: '' }),
+            ...over,
+        };
+    }
+
+    it('a claude role launch with --bead writes one binding with the dispatcher flags, before tmux starts', async () => {
+        const h = harnessOpts();
+        const r = await runLaunch(h, {
+            name: 'demo',
+            runtime: 'claude',
+            role: 'sync-role',
+            bead: 'CORE-2728',
+            newSession: true,
+            attach: false,
+            skills: [],
+            dispatcherDeps: dispatcherDeps(h),
+        });
+        // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
+        expect(r.error).toMatch(/exit:0/);
+        const sbCalls = r.callLog.filter((c) => c.command === 'sb');
+        expect(sbCalls).toHaveLength(1);
+        expect(sbCalls[0].argv).toEqual([
+            'provenance', 'dispatch', 'CORE-2728',
+            '--dispatcher-participant', 'g04z',
+            '--dispatcher-session', SESSION_UUID,
+            '--workspace', h.worktreePath,
+        ]);
+        // The binding precedes the work: recorded before the pane is created.
+        const sbIndex = r.callLog.findIndex((c) => c.command === 'sb');
+        const tmuxIndex = r.callLog.findIndex((c) => c.command === 'tmux' && c.argv[0] === 'new-session');
+        expect(sbIndex).toBeGreaterThanOrEqual(0);
+        expect(tmuxIndex).toBeGreaterThan(sbIndex);
+    });
+
+    it('an unknown dispatcher passes no dispatcher flag and never invents one', async () => {
+        const h = harnessOpts();
+        const r = await runLaunch(h, {
+            name: 'demo',
+            runtime: 'claude',
+            role: 'sync-role',
+            bead: 'CORE-2728',
+            newSession: true,
+            attach: false,
+            skills: [],
+            dispatcherDeps: dispatcherDeps(h, {
+                readProcess: () => null,
+                readEnviron: () => null,
+                env: {},
+            }),
+        });
+        // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
+        expect(r.error).toMatch(/exit:0/);
+        const sbCalls = r.callLog.filter((c) => c.command === 'sb');
+        expect(sbCalls).toHaveLength(1);
+        expect(sbCalls[0].argv).toEqual(['provenance', 'dispatch', 'CORE-2728', '--workspace', h.worktreePath]);
+        expect(sbCalls[0].argv).not.toContain('--dispatcher-participant');
+        expect(sbCalls[0].argv).not.toContain('--dispatcher-session');
+    });
+
+    it('a launch without --bead writes no binding', async () => {
+        const h = harnessOpts();
+        const r = await runLaunch(h, {
+            name: 'demo',
+            runtime: 'claude',
+            role: 'sync-role',
+            newSession: true,
+            attach: false,
+            skills: [],
+            dispatcherDeps: dispatcherDeps(h),
+        });
+        // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
+        expect(r.error).toMatch(/exit:0/);
+        expect(r.callLog.filter((c) => c.command === 'sb')).toHaveLength(0);
     });
 });

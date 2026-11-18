@@ -8,14 +8,13 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
-import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
+import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled, readSessionMeta, type SessionMeta } from '../utils/worktree-session.js';
 import {
     SUBSTRATE_HOLDER_VAR,
     XTRM_AGENT_NAME_VAR,
+    attachDispatcherEnv,
     cleanAgentName,
-    refreshDispatcherEnv,
     stripDispatcherEnv,
-    type DispatcherIdentityDeps,
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import type { WorktreeInfo } from './worktree.js';
@@ -43,22 +42,22 @@ export function matchWorktree(worktrees: WorktreeInfo[], name: string): Worktree
 }
 
 /**
- * Spawn environment for a resumed session (CORE-2432 R8): freshly resolved
- * dispatcher identity on top of the base env, plus the Claude MCP env for
- * claude resumes. Separated for tests; the action passes no deps (live lookup).
+ * Spawn environment for a resumed session (CORE-2432 R8). `dispatcherEnv` is the
+ * dispatcher RESTORED from the worker's launch binding (CORE-2728) — never a
+ * value resolved from the attacher's environment or ancestor chain. Separated
+ * for tests; the action passes the binding-derived record (live lookup).
  */
 export function buildAttachEnv(
     base: NodeJS.ProcessEnv,
     runtime: string,
-    dispatcherDeps: DispatcherIdentityDeps = {},
+    dispatcherEnv: Record<string, string> = {},
     holder: string | null = null,
     worktreePath: string | null = null,
 ): NodeJS.ProcessEnv {
-    const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
     // D6 (CORE-2727): `base` is the ATTACHER's environment. Its dispatcher keys,
     // agent name, parent pane/session and git identity describe the session the
     // operator typed in, not the session being resumed, so they are stripped
-    // before anything is re-added: only a freshly resolved value and the resumed
+    // before anything is re-added: only the restored dispatcher and the resumed
     // worker's own identity may survive. Unknown stays absent.
     const stripped = stripDispatcherEnv(base);
     // Lead decision (CORE-2727): the resumed session is its own worker, so it gets
@@ -87,6 +86,47 @@ export function buildAttachEnv(
 export function holderFromWorktreePath(worktreePath: string): string | null {
     const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec(basename(worktreePath));
     return match?.[1] ?? null;
+}
+
+/** A Substrate/Beads issue reference this command may pass to `sb` (no flags, no spaces). */
+const SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** What the issue lookup may read; both seams are injectable for tests. */
+export interface WorkerIssueDeps {
+    readMeta?: (worktreePath: string) => SessionMeta | null;
+    /** The tmux pane listing (`path<TAB>worktree<TAB>bead` per line). */
+    listPanes?: () => string;
+}
+
+function defaultListPanes(): string {
+    const result = spawnSync('tmux', ['list-panes', '-a', '-F', '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_bead}'], {
+        encoding: 'utf8', stdio: 'pipe',
+    });
+    return result.status === 0 ? String(result.stdout ?? '') : '';
+}
+
+/**
+ * The Substrate Issue a resumed worktree was launched for (CORE-2728). The
+ * launcher's session metadata persists it; a live pane's `@agent_bead` is the
+ * fallback. Unknown stays absent, so a missing ref never becomes a wrong one.
+ */
+export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDeps = {}): string | null {
+    const meta = (deps.readMeta ?? readSessionMeta)(worktreePath);
+    const fromMeta = (meta?.bead ?? '').trim();
+    if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
+    let listing: string;
+    try {
+        listing = (deps.listPanes ?? defaultListPanes)();
+    } catch {
+        return null;
+    }
+    for (const line of listing.split(/\r?\n/)) {
+        const [currentPath = '', agentWorktree = '', bead = ''] = line.split('\t');
+        if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
+        const candidate = bead.trim();
+        if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
+    }
+    return null;
 }
 
 export function createAttachCommand(): Command {
@@ -187,9 +227,13 @@ export function createAttachCommand(): Command {
             }
 
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
-            // CORE-2432 R8: a resumed session gets freshly resolved dispatcher
-            // identity instead of stale inherited XTRM_DISPATCHER_* values.
-            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path), target.path) });
+            // CORE-2728 (operator decision b): the resumed session gets its ORIGINAL
+            // dispatcher back, read from the binding this worker's launch wrote. No
+            // binding (or no live session) leaves the dispatcher absent — the
+            // attacher is never adopted.
+            const issueRef = resolveWorkerIssueRef(target.path);
+            const restoredDispatcher = attachDispatcherEnv(issueRef);
+            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
 
             process.exit(result.status ?? 0);
         });

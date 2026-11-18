@@ -18,7 +18,7 @@ import {
     writeCodexWorktreeSession,
     type CodexTrustProfile,
 } from '../core/codex-session.js';
-import { buildDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { buildDispatcherEnvWithResolution, recordDispatcherBinding, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -391,7 +391,19 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // CORE-2528: role App identity when this host has the App and its installation
     // covers the repo owner; otherwise the operator identity, as before.
     const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
-    const dispatcherEnv = buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
+    const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
+    const dispatcherEnv = dispatcher.env;
+    if (opts.bead) {
+        // CORE-2728: persist who dispatched this Codex worker before it starts, from
+        // the same resolution the pane env exports. A failed or old sb is one
+        // warning, never a failed launch.
+        const recorded = recordDispatcherBinding({
+            ref: opts.bead,
+            resolution: dispatcher.resolution,
+            workspace: worktreePath,
+        });
+        if (recorded.warning) process.stderr.write(recorded.warning);
+    }
     const agentEnv = {
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',

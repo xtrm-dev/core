@@ -17,6 +17,11 @@
  * - `XTRM_PARENT_PANE_ID` / `XTRM_PARENT_SESSION_ID` — the tmux pane xt ran
  *   in and its session, when tmux can answer.
  *
+ * CORE-2728 (D8, operator decision b): the same resolution is also PERSISTED on
+ * the launch's Substrate binding (`recordDispatcherBinding`), so `xt attach` can
+ * restore the ORIGINAL dispatcher (`attachDispatcherEnv`) instead of guessing
+ * from whoever typed attach.
+ *
  * Unknown stays absent (session-identity.ts rule): no placeholders, no empty
  * strings. Every probe fails soft — an error omits the field and the launch
  * proceeds.
@@ -28,6 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { buildGitIdentityEnv, GIT_IDENTITY_ENV_KEYS } from './git-identity.js';
+import { describeSbFailure } from './sb-receipt.js';
 import type { TmuxProbe } from './session-identity.js';
 
 export const SUBSTRATE_HOLDER_VAR = 'SUBSTRATE_HOLDER';
@@ -487,7 +493,21 @@ export const MERGE_GUARD_VAR = 'XTRM_MERGE_GUARD';
  * The full dispatcher-identity env for a worker named `workerName`.
  * Observed values only; unknown keys are absent.
  */
-export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityDeps = {}): Record<string, string> {
+/** The dispatcher env a launch exports, plus the resolution it came from (CORE-2728). */
+export interface DispatcherEnvResolution {
+    env: Record<string, string>;
+    resolution: DispatcherResolution;
+}
+
+/**
+ * `buildDispatcherEnv` and its resolution in one pass (CORE-2728): the launcher
+ * records the dispatcher on the Substrate binding from the SAME resolution the
+ * env exports, so the pane and the store can never name different sessions.
+ */
+export function buildDispatcherEnvWithResolution(
+    workerName: string,
+    deps: DispatcherIdentityDeps = {},
+): DispatcherEnvResolution {
     const env = deps.env ?? process.env;
     const out: Record<string, string> = {};
     const holder = clean(workerName);
@@ -525,22 +545,31 @@ export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityD
             if (sessionId && /^\$\d+$/.test(sessionId)) out[XTRM_PARENT_SESSION_ID_VAR] = sessionId;
         } catch { /* absent */ }
     }
-    return out;
+    return { env: out, resolution: dispatcher };
+}
+
+/** The env record only, for callers that do not need the resolution. */
+export function buildDispatcherEnv(workerName: string, deps: DispatcherIdentityDeps = {}): Record<string, string> {
+    return buildDispatcherEnvWithResolution(workerName, deps).env;
+}
+
+/** One live session-registry entry that carries a messaging socket. */
+interface LiveSessionEntry {
+    pid?: number;
+    address: string;
+    name?: string;
+    sessionId?: string;
 }
 
 /**
- * Live dispatcher sessions for one participant name (CORE-2432 R8/F4): every
- * session-registry entry with that exact name carrying a messaging socket,
- * skipping dead pids. Several live candidates are an error naming them all;
- * mtime order never decides. Throws only on ambiguity.
+ * Every live registry entry with a messaging socket, with its pid liveness and
+ * pid-reuse check applied. Shared by the name-keyed and holder-keyed lookups so
+ * both apply the same guard (CORE-2728).
  */
-function findLiveDispatchers(
-    participant: string,
-    deps: DispatcherIdentityDeps = {},
-): Array<{ pid?: number; address: string }> {
+function collectLiveSocketSessions(deps: DispatcherIdentityDeps = {}): LiveSessionEntry[] {
     const sessionsDir = deps.sessionsDir ?? path.join(os.homedir(), '.claude', 'sessions');
     const readProcess = deps.readProcess ?? readProcessInfo;
-    const found: { pid: unknown; address: string }[] = [];
+    const found: LiveSessionEntry[] = [];
     // CORE-2726 fix 6: the boot time and the clock ticks answer for the whole
     // host, so read them at most once per call instead of once per registry
     // file (getconf is a spawn).
@@ -570,7 +599,6 @@ function findLiveDispatchers(
         } catch {
             continue;
         }
-        if (clean(entry.name) !== participant) continue;
         const socket = clean(entry.messagingSocketPath);
         if (!socket) continue;
         // Pid liveness with reuse protection, exactly as the ancestor walk does
@@ -590,8 +618,28 @@ function findLiveDispatchers(
             const startCheck = compareStartTime(clean(entry.procStart), info.startTime, memoDeps);
             if (startCheck.checked && !startCheck.agrees) continue;
         }
-        found.push({ pid: entry.pid, address: `uds:${socket}` });
+        const live: LiveSessionEntry = { address: `uds:${socket}` };
+        if (typeof entry.pid === 'number') live.pid = entry.pid;
+        const name = clean(entry.name);
+        if (name) live.name = name;
+        const sessionId = clean(entry.sessionId);
+        if (sessionId) live.sessionId = sessionId;
+        found.push(live);
     }
+    return found;
+}
+
+/**
+ * Live dispatcher sessions for one participant name (CORE-2432 R8/F4): every
+ * session-registry entry with that exact name carrying a messaging socket,
+ * skipping dead pids. Several live candidates are an error naming them all;
+ * mtime order never decides. Throws only on ambiguity.
+ */
+function findLiveDispatchers(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): Array<{ pid?: number; address: string }> {
+    const found = collectLiveSocketSessions(deps).filter((entry) => entry.name === participant);
     if (found.length > 1) {
         const candidates = found.map((f) => `pid ${String(f.pid)} at ${f.address}`).join(', ');
         throw new Error(`ambiguous dispatcher participant "${participant}": ${candidates}`);
@@ -599,6 +647,21 @@ function findLiveDispatchers(
     // CORE-2727: the matched PID travels with the address, because the participant
     // is that process's own SUBSTRATE_HOLDER — never the name it was looked up by.
     return found.map((f) => ({ ...(typeof f.pid === 'number' ? { pid: f.pid } : {}), address: f.address }));
+}
+
+/**
+ * Live dispatcher sessions whose PROCESS carries this SUBSTRATE_HOLDER
+ * (CORE-2728). The registry `name` is the display name and may differ from the
+ * participant, so a participant lookup compares the ancestor process's own
+ * environment instead. Never throws.
+ */
+function findLiveDispatchersByHolder(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): LiveSessionEntry[] {
+    const readEnviron = deps.readEnviron ?? readProcessEnvironment;
+    return collectLiveSocketSessions(deps).filter((entry) => typeof entry.pid === 'number'
+        && clean(holderOf(readEnviron, entry.pid)) === participant);
 }
 
 /**
@@ -619,12 +682,16 @@ export function resolveDispatcherByParticipant(
 }
 
 /**
- * Fresh dispatcher env for a resumed session (CORE-2432 R8/F2): `xt attach`
- * resolves the dispatcher by participant (XTRM_DISPATCHER_NAME) against the
- * live sessions with a pid liveness check, and refreshes the env from that
- * hit instead of inheriting stale values across a dispatcher restart. When no
- * live entry matches, the nearest-ancestor (else inherited) resolution applies.
+ * Fresh dispatcher env for a resumed session (CORE-2432 R8/F2): resolves the
+ * dispatcher by participant NAME (XTRM_DISPATCHER_NAME) against the live
+ * sessions with a pid liveness check, and refreshes the env from that hit
+ * instead of inheriting stale values across a dispatcher restart. When no live
+ * entry matches, the nearest-ancestor (else inherited) resolution applies.
  * Unknown stays absent; ambiguity falls back the same way. Never throws.
+ *
+ * CORE-2728: this is NOT the `xt attach` path any more. A name keyed on the
+ * attacher's environment is the attacher's own dispatcher, so attach restores
+ * the persisted participant with `refreshDispatcherEnvByParticipant` instead.
  */
 export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
     const out: Record<string, string> = {};
@@ -655,6 +722,256 @@ export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<
     if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
     if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
     return out;
+}
+
+/**
+ * Fresh dispatcher env for a session restored from a persisted binding
+ * (CORE-2728, operator decision b): `xt attach` knows the ORIGINAL dispatcher's
+ * Substrate participant from the launch binding, never from the attacher's
+ * environment or ancestor chain. The live sessions are matched on
+ * SUBSTRATE_HOLDER (the participant), not on the display name. The participant
+ * always survives; the address (and display name) only when a live session
+ * carries a messaging socket. Unknown stays absent; never throws.
+ */
+export function refreshDispatcherEnvByParticipant(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    const want = clean(participant);
+    if (!want) return out;
+    let live: LiveSessionEntry[] = [];
+    try {
+        live = findLiveDispatchersByHolder(want, deps);
+    } catch { /* lookup failure means unknown, not absent participant */ }
+    if (live.length > 1) {
+        const candidates = live.map((entry) => `pid ${String(entry.pid)} at ${entry.address}`).join(', ');
+        process.stderr.write(`xt attach: ambiguous live dispatcher participant "${want}": ${candidates}; the address stays absent\n`);
+        out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
+        out[XTRM_DISPATCHER_NAME_VAR] = want;
+        return out;
+    }
+    out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
+    const hit = live[0];
+    if (hit) {
+        out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
+        out[XTRM_DISPATCHER_NAME_VAR] = hit.name ?? want;
+        return out;
+    }
+    // No live session: the participant is still the answer to "who dispatched me".
+    out[XTRM_DISPATCHER_NAME_VAR] = want;
+    return out;
+}
+
+/**
+ * The dispatcher session id of a participant, when a live session of that holder
+ * carries a canonical lowercase UUID (the Claude session id, CORE-2728). Null
+ * when unknown; a tmux `$N` is never a dispatcher session id here.
+ */
+export function resolveDispatcherSessionForParticipant(
+    participant: string,
+    deps: DispatcherIdentityDeps = {},
+): string | null {
+    const want = clean(participant);
+    if (!want) return null;
+    let live: LiveSessionEntry[] = [];
+    try {
+        live = findLiveDispatchersByHolder(want, deps);
+    } catch {
+        return null;
+    }
+    for (const entry of live) {
+        if (entry.sessionId && LOWERCASE_UUID.test(entry.sessionId)) return entry.sessionId;
+    }
+    return null;
+}
+
+/** A canonical lowercase UUID; the only dispatcher session form Substrate stores. */
+const LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** True when `value` is a canonical lowercase UUID (a Claude session id). */
+export function isLowercaseUuid(value: unknown): boolean {
+    return typeof value === 'string' && LOWERCASE_UUID.test(value);
+}
+
+/**
+ * A Substrate identity label: what `sb provenance dispatch --dispatcher-participant`
+ * accepts (shell-safe, at most 128 characters). A value that would be refused is
+ * never passed, so a launch cannot fail on it.
+ */
+const DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
+export function isDispatcherLabel(value: unknown): boolean {
+    return typeof value === 'string' && value.length <= 128 && DISPATCHER_LABEL.test(value);
+}
+
+/** One `sb` call; injectable so tests never touch a real store. */
+export type SbRunner = (
+    args: string[],
+    env?: NodeJS.ProcessEnv,
+    timeoutMs?: number,
+) => { ok: boolean; error?: string; stdout?: string };
+
+/** A provenance call a launch or an attach may wait for; never the whole budget. */
+export const PROVENANCE_TIMEOUT_MS = 5_000;
+
+function defaultSbRunner(args: string[], env: NodeJS.ProcessEnv = process.env, timeoutMs = PROVENANCE_TIMEOUT_MS) {
+    const result = spawnSync('sb', args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env,
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL',
+    });
+    const stdout = result.stdout ?? '';
+    if (result.status === 0) return { ok: true, stdout };
+    const timedOut = (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+    return {
+        ok: false,
+        stdout,
+        error: describeSbFailure({
+            binary: 'sb',
+            status: result.status,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            spawnError: timedOut ? `no answer in ${timeoutMs} ms` : (result.error?.message ?? null),
+        }),
+    };
+}
+
+/** The dispatcher a launch binding recorded, and the values needed to restore it. */
+export interface DispatcherBindingRecord {
+    participant: string;
+    sessionId?: string;
+}
+
+/**
+ * The newest launch binding that names a dispatcher, from `sb provenance trace
+ * <ref> --json` (CORE-2728). Bindings without a dispatcher participant are not
+ * an answer, so the newest one that HAS one wins; none means unknown.
+ */
+export function parseDispatcherBindings(stdout: string | null | undefined): DispatcherBindingRecord[] {
+    const text = (stdout ?? '').trim();
+    if (!text.startsWith('{')) return [];
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return [];
+    }
+    const envelope = parsed as { bindings?: unknown; data?: { bindings?: unknown } | null };
+    const raw = envelope.data && typeof envelope.data === 'object' && Array.isArray(envelope.data.bindings)
+        ? envelope.data.bindings
+        : envelope.bindings;
+    if (!Array.isArray(raw)) return [];
+    const rows: Array<DispatcherBindingRecord & { createdAt: number }> = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        const binding = item as Record<string, unknown>;
+        const participant = clean(binding.dispatcherParticipantId);
+        if (!participant) continue;
+        const row: DispatcherBindingRecord & { createdAt: number } = {
+            participant,
+            createdAt: typeof binding.createdAt === 'number' ? binding.createdAt : 0,
+        };
+        const sessionId = clean(binding.dispatcherSessionId);
+        if (sessionId) row.sessionId = sessionId;
+        rows.push(row);
+    }
+    // Newest first; a bindings list without timestamps keeps its own order.
+    rows.sort((a, b) => b.createdAt - a.createdAt);
+    return rows.map(({ createdAt: _createdAt, ...row }) => row);
+}
+
+/** Read the dispatcher a launch recorded for `ref`; null when none or unreadable. */
+export function readDispatcherBinding(
+    ref: string,
+    deps: { env?: NodeJS.ProcessEnv; run?: SbRunner; timeoutMs?: number } = {},
+): DispatcherBindingRecord | null {
+    const wanted = clean(ref);
+    if (!wanted) return null;
+    const run = deps.run ?? defaultSbRunner;
+    let result: { ok: boolean; stdout?: string };
+    try {
+        result = run(['provenance', 'trace', wanted, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+    } catch {
+        return null;
+    }
+    if (!result.ok) return null;
+    return parseDispatcherBindings(result.stdout)[0] ?? null;
+}
+
+/**
+ * The dispatcher env `xt attach` restores for a worker's issue (CORE-2728): the
+ * newest binding with a dispatcher participant, refreshed against the live
+ * sessions by that participant. No binding — or no issue ref — is no dispatcher:
+ * the record is empty so the attacher's own identity CANNOT be adopted.
+ */
+export function attachDispatcherEnv(
+    ref: string | null,
+    deps: {
+        env?: NodeJS.ProcessEnv;
+        run?: SbRunner;
+        timeoutMs?: number;
+        identity?: DispatcherIdentityDeps;
+    } = {},
+): Record<string, string> {
+    const wanted = clean(ref);
+    if (!wanted) return {};
+    const binding = readDispatcherBinding(wanted, deps);
+    if (!binding) return {};
+    return refreshDispatcherEnvByParticipant(binding.participant, deps.identity ?? {});
+}
+
+/** What recording the launch dispatcher produced, for the caller's one warning. */
+export interface DispatcherBindingWrite {
+    /** The exact `sb provenance dispatch` argv, for the golden test. */
+    argv: string[];
+    written: boolean;
+    warning?: string;
+}
+
+/**
+ * Record who dispatched a launch on the ExecutionBinding (CORE-2728, XTRM-839):
+ * `sb provenance dispatch <ref> [--dispatcher-participant <p>]
+ * [--dispatcher-session <uuid>]`. Absent values pass no flag — never a
+ * placeholder, never an env default. A failed or old `sb` is one warning and
+ * never blocks the launch.
+ */
+export function recordDispatcherBinding(input: {
+    ref: string;
+    resolution: Pick<DispatcherResolution, 'participant' | 'sessionId'>;
+    workspace?: string | null;
+    env?: NodeJS.ProcessEnv;
+    run?: SbRunner;
+    timeoutMs?: number;
+}): DispatcherBindingWrite {
+    const ref = clean(input.ref);
+    if (!ref) return { argv: [], written: false, warning: 'xt: launch carries no bead, so no dispatcher was recorded\n' };
+    const argv: string[] = ['provenance', 'dispatch', ref];
+    const participant = clean(input.resolution.participant);
+    if (participant && isDispatcherLabel(participant)) argv.push('--dispatcher-participant', participant);
+    const sessionId = clean(input.resolution.sessionId);
+    if (sessionId && isLowercaseUuid(sessionId)) argv.push('--dispatcher-session', sessionId);
+    const workspace = clean(input.workspace);
+    if (workspace) argv.push('--workspace', workspace);
+    const run = input.run ?? defaultSbRunner;
+    let result: { ok: boolean; error?: string };
+    try {
+        result = run(argv, input.env ?? process.env, input.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+    } catch (error) {
+        result = { ok: false, error: (error as Error).message };
+    }
+    if (result.ok) return { argv, written: true };
+    return {
+        argv,
+        written: false,
+        warning: `xt: could not record the dispatcher on ${ref} (launch continues): ${oneLine(result.error ?? 'sb gave no reason')}\n`,
+    };
+}
+
+/** One line, so a warning never spans the launch output. */
+function oneLine(text: string): string {
+    return text.replace(/\s+/g, ' ').trim();
 }
 
 /**

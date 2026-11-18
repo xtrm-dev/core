@@ -15,14 +15,16 @@ vi.mock('../commands/worktree.js', () => ({
     getRepoRoot: mocked.getRepoRoot,
 }));
 
-// CORE-2432 R8: hermetic dispatcher refresh; the live lookup is covered in attach-dispatcher.test.ts.
+// CORE-2728: hermetic dispatcher restore; the binding read and the live lookup are
+// covered in attach-restores-dispatcher.test.ts.
 // CORE-2727: buildAttachEnv also strips the attacher's keys, so the strip helper is
 // kept real here rather than mocked away.
 vi.mock('../core/dispatcher-identity.js', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../core/dispatcher-identity.js')>();
     return {
         ...actual,
-        refreshDispatcherEnv: vi.fn(() => ({
+        attachDispatcherEnv: vi.fn(() => ({
+            XTRM_DISPATCHER_PARTICIPANT: 'test-dispatcher',
             XTRM_DISPATCHER_NAME: 'test-dispatcher',
             XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
         })),
@@ -62,7 +64,7 @@ describe('xt attach Codex resume', () => {
         }) as never);
 
         const { createAttachCommand } = await import('../commands/attach.js');
-        // CORE-2432 R8: attach refreshes dispatcher identity into the resume env.
+        // CORE-2728: attach restores the dispatcher persisted at launch into the resume env.
         await expect(createAttachCommand().parseAsync(['node', 'xt', 'demo'])).rejects.toThrow('exit:0');
 
         expect(mocked.spawnSync).toHaveBeenCalledWith(
@@ -78,6 +80,7 @@ describe('xt attach Codex resume', () => {
                 cwd: worktree,
                 stdio: 'inherit',
                 env: expect.objectContaining({
+                    XTRM_DISPATCHER_PARTICIPANT: 'test-dispatcher',
                     XTRM_DISPATCHER_NAME: 'test-dispatcher',
                     XTRM_DISPATCHER_ADDRESS: 'uds:/test.sock',
                 }),

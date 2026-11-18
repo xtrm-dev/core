@@ -11,6 +11,7 @@ import {
     DISPATCHER_ENV_KEYS,
     buildDispatcherEnv,
     refreshDispatcherEnv,
+    refreshDispatcherEnvByParticipant,
     resolveDispatcherByParticipant,
     type ProcessInfo,
 } from '../core/dispatcher-identity.js';
@@ -135,7 +136,11 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             XTRM_DISPATCHER_NAME: 'coord',
             XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
         });
-        const env = buildAttachEnv({ PATH: '/bin' }, 'pi', deps);
+        // CORE-2728 (operator decision b): attach restores the ORIGINAL dispatcher
+        // from the persisted participant and matches its live session by
+        // SUBSTRATE_HOLDER, not by the registry's display name.
+        const env = buildAttachEnv({ PATH: '/bin' }, 'pi', refreshDispatcherEnvByParticipant('coord-holder', deps));
+        expect(env.XTRM_DISPATCHER_PARTICIPANT).toBe('coord-holder');
         expect(env.XTRM_DISPATCHER_NAME).toBe('coord');
         expect(env.XTRM_DISPATCHER_ADDRESS).toBe('uds:/run/cc/100.sock');
         // Attach does not invent a holder when the caller has none to give.
@@ -145,14 +150,14 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
 
     it('CORE-2536: a resumed session gets its launch slug as SUBSTRATE_HOLDER, over an inherited one', () => {
         const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
-        const fresh = buildAttachEnv({ PATH: '/bin' }, 'claude', deps, 'identities');
+        const fresh = buildAttachEnv({ PATH: '/bin' }, 'claude', {}, 'identities');
         expect(fresh.SUBSTRATE_HOLDER).toBe('identities');
         // xt attach was typed inside another worker: the resumed worker is not that worker.
-        const inherited = buildAttachEnv({ PATH: '/bin', SUBSTRATE_HOLDER: 'dispatcher-session' }, 'pi', deps, 'wed2-coord');
+        const inherited = buildAttachEnv({ PATH: '/bin', SUBSTRATE_HOLDER: 'dispatcher-session' }, 'pi', {}, 'wed2-coord');
         expect(inherited.SUBSTRATE_HOLDER).toBe('wed2-coord');
         // CORE-2727 (D6): with no holder to give, the attacher's own holder does not
         // survive either: unknown stays absent rather than naming the wrong worker.
-        expect(buildAttachEnv({ SUBSTRATE_HOLDER: 'keep' }, 'codex', deps, null)).not.toHaveProperty('SUBSTRATE_HOLDER');
+        expect(buildAttachEnv({ SUBSTRATE_HOLDER: 'keep' }, 'codex', {}, null)).not.toHaveProperty('SUBSTRATE_HOLDER');
     });
 
     it('D6 (CORE-2727): the attacher\'s identity keys never survive a resume', () => {
@@ -174,7 +179,7 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             GIT_COMMITTER_EMAIL: 'attacher@example.com',
         };
         const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
-        const env = buildAttachEnv(attacherEnv, 'pi', deps, null);
+        const env = buildAttachEnv(attacherEnv, 'pi', {}, null);
         for (const key of DISPATCHER_ENV_KEYS) expect(env[key]).toBeUndefined();
         // Only the attacher's own shell context survives.
         expect(env.PATH).toBe('/bin');
@@ -185,7 +190,7 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
         const env = buildAttachEnv(
             { PATH: '/bin', XTRM_DISPATCHER_NAME: 'attacher', GIT_AUTHOR_NAME: 'attacher' },
-            'pi', deps, 'worker-b',
+            'pi', refreshDispatcherEnv(deps), 'worker-b',
         );
         expect(env).toMatchObject({
             PATH: '/bin',
@@ -220,7 +225,7 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             GIT_AUTHOR_EMAIL: 'attacher@example.com',
             GIT_COMMITTER_EMAIL: 'attacher@example.com',
         };
-        const env = buildAttachEnv(attacher, 'pi', deps, 'worker-b', worktreePath);
+        const env = buildAttachEnv(attacher, 'pi', {}, 'worker-b', worktreePath);
         // The resumed worker's own identity, resolved from its worktree.
         expect(env).toMatchObject({
             SUBSTRATE_HOLDER: 'worker-b',
@@ -235,7 +240,7 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         expect(env.XTRM_AGENT_NAME).not.toBe('core-xt-pi-attacher');
         expect(env.GIT_AUTHOR_NAME).not.toBe('attacher');
         // Unknown holder: no identity at all rather than the attacher's.
-        const noHolder = buildAttachEnv(attacher, 'pi', deps, null, worktreePath);
+        const noHolder = buildAttachEnv(attacher, 'pi', {}, null, worktreePath);
         expect(noHolder.GIT_AUTHOR_NAME).toBeUndefined();
         expect(noHolder.GIT_AUTHOR_EMAIL).toBeUndefined();
         expect(noHolder.XTRM_AGENT_NAME).toBeUndefined();
