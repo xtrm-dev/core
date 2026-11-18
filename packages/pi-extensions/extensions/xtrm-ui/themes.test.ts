@@ -141,6 +141,35 @@ describe("shipped XTRM themes", () => {
     }
   });
 
+  test("the prompt-box border is one flat dim line, whatever the thinking level", () => {
+    // pi paints the interactive editor's border from these tokens:
+    // InteractiveMode.updateEditorBorderColor() sets
+    // editor.borderColor = theme.getThinkingBorderColor(level), and bash mode
+    // swaps in getBashModeBorderColor(). Authoring them as a text-brightness
+    // ramp made the box a near-white line at high/xhigh/max, so they are pinned
+    // to borderAccent: flat, dim, and identical in every level and mode. It is
+    // the token the header frame already uses, so the two boxes share one edge.
+    const levels = [
+      "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium",
+      "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+    ];
+    for (const theme of THEMES) {
+      const edge = resolve(theme, "borderAccent");
+      for (const token of levels) {
+        expect(resolve(theme, token), `${theme.name}.${token} must be the edge colour`).toBe(edge);
+      }
+      // Dim, not merely equal: the box sits further from the text ladder than
+      // the secondary text tier does — darker in a dark theme, lighter in a
+      // light one, so it stays closer to the background either way.
+      expect(luminance(edge), `${theme.name} prompt box stays dimmer than muted`)
+        [theme.appearance === "light" ? "toBeGreaterThan" : "toBeLessThan"](luminance(resolve(theme, "muted")));
+      // And it reads as a box, not as nothing: the edge stays clear of the faint
+      // fills it sits on.
+      expect(luminance(edge), `${theme.name} prompt box is visible above the faintest border`)
+        [theme.appearance === "light" ? "toBeLessThan" : "toBeGreaterThan"](luminance(resolve(theme, "borderMuted")));
+    }
+  });
+
   test("the flat variants differ only in the tool-row backgrounds", () => {
     const pairs: Array<[Theme, Theme]> = [[dark, darkFlat], [light, lightFlat]];
     for (const [base, flat] of pairs) {

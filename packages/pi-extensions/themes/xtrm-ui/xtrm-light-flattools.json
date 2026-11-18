@@ -69,13 +69,13 @@
     "syntaxOperator": "#3b4351",
     "syntaxPunctuation": "#55606f",
     "thinkingOff": "textFaint",
-    "thinkingMinimal": "textMeta",
-    "thinkingLow": "textThinking",
-    "thinkingMedium": "textSecondary",
-    "thinkingHigh": "textEmphasis",
-    "thinkingXhigh": "textPrimary",
-    "thinkingMax": "textPrimary",
-    "bashMode": "textSecondary"
+    "thinkingMinimal": "textFaint",
+    "thinkingLow": "textFaint",
+    "thinkingMedium": "textFaint",
+    "thinkingHigh": "textFaint",
+    "thinkingXhigh": "textFaint",
+    "thinkingMax": "textFaint",
+    "bashMode": "textFaint"
   },
   "export": {
     "pageBg": "#f5f7fa",

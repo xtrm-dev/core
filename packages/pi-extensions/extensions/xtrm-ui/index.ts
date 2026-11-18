@@ -238,18 +238,15 @@ export function resetThemeBinding(): void {
 
 /** Record the live theme from an extension context. Safe to call often. */
 export function rememberTheme(
-	ctx: { ui?: { theme?: ThinkingThemeLike } & Partial<WorkingIndicatorUi> } | undefined,
+	ctx: { ui?: { theme?: ThinkingThemeLike } } | undefined,
 ): void {
 	try {
 		const theme = ctx?.ui?.theme;
 		if (!theme) return;
 		activeThemeSnapshot = theme;
 		setActiveThemeProvider(() => ctx?.ui?.theme);
-		// A theme switch reaches rows through the lazy binding; the spinner is a
-		// static frame list, so it needs an explicit refresh.
-		if (theme !== lastWorkingTheme && typeof ctx?.ui?.setWorkingIndicator === "function") {
-			applyWorkingIndicator(ctx.ui as WorkingIndicatorUi, theme);
-		}
+		// A theme switch reaches every row through the lazy binding; the working
+		// row carries no frames, so there is nothing to re-apply here.
 	} catch {
 		// A theme that is not initialized yet is not an error: the next context
 		// records it.
@@ -1653,40 +1650,6 @@ function applyThinkingChrome(ctx: ExtensionContext): void {
 // Working indicator + turn summary
 // ============================================================================
 
-/** The working spinner: a ten-frame walk through the dingbat block (`✶` left
- *  out — it reads as a solid blob at small sizes), at 115 ms — pi-tasks' glyph
- *  vocabulary, roughly 30% quicker than its 150 ms cadence so a full turn reads
- *  as motion rather than a slideshow.
- *
- *  Every frame is one visible cell, has no variation selector, and carries no
- *  escape of its own: colour is added per frame from the theme's own grayscale
- *  ladder (see `workingFrames`), never baked in. `renderIndicatorVerbatim` in
- *  pi's Loader means a custom frame skips pi's `spinnerColorFn`, so the tint is
- *  ours to supply — and ours to drop when the terminal asked for no colour.
- *
- *  The tone pulses: dim at the ends of the walk, `toolTitle` through the middle
- *  (the same tier pi paints its own spinner with), `muted` in between. The star
- *  brightens as it turns instead of carrying a hue. No frame is blank, so the
- *  spinner cell can never collapse and shift the elapsed text. */
-export const WORKING_FRAMES = ["\u2733", "\u2734", "\u2735", "\u2737", "\u2738", "\u2739", "\u273a", "\u273b", "\u273c", "\u273d"];
-export const WORKING_FRAME_MS = 115;
-/** One grayscale tier per frame: a symmetric pulse across the walk. */
-export const WORKING_FRAME_TOKENS = [
-  "dim", "muted", "muted", "toolTitle", "toolTitle", "toolTitle", "toolTitle", "muted", "muted", "dim",
-];
-
-/** A terminal that asked for no colour gets the plain glyphs: the theme's `fg`
- *  always emits escapes, so the guard has to live here. */
-function workingColourEnabled(): boolean {
-  return !process.env.NO_COLOR && process.env.TERM !== "dumb";
-}
-
-/** Frames to hand to `setWorkingIndicator`: plain, or tinted through the theme's
- *  grayscale ladder when a theme is available and colour is wanted. */
-export function workingFrames(theme?: ThinkingThemeLike): string[] {
-  if (!theme || typeof theme.fg !== "function" || !workingColourEnabled()) return [...WORKING_FRAMES];
-  return WORKING_FRAMES.map((frame, index) => theme.fg(WORKING_FRAME_TOKENS[index] ?? "toolTitle", frame));
-}
 const WORKING_TICK_MS = 1000;
 
 /** Custom entry type for the persisted per-turn summary. Custom entries never
@@ -1804,17 +1767,19 @@ export function prefixAssistantDot(markdown: string): string | undefined {
 	return lines.join("\n");
 }
 
-type WorkingIndicatorUi = { setWorkingIndicator: (options: { frames: string[]; intervalMs: number }) => void };
+type WorkingIndicatorUi = { setWorkingIndicator: (options?: { frames?: string[]; intervalMs?: number }) => void };
 
-let lastWorkingTheme: unknown;
-
-/** Applies the star frames through pi's documented WorkingIndicatorOptions.
- *  Idempotent: re-applied only when the theme object changed, so `/theme`
- *  reaches a spinner that is already on screen without restarting it on every
- *  prompt. */
-export function applyWorkingIndicator(ui: WorkingIndicatorUi, theme?: ThinkingThemeLike): void {
-	lastWorkingTheme = theme;
-	ui.setWorkingIndicator({ frames: workingFrames(theme), intervalMs: WORKING_FRAME_MS });
+/** Leaves the working row without a spinner. pi's Loader draws `frame + " "`
+ *  before the message and prepends nothing when the frame renders empty, so an
+ *  empty frame list drops the glyph and its separator cell in one step; it also
+ *  skips its animation loop for a list that short, so nothing ticks on our
+ *  behalf.
+ *
+ *  Applied once per session, with no theme argument: nothing is painted, so no
+ *  colour, no frame width, and no refresh on `/theme`. The row's remaining
+ *  indent is the message's own (see `startTurnClock`). */
+export function applyWorkingIndicator(ui: WorkingIndicatorUi): void {
+	ui.setWorkingIndicator({ frames: [] });
 }
 
 type TurnClock = {
@@ -1832,8 +1797,13 @@ function stopTurnClock(): void {
 	turnClock.ui = undefined;
 }
 
-/** Starts the elapsed ticker on agent_start; the message updates live while
- *  pi animates the (custom) frames. now/schedule are injectable for tests. */
+/** Starts the elapsed ticker on agent_start; the message updates live and is
+ *  the whole of the working row. now/schedule are injectable for tests.
+ *
+ *  The message opens with one space. pi pads the row by one column (`Text`,
+ *  `paddingX=1`) and the spinner used to spend the two cells that carried the
+ *  text out to `TEXT_COLUMN`; the space keeps the row on the grid that prose,
+ *  tool rows and the settled line share. */
 export function startTurnClock(
 	ui: { setWorkingMessage: (message?: string) => void },
 	tokensAtStart: number,
@@ -1845,10 +1815,10 @@ export function startTurnClock(
 	turnClock.endedAt = undefined;
 	turnClock.tokensAtStart = tokensAtStart;
 	turnClock.ui = ui;
-	ui.setWorkingMessage("elapsed 0s");
+	ui.setWorkingMessage(" elapsed 0s");
 	turnClock.timer = schedule(() => {
 		const elapsed = Math.max(0, Math.round((Date.now() - turnClock.startedAt) / 1000));
-		turnClock.ui?.setWorkingMessage(`elapsed ${elapsed}s`);
+		turnClock.ui?.setWorkingMessage(` elapsed ${elapsed}s`);
 	}, WORKING_TICK_MS);
 }
 
@@ -3339,7 +3309,7 @@ export default function xtrmUiExtension(pi: ExtensionAPI): void {
     // trace (xtrm-6ggil).
     thinkingToggleLatch.followsToggle = false;
     setPrefs(loadPrefs(ctx.sessionManager.getEntries() as Array<MaybeCustomEntry>));
-    applyWorkingIndicator(ctx.ui, (ctx.ui as unknown as { theme?: ThinkingThemeLike }).theme);
+    applyWorkingIndicator(ctx.ui);
     // Await the prototype patch BEFORE the first message can render: a
     // factory-time install failure (theme not initialized yet) must be
     // retried here, after Pi's theme controller has run initTheme(), or the
