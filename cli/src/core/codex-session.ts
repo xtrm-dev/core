@@ -23,6 +23,13 @@ export interface CodexWorktreeSession {
     safetyProfile: 'codex-yolo' | 'codex-workspace-write';
     profileName: string;
     profilePath: string;
+    /**
+     * CORE-2728: the Substrate Issue this session was launched for (`--bead`).
+     * Recorded so `xt attach` can find the launch binding — and the original
+     * dispatcher — after the pane (and its @agent_bead) is gone. Absent when the
+     * launch carried no bead; a record without it stays valid.
+     */
+    bead?: string;
 }
 
 export interface CodexTrustProfile {
@@ -166,7 +173,14 @@ export function readCodexWorktreeSession(worktreePath: string): CodexWorktreeSes
             || path.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
             return null;
         }
-        return parsed as unknown as CodexWorktreeSession;
+        const session = parsed as unknown as CodexWorktreeSession;
+        // An absent bead is a valid record; a non-string or empty value is dropped
+        // rather than carried, so a damaged file never names an Issue. The ref shape
+        // is validated by the attach-side reader before it reaches `sb`.
+        const bead = typeof parsed.bead === 'string' ? parsed.bead.trim() : '';
+        if (bead) session.bead = bead;
+        else delete session.bead;
+        return session;
     } catch {
         return null;
     }

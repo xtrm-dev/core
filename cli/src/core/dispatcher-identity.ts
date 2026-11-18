@@ -863,23 +863,42 @@ export function parseDispatcherBindings(stdout: string | null | undefined): Disp
         ? envelope.data.bindings
         : envelope.bindings;
     if (!Array.isArray(raw)) return [];
-    const rows: Array<DispatcherBindingRecord & { createdAt: number }> = [];
+    const rows: Array<DispatcherBindingRecord & { createdAt: number; id: string }> = [];
     for (const item of raw) {
         if (!item || typeof item !== 'object') continue;
         const binding = item as Record<string, unknown>;
         const participant = clean(binding.dispatcherParticipantId);
         if (!participant) continue;
-        const row: DispatcherBindingRecord & { createdAt: number } = {
+        const row: DispatcherBindingRecord & { createdAt: number; id: string } = {
             participant,
-            createdAt: typeof binding.createdAt === 'number' ? binding.createdAt : 0,
+            createdAt: bindingCreatedAt(binding.createdAt),
+            id: clean(binding.id) ?? '',
         };
         const sessionId = clean(binding.dispatcherSessionId);
         if (sessionId) row.sessionId = sessionId;
         rows.push(row);
     }
-    // Newest first; a bindings list without timestamps keeps its own order.
-    rows.sort((a, b) => b.createdAt - a.createdAt);
-    return rows.map(({ createdAt: _createdAt, ...row }) => row);
+    // Newest first. sb 0.4.0 emits an integer epoch in milliseconds; an ISO string
+    // is accepted too, because the schema never promised a wire type. A missing
+    // timestamp is the OLDEST, never "now", and ties break on the binding id —
+    // a uuidv7, so lexical order is creation order — which keeps the pick
+    // deterministic instead of leaving it to the store's row order.
+    rows.sort((a, b) => {
+        if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+        if (a.id === b.id) return 0;
+        return a.id < b.id ? 1 : -1;
+    });
+    return rows.map(({ createdAt: _createdAt, id: _id, ...row }) => row);
+}
+
+/** A binding's creation instant in epoch ms; a missing or unparseable value is oldest. */
+function bindingCreatedAt(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Date.parse(value.trim());
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number.NEGATIVE_INFINITY;
 }
 
 /** Read the dispatcher a launch recorded for `ref`; null when none or unreadable. */

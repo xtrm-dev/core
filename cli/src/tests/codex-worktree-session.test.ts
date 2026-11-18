@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
+import { DISPATCHER_ENV_KEYS, attachDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveWorkerIssueRef } from '../commands/attach.js';
 
 const mocked = vi.hoisted(() => ({ spawnSync: vi.fn() }));
 
@@ -704,6 +705,35 @@ describe('Codex worktree launcher', () => {
                 '--workspace', worktreePath,
             ]);
             expect(stdoutSpy).toHaveBeenCalled();
+            // CORE-2728 S1: the bead rides the Codex session record, so `xt attach`
+            // can resolve the issue (and the binding) with no pane left at all.
+            expect(fs.readJsonSync(path.join(worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
+                runtime: 'codex',
+                threadId: '019fc3bc-fb7a-7ae0-9536-125624bf726b',
+                bead: 'CORE-2728',
+            });
+            // End to end: a real Codex --bead launch, NO pane, then attach resolves
+            // the ref from the record and restores the original participant.
+            const ref = resolveWorkerIssueRef(worktreePath, { listPanes: () => '' });
+            expect(ref).toBe('CORE-2728');
+            const restored = attachDispatcherEnv(ref, {
+                env: {},
+                run: () => ({
+                    ok: true,
+                    stdout: JSON.stringify({
+                        schema: 'substrate-cli/v1', command: 'provenance.trace', ok: true,
+                        data: { bindings: [{ id: 'exb_1', dispatcherParticipantId: 'g04z', createdAt: 1 }] },
+                    }),
+                }),
+                identity: {
+                    sessionsDir,
+                    readProcess: () => ({ ppid: 1 }),
+                    readEnviron: (pid: number) => (pid === 100 ? { SUBSTRATE_HOLDER: 'g04z' } : null),
+                    env: {},
+                },
+            });
+            expect(restored.XTRM_DISPATCHER_PARTICIPANT).toBe('g04z');
+            expect(restored.XTRM_DISPATCHER_ADDRESS).toBe('uds:/run/cc/100.sock');
         } finally {
             process.env.HOME = savedHome;
         }

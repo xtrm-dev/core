@@ -498,6 +498,9 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         safetyProfile: runtimePlan.safetyProfile.name,
         profileName: trustProfile.name,
         profilePath: trustProfile.path,
+        // CORE-2728: the Issue travels with the session record, so attach can
+        // restore the original dispatcher without a live pane.
+        ...(opts.bead ? { bead: opts.bead } : {}),
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
 
     if (window) {

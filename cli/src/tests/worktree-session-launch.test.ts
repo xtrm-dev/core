@@ -92,6 +92,11 @@ interface LaunchHarness {
     seedWorktreeCopy: boolean;
     /** Shape the repo pack fixture: 'valid' (default), 'missing' (no SKILL.md), 'unsafe-name'. */
     malformedPack?: 'missing' | 'unsafe-name';
+    /**
+     * CORE-2728: what the launch-time `sb provenance dispatch` answers. Default is
+     * a success; a variant models a failed, missing or hung sb.
+     */
+    sbResult?: { status?: number | null; stdout?: string; stderr?: string; error?: { code: string; message?: string } };
     error: string;
 }
 
@@ -270,7 +275,7 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
         }
         if (command === 'sb') {
             // CORE-2728: a bead launch records who dispatched it. Never a real store.
-            return { status: 0, stdout: '{"schema":"substrate-cli/v1","command":"provenance.dispatch","ok":true,"data":{}}', stderr: '' };
+            return h.sbResult ?? { status: 0, stdout: '{"schema":"substrate-cli/v1","command":"provenance.dispatch","ok":true,"data":{}}', stderr: '' };
         }
         if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
         if (command === 'pi') { piSpawnCalls.push(1); return { status: 0, stdout: '', stderr: '' }; }
@@ -1224,6 +1229,45 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         const tmuxIndex = r.callLog.findIndex((c) => c.command === 'tmux' && c.argv[0] === 'new-session');
         expect(sbIndex).toBeGreaterThanOrEqual(0);
         expect(tmuxIndex).toBeGreaterThan(sbIndex);
+        // CORE-2728 F3: the bead is persisted with the session record, so attach can
+        // find this launch's binding after the pane is gone.
+        expect(fs.readJsonSync(path.join(h.worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
+            runtime: 'claude',
+            bead: 'CORE-2728',
+        });
+    });
+
+    it.each([
+        ['a failed sb', { status: 1, stdout: '', stderr: 'boom' }, 'sb (sb) exited 1: boom'],
+        ['a missing sb', { status: null, stdout: '', stderr: '', error: { code: 'ENOENT', message: 'spawn sb ENOENT' } }, 'sb: spawn sb ENOENT'],
+        ['a hung sb', { status: null, stdout: '', stderr: '', error: { code: 'ETIMEDOUT' } }, 'sb: no answer in 5000 ms'],
+    ])('CORE-2728 F4: %s is one warning and the launch still succeeds', async (_label, sbResult, reason) => {
+        const h = harnessOpts({ sbResult: sbResult as never });
+        const lines: string[] = [];
+        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            lines.push(String(chunk));
+            return true;
+        }) as never);
+        let r: LaunchResult;
+        try {
+            r = await runLaunch(h, {
+                name: 'demo',
+                runtime: 'claude',
+                role: 'sync-role',
+                bead: 'CORE-2728',
+                newSession: true,
+                attach: false,
+                skills: [],
+                dispatcherDeps: dispatcherDeps(h),
+            });
+        } finally {
+            stderrSpy.mockRestore();
+        }
+        expect(r.error).toMatch(/exit:0/);
+        expect(r.callLog.filter((c) => c.command === 'sb')).toHaveLength(1);
+        // EXACTLY one line about the dispatcher, no stack and no second report.
+        const dispatcherLines = lines.filter((line) => line.includes('could not record the dispatcher'));
+        expect(dispatcherLines).toEqual([`xt: could not record the dispatcher on CORE-2728 (launch continues): ${reason}\n`]);
     });
 
     it('an unknown dispatcher passes no dispatcher flag and never invents one', async () => {
@@ -1265,5 +1309,9 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
         expect(r.error).toMatch(/exit:0/);
         expect(r.callLog.filter((c) => c.command === 'sb')).toHaveLength(0);
+        // CORE-2728 F3: no bead means no bead key — never an empty placeholder.
+        const meta = fs.readJsonSync(path.join(h.worktreePath, '.xtrm', 'session-meta.json')) as Record<string, unknown>;
+        expect(meta.runtime).toBe('claude');
+        expect(meta).not.toHaveProperty('bead');
     });
 });

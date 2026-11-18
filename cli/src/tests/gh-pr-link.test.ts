@@ -911,14 +911,17 @@ describe('resolveWorkerSessionId', () => {
 describe('linkCreatedPr dispatch carries the dispatcher identity (CORE-2728)', () => {
     const SESSION_UUID = '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce';
 
-    function registry(holder: string): { dir: string; deps: import('../core/dispatcher-identity.js').DispatcherIdentityDeps } {
+    function registry(
+        holder: string,
+        sessionId: string | null = SESSION_UUID,
+    ): { dir: string; deps: import('../core/dispatcher-identity.js').DispatcherIdentityDeps } {
         const dir = mkdtempSync(join(tmpdir(), 'xtrm-gh-pr-link-dispatcher-'));
         mkdirSync(join(dir, 'sessions'), { recursive: true });
         writeFileSync(join(dir, 'sessions', '100.json'), JSON.stringify({
             pid: 100,
             name: 'g04z-lead',
             messagingSocketPath: '/run/cc/100.sock',
-            sessionId: SESSION_UUID,
+            ...(sessionId === null ? {} : { sessionId }),
         }));
         return {
             dir,
@@ -960,6 +963,41 @@ describe('linkCreatedPr dispatch carries the dispatcher identity (CORE-2728)', (
             const dispatch = calls.find((c) => c.kind === 'dispatch');
             expect(dispatch?.argv).not.toContain('--dispatcher-participant');
             expect(dispatch?.argv).not.toContain('--dispatcher-session');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('CORE-2728 F5: a tmux `$N` registry session id passes no --dispatcher-session', () => {
+        const { dir, deps } = registry('g04z', '$42');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                env: { XTRM_DISPATCHER_PARTICIPANT: 'g04z' },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('CORE-2728 F6: a participant sb would refuse passes neither dispatcher flag', () => {
+        const { dir, deps } = registry('g04z');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                // 129 characters: over the Substrate label bound -> no flag at all.
+                env: { XTRM_DISPATCHER_PARTICIPANT: `not a label-${'x'.repeat(117)}` },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).not.toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+            // The session is only ever looked up FOR a passed participant.
+            expect(dispatch?.argv).toContain('CORE-2607');
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

@@ -64209,14 +64209,27 @@ function parseDispatcherBindings(stdout) {
     if (!participant) continue;
     const row = {
       participant,
-      createdAt: typeof binding.createdAt === "number" ? binding.createdAt : 0
+      createdAt: bindingCreatedAt(binding.createdAt),
+      id: clean(binding.id) ?? ""
     };
     const sessionId = clean(binding.dispatcherSessionId);
     if (sessionId) row.sessionId = sessionId;
     rows.push(row);
   }
-  rows.sort((a, b) => b.createdAt - a.createdAt);
-  return rows.map(({ createdAt: _createdAt, ...row }) => row);
+  rows.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? 1 : -1;
+  });
+  return rows.map(({ createdAt: _createdAt, id: _id, ...row }) => row);
+}
+function bindingCreatedAt(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Number.NEGATIVE_INFINITY;
 }
 function readDispatcherBinding(ref, deps = {}) {
   const wanted = clean(ref);
@@ -71260,7 +71273,11 @@ function readCodexWorktreeSession(worktreePath) {
     if (parsed.runtime !== "codex" || typeof parsed.launchedAt !== "string" || !Number.isFinite(Date.parse(parsed.launchedAt)) || typeof parsed.threadId !== "string" || !UUID2.test(parsed.threadId) || parsed.safetyProfile !== "codex-yolo" && parsed.safetyProfile !== "codex-workspace-write" || typeof parsed.profileName !== "string" || !PROFILE_NAME.test(parsed.profileName) || typeof parsed.profilePath !== "string" || !import_node_path28.default.isAbsolute(parsed.profilePath) || import_node_path28.default.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
       return null;
     }
-    return parsed;
+    const session = parsed;
+    const bead = typeof parsed.bead === "string" ? parsed.bead.trim() : "";
+    if (bead) session.bead = bead;
+    else delete session.bead;
+    return session;
   } catch {
     return null;
   }
@@ -71635,7 +71652,10 @@ async function launchCodexWorktreeSession(opts) {
     threadId: session.threadId,
     safetyProfile: runtimePlan.safetyProfile.name,
     profileName: trustProfile.name,
-    profilePath: trustProfile.path
+    profilePath: trustProfile.path,
+    // CORE-2728: the Issue travels with the session record, so attach can
+    // restore the original dispatcher without a live pane.
+    ...opts.bead ? { bead: opts.bead } : {}
   })) cleanupAndFail("Could not persist Codex worktree session metadata");
   if (window) {
     removeSignalCleanup();
