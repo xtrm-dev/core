@@ -38,6 +38,7 @@ import {
     REMOTE_ATTACH_TIMEOUT_MS,
     SB_REMOTE_CONFIG_ENV_VAR,
     SB_REMOTE_CONFIG_RELATIVE_PATH,
+    SB_REMOTE_MODE_SOURCE,
 } from './gh-pr-link.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -218,17 +219,18 @@ const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS};
 const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)};
 const SB_REMOTE_CONFIG_RELATIVE = ${JSON.stringify(SB_REMOTE_CONFIG_RELATIVE_PATH)};
 
-/** Whether sb forwards every call over ssh, read from sb's own config only. */
-function sbRemoteMode() {
-  if ((process.env.SUBSTRATE_DB || '').trim()) return false;
+// CORE-2745 review (MEDIUM): this is the SAME function the module uses, embedded
+// as source text, so the shim's mode check cannot drift from sb's own precedence.
+const sbRemoteModeFrom = ${SB_REMOTE_MODE_SOURCE};
+
+/** sb's config file content, or null when it cannot be read. */
+function sbConfigText() {
   try {
     const file = (process.env[SB_REMOTE_CONFIG_ENV_VAR] || '').trim()
       || path.join(os.homedir(), SB_REMOTE_CONFIG_RELATIVE);
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
-    return typeof remote === 'string' ? remote.trim() !== '' : Boolean(remote && typeof remote === 'object');
+    return fs.readFileSync(file, 'utf8');
   } catch (error) {
-    return false;
+    return null;
   }
 }
 
@@ -241,7 +243,7 @@ function linkTimeoutMs() {
   const raw = Number((process.env[LINK_TIMEOUT_ENV_VAR] || '').trim());
   const budget = Number.isFinite(raw) && raw > 0
     ? Math.min(Math.max(Math.round(raw), LINK_TIMEOUT_MIN_MS), LINK_TIMEOUT_MAX_MS)
-    : (sbRemoteMode() ? REMOTE_LINK_BUDGET_MS : LINK_BUDGET_MS);
+    : (sbRemoteModeFrom(process.env, sbConfigText()) ? REMOTE_LINK_BUDGET_MS : LINK_BUDGET_MS);
   return budget + LINK_TAIL_MS;
 }
 

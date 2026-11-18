@@ -102,41 +102,74 @@ export function sbRemoteConfigPath(env: NodeJS.ProcessEnv, homeDir = homedir()):
 }
 
 /**
- * Whether a parsed sb config says every call is forwarded over ssh. Tolerant by
- * design: an unknown shape reads as no remote setting, so a link on a host with a
- * newer sb keeps the fast local budget rather than waiting for a mode it cannot see.
- * An empty object is no setting either (CORE-2745 review F4): only a non-empty
- * remote setting forwards calls.
+ * CORE-2745: sb's own choice between a local store and the remote server, in the
+ * order sb applies it. This one function is the single source of truth: the
+ * generated `gh` shim embeds its source text verbatim
+ * ({@link SB_REMOTE_MODE_SOURCE}), so the two copies cannot drift.
+ *
+ * Mirrored from the substrate CLI (read 2026-11-18):
+ *   - service/client.ts `localOrRemote`: `const explicit = env.SUBSTRATE_DB ??
+ *     env.SUBSTRATE_LOCAL_DB; if (explicit !== undefined && explicit !== "")` is a
+ *     LOCAL store. Note the `??`: a DEFINED-but-empty SUBSTRATE_DB masks
+ *     SUBSTRATE_LOCAL_DB and is not itself a local store, so the file decides.
+ *   - remote/config.ts `readRemoteConfig`: `SUBSTRATE_REMOTE` (trimmed, non-empty)
+ *     replaces the file's `remote`, and it works with no config file at all, so
+ *     the env wins over the file.
+ *   - remote/spec.ts `parseRemoteSpec`: only `ssh:<host>` (host not starting with
+ *     `-`) is a usable remote. Any other value makes sb refuse the invocation, so
+ *     it is one failing call, not a wait: it takes the local budget.
+ *
+ * `configText` is the config file's content, or null when it could not be read.
+ * Self-contained on purpose: no imports, no helpers, no closures over module
+ * state, because the shim evaluates this exact text.
+ */
+export function sbRemoteModeFrom(env: Record<string, string | undefined>, configText: string | null): boolean {
+    const explicit = env.SUBSTRATE_DB ?? env.SUBSTRATE_LOCAL_DB;
+    if (explicit !== undefined && explicit !== '') return false;
+    const fromEnv = (env.SUBSTRATE_REMOTE ?? '').trim();
+    let remoteValue: unknown = fromEnv !== '' ? fromEnv : null;
+    if (remoteValue === null && configText !== null) {
+        try {
+            const parsed: unknown = JSON.parse(configText);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                const fileRemote = (parsed as { remote?: unknown }).remote;
+                if (fileRemote !== undefined) remoteValue = fileRemote;
+            }
+        } catch {
+            return false;
+        }
+    }
+    if (typeof remoteValue !== 'string') return false;
+    return /^ssh:(?!-)[^\s:]+$/.test(remoteValue.trim());
+}
+
+/** The text the generated shim embeds, so it runs this function and not a copy. */
+export const SB_REMOTE_MODE_SOURCE = `(${sbRemoteModeFrom.toString()})`;
+
+/**
+ * Whether sb's own config says every call is forwarded over ssh. Tolerant by
+ * design: an unreadable or unparsable file reads as local, because sb refuses such
+ * an invocation before it opens anything.
  */
 export function parseSbRemoteMode(text: string | null | undefined): boolean {
-    try {
-        const parsed = JSON.parse((text ?? '').trim()) as { remote?: unknown } | null;
-        const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
-        if (typeof remote === 'string') return remote.trim() !== '';
-        if (remote && typeof remote === 'object') return Object.keys(remote).length > 0;
-        return false;
-    } catch {
-        return false;
-    }
+    return sbRemoteModeFrom({}, text ?? null);
 }
 
 /**
- * Whether this session's `sb` runs in remote (ssh) mode, read from sb's own config
- * and never from a probe call: a probe would cost exactly the latency the budget
- * is there to pay for. `--db`/`SUBSTRATE_DB` name a local store, and sb never
- * forwards those invocations, so an explicit local store means local mode.
+ * Whether this session's `sb` runs in remote (ssh) mode, read from sb's own env and
+ * config and never from a probe call: a probe would cost exactly the latency the
+ * budget is there to pay for.
  */
 export function sbRemoteMode(deps: SbModeDeps = {}): boolean {
     const env = deps.env ?? process.env;
-    if ((env.SUBSTRATE_DB ?? '').trim()) return false;
     const read = deps.readFile ?? ((file: string) => readFileSync(file, 'utf8'));
-    let text: string;
+    let text: string | null = null;
     try {
         text = read(sbRemoteConfigPath(env, deps.homeDir));
     } catch {
-        return false;
+        text = null;
     }
-    return parseSbRemoteMode(text);
+    return sbRemoteModeFrom(env, text);
 }
 
 /**
@@ -679,6 +712,13 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // only when it can change the argv: no shell holder means no --participant
         // either way (a), and a failed attach that already answered with the claim
         // is reused instead (b).
+        //
+        // Measured against the shipped sb (0.4.0, 2026-11-18): its `no_receipt`
+        // refusal carries no claim, so (b) does not fire there today. The saving
+        // that actually lands on a normal host is (a), the empty-holder skip, and
+        // (b) is kept as an opportunistic one for an sb that answers with the
+        // claim. Neither is load-bearing for the budget: the remote budget is
+        // sized for all seven calls, so a link that pays every one still fits.
         let claimHolder: string | null = null;
         let claimActivation: string | null = null;
         let claimReadFailed = false;

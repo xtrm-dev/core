@@ -130,6 +130,45 @@ describe('the link budget the shim embeds (CORE-2745)', () => {
         expect(generatedLinkTimeoutMs({}, REMOTE_CONFIG)).toBe(19000);
     });
 
+    // CORE-2745 pr-reviewer round (MEDIUM): the generated check runs the module's
+    // own sbRemoteModeFrom source, so sb's precedence rows must land identically in
+    // both, including the shapes sb refuses (`{}`, `[]`, `""`, a non-string).
+    it('resolves sb\'s mode exactly as the module does, row by row', () => {
+        const rows: { name: string; env: NodeJS.ProcessEnv; config?: string }[] = [
+            { name: 'no setting', env: {} },
+            { name: 'remote ssh spec', env: {}, config: REMOTE_CONFIG },
+            { name: 'remote empty object', env: {}, config: JSON.stringify({ remote: {} }) },
+            { name: 'remote empty array', env: {}, config: JSON.stringify({ remote: [] }) },
+            { name: 'remote empty string', env: {}, config: JSON.stringify({ remote: '' }) },
+            { name: 'remote number', env: {}, config: JSON.stringify({ remote: 5 }) },
+            { name: 'remote object', env: {}, config: JSON.stringify({ remote: { host: 'h' } }) },
+            { name: 'remote not a spec', env: {}, config: JSON.stringify({ remote: 'dawid@host' }) },
+            { name: 'env alone', env: { SUBSTRATE_REMOTE: 'ssh:host' } },
+            { name: 'env over an unusable file', env: { SUBSTRATE_REMOTE: 'ssh:host' }, config: JSON.stringify({ remote: {} }) },
+            { name: 'SUBSTRATE_LOCAL_DB beats a remote file', env: { SUBSTRATE_LOCAL_DB: '/tmp/state.db' }, config: REMOTE_CONFIG },
+            { name: 'SUBSTRATE_DB beats the env', env: { SUBSTRATE_DB: '/tmp/state.db', SUBSTRATE_REMOTE: 'ssh:host' } },
+            {
+                // sb's `??` quirk: a DEFINED-but-empty SUBSTRATE_DB masks the local
+                // path AND is not itself a local store, so the file still decides.
+                name: 'empty SUBSTRATE_DB masks SUBSTRATE_LOCAL_DB',
+                env: { SUBSTRATE_DB: '', SUBSTRATE_LOCAL_DB: '/tmp/state.db' },
+                config: REMOTE_CONFIG,
+            },
+        ];
+        for (const row of rows) {
+            const readFile = row.config === undefined ? localRead : () => row.config as string;
+            expect(generatedLinkTimeoutMs(row.env, row.config), row.name)
+                .toBe(resolveLinkBudgetMs({ env: row.env, readFile }) + LINK_TAIL_MS);
+        }
+        // And the two shapes the reviewer named read as LOCAL on both sides.
+        expect(generatedLinkTimeoutMs({}, JSON.stringify({ remote: {} }))).toBe(6000);
+        expect(generatedLinkTimeoutMs({}, JSON.stringify({ remote: [] }))).toBe(6000);
+        expect(generatedLinkTimeoutMs({}, JSON.stringify({ remote: '' }))).toBe(6000);
+        expect(generatedLinkTimeoutMs({}, JSON.stringify({ remote: 5 }))).toBe(6000);
+        expect(generatedLinkTimeoutMs({ SUBSTRATE_REMOTE: 'ssh:host' })).toBe(19000);
+        expect(generatedLinkTimeoutMs({ SUBSTRATE_LOCAL_DB: '/tmp/state.db' }, REMOTE_CONFIG)).toBe(6000);
+    });
+
     it('the local kill stays the six seconds the shim has always allowed', () => {
         expect(resolveLinkCeilingMs({ env: {}, readFile: localRead })).toBe(6000);
     });

@@ -65012,28 +65012,36 @@ function sbRemoteConfigPath(env3, homeDir = (0, import_node_os9.homedir)()) {
   const override = (env3[SB_REMOTE_CONFIG_ENV_VAR] ?? "").trim();
   return override || import_node_path16.default.join(homeDir, SB_REMOTE_CONFIG_RELATIVE_PATH);
 }
-function parseSbRemoteMode(text) {
-  try {
-    const parsed = JSON.parse((text ?? "").trim());
-    const remote = parsed && typeof parsed === "object" ? parsed.remote : null;
-    if (typeof remote === "string") return remote.trim() !== "";
-    if (remote && typeof remote === "object") return Object.keys(remote).length > 0;
-    return false;
-  } catch {
-    return false;
+function sbRemoteModeFrom(env3, configText) {
+  const explicit = env3.SUBSTRATE_DB ?? env3.SUBSTRATE_LOCAL_DB;
+  if (explicit !== void 0 && explicit !== "") return false;
+  const fromEnv = (env3.SUBSTRATE_REMOTE ?? "").trim();
+  let remoteValue = fromEnv !== "" ? fromEnv : null;
+  if (remoteValue === null && configText !== null) {
+    try {
+      const parsed = JSON.parse(configText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const fileRemote = parsed.remote;
+        if (fileRemote !== void 0) remoteValue = fileRemote;
+      }
+    } catch {
+      return false;
+    }
   }
+  if (typeof remoteValue !== "string") return false;
+  return /^ssh:(?!-)[^\s:]+$/.test(remoteValue.trim());
 }
+var SB_REMOTE_MODE_SOURCE = `(${sbRemoteModeFrom.toString()})`;
 function sbRemoteMode(deps = {}) {
   const env3 = deps.env ?? process.env;
-  if ((env3.SUBSTRATE_DB ?? "").trim()) return false;
   const read = deps.readFile ?? ((file2) => (0, import_node_fs4.readFileSync)(file2, "utf8"));
-  let text;
+  let text = null;
   try {
     text = read(sbRemoteConfigPath(env3, deps.homeDir));
   } catch {
-    return false;
+    text = null;
   }
-  return parseSbRemoteMode(text);
+  return sbRemoteModeFrom(env3, text);
 }
 function resolveLinkBudgetMs(deps = {}) {
   const env3 = deps.env ?? process.env;
@@ -65565,17 +65573,18 @@ const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS};
 const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)};
 const SB_REMOTE_CONFIG_RELATIVE = ${JSON.stringify(SB_REMOTE_CONFIG_RELATIVE_PATH)};
 
-/** Whether sb forwards every call over ssh, read from sb's own config only. */
-function sbRemoteMode() {
-  if ((process.env.SUBSTRATE_DB || '').trim()) return false;
+// CORE-2745 review (MEDIUM): this is the SAME function the module uses, embedded
+// as source text, so the shim's mode check cannot drift from sb's own precedence.
+const sbRemoteModeFrom = ${SB_REMOTE_MODE_SOURCE};
+
+/** sb's config file content, or null when it cannot be read. */
+function sbConfigText() {
   try {
     const file = (process.env[SB_REMOTE_CONFIG_ENV_VAR] || '').trim()
       || path.join(os.homedir(), SB_REMOTE_CONFIG_RELATIVE);
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
-    return typeof remote === 'string' ? remote.trim() !== '' : Boolean(remote && typeof remote === 'object');
+    return fs.readFileSync(file, 'utf8');
   } catch (error) {
-    return false;
+    return null;
   }
 }
 
@@ -65588,7 +65597,7 @@ function linkTimeoutMs() {
   const raw = Number((process.env[LINK_TIMEOUT_ENV_VAR] || '').trim());
   const budget = Number.isFinite(raw) && raw > 0
     ? Math.min(Math.max(Math.round(raw), LINK_TIMEOUT_MIN_MS), LINK_TIMEOUT_MAX_MS)
-    : (sbRemoteMode() ? REMOTE_LINK_BUDGET_MS : LINK_BUDGET_MS);
+    : (sbRemoteModeFrom(process.env, sbConfigText()) ? REMOTE_LINK_BUDGET_MS : LINK_BUDGET_MS);
   return budget + LINK_TAIL_MS;
 }
 

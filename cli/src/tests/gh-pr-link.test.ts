@@ -136,18 +136,53 @@ describe('the link budget follows sb mode (CORE-2745)', () => {
         expect(sbRemoteConfigPath({ SUBSTRATE_REMOTE_CONFIG: override }, '/home/worker')).toBe(override);
     });
 
-    it('reads only a non-empty remote setting as remote mode', () => {
+    it('reads only a usable ssh setting as remote mode', () => {
         expect(parseSbRemoteMode(JSON.stringify({ remote: 'ssh:host' }))).toBe(true);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: '  ssh:host  ' }))).toBe(true);
         expect(parseSbRemoteMode(JSON.stringify({ remote: '   ' }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: null }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: '' }))).toBe(false);
-        // CORE-2745 review F4: an empty object is no setting, not a remote mode.
+        // CORE-2745 review F4 + pr-reviewer round: sb's parseRemoteSpec accepts only
+        // `ssh:<host>`, and readRemoteConfig refuses a non-string `remote`, so an
+        // empty object, an array, a number or an object is NOT remote mode.
         expect(parseSbRemoteMode(JSON.stringify({ remote: {} }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: [] }))).toBe(false);
-        expect(parseSbRemoteMode(JSON.stringify({ remote: { host: 'h' } }))).toBe(true);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: { host: 'h' } }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: 5 }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: true }))).toBe(false);
+        // A string sb cannot parse as a spec is a refused invocation, not a wait.
+        expect(parseSbRemoteMode(JSON.stringify({ remote: 'dawid@host' }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: 'ssh:-host' }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: 'ssh:' }))).toBe(false);
         expect(parseSbRemoteMode('{}')).toBe(false);
+        expect(parseSbRemoteMode('[]')).toBe(false);
         expect(parseSbRemoteMode('')).toBe(false);
+        expect(parseSbRemoteMode('not json')).toBe(false);
         expect(parseSbRemoteMode(null)).toBe(false);
+    });
+
+    // CORE-2745 pr-reviewer round (MEDIUM): the mode follows sb's own rules
+    // (service/client.ts localOrRemote, remote/config.ts readRemoteConfig,
+    // remote/spec.ts parseRemoteSpec), not a guess about the config file.
+    it('follows sb\'s precedence: env, then the file, and a local store first', () => {
+        const noFile = localRead;
+        const remoteFile = () => REMOTE_CONFIG;
+        const withEnv = (env: NodeJS.ProcessEnv, readFile: (file: string) => string) => resolveLinkBudgetMs({ env, readFile });
+
+        // SUBSTRATE_REMOTE alone is enough, with no config file at all.
+        expect(withEnv({ SUBSTRATE_REMOTE: 'ssh:host' }, noFile)).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        // The env wins over the file: an unusable file is irrelevant when it is set.
+        expect(withEnv({ SUBSTRATE_REMOTE: 'ssh:host' }, () => JSON.stringify({ remote: {} }))).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        // A local store wins over the file AND over the env, in sb's order.
+        expect(withEnv({ SUBSTRATE_LOCAL_DB: '/tmp/state.db' }, remoteFile)).toBe(ATTACH_TIMEOUT_MS);
+        expect(withEnv({ SUBSTRATE_DB: '/tmp/state.db' }, remoteFile)).toBe(ATTACH_TIMEOUT_MS);
+        expect(withEnv({ SUBSTRATE_DB: '/tmp/state.db', SUBSTRATE_REMOTE: 'ssh:host' }, noFile)).toBe(ATTACH_TIMEOUT_MS);
+        // sb's `??` quirk: a DEFINED-but-empty SUBSTRATE_DB masks SUBSTRATE_LOCAL_DB
+        // and is not itself a local store, so the remote selection still runs.
+        expect(withEnv({ SUBSTRATE_DB: '', SUBSTRATE_LOCAL_DB: '/tmp/state.db' }, remoteFile)).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        // A file-only setting still decides when neither variable is present.
+        expect(withEnv({}, remoteFile)).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        expect(withEnv({}, noFile)).toBe(ATTACH_TIMEOUT_MS);
     });
 
     it('lets one env var override the budget in either mode, clamped', () => {
