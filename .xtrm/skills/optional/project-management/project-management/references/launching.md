@@ -55,6 +55,23 @@ launched under the shared `project-manager` role, or a running session from befo
 `init --issue` writes `.substrate-issue`; both files stay out of git (info/exclude). The worker's own first step (`pm_session.py show`,
 `references/worker.md`) prints the common goal, so the prompt needs no paste; the contract names the goal section it serves (step 1 below).
 
+### Identity and restore
+
+`xt` exports the dispatcher as three observed labels, never authority: `XTRM_DISPATCHER_PARTICIPANT` is the dispatcher's own
+`SUBSTRATE_HOLDER` (the name a worker messages and claims by, and the only one that names a participant), `XTRM_DISPATCHER_NAME` is the
+display name such as `g04z-lead`, and `XTRM_DISPATCHER_ADDRESS` is its `uds:` socket when it publishes one. `SUBSTRATE_HOLDER=<name>` beside
+them is the worker's OWN holder. Unknown values are absent; nothing is defaulted from the environment.
+
+Every launch with `--bead` also records the dispatcher on the Issue's ExecutionBinding (`sb provenance dispatch
+--dispatcher-participant/--dispatcher-session`) and writes that binding's id into the worktree's `.xtrm/session-meta.json`. After a pause,
+`xt attach` restores the dispatcher from THAT binding, refreshed against the live sessions by participant — so a restarted lead is found again,
+an absent one leaves the keys absent, and the attacher's own dispatcher is never adopted. A bead read from a live pane may only restore a binding
+made in the worker's own worktree: two workers on one issue keep their own dispatchers, and no one can elect a dispatcher by writing
+`@agent_bead`.
+
+These values are advisory. They tell a worker and the record WHO dispatched it; they never authorize a claim, a merge, a release or a production
+change. Check a worker's first journal entry after launch rather than trusting the pane (`references/worker.md`).
+
 ## Launch
 
 - `--window` opens a detached window in the caller's tmux session and prints `<session>:<pane_id>`: keep that id, it is the stable target. Window
