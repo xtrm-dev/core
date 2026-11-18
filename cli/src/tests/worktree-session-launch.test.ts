@@ -1217,13 +1217,16 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
         expect(r.error).toMatch(/exit:0/);
         const sbCalls = r.callLog.filter((c) => c.command === 'sb');
-        expect(sbCalls).toHaveLength(1);
+        // CORE-2740: dispatch, then one trace read-back that finds which binding
+        // this launch wrote, so the session record can name it.
+        expect(sbCalls).toHaveLength(2);
         expect(sbCalls[0].argv).toEqual([
             'provenance', 'dispatch', 'CORE-2728',
             '--dispatcher-participant', 'g04z',
             '--dispatcher-session', SESSION_UUID,
             '--workspace', h.worktreePath,
         ]);
+        expect(sbCalls[1].argv).toEqual(['provenance', 'trace', 'CORE-2728', '--json']);
         // The binding precedes the work: recorded before the pane is created.
         const sbIndex = r.callLog.findIndex((c) => c.command === 'sb');
         const tmuxIndex = r.callLog.findIndex((c) => c.command === 'tmux' && c.argv[0] === 'new-session');
@@ -1234,6 +1237,44 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         expect(fs.readJsonSync(path.join(h.worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
             runtime: 'claude',
             bead: 'CORE-2728',
+        });
+    });
+
+    it('CORE-2740 F2: the launch records the binding id it just wrote in the session record', async () => {
+        // The hermetic sb answers the same envelope to dispatch and to the trace
+        // read-back; a binding in the launch's own worktree, created at launch time,
+        // is the one the record must name.
+        const h = harnessOpts();
+        h.sbResult = {
+            status: 0,
+            stderr: '',
+            stdout: JSON.stringify({
+                schema: 'substrate-cli/v1',
+                command: 'provenance.trace',
+                ok: true,
+                data: {
+                    bindings: [
+                        { id: 'exb_older', dispatcherParticipantId: 'old-lead', workspace: h.worktreePath, createdAt: 1 },
+                        { id: 'exb_own', dispatcherParticipantId: 'g04z', workspace: h.worktreePath, createdAt: Date.now() + 60_000 },
+                    ],
+                },
+            }),
+        };
+        const r = await runLaunch(h, {
+            name: 'demo',
+            runtime: 'claude',
+            role: 'sync-role',
+            bead: 'CORE-2728',
+            newSession: true,
+            attach: false,
+            skills: [],
+            dispatcherDeps: dispatcherDeps(h),
+        });
+        expect(r.error).toMatch(/exit:0/);
+        expect(fs.readJsonSync(path.join(h.worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
+            runtime: 'claude',
+            bead: 'CORE-2728',
+            bindingId: 'exb_own',
         });
     });
 
@@ -1289,7 +1330,10 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         // The bead assignee probe fails in this hermetic harness; the launch itself succeeds.
         expect(r.error).toMatch(/exit:0/);
         const sbCalls = r.callLog.filter((c) => c.command === 'sb');
-        expect(sbCalls).toHaveLength(1);
+        // CORE-2740: the dispatch and its read-back; the trace fixture names no
+        // binding, so the record keeps no binding id and attach falls back to the
+        // worktree match instead.
+        expect(sbCalls).toHaveLength(2);
         expect(sbCalls[0].argv).toEqual(['provenance', 'dispatch', 'CORE-2728', '--workspace', h.worktreePath]);
         expect(sbCalls[0].argv).not.toContain('--dispatcher-participant');
         expect(sbCalls[0].argv).not.toContain('--dispatcher-session');

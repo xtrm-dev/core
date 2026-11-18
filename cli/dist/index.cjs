@@ -64119,7 +64119,7 @@ function findLiveDispatchersByHolder(participant, deps = {}) {
 function refreshDispatcherEnvByParticipant(participant, deps = {}) {
   const out = {};
   const want = clean(participant);
-  if (!want) return out;
+  if (!want || !isDispatcherLabel(want)) return out;
   let live = [];
   try {
     live = findLiveDispatchersByHolder(want, deps);
@@ -64137,7 +64137,7 @@ function refreshDispatcherEnvByParticipant(participant, deps = {}) {
   const hit = live[0];
   if (hit) {
     out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
-    out[XTRM_DISPATCHER_NAME_VAR] = hit.name ?? want;
+    out[XTRM_DISPATCHER_NAME_VAR] = cleanAgentName(hit.name) ?? want;
     return out;
   }
   out[XTRM_DISPATCHER_NAME_VAR] = want;
@@ -64189,7 +64189,7 @@ function defaultSbRunner(args, env3 = process.env, timeoutMs = PROVENANCE_TIMEOU
     })
   };
 }
-function parseDispatcherBindings(stdout) {
+function parseTraceBindingRows(stdout) {
   const text = (stdout ?? "").trim();
   if (!text.startsWith("{")) return [];
   let parsed;
@@ -64205,15 +64205,16 @@ function parseDispatcherBindings(stdout) {
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const binding = item;
-    const participant = clean(binding.dispatcherParticipantId);
-    if (!participant) continue;
     const row = {
-      participant,
-      createdAt: bindingCreatedAt(binding.createdAt),
-      id: clean(binding.id) ?? ""
+      id: clean(binding.id) ?? "",
+      createdAt: bindingCreatedAt(binding.createdAt)
     };
+    const participant = clean(binding.dispatcherParticipantId);
+    if (participant) row.participant = participant;
     const sessionId = clean(binding.dispatcherSessionId);
     if (sessionId) row.sessionId = sessionId;
+    const workspace = clean(binding.workspace);
+    if (workspace) row.workspace = workspace;
     rows.push(row);
   }
   rows.sort((a, b) => {
@@ -64221,7 +64222,28 @@ function parseDispatcherBindings(stdout) {
     if (a.id === b.id) return 0;
     return a.id < b.id ? 1 : -1;
   });
-  return rows.map(({ createdAt: _createdAt, id: _id, ...row }) => row);
+  return rows;
+}
+function bindingRecordOf(row) {
+  if (!row.participant) return null;
+  const record2 = { participant: row.participant };
+  if (row.sessionId) record2.sessionId = row.sessionId;
+  return record2;
+}
+function selectRestoreBinding(rows, select) {
+  const wantedId = clean(select.bindingId);
+  if (wantedId) {
+    const own2 = rows.find((row) => row.id === wantedId);
+    return own2 ? bindingRecordOf(own2) : null;
+  }
+  const workspace = clean(select.workspace);
+  if (workspace) {
+    const own2 = rows.find((row) => row.workspace === workspace && row.participant);
+    if (own2) return bindingRecordOf(own2);
+  }
+  if (select.ownRecord === false) return null;
+  const legacy = rows.find((row) => row.participant);
+  return legacy ? bindingRecordOf(legacy) : null;
 }
 function bindingCreatedAt(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -64246,7 +64268,26 @@ function readDispatcherBinding(ref, deps = {}) {
 `);
     return null;
   }
-  return parseDispatcherBindings(result.stdout)[0] ?? null;
+  return selectRestoreBinding(parseTraceBindingRows(result.stdout), deps);
+}
+function findLaunchBindingId(ref, deps) {
+  const wanted = clean(ref);
+  const workspace = clean(deps.workspace);
+  if (!wanted || !workspace) return null;
+  const run5 = deps.run ?? defaultSbRunner;
+  let result;
+  try {
+    result = run5(["provenance", "trace", wanted, "--json"], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+  } catch {
+    return null;
+  }
+  if (!result.ok) return null;
+  const since = typeof deps.sinceMs === "number" && Number.isFinite(deps.sinceMs) ? deps.sinceMs : null;
+  const own2 = parseTraceBindingRows(result.stdout).filter((row) => row.id && row.workspace === workspace && (since === null || row.createdAt >= since));
+  if (own2.length === 0) return null;
+  const participant = clean(deps.participant);
+  const preferred = participant ? own2.find((row) => row.participant === participant) : void 0;
+  return (preferred ?? own2[0])?.id ?? null;
 }
 function attachDispatcherEnv(ref, deps = {}) {
   const wanted = clean(ref);
@@ -67749,6 +67790,20 @@ function readSessionMeta(worktreePath) {
     return null;
   }
 }
+function writeSessionBindingId(worktreePath, bindingId) {
+  const id = (bindingId ?? "").trim();
+  if (!id) return false;
+  const meta3 = readSessionMeta(worktreePath);
+  if (!meta3 || typeof meta3.runtime !== "string") return false;
+  try {
+    const dest = sessionMetaPath(worktreePath);
+    (0, import_node_fs7.mkdirSync)(import_node_path21.default.dirname(dest), { recursive: true });
+    (0, import_node_fs7.writeFileSync)(dest, JSON.stringify({ ...meta3, bindingId: id }, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
 function unregisterPluginsForWorktree(worktreePath) {
   const localSettingsPath = import_node_path21.default.join(worktreePath, ".claude", "settings.local.json");
   try {
@@ -68387,12 +68442,21 @@ async function launchTmuxSession(args) {
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path21.default.basename(worktreePath) });
   const dispatcherEnv = dispatcher.env;
   if (bead) {
+    const dispatchStartedMs = Date.now();
     const recorded = recordDispatcherBinding({
       ref: bead,
       resolution: dispatcher.resolution,
       workspace: worktreePath
     });
     if (recorded.warning) process.stderr.write(recorded.warning);
+    if (recorded.written) {
+      const bindingId = findLaunchBindingId(bead, {
+        workspace: worktreePath,
+        sinceMs: dispatchStartedMs,
+        participant: dispatcher.resolution.participant
+      });
+      if (bindingId) writeSessionBindingId(worktreePath, bindingId);
+    }
   }
   const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
@@ -78420,11 +78484,14 @@ init_pi_runtime();
 // src/utils/worktree-pane-bead.ts
 var import_node_child_process22 = require("child_process");
 var PANE_LISTING_FORMAT = "#{pane_current_path}	#{@agent_worktree}	#{@agent_bead}";
-function listAgentPanes() {
+var PANE_PROBE_TIMEOUT_MS = 2e3;
+function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
   try {
     const result = (0, import_node_child_process22.spawnSync)("tmux", ["list-panes", "-a", "-F", PANE_LISTING_FORMAT], {
       encoding: "utf8",
-      stdio: "pipe"
+      stdio: "pipe",
+      timeout: timeoutMs,
+      killSignal: "SIGKILL"
     });
     return result.status === 0 ? String(result.stdout ?? "") : "";
   } catch {
@@ -78479,6 +78546,7 @@ function holderFromWorktreePath(worktreePath) {
   return match?.[1] ?? null;
 }
 var SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+var SAFE_BINDING_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 function readSessionRecord(worktreePath) {
   const codex = readCodexWorktreeSession(worktreePath);
   if (codex) {
@@ -78490,11 +78558,13 @@ function readSessionRecord(worktreePath) {
   }
   return readSessionMeta(worktreePath);
 }
-function resolveWorkerIssueRef(worktreePath, deps = {}) {
+function resolveWorkerIssue(worktreePath, deps = {}) {
   const meta3 = (deps.readMeta ?? readSessionRecord)(worktreePath);
   const raw = meta3 ? meta3.bead : void 0;
   const fromMeta = typeof raw === "string" ? raw.trim() : "";
-  if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
+  if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) {
+    return { ref: fromMeta, source: "meta", bindingId: bindingIdFromMeta(meta3) };
+  }
   const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
   let fromPane;
   try {
@@ -78503,8 +78573,15 @@ function resolveWorkerIssueRef(worktreePath, deps = {}) {
     return null;
   }
   const candidate = typeof fromPane === "string" ? fromPane.trim() : "";
-  if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
+  if (candidate && SAFE_ISSUE_REF.test(candidate)) {
+    return { ref: candidate, source: "pane", bindingId: null };
+  }
   return null;
+}
+function bindingIdFromMeta(meta3) {
+  const raw = meta3 ? meta3.bindingId : void 0;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value && SAFE_BINDING_ID.test(value) ? value : null;
 }
 function createAttachCommand() {
   return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').action(async (name) => {
@@ -78581,8 +78658,12 @@ function createAttachCommand() {
         console.log(kleur_default.dim(`  warning: pi launch preflight failed (${message})`));
       }
     }
-    const issueRef = resolveWorkerIssueRef(target.path);
-    const restoredDispatcher = attachDispatcherEnv(issueRef);
+    const issue2 = resolveWorkerIssue(target.path);
+    const restoredDispatcher = attachDispatcherEnv(issue2?.ref ?? null, {
+      bindingId: issue2?.bindingId ?? null,
+      workspace: target.path,
+      ownRecord: issue2?.source === "meta"
+    });
     const result = (0, import_node_child_process23.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
     process.exit(result.status ?? 0);
   });

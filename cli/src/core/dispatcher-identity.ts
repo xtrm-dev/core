@@ -695,8 +695,12 @@ export function refreshDispatcherEnvByParticipant(
     deps: DispatcherIdentityDeps = {},
 ): Record<string, string> {
     const out: Record<string, string> = {};
+    // CORE-2740 F1: the participant is read back from a stored binding, so it is
+    // data, not a value this process chose. A value that is not a Substrate label
+    // (a newline, an ESC, an over-long string) is OMITTED, never trimmed into a
+    // different identity: unknown stays absent and the caller falls back.
     const want = clean(participant);
-    if (!want) return out;
+    if (!want || !isDispatcherLabel(want)) return out;
     let live: LiveSessionEntry[] = [];
     try {
         live = findLiveDispatchersByHolder(want, deps);
@@ -712,7 +716,9 @@ export function refreshDispatcherEnvByParticipant(
     const hit = live[0];
     if (hit) {
         out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
-        out[XTRM_DISPATCHER_NAME_VAR] = hit.name ?? want;
+        // CORE-2740 F1: the registry name is display-only and may come from another
+        // process's record, so it is reduced to one bounded line before export.
+        out[XTRM_DISPATCHER_NAME_VAR] = cleanAgentName(hit.name) ?? want;
         return out;
     }
     // No live session: the participant is still the answer to "who dispatched me".
@@ -801,12 +807,24 @@ export interface DispatcherBindingRecord {
     sessionId?: string;
 }
 
+/** One trace binding row as the restore selection reads it (CORE-2740). */
+interface TraceBindingRow {
+    id: string;
+    /** The dispatcher, when this binding recorded one. */
+    participant?: string;
+    sessionId?: string;
+    /** The worktree the launch bound its execution to. */
+    workspace?: string;
+    createdAt: number;
+}
+
 /**
- * The newest launch binding that names a dispatcher, from `sb provenance trace
- * <ref> --json` (CORE-2728). Bindings without a dispatcher participant are not
- * an answer, so the newest one that HAS one wins; none means unknown.
+ * Every binding `sb provenance trace <ref> --json` lists, newest first — also
+ * the ones that recorded no dispatcher, because a worker's own binding without
+ * a dispatcher is still an answer ("absent"), not a licence to read the next
+ * binding's (CORE-2740 F2).
  */
-export function parseDispatcherBindings(stdout: string | null | undefined): DispatcherBindingRecord[] {
+function parseTraceBindingRows(stdout: string | null | undefined): TraceBindingRow[] {
     const text = (stdout ?? '').trim();
     if (!text.startsWith('{')) return [];
     let parsed: unknown;
@@ -820,19 +838,20 @@ export function parseDispatcherBindings(stdout: string | null | undefined): Disp
         ? envelope.data.bindings
         : envelope.bindings;
     if (!Array.isArray(raw)) return [];
-    const rows: Array<DispatcherBindingRecord & { createdAt: number; id: string }> = [];
+    const rows: TraceBindingRow[] = [];
     for (const item of raw) {
         if (!item || typeof item !== 'object') continue;
         const binding = item as Record<string, unknown>;
-        const participant = clean(binding.dispatcherParticipantId);
-        if (!participant) continue;
-        const row: DispatcherBindingRecord & { createdAt: number; id: string } = {
-            participant,
-            createdAt: bindingCreatedAt(binding.createdAt),
+        const row: TraceBindingRow = {
             id: clean(binding.id) ?? '',
+            createdAt: bindingCreatedAt(binding.createdAt),
         };
+        const participant = clean(binding.dispatcherParticipantId);
+        if (participant) row.participant = participant;
         const sessionId = clean(binding.dispatcherSessionId);
         if (sessionId) row.sessionId = sessionId;
+        const workspace = clean(binding.workspace);
+        if (workspace) row.workspace = workspace;
         rows.push(row);
     }
     // Newest first. sb 0.4.0 emits an integer epoch in milliseconds; an ISO string
@@ -845,7 +864,66 @@ export function parseDispatcherBindings(stdout: string | null | undefined): Disp
         if (a.id === b.id) return 0;
         return a.id < b.id ? 1 : -1;
     });
-    return rows.map(({ createdAt: _createdAt, id: _id, ...row }) => row);
+    return rows;
+}
+
+/**
+ * The launch bindings that name a dispatcher, newest first, from
+ * `sb provenance trace <ref> --json` (CORE-2728). Bindings without a dispatcher
+ * participant are not an answer here, so the newest one that HAS one wins.
+ */
+export function parseDispatcherBindings(stdout: string | null | undefined): DispatcherBindingRecord[] {
+    const records: DispatcherBindingRecord[] = [];
+    for (const row of parseTraceBindingRows(stdout)) {
+        const record = bindingRecordOf(row);
+        if (record) records.push(record);
+    }
+    return records;
+}
+
+/** The restore-relevant view of one row; null when the row names no dispatcher. */
+function bindingRecordOf(row: TraceBindingRow): DispatcherBindingRecord | null {
+    if (!row.participant) return null;
+    const record: DispatcherBindingRecord = { participant: row.participant };
+    if (row.sessionId) record.sessionId = row.sessionId;
+    return record;
+}
+
+/** Which binding `xt attach` may restore for one worker (CORE-2740 F2). */
+export interface DispatcherBindingSelect {
+    /** The exact binding the launch recorded in the worker's own session record. */
+    bindingId?: string | null;
+    /** The worker's own worktree: a binding created anywhere else is not its own. */
+    workspace?: string | null;
+    /** false when the Issue ref came from a live pane, never from the worker's own record. */
+    ownRecord?: boolean;
+}
+
+/**
+ * The one binding a restore may read (CORE-2740 F2). The order is the defence:
+ * an exact id from the worker's own record outranks everything; without it only
+ * a binding created in the worker's own worktree may answer; and a ref taken from
+ * a live pane may never fall through to "the newest binding on the Issue",
+ * because a same-user process could have written that pane.
+ */
+function selectRestoreBinding(rows: TraceBindingRow[], select: DispatcherBindingSelect): DispatcherBindingRecord | null {
+    const wantedId = clean(select.bindingId);
+    if (wantedId) {
+        const own = rows.find((row) => row.id === wantedId);
+        return own ? bindingRecordOf(own) : null;
+    }
+    const workspace = clean(select.workspace);
+    if (workspace) {
+        const own = rows.find((row) => row.workspace === workspace && row.participant);
+        if (own) return bindingRecordOf(own);
+    }
+    // A ref taken from a live pane is not the worker's own word: only the
+    // workspace match above may answer it.
+    if (select.ownRecord === false) return null;
+    // Legacy record (launched before CORE-2740, so it names no binding id): the
+    // newest binding that names a dispatcher is that launch's own.
+    const legacy = rows.find((row) => row.participant);
+    return legacy ? bindingRecordOf(legacy) : null;
 }
 
 /** A binding's creation instant in epoch ms; a missing or unparseable value is oldest. */
@@ -858,10 +936,14 @@ function bindingCreatedAt(value: unknown): number {
     return Number.NEGATIVE_INFINITY;
 }
 
-/** Read the dispatcher a launch recorded for `ref`; null when none or unreadable. */
+/**
+ * Read the dispatcher a launch recorded for `ref`; null when none or unreadable.
+ * `select` says which binding may answer (CORE-2740 F2); without it the newest
+ * binding that names a dispatcher wins, which is the pre-CORE-2740 behaviour.
+ */
 export function readDispatcherBinding(
     ref: string | null | undefined,
-    deps: { env?: NodeJS.ProcessEnv; run?: SbRunner; timeoutMs?: number } = {},
+    deps: { env?: NodeJS.ProcessEnv; run?: SbRunner; timeoutMs?: number } & DispatcherBindingSelect = {},
 ): DispatcherBindingRecord | null {
     const wanted = clean(ref);
     if (!wanted) return null;
@@ -879,14 +961,55 @@ export function readDispatcherBinding(
         process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(result.error ?? 'sb gave no reason')}); the dispatcher stays absent\n`);
         return null;
     }
-    return parseDispatcherBindings(result.stdout)[0] ?? null;
+    return selectRestoreBinding(parseTraceBindingRows(result.stdout), deps);
+}
+
+/**
+ * The id of the binding a launch just wrote (CORE-2740 F2): the newest row for
+ * `ref` created at or after `sinceMs` in the launch's OWN worktree. The launch
+ * stores it in its session record, so `xt attach` restores that binding instead
+ * of the newest one on the Issue. Null when unknown; never throws, never warns.
+ */
+export function findLaunchBindingId(
+    ref: string | null | undefined,
+    deps: {
+        workspace: string | null | undefined;
+        sinceMs?: number;
+        participant?: string | null;
+        env?: NodeJS.ProcessEnv;
+        run?: SbRunner;
+        timeoutMs?: number;
+    },
+): string | null {
+    const wanted = clean(ref);
+    const workspace = clean(deps.workspace);
+    if (!wanted || !workspace) return null;
+    const run = deps.run ?? defaultSbRunner;
+    let result: { ok: boolean; stdout?: string; error?: string };
+    try {
+        result = run(['provenance', 'trace', wanted, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+    } catch {
+        return null;
+    }
+    if (!result.ok) return null;
+    const since = typeof deps.sinceMs === 'number' && Number.isFinite(deps.sinceMs) ? deps.sinceMs : null;
+    const own = parseTraceBindingRows(result.stdout).filter((row) => row.id
+        && row.workspace === workspace
+        && (since === null || row.createdAt >= since));
+    if (own.length === 0) return null;
+    // Prefer the row that also names our dispatcher; a launch with no dispatcher
+    // leaves that field absent, and the row is still ours by workspace.
+    const participant = clean(deps.participant);
+    const preferred = participant ? own.find((row) => row.participant === participant) : undefined;
+    return (preferred ?? own[0])?.id ?? null;
 }
 
 /**
  * The dispatcher env `xt attach` restores for a worker's issue (CORE-2728): the
- * newest binding with a dispatcher participant, refreshed against the live
- * sessions by that participant. No binding — or no issue ref — is no dispatcher:
- * the record is empty so the attacher's own identity CANNOT be adopted.
+ * binding the worker's OWN launch wrote, refreshed against the live sessions by
+ * its participant. `select` narrows which binding may answer (CORE-2740 F2).
+ * No binding — or no issue ref — is no dispatcher: the record is empty so the
+ * attacher's own identity CANNOT be adopted.
  */
 export function attachDispatcherEnv(
     ref: string | null,
@@ -895,7 +1018,7 @@ export function attachDispatcherEnv(
         run?: SbRunner;
         timeoutMs?: number;
         identity?: DispatcherIdentityDeps;
-    } = {},
+    } & DispatcherBindingSelect = {},
 ): Record<string, string> {
     const wanted = clean(ref);
     if (!wanted) return {};
