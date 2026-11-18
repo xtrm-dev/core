@@ -884,7 +884,7 @@ export function parseDispatcherBindings(stdout: string | null | undefined): Disp
 
 /** Read the dispatcher a launch recorded for `ref`; null when none or unreadable. */
 export function readDispatcherBinding(
-    ref: string,
+    ref: string | null | undefined,
     deps: { env?: NodeJS.ProcessEnv; run?: SbRunner; timeoutMs?: number } = {},
 ): DispatcherBindingRecord | null {
     const wanted = clean(ref);

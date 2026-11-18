@@ -20,12 +20,18 @@ import {
     refreshDispatcherEnvByParticipant,
     resolveDispatcherSessionForParticipant,
     type DispatcherIdentityDeps,
+    type DispatcherResolution,
     type ProcessInfo,
     type SbRunner,
 } from '../core/dispatcher-identity.js';
 import { resolveWorkerIssueRef } from '../commands/attach.js';
 
 const CLAUDE_SESSION = '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce';
+
+/** A resolution with the fields a record call ignores left at their defaults. */
+function resolution(over: Partial<DispatcherResolution> = {}): DispatcherResolution {
+    return { source: 'ancestor', procStartChecked: false, skipped: [], ...over };
+}
 
 let sessionsDir = '';
 const roots: string[] = [];
@@ -73,7 +79,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
         };
         const written = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { participant: 'g04z', sessionId: CLAUDE_SESSION, source: 'ancestor', procStartChecked: true, skipped: [] },
+            resolution: resolution({ participant: 'g04z', sessionId: CLAUDE_SESSION, procStartChecked: true }),
             workspace: '/repo/.xtrm/worktrees/core-xt-pi-worker',
             env: {},
             run,
@@ -98,7 +104,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
         };
         const written = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { source: 'none', procStartChecked: false, skipped: [] },
+            resolution: resolution({ source: 'none' }),
             env: {},
             run,
         });
@@ -111,7 +117,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
     it('a session that is not a lowercase UUID is never passed (and never defaulted from env)', () => {
         const written = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { participant: 'g04z', sessionId: '$42', source: 'ancestor', procStartChecked: false, skipped: [] },
+            resolution: resolution({ participant: 'g04z', sessionId: '$42' }),
             // An inherited value of the same name must not be read for the session.
             env: { XTRM_PARENT_SESSION_ID: '$42', XTRM_SESSION_ID: '$42' },
             run: () => ({ ok: true, stdout: '' }),
@@ -123,7 +129,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
     it('a failed sb is one warning and never a failed launch', () => {
         const written = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { participant: 'g04z', source: 'ancestor', procStartChecked: false, skipped: [] },
+            resolution: resolution({ participant: 'g04z' }),
             env: {},
             run: () => ({ ok: false, error: 'sb exited 1: no store' }),
         });
@@ -132,7 +138,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
         // A runner that throws is the same single warning, not an exception.
         const thrown = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { participant: 'g04z', source: 'ancestor', procStartChecked: false, skipped: [] },
+            resolution: resolution({ participant: 'g04z' }),
             env: {},
             run: () => {
                 throw new Error('sb is not installed');
@@ -145,7 +151,7 @@ describe('recordDispatcherBinding: the launch writes who dispatched it (CORE-272
     it('a resolution with a label sb would refuse passes no participant', () => {
         const written = recordDispatcherBinding({
             ref: 'CORE-2728',
-            resolution: { participant: 'not a label', source: 'ancestor', procStartChecked: false, skipped: [] },
+            resolution: resolution({ participant: 'not a label' }),
             env: {},
             run: () => ({ ok: true, stdout: '' }),
         });
