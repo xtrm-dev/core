@@ -12,9 +12,12 @@ itself, `xt` resolves the dispatcher and exports to the worker, with no typing:
 | Variable | Value |
 |---|---|
 | `SUBSTRATE_HOLDER` | `<slug>`; overrides the coordinator's own value |
-| `XTRM_DISPATCHER_NAME` | the nearest ancestor session registered in `~/.claude/sessions/` (Claude Code, or Pi with pi-claude-link) |
+| `XTRM_DISPATCHER_NAME` | the nearest ancestor session registered in `~/.claude/sessions/` (Claude Code, or Pi with pi-claude-link); display only |
+| `XTRM_DISPATCHER_PARTICIPANT` | that ancestor's own `SUBSTRATE_HOLDER`: the name a worker addresses by `SendMessage` and claims by; never a display name |
 | `XTRM_DISPATCHER_ADDRESS` | `uds:<messagingSocketPath>` of that session |
 | `XTRM_PARENT_SESSION_ID`, `XTRM_PARENT_PANE_ID` | the coordinator's tmux session and pane |
+
+The launch also records the dispatcher on the Issue's ExecutionBinding (`sb provenance dispatch --dispatcher-participant/--dispatcher-session`), and remembers that binding's id in the worktree's `.xtrm/session-meta.json`. After a pause, `xt attach` restores the dispatcher from THAT binding, refreshed against the live sessions by participant: a restarted lead is found again, and an absent one leaves the keys absent. It never adopts the attacher's own dispatcher, and it does not fall back to "the newest binding on the Issue", so two workers on one Issue each get their own. A binding participant that is not a Substrate label, or a registry name carrying control characters, is omitted rather than exported (CORE-2740).
 
 `XTRM_SESSION_ID` and `XTRM_PARENT_SESSION_ID` are tmux **session** ids (`$0`, `$1`,
 `$7`), and every window in one session shares the same value — five windows of

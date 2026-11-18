@@ -140,8 +140,8 @@ The same judgment over many items is an AgentRun workflow (`references/agentrun.
 - Every handoff lists each live pane's reap condition and the open windows (`references/launching.md`, "Reaping").
 - **Superseding a manager or lead:** collect its full report as a `handoff` entry, take over every live duty, journal the takeover list, then
   `kill-pane` its panes one by one.
-- **Identity.** `xt` exports `XTRM_DISPATCHER_NAME`, `XTRM_DISPATCHER_ADDRESS` and `SUBSTRATE_HOLDER=<name>`; the worker claims with `--holder
-  <name>`; the prompt still says "report with `SendMessage` and journal on your issue". Check its first journal entry after launch.
+- **Identity.** `xt` exports `XTRM_DISPATCHER_PARTICIPANT` (the dispatcher's own `SUBSTRATE_HOLDER`), `XTRM_DISPATCHER_NAME` (display only),
+  `XTRM_DISPATCHER_ADDRESS` and `SUBSTRATE_HOLDER=<name>`; the worker claims with `--holder <name>`; the prompt keeps "report with `SendMessage` and journal on your issue"; `xt attach` restores it from the launch's own binding (`references/launching.md`, "Identity and restore"). Check its first journal entry after launch.
 - **Claims are leases** (about 15 minutes). The worker claims with `--ttl-ms` covering its checkpoint interval and renews at every checkpoint
   with `sb issue renew <ref>` (`references/substrate.md`, "Renew a claim"); it claims again only after the lease expired. Put this in the prompt.
 - Name a worker `<story-key>-<slug>` (`PROJ-260-pi-runtime`): branch `xt/<name>`, window `claude-<name>` lower case, so the Jira key reaches

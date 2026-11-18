@@ -18,15 +18,27 @@ import { spawnSync } from 'node:child_process';
 export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_bead}';
 
 /**
- * Every pane's `path<TAB>worktree<TAB>bead` row, or '' when tmux cannot answer
- * (no server, no binary). Never throws.
+ * Hard ceiling for the pane probe (CORE-2740 F3). `xt attach` waits on this
+ * listing before it starts a runtime, so a wedged tmux server (or a tmux socket
+ * a same-user process made stop answering) must not hang the attach: past this
+ * bound the probe is killed and reads as absent.
  */
-export function listAgentPanes(): string {
+export const PANE_PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * Every pane's `path<TAB>worktree<TAB>bead` row, or '' when tmux cannot answer
+ * (no server, no binary, or no answer within `timeoutMs`). Never throws.
+ */
+export function listAgentPanes(timeoutMs: number = PANE_PROBE_TIMEOUT_MS): string {
     try {
         const result = spawnSync('tmux', ['list-panes', '-a', '-F', PANE_LISTING_FORMAT], {
             encoding: 'utf8',
             stdio: 'pipe',
+            timeout: timeoutMs,
+            killSignal: 'SIGKILL',
         });
+        // A timeout leaves status null (the process was killed), so a hung probe
+        // and a failing probe read the same way: absent.
         return result.status === 0 ? String(result.stdout ?? '') : '';
     } catch {
         return '';

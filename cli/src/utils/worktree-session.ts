@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, recordDispatcherBinding, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, recordDispatcherBinding, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -2629,6 +2629,12 @@ export interface SessionMeta {
      * dispatcher — after the tmux pane (and its @agent_bead) is gone.
      */
     bead?: string;
+    /**
+     * CORE-2740 F2: the ExecutionBinding this launch wrote. Written right after
+     * the binding exists, so `xt attach` restores THIS worker's dispatcher
+     * rather than the newest binding somebody else wrote on the same Issue.
+     */
+    bindingId?: string;
 }
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
@@ -2660,6 +2666,28 @@ export function readSessionMeta(worktreePath: string): SessionMeta | null {
         return JSON.parse(raw) as SessionMeta;
     } catch {
         return null;
+    }
+}
+
+/**
+ * Record the binding this launch wrote in the session record (CORE-2740 F2).
+ * The binding only exists after `sb provenance dispatch`, which runs after the
+ * record is first written, so this amends an existing record; it never invents
+ * one (a missing record means the launch cannot be attached anyway). Returns
+ * false when there is nothing to amend or the write failed; never throws.
+ */
+export function writeSessionBindingId(worktreePath: string, bindingId: string | null | undefined): boolean {
+    const id = (bindingId ?? '').trim();
+    if (!id) return false;
+    const meta = readSessionMeta(worktreePath);
+    if (!meta || typeof meta.runtime !== 'string') return false;
+    try {
+        const dest = sessionMetaPath(worktreePath);
+        mkdirSync(path.dirname(dest), { recursive: true });
+        writeFileSync(dest, JSON.stringify({ ...meta, bindingId: id }, null, 2));
+        return true;
+    } catch {
+        return false;
     }
 }
 
@@ -3661,12 +3689,25 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     if (bead) {
         // Before the runtime starts, so the binding precedes the work. A failed or
         // old sb is one warning; the launch itself never fails on it.
+        const dispatchStartedMs = Date.now();
         const recorded = recordDispatcherBinding({
             ref: bead,
             resolution: dispatcher.resolution,
             workspace: worktreePath,
         });
         if (recorded.warning) process.stderr.write(recorded.warning);
+        if (recorded.written) {
+            // CORE-2740 F2: remember WHICH binding this launch wrote, so `xt attach`
+            // restores this worker's dispatcher, not the newest binding on the
+            // Issue. Fail-soft: without the id attach falls back to the binding
+            // made in this worktree, which still cannot name a foreign one.
+            const bindingId = findLaunchBindingId(bead, {
+                workspace: worktreePath,
+                sinceMs: dispatchStartedMs,
+                participant: dispatcher.resolution.participant,
+            });
+            if (bindingId) writeSessionBindingId(worktreePath, bindingId);
+        }
     }
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
     const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });

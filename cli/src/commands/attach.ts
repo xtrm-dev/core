@@ -99,6 +99,23 @@ export interface WorkerIssueDeps {
     paneBead?: (worktreePath: string) => string | null;
 }
 
+/** The Issue a resumed worktree was launched for, and how sure we are of it. */
+export interface WorkerIssue {
+    ref: string;
+    /**
+     * 'meta' = the worker's own session record; 'pane' = a live pane's
+     * `@agent_bead` (CORE-2740 F2). A pane's metadata is written by whoever can
+     * reach the live pane, so the caller must not let it choose a foreign
+     * dispatcher binding.
+     */
+    source: 'meta' | 'pane';
+    /** The exact binding this launch wrote, when the worker's own record names one. */
+    bindingId: string | null;
+}
+
+/** A binding id read back from a session record (CORE-2740); no shell, no flags. */
+const SAFE_BINDING_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 /**
  * The session record a resumed worktree wrote. A Codex record is validated by its
  * own reader (CORE-2728 S1 carries the bead there), so a damaged Codex file cannot
@@ -118,16 +135,19 @@ function readSessionRecord(worktreePath: string): SessionMeta | null {
 }
 
 /**
- * The Substrate Issue a resumed worktree was launched for (CORE-2728). The
- * launcher's session record persists it; a live pane's recorded bead is the
- * fallback. A non-string, malformed or ambiguous value is ABSENT — never a
- * guess and never a TypeError.
+ * The Substrate Issue a resumed worktree was launched for (CORE-2728), with its
+ * provenance and the launch binding the record names (CORE-2740). The launcher's
+ * session record persists it; a live pane's recorded bead is the fallback. A
+ * non-string, malformed or ambiguous value is ABSENT — never a guess and never a
+ * TypeError.
  */
-export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDeps = {}): string | null {
+export function resolveWorkerIssue(worktreePath: string, deps: WorkerIssueDeps = {}): WorkerIssue | null {
     const meta = (deps.readMeta ?? readSessionRecord)(worktreePath);
     const raw = meta ? meta.bead : undefined;
     const fromMeta = typeof raw === 'string' ? raw.trim() : '';
-    if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
+    if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) {
+        return { ref: fromMeta, source: 'meta', bindingId: bindingIdFromMeta(meta) };
+    }
     const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
     let fromPane: unknown;
     try {
@@ -136,8 +156,23 @@ export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDep
         return null;
     }
     const candidate = typeof fromPane === 'string' ? fromPane.trim() : '';
-    if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
+    if (candidate && SAFE_ISSUE_REF.test(candidate)) {
+        // A pane never carries a binding: only the workspace may then say which
+        // binding is this worker's own (CORE-2740 F2).
+        return { ref: candidate, source: 'pane', bindingId: null };
+    }
     return null;
+}
+
+/** The binding id a session record names, when it is a plausible one. */
+function bindingIdFromMeta(meta: SessionMeta | null): string | null {
+    const value = typeof meta?.bindingId === 'string' ? meta.bindingId.trim() : '';
+    return value && SAFE_BINDING_ID.test(value) ? value : null;
+}
+
+/** The Issue ref only; kept for callers that need nothing else. */
+export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDeps = {}): string | null {
+    return resolveWorkerIssue(worktreePath, deps)?.ref ?? null;
 }
 
 export function createAttachCommand(): Command {
@@ -240,10 +275,15 @@ export function createAttachCommand(): Command {
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
             // CORE-2728 (operator decision b): the resumed session gets its ORIGINAL
             // dispatcher back, read from the binding this worker's launch wrote. No
-            // binding (or no live session) leaves the dispatcher absent — the
-            // attacher is never adopted.
-            const issueRef = resolveWorkerIssueRef(target.path);
-            const restoredDispatcher = attachDispatcherEnv(issueRef);
+            // binding leaves the dispatcher absent — the attacher is never adopted.
+            // CORE-2740 F2: only the binding THIS worker recorded (or one made in
+            // this worktree) may answer; a bead taken from a pane cannot elect a
+            // foreign dispatcher.
+            const issue = resolveWorkerIssue(target.path);
+            const restoredDispatcher = attachDispatcherEnv(issue?.ref ?? null, {
+                bindingId: issue?.bindingId ?? null,
+                workspace: target.path,
+            });
             const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
 
             process.exit(result.status ?? 0);

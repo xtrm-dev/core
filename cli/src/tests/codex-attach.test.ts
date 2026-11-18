@@ -127,7 +127,7 @@ describe('xt attach Codex resume', () => {
     });
 
     it('CORE-2728 F2b: the recorded bead names the issue, never the attacher\'s XTRM_AGENT_BEAD', async () => {
-        codexWorktree({ bead: 'CORE-2728' });
+        const worktree = codexWorktree({ bead: 'CORE-2728' });
         // A different work item in the attacher's environment must not win: the record
         // of THIS worktree is the only source of its issue.
         const savedBead = process.env.XTRM_AGENT_BEAD;
@@ -139,7 +139,11 @@ describe('xt attach Codex resume', () => {
             else process.env.XTRM_AGENT_BEAD = savedBead;
         }
         expect(mocked.attachDispatcherEnv).toHaveBeenCalledTimes(1);
-        expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith('CORE-2728');
+        // CORE-2740: the ref travels with its provenance and the worker's worktree.
+        expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith('CORE-2728', {
+            bindingId: null,
+            workspace: worktree,
+        });
     });
 
     it('CORE-2728 F2b: no bead in the record and no bead in the environment leaves the issue absent', async () => {
@@ -152,6 +156,8 @@ describe('xt attach Codex resume', () => {
             if (savedBead === undefined) delete process.env.XTRM_AGENT_BEAD;
             else process.env.XTRM_AGENT_BEAD = savedBead;
         }
-        expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith(null);
+        expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith(null, expect.objectContaining({
+            bindingId: null,
+        }));
     });
 });
