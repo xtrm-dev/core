@@ -8,6 +8,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+    GH_SHIM_FINGERPRINT,
     GH_SHIM_MARKER,
     defaultGhShimPath,
     findRealGh,
@@ -16,15 +17,12 @@ import {
     installGhShim,
 } from '../core/gh-shim.js';
 import {
-    ATTACH_TIMEOUT_MS,
     LINK_TAIL_MS,
     LINK_TIMEOUT_ENV_VAR,
     LINK_TIMEOUT_MAX_MS,
     LINK_TIMEOUT_MIN_MS,
-    REMOTE_ATTACH_TIMEOUT_MS,
     resolveLinkBudgetMs,
     resolveLinkCeilingMs,
-    SB_REMOTE_CONFIG_ENV_VAR,
 } from '../core/gh-pr-link.js';
 
 let tmp = '';
@@ -68,38 +66,68 @@ describe('findRealGh', () => {
 
 // CORE-2745: the shim owns the outer kill for one link, and the inner path owns
 // the budget inside it. The numbers are inlined into the generated shim at install
-// time, so this case locks the ordering the two files have to keep: the kill is
-// always the budget plus the tail, in both modes and for an override.
+// time, so these cases EXECUTE the generated shim's own linkTimeoutMs() (never the
+// TypeScript twin) and hold it equal to the budget plus the tail.
 describe('the link budget the shim embeds (CORE-2745)', () => {
     const REMOTE_CONFIG = JSON.stringify({ remote: 'ssh:dawid@159.195.49.110' });
     const localRead = () => {
         throw new Error('ENOENT: no substrate.json');
     };
 
-    it('inlines the budget, the clamp and the tail from gh-pr-link.ts', () => {
+    /**
+     * Run the generated shim's linkTimeoutMs() with sb's config faked. The slice is
+     * the shipped text, from the inlined constants to the next section, so this
+     * never re-implements the function it checks.
+     */
+    function generatedLinkTimeoutMs(env: NodeJS.ProcessEnv, configText?: string): number {
         const source = ghShimSource(null);
-        expect(source).toContain(`const LINK_TIMEOUT_ENV_VAR = ${JSON.stringify(LINK_TIMEOUT_ENV_VAR)}`);
-        expect(source).toContain(`const LINK_TIMEOUT_MIN_MS = ${LINK_TIMEOUT_MIN_MS}`);
-        expect(source).toContain(`const LINK_TIMEOUT_MAX_MS = ${LINK_TIMEOUT_MAX_MS}`);
-        expect(source).toContain(`const LINK_TAIL_MS = ${LINK_TAIL_MS}`);
-        expect(source).toContain(`const LINK_BUDGET_MS = ${ATTACH_TIMEOUT_MS}`);
-        expect(source).toContain(`const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS}`);
-        expect(source).toContain(`const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)}`);
-        // One function decides it at runtime, from sb's own config.
-        expect(source).toContain('function sbRemoteMode()');
-        expect(source).toContain('return budget + LINK_TAIL_MS;');
+        const from = source.indexOf('const LINK_TIMEOUT_ENV_VAR =');
+        const to = source.indexOf('// CORE-2619: a marker');
+        expect(from).toBeGreaterThan(-1);
+        expect(to).toBeGreaterThan(from);
+        const body = source.slice(from, to);
+        const factory = new Function('process', 'fs', 'os', 'path', `${body}\nreturn linkTimeoutMs;`) as (
+            ...args: unknown[]
+        ) => () => number;
+        const fakeFs = {
+            readFileSync: (file: string) => {
+                if (configText === undefined) throw new Error(`ENOENT: ${file}`);
+                return configText;
+            },
+        };
+        const fakeOs = { homedir: () => '/home/worker' };
+        return factory({ env }, fakeFs, fakeOs, path)();
+    }
+
+    it('kills the link at the budget the inner path keeps, in both modes', () => {
+        expect(generatedLinkTimeoutMs({})).toBe(resolveLinkBudgetMs({ env: {}, readFile: localRead }) + LINK_TAIL_MS);
+        expect(generatedLinkTimeoutMs({}, REMOTE_CONFIG)).toBe(resolveLinkBudgetMs({ env: {}, readFile: () => REMOTE_CONFIG }) + LINK_TAIL_MS);
     });
 
-    it('kills the link after the budget the inner path keeps, never before it', () => {
-        for (const deps of [
-            { env: {}, readFile: localRead },
-            { env: {}, readFile: () => REMOTE_CONFIG },
-            { env: { [LINK_TIMEOUT_ENV_VAR]: '2000' }, readFile: localRead },
-            { env: { [LINK_TIMEOUT_ENV_VAR]: '45000' }, readFile: () => REMOTE_CONFIG },
-        ]) {
-            expect(resolveLinkCeilingMs(deps)).toBe(resolveLinkBudgetMs(deps) + LINK_TAIL_MS);
-            expect(resolveLinkCeilingMs(deps)).toBeGreaterThan(resolveLinkBudgetMs(deps));
+    it('clamps and falls back exactly as the inner budget does', () => {
+        const cases: { value: string; remote: boolean }[] = [
+            { value: '999999', remote: false },
+            { value: '999999', remote: true },
+            { value: '1', remote: false },
+            { value: '1', remote: true },
+            { value: 'NaN', remote: false },
+            { value: 'NaN', remote: true },
+            { value: '0', remote: false },
+            { value: '0', remote: true },
+            { value: '', remote: false },
+            { value: '', remote: true },
+        ];
+        for (const { value, remote } of cases) {
+            const env = { [LINK_TIMEOUT_ENV_VAR]: value };
+            const readFile = remote ? () => REMOTE_CONFIG : localRead;
+            expect(generatedLinkTimeoutMs(env, remote ? REMOTE_CONFIG : undefined), `${value || 'empty'}/${remote ? 'remote' : 'local'}`)
+                .toBe(resolveLinkBudgetMs({ env, readFile }) + LINK_TAIL_MS);
         }
+        // The clamps are the documented ones, not merely equal to the twin.
+        expect(generatedLinkTimeoutMs({ [LINK_TIMEOUT_ENV_VAR]: '999999' })).toBe(LINK_TIMEOUT_MAX_MS + LINK_TAIL_MS);
+        expect(generatedLinkTimeoutMs({ [LINK_TIMEOUT_ENV_VAR]: '1' })).toBe(LINK_TIMEOUT_MIN_MS + LINK_TAIL_MS);
+        expect(generatedLinkTimeoutMs({})).toBe(6000);
+        expect(generatedLinkTimeoutMs({}, REMOTE_CONFIG)).toBe(19000);
     });
 
     it('the local kill stays the six seconds the shim has always allowed', () => {
@@ -119,6 +147,26 @@ describe('installGhShim', () => {
         expect(content.startsWith('#!/usr/bin/env node')).toBe(true);
         expect(content).toContain(GH_SHIM_MARKER);
         expect(content).toContain(`const REAL_GH = ${JSON.stringify(path.join(realBin, 'gh'))};`);
+    });
+
+    // CORE-2745 review F3: a shim installed by an earlier release must still be
+    // recognised as a shim (so it is skipped when looking for the real gh), but it
+    // is NOT current, so doctor reports it and `xt identity setup` rewrites it.
+    // Before the bump a v1 shim kept its fixed 6000 ms link kill against an
+    // 18000 ms inner budget, which is the failure this PR fixes.
+    it('reports a v1 shim as installed but not current, and reinstalls it', () => {
+        expect(installGhShim(deps()).ok).toBe(true);
+        const file = path.join(shimDir, 'gh');
+        const current = fs.readFileSync(file, 'utf8');
+        fs.writeFileSync(file, current.replace(GH_SHIM_FINGERPRINT, 'xtrm-gh-agent-shim v1'));
+
+        expect(ghShimStatus(deps()).installed).toBe(true);
+        expect(ghShimStatus(deps()).current).toBe(false);
+        // Never mistaken for the real gh: the detection marker is version-free.
+        expect(findRealGh(deps())).toBe(path.join(realBin, 'gh'));
+
+        expect(installGhShim(deps()).ok).toBe(true);
+        expect(ghShimStatus(deps()).current).toBe(true);
     });
 
     it('refuses to overwrite a foreign gh and refuses without a real gh', () => {

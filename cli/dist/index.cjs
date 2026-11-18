@@ -65017,7 +65017,8 @@ function parseSbRemoteMode(text) {
     const parsed = JSON.parse((text ?? "").trim());
     const remote = parsed && typeof parsed === "object" ? parsed.remote : null;
     if (typeof remote === "string") return remote.trim() !== "";
-    return Boolean(remote && typeof remote === "object");
+    if (remote && typeof remote === "object") return Object.keys(remote).length > 0;
+    return false;
   } catch {
     return false;
   }
@@ -65272,13 +65273,24 @@ function linkOrWarn(stdout, argv, deps) {
     if (deps.cwd) args.push("--workspace", cwd);
     return withReceiptProject(args, project);
   };
-  const outOfTime = (step, finish) => ({
+  const outOfTime = (step, finish, note) => ({
     attached: false,
     ref,
     canonical: pr.canonical,
     argv: attachArgv,
-    warning: oneLine2(`created ${pr.canonical}, but the Substrate link to ${ref} ran out of time at ${step}; finish with: ${finishWith(...finish)}`)
+    warning: oneLine2(`created ${pr.canonical}, but the Substrate link to ${ref} ran out of time at ${step}; finish with: ${finishWith(...finish)}${note ? ` (${note})` : ""}`)
   });
+  const claimReadFinish = () => {
+    const dispatch = ["provenance", "dispatch", ref];
+    if (ownHolder) {
+      dispatch.push("--participant", ownHolder, "--activation", `'<activationId from the show>'`);
+    }
+    const steps = [showArgv, withReceiptProject(dispatch, project), allocateArgv, attachArgv];
+    return {
+      steps,
+      note: ownHolder ? `--participant ${ownHolder} only when the show answer names it as the claim holder, and --activation is that answer's activationId` : "add --participant <the claim holder from the show> and --activation <its activationId> to the dispatch"
+    };
+  };
   const timedOut = (error62) => /no answer in \d+ ms|ETIMEDOUT/i.test(error62 ?? "");
   const t1 = run5(attachArgv, env3, budget());
   if (!t1.ok) {
@@ -65303,13 +65315,14 @@ function linkOrWarn(stdout, argv, deps) {
         claimActivation = claimFromAttach.activationId ?? null;
       }
     } else if (ownHolder) {
+      const claimFinish = claimReadFinish();
       if (recoveryBudget() <= 0) {
-        return outOfTime("the claim read (sb issue show)", [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+        return outOfTime("the claim read (sb issue show)", claimFinish.steps, claimFinish.note);
       }
       const showResult = run5(showArgv, env3, recoveryBudget());
       if (!showResult.ok) {
         if (timedOut(showResult.error)) {
-          return outOfTime("the claim read (sb issue show)", [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+          return outOfTime("the claim read (sb issue show)", claimFinish.steps, claimFinish.note);
         }
         claimReadFailed = true;
       } else {
@@ -65402,8 +65415,9 @@ function linkOrWarn(stdout, argv, deps) {
 // src/core/gh-shim.ts
 var import_node_os10 = __toESM(require("os"), 1);
 var import_node_path17 = __toESM(require("path"), 1);
-var GH_SHIM_MARKER = "// xtrm-gh-agent-shim v1";
-var GH_SHIM_FINGERPRINT = "xtrm-gh-agent-shim v1";
+var GH_SHIM_DETECT = "xtrm-gh-agent-shim";
+var GH_SHIM_FINGERPRINT = `${GH_SHIM_DETECT} v2`;
+var GH_SHIM_MARKER = `// ${GH_SHIM_FINGERPRINT}`;
 function realpathOf(deps, file2) {
   const read = deps.readRealPath ?? ((f) => (0, import_node_fs5.realpathSync)(f));
   try {
@@ -65430,7 +65444,7 @@ function isExecutableFile(deps, file2) {
 function isShimFile(deps, file2) {
   const read = deps.readFile ?? ((f) => (0, import_node_fs5.readFileSync)(f, "utf8"));
   try {
-    return read(file2).slice(0, 512).includes(GH_SHIM_FINGERPRINT);
+    return read(file2).slice(0, 512).includes(GH_SHIM_DETECT);
   } catch {
     return false;
   }
@@ -65463,7 +65477,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const MARKER = '${GH_SHIM_FINGERPRINT}';
+const MARKER = '${GH_SHIM_DETECT}';
 // CORE-2626: the classification every restricted-role decision reads, inlined
 // from cli/src/core/gh-shim-routes.ts so the running shim cannot drift from the
 // table the parity test checks.

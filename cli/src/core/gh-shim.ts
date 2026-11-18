@@ -43,10 +43,16 @@ import os from 'node:os';
 import path from 'node:path';
 
 // A JavaScript line comment: the shim is a .js file, so a `#` line here would be
-// a SyntaxError on every agent `gh` call. The detection substring stays stable
-// for files written by earlier versions.
-export const GH_SHIM_MARKER = '// xtrm-gh-agent-shim v1';
-export const GH_SHIM_FINGERPRINT = 'xtrm-gh-agent-shim v1';
+// a SyntaxError on every agent `gh` call. Detection is version-independent on
+// purpose: a shim written by any xtrm release must still be recognised as a shim
+// (never mistaken for the real gh, which would recurse), while the versioned
+// GH_SHIM_FINGERPRINT is what ghShimStatus compares, so a changed shim reads as
+// NOT CURRENT and `xt identity setup` reinstalls it.
+// CORE-2745 bumped it to v2: a v1 shim kept a fixed 6000 ms link kill against an
+// inner budget that is now 18000 ms in remote mode.
+export const GH_SHIM_DETECT = 'xtrm-gh-agent-shim';
+export const GH_SHIM_FINGERPRINT = `${GH_SHIM_DETECT} v2`;
+export const GH_SHIM_MARKER = `// ${GH_SHIM_FINGERPRINT}`;
 const REAL_GH_PLACEHOLDER = '__XTRM_REAL_GH__';
 
 export interface ShimDeps {
@@ -86,7 +92,7 @@ function isExecutableFile(deps: ShimDeps, file: string): boolean {
 function isShimFile(deps: ShimDeps, file: string): boolean {
     const read = deps.readFile ?? ((f: string) => readFileSync(f, 'utf8'));
     try {
-        return read(file).slice(0, 512).includes(GH_SHIM_FINGERPRINT);
+        return read(file).slice(0, 512).includes(GH_SHIM_DETECT);
     } catch {
         return false;
     }
@@ -124,7 +130,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const MARKER = '${GH_SHIM_FINGERPRINT}';
+const MARKER = '${GH_SHIM_DETECT}';
 // CORE-2626: the classification every restricted-role decision reads, inlined
 // from cli/src/core/gh-shim-routes.ts so the running shim cannot drift from the
 // table the parity test checks.

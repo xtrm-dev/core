@@ -105,13 +105,16 @@ export function sbRemoteConfigPath(env: NodeJS.ProcessEnv, homeDir = homedir()):
  * Whether a parsed sb config says every call is forwarded over ssh. Tolerant by
  * design: an unknown shape reads as no remote setting, so a link on a host with a
  * newer sb keeps the fast local budget rather than waiting for a mode it cannot see.
+ * An empty object is no setting either (CORE-2745 review F4): only a non-empty
+ * remote setting forwards calls.
  */
 export function parseSbRemoteMode(text: string | null | undefined): boolean {
     try {
         const parsed = JSON.parse((text ?? '').trim()) as { remote?: unknown } | null;
         const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
         if (typeof remote === 'string') return remote.trim() !== '';
-        return Boolean(remote && typeof remote === 'object');
+        if (remote && typeof remote === 'object') return Object.keys(remote).length > 0;
+        return false;
     } catch {
         return false;
     }
@@ -608,13 +611,34 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
      * exact command that finishes the link, so nobody has to reconstruct the
      * recovery by hand.
      */
-    const outOfTime = (step: string, finish: string[][]): GhPrLinkResult => ({
+    const outOfTime = (step: string, finish: string[][], note?: string): GhPrLinkResult => ({
         attached: false,
         ref,
         canonical: pr.canonical,
         argv: attachArgv,
-        warning: oneLine(`created ${pr.canonical}, but the Substrate link to ${ref} ran out of time at ${step}; finish with: ${finishWith(...finish)}`),
+        warning: oneLine(`created ${pr.canonical}, but the Substrate link to ${ref} ran out of time at ${step}; finish with: ${finishWith(...finish)}${note ? ` (${note})` : ''}`),
     });
+    /**
+     * CORE-2745 review F1: a claim-read timeout cannot be finished by
+     * `provenance dispatch` alone. sb refuses a dispatch on a live-held Issue that
+     * names no participant, and the claim read is exactly the step that finds the
+     * holder — so the line carries the read, a dispatch with the participant we
+     * already know (the shell holder) and the activation the read answers with,
+     * then the rest of the recovery.
+     */
+    const claimReadFinish = (): { steps: string[][]; note: string } => {
+        const dispatch: string[] = ['provenance', 'dispatch', ref];
+        if (ownHolder) {
+            dispatch.push('--participant', ownHolder, '--activation', `'<activationId from the show>'`);
+        }
+        const steps = [showArgv, withReceiptProject(dispatch, project), allocateArgv, attachArgv];
+        return {
+            steps,
+            note: ownHolder
+                ? `--participant ${ownHolder} only when the show answer names it as the claim holder, and --activation is that answer's activationId`
+                : 'add --participant <the claim holder from the show> and --activation <its activationId> to the dispatch',
+        };
+    };
     /** sb's own wording for a call this process killed at its budget. */
     const timedOut = (error?: string): boolean => /no answer in \d+ ms|ETIMEDOUT/i.test(error ?? '');
     const t1 = run(attachArgv, env, budget());
@@ -665,15 +689,18 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
                 claimActivation = claimFromAttach.activationId ?? null;
             }
         } else if (ownHolder) {
+            // CORE-2745 review F1: name the read AND the dispatch that works on a
+            // live-held Issue, not a dispatch sb would refuse.
+            const claimFinish = claimReadFinish();
             if (recoveryBudget() <= 0) {
-                return outOfTime('the claim read (sb issue show)', [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+                return outOfTime('the claim read (sb issue show)', claimFinish.steps, claimFinish.note);
             }
             const showResult = run(showArgv, env, recoveryBudget());
             if (!showResult.ok) {
                 // A read that hit the budget ends the recovery; any other failure
                 // continues without a participant, as before.
                 if (timedOut(showResult.error)) {
-                    return outOfTime('the claim read (sb issue show)', [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+                    return outOfTime('the claim read (sb issue show)', claimFinish.steps, claimFinish.note);
                 }
                 claimReadFailed = true;
             } else {

@@ -141,6 +141,9 @@ describe('the link budget follows sb mode (CORE-2745)', () => {
         expect(parseSbRemoteMode(JSON.stringify({ remote: '   ' }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: null }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: '' }))).toBe(false);
+        // CORE-2745 review F4: an empty object is no setting, not a remote mode.
+        expect(parseSbRemoteMode(JSON.stringify({ remote: {} }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: [] }))).toBe(false);
         expect(parseSbRemoteMode(JSON.stringify({ remote: { host: 'h' } }))).toBe(true);
         expect(parseSbRemoteMode('{}')).toBe(false);
         expect(parseSbRemoteMode('')).toBe(false);
@@ -1201,6 +1204,17 @@ describe('the recovery fits the budget in remote mode (CORE-2745)', () => {
         expect(result.warning).toMatch(/finish with: sb issue show CORE-2607 --json, then sb provenance dispatch CORE-2607/);
         expect(result.warning).toContain('--project prj_core');
         // ONE stderr line: the shim prefixes it and never splits it.
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    // CORE-2745 review F1: the claim-read step is the one that FINDS the holder, so
+    // the finish line must carry the read and a dispatch sb will accept on a
+    // live-held Issue. A bare `dispatch` is refused there (anti-steal), which is the
+    // very case the read exists for.
+    it('finishes a claim-read timeout with the participant, not a dispatch sb would refuse', () => {
+        const { result } = latencyDeps({ perCallMs: 1_500, env: { SUBSTRATE_HOLDER: 'pi152-core' } });
+        expect(result.warning).toMatch(/finish with: sb issue show CORE-2607 --json, then sb provenance dispatch CORE-2607 --participant pi152-core --activation '<activationId from the show>' --project prj_core, then sb provenance allocate CORE-2607 --project prj_core, then sb provenance attach CORE-2607 pr xtrm-dev\/core#912 --project prj_core/);
+        expect(result.warning).toMatch(/--participant pi152-core only when the show answer names it as the claim holder, and --activation is that answer's activationId/);
         expect(result.warning).not.toMatch(/\n/);
     });
 
