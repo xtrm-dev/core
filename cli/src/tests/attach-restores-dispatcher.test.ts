@@ -17,8 +17,8 @@ import {
     parseDispatcherBindings,
     readDispatcherBinding,
     recordDispatcherBinding,
-    refreshDispatcherEnv,
     refreshDispatcherEnvByParticipant,
+    resolveDispatcherResolution,
     resolveDispatcherSessionForParticipant,
     type DispatcherIdentityDeps,
     type DispatcherResolution,
@@ -26,6 +26,7 @@ import {
     type SbRunner,
 } from '../core/dispatcher-identity.js';
 import { resolveWorkerIssueRef } from '../commands/attach.js';
+import { readCodexWorktreeSession } from '../core/codex-session.js';
 
 const CLAUDE_SESSION = '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce';
 
@@ -227,7 +228,14 @@ describe('the binding a launch recorded (CORE-2728)', () => {
         };
         expect(readDispatcherBinding('CORE-2728', { run, env: {} })).toEqual({ participant: 'g04z' });
         expect(calls).toEqual([['provenance', 'trace', 'CORE-2728', '--json']]);
-        expect(readDispatcherBinding('CORE-2728', { run: () => ({ ok: false, error: 'no store' }), env: {} })).toBeNull();
+        // A failed read is null AND one warning (CORE-2728 F6), never silence.
+        const warnSpy = vi.spyOn(process.stderr, 'write').mockImplementation((() => true) as never);
+        try {
+            expect(readDispatcherBinding('CORE-2728', { run: () => ({ ok: false, error: 'no store' }), env: {} })).toBeNull();
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            warnSpy.mockRestore();
+        }
         expect(readDispatcherBinding(null, { run })).toBeNull();
     });
 });
@@ -283,11 +291,13 @@ describe('xt attach restores the ORIGINAL dispatcher (CORE-2728)', () => {
             }[pid] ?? null),
             env: { XTRM_DISPATCHER_NAME: 'attacher', XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/attacher.sock' },
         };
-        // Proof the trap is armed: the old, name-keyed path would name the attacher.
-        expect(refreshDispatcherEnv(attacherDeps)).toEqual({
-            [XTRM_DISPATCHER_NAME_VAR]: 'attacher',
-            [XTRM_DISPATCHER_ADDRESS_VAR]: 'uds:/run/cc/attacher.sock',
-            [XTRM_DISPATCHER_PARTICIPANT_VAR]: 'attacher',
+        // Proof the trap is armed: the attacher's own resolution names the attacher,
+        // so any fallback would adopt it.
+        expect(resolveDispatcherResolution(attacherDeps)).toMatchObject({
+            participant: 'attacher',
+            name: 'attacher',
+            address: 'uds:/run/cc/attacher.sock',
+            source: 'ancestor',
         });
         const attacherEnv: NodeJS.ProcessEnv = {
             XTRM_DISPATCHER_PARTICIPANT: 'attacher',
@@ -300,8 +310,23 @@ describe('xt attach restores the ORIGINAL dispatcher (CORE-2728)', () => {
         ]) {
             expect(attachDispatcherEnv('CORE-2728', { env: attacherEnv, run: () => ({ ok: true, stdout }), identity: attacherDeps })).toEqual({});
         }
-        // An unreadable store and an unknown issue ref are the same: absent.
-        expect(attachDispatcherEnv('CORE-2728', { run: () => ({ ok: false, error: 'no store' }), identity: attacherDeps })).toEqual({});
+        // An unreadable store is ALSO absent, and says so once (CORE-2728 F6) — it
+        // never falls back to the attacher either.
+        const lines: string[] = [];
+        const spy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            lines.push(String(chunk));
+            return true;
+        }) as never);
+        let unreadable: Record<string, string>;
+        try {
+            unreadable = attachDispatcherEnv('CORE-2728', { run: () => ({ ok: false, error: 'no store' }), identity: attacherDeps });
+        } finally {
+            spy.mockRestore();
+        }
+        expect(unreadable).toEqual({});
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain('could not be read');
+        // An unknown issue ref is silent: there is nothing to read.
         expect(attachDispatcherEnv(null, { identity: attacherDeps })).toEqual({});
     });
 
@@ -401,24 +426,7 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
             launchedAt: '2026-11-18T00:00:00.000Z',
             bead: 'CORE-2728',
         });
-        expect(resolveWorkerIssueRef(dir, { listPanes: () => '' })).toBe('CORE-2728');
-    });
-
-    it('falls back to a live pane @agent_bead for that worktree', () => {
-        const dir = worktree();
-        // The real listing shape is path<TAB>worktree<TAB>bead.
-        // @agent_worktree names the worktree even when the pane's cwd has moved.
-        const listing = [
-            `/elsewhere\t\tCORE-1`,
-            `/elsewhere\t${dir}\tCORE-2728`,
-        ].join('\n');
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, listPanes: () => listing })).toBe('CORE-2728');
-        // pane_current_path is the fallback: a bare launch writes no @agent_worktree
-        // option, so a pane sitting in the worktree must still resolve its issue.
-        const byPath = `${dir}\t\tCORE-2728`;
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, listPanes: () => byPath })).toBe('CORE-2728');
-        // A pane in another worktree is never that worktree's issue.
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, listPanes: () => `/elsewhere\t\tCORE-9999` })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBe('CORE-2728');
     });
 
     it('a Codex record carries the bead, so attach restores the dispatcher with NO pane', () => {
@@ -434,9 +442,11 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
             profilePath: path.join(os.homedir(), '.codex', 'xtrm-0123456789abcdef.config.toml'),
             bead: 'CORE-2728',
         });
-        // No tmux pane at all: the record is the only source.
-        const ref = resolveWorkerIssueRef(dir, { listPanes: () => '' });
+        // No live pane at all: the record is the only source.
+        const ref = resolveWorkerIssueRef(dir, { paneBead: () => null });
         expect(ref).toBe('CORE-2728');
+        // CORE-2728 M6c: with the Codex reader dropping the bead, this would be null.
+        expect(readCodexWorktreeSession(dir)?.bead).toBe('CORE-2728');
         const identity = liveDispatcher('g04z', { name: 'g04z-lead' });
         const env = attachDispatcherEnv(ref, {
             env: {},
@@ -452,11 +462,25 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
 
     it('unknown stays absent: no metadata, no pane and an unsafe value all return null', () => {
         const dir = worktree();
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, listPanes: () => '' })).toBeNull();
-        const unsafe = `${dir}\t\t--project`;
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, listPanes: () => unsafe })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneBead: () => null })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneBead: () => '--project' })).toBeNull();
         fs.ensureDirSync(path.join(dir, '.xtrm'));
         fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), { runtime: 'pi', launchedAt: 'x', bead: 'not a ref' });
-        expect(resolveWorkerIssueRef(dir, { listPanes: () => '' })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBeNull();
+    });
+
+    it('CORE-2728 F5: a non-string bead is absent, not a TypeError', () => {
+        const dir = worktree();
+        fs.ensureDirSync(path.join(dir, '.xtrm'));
+        fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), {
+            runtime: 'pi',
+            launchedAt: '2026-11-18T00:00:00.000Z',
+            bead: 2728,
+        });
+        // A damaged record must answer "unknown", never throw while attach runs.
+        expect(() => resolveWorkerIssueRef(dir, { paneBead: () => null })).not.toThrow();
+        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBeNull();
+        // The pane fallback still answers when the record cannot.
+        expect(resolveWorkerIssueRef(dir, { paneBead: () => 'CORE-2728' })).toBe('CORE-2728');
     });
 });

@@ -173,13 +173,14 @@ export function readCodexWorktreeSession(worktreePath: string): CodexWorktreeSes
             || path.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
             return null;
         }
-        const session = parsed as unknown as CodexWorktreeSession;
-        // An absent bead is a valid record; a non-string or empty value is dropped
-        // rather than carried, so a damaged file never names an Issue. The ref shape
-        // is validated by the attach-side reader before it reaches `sb`.
-        const bead = typeof parsed.bead === 'string' ? parsed.bead.trim() : '';
+        // Only the fields above are trusted: the bead is read explicitly, so an
+        // absent one is a valid record and a non-string/empty one is dropped rather
+        // than carried. A damaged file can then never name an Issue, and the ref
+        // shape is still validated by the attach-side reader before it reaches `sb`.
+        const { bead: rawBead, ...validated } = parsed;
+        const session = validated as unknown as CodexWorktreeSession;
+        const bead = typeof rawBead === 'string' ? rawBead.trim() : '';
         if (bead) session.bead = bead;
-        else delete session.bead;
         return session;
     } catch {
         return null;

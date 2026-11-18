@@ -682,49 +682,6 @@ export function resolveDispatcherByParticipant(
 }
 
 /**
- * Fresh dispatcher env for a resumed session (CORE-2432 R8/F2): resolves the
- * dispatcher by participant NAME (XTRM_DISPATCHER_NAME) against the live
- * sessions with a pid liveness check, and refreshes the env from that hit
- * instead of inheriting stale values across a dispatcher restart. When no live
- * entry matches, the nearest-ancestor (else inherited) resolution applies.
- * Unknown stays absent; ambiguity falls back the same way. Never throws.
- *
- * CORE-2728: this is NOT the `xt attach` path any more. A name keyed on the
- * attacher's environment is the attacher's own dispatcher, so attach restores
- * the persisted participant with `refreshDispatcherEnvByParticipant` instead.
- */
-export function refreshDispatcherEnv(deps: DispatcherIdentityDeps = {}): Record<string, string> {
-    const out: Record<string, string> = {};
-    const env = deps.env ?? process.env;
-    const readEnviron = deps.readEnviron ?? readProcessEnvironment;
-    const participant = clean(env[XTRM_DISPATCHER_NAME_VAR]);
-    if (participant) {
-        try {
-            const live = findLiveDispatchers(participant, deps)[0];
-            if (live?.address) {
-                out[XTRM_DISPATCHER_NAME_VAR] = participant;
-                out[XTRM_DISPATCHER_ADDRESS_VAR] = live.address;
-                // CORE-2727: the participant is the dispatcher PROCESS's own
-                // SUBSTRATE_HOLDER. The name this lookup was keyed on is only the
-                // inherited display name, so it is never promoted to a participant;
-                // an unreadable environment leaves it absent.
-                const holder = typeof live.pid === 'number' ? clean(holderOf(readEnviron, live.pid)) : null;
-                if (holder) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = holder;
-                return out;
-            }
-        } catch (error) {
-            // Ambiguous: say so on stderr, then fall back to ancestor resolution.
-            process.stderr.write(`xt attach: ${(error as Error).message}; falling back to ancestor resolution\n`);
-        }
-    }
-    const dispatcher = resolveDispatcherResolution(deps);
-    if (dispatcher.name) out[XTRM_DISPATCHER_NAME_VAR] = dispatcher.name;
-    if (dispatcher.address) out[XTRM_DISPATCHER_ADDRESS_VAR] = dispatcher.address;
-    if (dispatcher.participant) out[XTRM_DISPATCHER_PARTICIPANT_VAR] = dispatcher.participant;
-    return out;
-}
-
-/**
  * Fresh dispatcher env for a session restored from a persisted binding
  * (CORE-2728, operator decision b): `xt attach` knows the ORIGINAL dispatcher's
  * Substrate participant from the launch binding, never from the attacher's
@@ -909,13 +866,19 @@ export function readDispatcherBinding(
     const wanted = clean(ref);
     if (!wanted) return null;
     const run = deps.run ?? defaultSbRunner;
-    let result: { ok: boolean; stdout?: string };
+    let result: { ok: boolean; stdout?: string; error?: string };
     try {
         result = run(['provenance', 'trace', wanted, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
     } catch {
         return null;
     }
-    if (!result.ok) return null;
+    if (!result.ok) {
+        // CORE-2728 F6: an unreadable binding is not silence — one stderr line
+        // names the issue and the reason, and the dispatcher stays ABSENT (never
+        // the attacher's).
+        process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(result.error ?? 'sb gave no reason')}); the dispatcher stays absent\n`);
+        return null;
+    }
     return parseDispatcherBindings(result.stdout)[0] ?? null;
 }
 

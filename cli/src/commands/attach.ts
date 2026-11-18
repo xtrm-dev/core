@@ -8,6 +8,7 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
+import { resolveWorktreePaneBead } from '../utils/worktree-pane-bead.js';
 import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled, readSessionMeta, type SessionMeta } from '../utils/worktree-session.js';
 import {
     SUBSTRATE_HOLDER_VAR,
@@ -91,41 +92,51 @@ export function holderFromWorktreePath(worktreePath: string): string | null {
 /** A Substrate/Beads issue reference this command may pass to `sb` (no flags, no spaces). */
 const SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-/** What the issue lookup may read; both seams are injectable for tests. */
+/** What the issue lookup may read; every seam is injectable for tests. */
 export interface WorkerIssueDeps {
     readMeta?: (worktreePath: string) => SessionMeta | null;
-    /** The tmux pane listing (`path<TAB>worktree<TAB>bead` per line). */
-    listPanes?: () => string;
+    /** The bead a live pane records for this worktree; null when none or ambiguous. */
+    paneBead?: (worktreePath: string) => string | null;
 }
 
-function defaultListPanes(): string {
-    const result = spawnSync('tmux', ['list-panes', '-a', '-F', '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_bead}'], {
-        encoding: 'utf8', stdio: 'pipe',
-    });
-    return result.status === 0 ? String(result.stdout ?? '') : '';
+/**
+ * The session record a resumed worktree wrote. A Codex record is validated by its
+ * own reader (CORE-2728 S1 carries the bead there), so a damaged Codex file cannot
+ * hand the attach a bead the reader would reject; anything else is the plain
+ * launcher record.
+ */
+function readSessionRecord(worktreePath: string): SessionMeta | null {
+    const codex = readCodexWorktreeSession(worktreePath);
+    if (codex) {
+        return {
+            runtime: 'codex',
+            launchedAt: codex.launchedAt,
+            ...(codex.bead ? { bead: codex.bead } : {}),
+        };
+    }
+    return readSessionMeta(worktreePath);
 }
 
 /**
  * The Substrate Issue a resumed worktree was launched for (CORE-2728). The
- * launcher's session metadata persists it; a live pane's `@agent_bead` is the
- * fallback. Unknown stays absent, so a missing ref never becomes a wrong one.
+ * launcher's session record persists it; a live pane's recorded bead is the
+ * fallback. A non-string, malformed or ambiguous value is ABSENT — never a
+ * guess and never a TypeError.
  */
 export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDeps = {}): string | null {
-    const meta = (deps.readMeta ?? readSessionMeta)(worktreePath);
-    const fromMeta = (meta?.bead ?? '').trim();
+    const meta = (deps.readMeta ?? readSessionRecord)(worktreePath);
+    const raw = meta ? meta.bead : undefined;
+    const fromMeta = typeof raw === 'string' ? raw.trim() : '';
     if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
-    let listing: string;
+    const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
+    let fromPane: unknown;
     try {
-        listing = (deps.listPanes ?? defaultListPanes)();
+        fromPane = paneBead(worktreePath);
     } catch {
         return null;
     }
-    for (const line of listing.split(/\r?\n/)) {
-        const [currentPath = '', agentWorktree = '', bead = ''] = line.split('\t');
-        if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
-        const candidate = bead.trim();
-        if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
-    }
+    const candidate = typeof fromPane === 'string' ? fromPane.trim() : '';
+    if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
     return null;
 }
 

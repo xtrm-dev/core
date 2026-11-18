@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     DISPATCHER_ENV_KEYS,
     buildDispatcherEnv,
-    refreshDispatcherEnv,
     refreshDispatcherEnvByParticipant,
     resolveDispatcherByParticipant,
     type ProcessInfo,
@@ -126,16 +125,6 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
             // session entry wins, with a pid liveness check (TABLE: 100 alive).
             env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
         };
-        expect(refreshDispatcherEnv(deps)).toEqual({
-            XTRM_DISPATCHER_NAME: 'coord',
-            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
-            XTRM_DISPATCHER_PARTICIPANT: 'coord-holder',
-        });
-        // An unreadable environment leaves the participant absent, never the name.
-        expect(refreshDispatcherEnv({ ...deps, readEnviron: () => null })).toEqual({
-            XTRM_DISPATCHER_NAME: 'coord',
-            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
-        });
         // CORE-2728 (operator decision b): attach restores the ORIGINAL dispatcher
         // from the persisted participant and matches its live session by
         // SUBSTRATE_HOLDER, not by the registry's display name.
@@ -188,9 +177,14 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
     it('D6 (CORE-2727): a resolved dispatcher and the resumed holder are the only values re-added', () => {
         writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
         const deps = { startPid: 300, sessionsDir, readProcess, tmux: noTmux, env: {} };
+        // CORE-2728: the restored dispatcher record the binding read hands attach.
+        const restored = {
+            XTRM_DISPATCHER_NAME: 'coord',
+            XTRM_DISPATCHER_ADDRESS: 'uds:/run/cc/100.sock',
+        };
         const env = buildAttachEnv(
             { PATH: '/bin', XTRM_DISPATCHER_NAME: 'attacher', GIT_AUTHOR_NAME: 'attacher' },
-            'pi', refreshDispatcherEnv(deps), 'worker-b',
+            'pi', restored, 'worker-b',
         );
         expect(env).toMatchObject({
             PATH: '/bin',
@@ -277,50 +271,6 @@ describe('CORE-2432 R8 worker resolves a restarted dispatcher by participant', (
         expect(resolveDispatcherByParticipant('coord', deps)).toEqual({
             name: 'coord',
             address: 'uds:/run/cc/100.sock',
-        });
-    });
-
-    it('ambiguity at attach prints one stderr line naming the candidates, then falls back', () => {
-        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock' });
-        writeSession(200, { name: 'coord', messagingSocketPath: '/run/cc/200.sock' });
-        const lines: string[] = [];
-        const spy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
-            lines.push(String(chunk));
-            return true;
-        }) as never);
-        try {
-            const got = refreshDispatcherEnv({
-                sessionsDir,
-                readProcess: allAlive,
-                startPid: 999,
-                env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
-            });
-            // No ancestor either: inherited last resort, after the stderr line.
-            expect(got).toEqual({
-                XTRM_DISPATCHER_NAME: 'coord',
-                XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock',
-            });
-        } finally {
-            spy.mockRestore();
-        }
-        expect(lines.join('')).toMatch(/ambiguous dispatcher participant "coord".*uds:\/run\/cc\/100\.sock.*uds:\/run\/cc\/200\.sock/);
-    });
-
-    it('F2 a dead participant entry falls back to ancestor resolution', () => {
-        writeSession(100, { name: 'coord', messagingSocketPath: '/run/cc/100.sock', procStart: '10' });
-        const deps = {
-            startPid: 300,
-            sessionsDir,
-            readProcess: (_pid: number): ProcessInfo | null => null,
-            tmux: noTmux,
-            env: { XTRM_DISPATCHER_NAME: 'coord', XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock' },
-        };
-        // No live entry (pid dead) and no ancestor session: inherited values
-        // survive as the last resort, exactly as before. The participant is not
-        // inherited: an inherited NAME is not a participant (CORE-2727).
-        expect(refreshDispatcherEnv({ ...deps, startPid: 999 })).toEqual({
-            XTRM_DISPATCHER_NAME: 'coord',
-            XTRM_DISPATCHER_ADDRESS: 'uds:/stale.sock',
         });
     });
 

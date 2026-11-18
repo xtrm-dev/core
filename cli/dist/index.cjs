@@ -61790,7 +61790,7 @@ __export(reconcile_exports, {
 async function reconcile(specPath, state, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process38.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process39.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) {
     return { ok: false, error: `sp result failed: ${r.stderr || r.stdout}` };
   }
@@ -61830,7 +61830,7 @@ function extractPlannerResult(parsed) {
 async function validateIdsExist(ids, bdBin) {
   const orphans = [];
   for (const id of ids) {
-    const r = (0, import_node_child_process38.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
+    const r = (0, import_node_child_process39.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
     if (r.status !== 0) orphans.push(id);
   }
   return orphans;
@@ -61855,11 +61855,11 @@ async function writeLinksInPlace(specPath, links) {
 function sidecarPathFromSpec(specPath) {
   return import_node_path68.default.join(import_node_path68.default.dirname(specPath), ".apply-state.json");
 }
-var import_node_child_process38, import_fs_extra60, import_node_path68, import_yaml4;
+var import_node_child_process39, import_fs_extra60, import_node_path68, import_yaml4;
 var init_reconcile = __esm({
   "src/spec/reconcile.ts"() {
     "use strict";
-    import_node_child_process38 = require("child_process");
+    import_node_child_process39 = require("child_process");
     import_fs_extra60 = __toESM(require_lib(), 1);
     import_node_path68 = __toESM(require("path"), 1);
     import_yaml4 = __toESM(require_dist3(), 1);
@@ -64241,7 +64241,11 @@ function readDispatcherBinding(ref, deps = {}) {
   } catch {
     return null;
   }
-  if (!result.ok) return null;
+  if (!result.ok) {
+    process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(result.error ?? "sb gave no reason")}); the dispatcher stays absent
+`);
+    return null;
+  }
   return parseDispatcherBindings(result.stdout)[0] ?? null;
 }
 function attachDispatcherEnv(ref, deps = {}) {
@@ -71273,10 +71277,10 @@ function readCodexWorktreeSession(worktreePath) {
     if (parsed.runtime !== "codex" || typeof parsed.launchedAt !== "string" || !Number.isFinite(Date.parse(parsed.launchedAt)) || typeof parsed.threadId !== "string" || !UUID2.test(parsed.threadId) || parsed.safetyProfile !== "codex-yolo" && parsed.safetyProfile !== "codex-workspace-write" || typeof parsed.profileName !== "string" || !PROFILE_NAME.test(parsed.profileName) || typeof parsed.profilePath !== "string" || !import_node_path28.default.isAbsolute(parsed.profilePath) || import_node_path28.default.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
       return null;
     }
-    const session = parsed;
-    const bead = typeof parsed.bead === "string" ? parsed.bead.trim() : "";
+    const { bead: rawBead, ...validated } = parsed;
+    const session = validated;
+    const bead = typeof rawBead === "string" ? rawBead.trim() : "";
     if (bead) session.bead = bead;
-    else delete session.bead;
     return session;
   } catch {
     return null;
@@ -78408,10 +78412,44 @@ function clearStatuslineClaim2(repoRoot) {
 // src/commands/attach.ts
 init_kleur();
 var import_prompts5 = __toESM(require_prompts3(), 1);
-var import_node_child_process22 = require("child_process");
+var import_node_child_process23 = require("child_process");
 var import_node_path44 = require("path");
 init_theme();
 init_pi_runtime();
+
+// src/utils/worktree-pane-bead.ts
+var import_node_child_process22 = require("child_process");
+var PANE_LISTING_FORMAT = "#{pane_current_path}	#{@agent_worktree}	#{@agent_bead}";
+function listAgentPanes() {
+  try {
+    const result = (0, import_node_child_process22.spawnSync)("tmux", ["list-panes", "-a", "-F", PANE_LISTING_FORMAT], {
+      encoding: "utf8",
+      stdio: "pipe"
+    });
+    return result.status === 0 ? String(result.stdout ?? "") : "";
+  } catch {
+    return "";
+  }
+}
+function beadFromPaneListing(listing, worktreePath) {
+  const beads = /* @__PURE__ */ new Set();
+  for (const line of String(listing ?? "").split(/\r?\n/)) {
+    const [currentPath = "", agentWorktree = "", bead = ""] = line.split("	");
+    if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
+    const candidate = bead.trim();
+    if (candidate) beads.add(candidate);
+  }
+  return beads.size === 1 ? [...beads][0] ?? null : null;
+}
+function resolveWorktreePaneBead(worktreePath, probe2 = listAgentPanes) {
+  try {
+    return beadFromPaneListing(probe2(), worktreePath);
+  } catch {
+    return null;
+  }
+}
+
+// src/commands/attach.ts
 function recency(wt) {
   return wt.lastLogTime?.getTime() ?? (wt.launchedAt ? new Date(wt.launchedAt).getTime() : 0);
 }
@@ -78441,29 +78479,31 @@ function holderFromWorktreePath(worktreePath) {
   return match?.[1] ?? null;
 }
 var SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-function defaultListPanes() {
-  const result = (0, import_node_child_process22.spawnSync)("tmux", ["list-panes", "-a", "-F", "#{pane_current_path}	#{@agent_worktree}	#{@agent_bead}"], {
-    encoding: "utf8",
-    stdio: "pipe"
-  });
-  return result.status === 0 ? String(result.stdout ?? "") : "";
+function readSessionRecord(worktreePath) {
+  const codex = readCodexWorktreeSession(worktreePath);
+  if (codex) {
+    return {
+      runtime: "codex",
+      launchedAt: codex.launchedAt,
+      ...codex.bead ? { bead: codex.bead } : {}
+    };
+  }
+  return readSessionMeta(worktreePath);
 }
 function resolveWorkerIssueRef(worktreePath, deps = {}) {
-  const meta3 = (deps.readMeta ?? readSessionMeta)(worktreePath);
-  const fromMeta = (meta3?.bead ?? "").trim();
+  const meta3 = (deps.readMeta ?? readSessionRecord)(worktreePath);
+  const raw = meta3 ? meta3.bead : void 0;
+  const fromMeta = typeof raw === "string" ? raw.trim() : "";
   if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
-  let listing;
+  const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
+  let fromPane;
   try {
-    listing = (deps.listPanes ?? defaultListPanes)();
+    fromPane = paneBead(worktreePath);
   } catch {
     return null;
   }
-  for (const line of listing.split(/\r?\n/)) {
-    const [currentPath = "", agentWorktree = "", bead = ""] = line.split("	");
-    if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
-    const candidate = bead.trim();
-    if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
-  }
+  const candidate = typeof fromPane === "string" ? fromPane.trim() : "";
+  if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
   return null;
 }
 function createAttachCommand() {
@@ -78543,7 +78583,7 @@ function createAttachCommand() {
     }
     const issueRef = resolveWorkerIssueRef(target.path);
     const restoredDispatcher = attachDispatcherEnv(issueRef);
-    const result = (0, import_node_child_process22.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
+    const result = (0, import_node_child_process23.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
     process.exit(result.status ?? 0);
   });
 }
@@ -78568,7 +78608,7 @@ init_kleur();
 var import_fs_extra41 = __toESM(require_lib(), 1);
 var import_node_os23 = __toESM(require("os"), 1);
 var import_node_path45 = __toESM(require("path"), 1);
-var import_node_child_process23 = require("child_process");
+var import_node_child_process24 = require("child_process");
 var SHIM_MARKER = "# xtrm-acli-agent-shim v1";
 var DEFAULT_SITE = "mercuryintel.atlassian.net";
 function jiraIdentityPaths(home = import_node_os23.default.homedir()) {
@@ -78926,7 +78966,7 @@ exec "$real" "$@"
 `;
 }
 var defaultRun = (cmd, args, opts) => {
-  const r = (0, import_node_child_process23.spawnSync)(cmd, args, { env: opts.env, input: opts.input, encoding: "utf8" });
+  const r = (0, import_node_child_process24.spawnSync)(cmd, args, { env: opts.env, input: opts.input, encoding: "utf8" });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 };
 function isOurShim(file2) {
@@ -79120,7 +79160,7 @@ init_kleur();
 var import_node_fs24 = require("fs");
 var import_node_os26 = __toESM(require("os"), 1);
 var import_node_path48 = __toESM(require("path"), 1);
-var import_node_child_process25 = require("child_process");
+var import_node_child_process26 = require("child_process");
 
 // src/core/review-posting.ts
 var OUTCOME_TO_EVENT = {
@@ -79418,7 +79458,7 @@ function reviewReceiptArgs(receipt, input2, issueRef, slug, deps = {}) {
 }
 
 // src/core/gh-pr-link.ts
-var import_node_child_process24 = require("child_process");
+var import_node_child_process25 = require("child_process");
 var import_node_fs20 = require("fs");
 var ATTACH_TIMEOUT_MS = 5e3;
 var ISSUE_REF = /^[A-Z][A-Z0-9]*-\d+(?:\.\d+)*$/;
@@ -79542,7 +79582,7 @@ function chooseIssueRef(input2) {
 }
 function defaultRunGit() {
   return (args, cwd) => {
-    const result = (0, import_node_child_process24.spawnSync)("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd, timeout: ATTACH_TIMEOUT_MS });
+    const result = (0, import_node_child_process25.spawnSync)("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd, timeout: ATTACH_TIMEOUT_MS });
     return { status: result.status, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
   };
 }
@@ -79822,9 +79862,9 @@ function markerGuidance(ref) {
   ];
 }
 function defaultRunSb() {
-  const { spawnSync: spawnSync47 } = require("child_process");
+  const { spawnSync: spawnSync48 } = require("child_process");
   return (cmd, args, opts) => {
-    const result = spawnSync47(cmd, args, {
+    const result = spawnSync48(cmd, args, {
       encoding: "utf8",
       input: opts.input ?? void 0,
       cwd: opts.cwd,
@@ -80440,7 +80480,7 @@ function realGh() {
   return (process.env.XTRM_REAL_GH ?? "").trim() || "gh";
 }
 function ghView(args, cwd) {
-  const result = (0, import_node_child_process25.spawnSync)(realGh(), args, {
+  const result = (0, import_node_child_process26.spawnSync)(realGh(), args, {
     encoding: "utf8",
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
@@ -81121,16 +81161,16 @@ function isCacheValid(cache, entries, ttlMs = DEFAULT_TTL_MS) {
 
 // src/commands/docs-cross-check-gh.ts
 init_kleur();
-var import_node_child_process26 = require("child_process");
+var import_node_child_process27 = require("child_process");
 function isGhAvailable() {
-  return (0, import_node_child_process26.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
+  return (0, import_node_child_process27.spawnSync)("gh", ["--version"], { stdio: "pipe", encoding: "utf8" }).status === 0;
 }
 function fetchRecentPrs(repoRoot, days) {
   if (!isGhAvailable()) {
     console.log(kleur_default.yellow("  \u26A0 gh CLI not found \u2014 skipping PR data (install gh to enable cross-check)"));
     return [];
   }
-  const r = (0, import_node_child_process26.spawnSync)("gh", [
+  const r = (0, import_node_child_process27.spawnSync)("gh", [
     "pr",
     "list",
     "--state",
@@ -81160,12 +81200,12 @@ function fetchRecentPrs(repoRoot, days) {
 }
 
 // src/commands/docs-cross-check-bd.ts
-var import_node_child_process27 = require("child_process");
+var import_node_child_process28 = require("child_process");
 init_kleur();
 var _bdAvailable = null;
 function isBdAvailable() {
   if (_bdAvailable !== null) return _bdAvailable;
-  const r = (0, import_node_child_process27.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
+  const r = (0, import_node_child_process28.spawnSync)("bd", ["--version"], { stdio: "pipe", encoding: "utf8" });
   _bdAvailable = r.status === 0;
   return _bdAvailable;
 }
@@ -81177,7 +81217,7 @@ function fetchClosedBdIssues(days) {
     logBdWarning("fetchClosedBdIssues: bd CLI not available, skipping issue fetch");
     return [];
   }
-  const r = (0, import_node_child_process27.spawnSync)("bd", [
+  const r = (0, import_node_child_process28.spawnSync)("bd", [
     "query",
     `status=closed AND updated>${days}d`,
     "--json"
@@ -81705,7 +81745,7 @@ ${content}`;
 
 // src/commands/debug.ts
 init_kleur();
-var import_node_child_process28 = require("child_process");
+var import_node_child_process29 = require("child_process");
 var import_node_fs25 = require("fs");
 var import_node_path49 = require("path");
 var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
@@ -81848,7 +81888,7 @@ function buildWhere(opts, base) {
 }
 function queryEvents(dbPath, where, limit) {
   const sql = `SELECT id,ts,session_id,runtime,worktree,kind,tool_name,outcome,issue_id,duration_ms,data FROM events${where ? ` WHERE ${where}` : ""} ORDER BY id ASC LIMIT ${limit}`;
-  const result = (0, import_node_child_process28.spawnSync)("sqlite3", [dbPath, "-json", sql], {
+  const result = (0, import_node_child_process29.spawnSync)("sqlite3", [dbPath, "-json", sql], {
     stdio: ["pipe", "pipe", "pipe"],
     encoding: "utf8",
     timeout: 5e3
@@ -81905,10 +81945,10 @@ function createDebugCommand() {
 init_kleur();
 var import_fs_extra45 = __toESM(require_lib(), 1);
 var import_path24 = __toESM(require("path"), 1);
-var import_node_child_process29 = require("child_process");
+var import_node_child_process30 = require("child_process");
 init_theme();
 function run3(cmd, args, cwd) {
-  const r = (0, import_node_child_process29.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const r = (0, import_node_child_process30.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim() };
 }
 function detectDefaultBranch(cwd) {
@@ -82790,7 +82830,7 @@ function createSkillsCommand() {
 // src/commands/claude-sync.ts
 var import_fs_extra47 = __toESM(require_lib(), 1);
 var import_node_path51 = __toESM(require("path"), 1);
-var import_node_child_process30 = require("child_process");
+var import_node_child_process31 = require("child_process");
 init_kleur();
 var SENTINEL_RE = /<!-- XTRM-MANAGED:(\S+) start v=(\S+) -->\n([\s\S]*?)\n<!-- XTRM-MANAGED:\1 end -->/g;
 function parseFrontmatter2(text) {
@@ -82881,7 +82921,7 @@ function renderFragmentBody(frag, ctx) {
 function detectRepoContext(cwd) {
   let repoName = import_node_path51.default.basename(cwd);
   try {
-    const top = (0, import_node_child_process30.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const top = (0, import_node_child_process31.execSync)("git rev-parse --show-toplevel", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (top) repoName = import_node_path51.default.basename(top);
   } catch {
   }
@@ -83086,7 +83126,7 @@ var import_prompts6 = __toESM(require_prompts3(), 1);
 
 // src/core/claude-route.ts
 var import_node_fs26 = require("fs");
-var import_node_child_process31 = require("child_process");
+var import_node_child_process32 = require("child_process");
 var import_node_os28 = require("os");
 var import_node_path52 = __toESM(require("path"), 1);
 init_zod();
@@ -83288,7 +83328,7 @@ function getClaudeRouteStatus(location = resolveClaudeRouteConfigLocation(), rea
   };
 }
 function resolveKnownSpecialistNames(run5 = (command, args) => {
-  const result = (0, import_node_child_process31.spawnSync)(command, args, { encoding: "utf-8", timeout: 5e3 });
+  const result = (0, import_node_child_process32.spawnSync)(command, args, { encoding: "utf-8", timeout: 5e3 });
   return { status: result.status, stdout: result.stdout ?? "" };
 }) {
   const result = run5("sp", ["list", "--json"]);
@@ -83512,7 +83552,7 @@ function createClaudeRouteCommand() {
 // src/commands/doctor.ts
 var import_fs_extra50 = __toESM(require_lib(), 1);
 var import_node_path57 = __toESM(require("path"), 1);
-var import_node_child_process33 = require("child_process");
+var import_node_child_process34 = require("child_process");
 init_kleur();
 var import_cli_table3 = __toESM(require_cli_table3(), 1);
 init_pi_runtime();
@@ -83977,7 +84017,7 @@ function getClaudeChannelStatus(paths) {
 
 // src/utils/npm-latest.ts
 var import_node_fs28 = require("fs");
-var import_node_child_process32 = require("child_process");
+var import_node_child_process33 = require("child_process");
 var import_node_path56 = __toESM(require("path"), 1);
 var import_node_os31 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
@@ -84009,7 +84049,7 @@ function writeCache2(file2, data) {
   }
 }
 function defaultNpmView(pkg) {
-  const result = (0, import_node_child_process32.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
+  const result = (0, import_node_child_process33.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -84019,7 +84059,7 @@ function defaultNpmView(pkg) {
   return v.length > 0 ? v : null;
 }
 function defaultInstalledResolver(pkg) {
-  const rootResult = (0, import_node_child_process32.spawnSync)("npm", ["root", "-g"], {
+  const rootResult = (0, import_node_child_process33.spawnSync)("npm", ["root", "-g"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -84124,7 +84164,7 @@ ${kleur_default.bold(`\u2500\u2500 ${label} ${line}`)}`);
 function runSelfCheck(cwd) {
   const cliEntry = process.argv[1];
   if (!cliEntry) return null;
-  const result = (0, import_node_child_process33.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
+  const result = (0, import_node_child_process34.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -84674,9 +84714,9 @@ function createDoctorCommand() {
 ${kleur_default.bold("xt doctor")}
 `);
     section2("Runtime availability");
-    const claudeAvailable = (0, import_node_child_process33.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
-    const piAvailable = (0, import_node_child_process33.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
-    const pnpmAvailable = (0, import_node_child_process33.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
+    const claudeAvailable = (0, import_node_child_process34.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
+    const piAvailable = (0, import_node_child_process34.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
+    const pnpmAvailable = (0, import_node_child_process34.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
     claudeAvailable ? ok("claude CLI available") : warn(CLAUDE_CLI_MISSING_MESSAGE);
     if (satisfiesNodeFloor()) {
       ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
@@ -84766,7 +84806,7 @@ function createBootstrapCommand() {
 
 // src/commands/update.ts
 init_kleur();
-var import_node_child_process34 = require("child_process");
+var import_node_child_process35 = require("child_process");
 var import_node_path61 = __toESM(require("path"), 1);
 var import_fs_extra55 = __toESM(require_lib(), 1);
 init_pi_runtime();
@@ -85296,7 +85336,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process34.spawnSync)("git", args, {
+  return (0, import_node_child_process35.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -85406,17 +85446,17 @@ function createUpdateCommand() {
 // src/commands/release.ts
 init_kleur();
 var import_node_fs30 = require("fs");
-var import_node_child_process36 = require("child_process");
+var import_node_child_process37 = require("child_process");
 var import_node_path63 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
 var import_node_fs29 = require("fs");
-var import_node_child_process35 = require("child_process");
+var import_node_child_process36 = require("child_process");
 var import_node_path62 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process35.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process36.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
@@ -85485,7 +85525,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process36.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process37.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -86339,7 +86379,7 @@ function renderHuman2(report) {
 init_kleur();
 var import_fs_extra61 = __toESM(require_lib(), 1);
 var import_node_path69 = __toESM(require("path"), 1);
-var import_node_child_process39 = require("child_process");
+var import_node_child_process40 = require("child_process");
 var import_yaml5 = __toESM(require_dist3(), 1);
 
 // src/spec/xml.ts
@@ -86410,10 +86450,10 @@ function toChangeContractNode({ spec, effectiveScrutiny }) {
 }
 
 // src/spec/dispatch.ts
-var import_node_child_process37 = require("child_process");
+var import_node_child_process38 = require("child_process");
 function dispatchPlanner(plannerBeadId, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
-  const r = (0, import_node_child_process37.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
+  const r = (0, import_node_child_process38.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
     encoding: "utf8"
   });
   if (r.status !== 0) {
@@ -86594,7 +86634,7 @@ function createSpecApplyCommand() {
 }
 function bdCreatePlannerBead(args) {
   const bd2 = process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process39.spawnSync)(
+  const r = (0, import_node_child_process40.spawnSync)(
     bd2,
     ["create", "--type", "task", "--priority", "1", "--title", args.title, "--description", args.description, "--json"],
     { encoding: "utf8" }
@@ -86617,7 +86657,7 @@ var import_node_path70 = __toESM(require("path"), 1);
 var import_yaml6 = __toESM(require_dist3(), 1);
 
 // src/spec/drift.ts
-var import_node_child_process40 = require("child_process");
+var import_node_child_process41 = require("child_process");
 async function computeStatus(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const epic = spec.links.epic ?? null;
@@ -86667,7 +86707,7 @@ async function computeStatus(spec, opts = {}) {
   };
 }
 function bdShow(bd2, id) {
-  const r = (0, import_node_child_process40.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process41.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout);
@@ -86676,7 +86716,7 @@ function bdShow(bd2, id) {
   }
 }
 function bdChildrenDiff(bd2, epic, knownChildren) {
-  const r = (0, import_node_child_process40.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process41.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -86687,7 +86727,7 @@ function bdChildrenDiff(bd2, epic, knownChildren) {
   }
 }
 function bdCycles(bd2, epic) {
-  const r = (0, import_node_child_process40.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process41.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -86754,7 +86794,7 @@ var import_node_path71 = __toESM(require("path"), 1);
 var import_yaml7 = __toESM(require_dist3(), 1);
 
 // src/spec/archive-gate.ts
-var import_node_child_process41 = require("child_process");
+var import_node_child_process42 = require("child_process");
 async function checkArchiveGate(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const failures = [];
@@ -86799,7 +86839,7 @@ async function checkArchiveGate(spec, opts = {}) {
   return { ok: failures.length === 0, failures };
 }
 function bdStatus(bd2, id) {
-  const r = (0, import_node_child_process41.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process42.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout).status ?? null;
@@ -86808,7 +86848,7 @@ function bdStatus(bd2, id) {
   }
 }
 function bdKv(bd2, key) {
-  const r = (0, import_node_child_process41.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
+  const r = (0, import_node_child_process42.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
   if (r.status !== 0) return null;
   const value = r.stdout.trim();
   return value.length > 0 ? value : null;
@@ -87837,7 +87877,7 @@ function createHooksCommand() {
 // src/commands/version.ts
 var import_node_fs31 = require("fs");
 var import_node_path73 = require("path");
-var import_node_child_process42 = require("child_process");
+var import_node_child_process43 = require("child_process");
 init_kleur();
 function readInstallPackageJson() {
   const candidates = [
@@ -87860,7 +87900,7 @@ function detectSource(installRoot) {
 }
 function readGitCommit(installRoot) {
   if (!(0, import_node_fs31.existsSync)((0, import_node_path73.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process42.spawnSync)("git", ["rev-parse", "HEAD"], {
+  const result = (0, import_node_child_process43.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -87870,7 +87910,7 @@ function readGitCommit(installRoot) {
 }
 function readGitDirty(installRoot) {
   if (!(0, import_node_fs31.existsSync)((0, import_node_path73.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process42.spawnSync)("git", ["status", "--porcelain"], {
+  const result = (0, import_node_child_process43.spawnSync)("git", ["status", "--porcelain"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -87948,11 +87988,11 @@ function createVersionCommand() {
 init_kleur();
 
 // src/core/topology-projection.ts
-var import_node_child_process43 = require("child_process");
+var import_node_child_process44 = require("child_process");
 var import_node_os34 = require("os");
 var import_node_path74 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
-var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process43.execFile);
+var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process44.execFile);
 var SEP2 = "	";
 var PANE_FIELDS = [
   "pane_id",
@@ -91338,7 +91378,7 @@ function activeBranch(entries) {
 
 // src/core/agent-host-launch.ts
 var import_node_crypto20 = require("crypto");
-var import_node_child_process44 = require("child_process");
+var import_node_child_process45 = require("child_process");
 var import_node_fs34 = require("fs");
 var import_node_path76 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
@@ -91367,7 +91407,7 @@ var LaunchRejection = class extends Error {
   code;
 };
 var runProcess = (file2, args, options) => new Promise((resolve6) => {
-  (0, import_node_child_process44.execFile)(
+  (0, import_node_child_process45.execFile)(
     file2,
     [...args],
     { cwd: options.cwd, env: options.env, timeout: options.timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8" },
@@ -91575,7 +91615,7 @@ function firstLine2(text) {
 }
 
 // src/core/agent-host-references.ts
-var import_node_child_process45 = require("child_process");
+var import_node_child_process46 = require("child_process");
 var import_node_crypto21 = require("crypto");
 var import_node_fs35 = require("fs");
 var import_promises = require("fs/promises");
@@ -91806,7 +91846,7 @@ ${statText}
 }
 function git5(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process45.execFile)(
+    (0, import_node_child_process46.execFile)(
       "git",
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
       {
@@ -92996,7 +93036,7 @@ function boundText(text) {
 }
 
 // src/core/agent-host-session-index.ts
-var import_node_child_process46 = require("child_process");
+var import_node_child_process47 = require("child_process");
 var import_node_fs37 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os36 = __toESM(require("os"), 1);
@@ -93478,7 +93518,7 @@ function remoteUrl(configOut) {
 }
 function git6(cwd, args) {
   return new Promise((resolve6, reject) => {
-    (0, import_node_child_process46.execFile)(
+    (0, import_node_child_process47.execFile)(
       "git",
       ["-C", cwd, ...args],
       // SIGKILL: execFile's timeout only signals; a child ignoring SIGTERM kept the callback pending.
@@ -93647,7 +93687,7 @@ function bounded2(value, max) {
 }
 
 // src/core/topology-feed.ts
-var import_node_child_process47 = require("child_process");
+var import_node_child_process48 = require("child_process");
 var import_node_crypto22 = require("crypto");
 var import_node_readline2 = require("readline");
 var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
@@ -93900,7 +93940,7 @@ var TopologyFeed = class {
     if (!target) return;
     const env3 = { ...process.env };
     delete env3.TMUX;
-    const child = (0, import_node_child_process47.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
+    const child = (0, import_node_child_process48.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
       stdio: ["pipe", "pipe", "ignore"],
       env: env3
     });
@@ -94525,7 +94565,7 @@ function safeUnlink(file2) {
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process48 = require("child_process");
+var import_node_child_process49 = require("child_process");
 var import_node_crypto23 = require("crypto");
 var import_node_fs39 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
@@ -94663,7 +94703,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const { fd: logFd, start: logStart } = openHostLog(logPath);
   let child;
   try {
-    child = (0, import_node_child_process48.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process49.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? hostSpawnEnv(process.env)
