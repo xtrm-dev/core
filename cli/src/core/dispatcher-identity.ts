@@ -715,7 +715,9 @@ export function refreshDispatcherEnvByParticipant(
     out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
     const hit = live[0];
     if (hit) {
-        out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
+        // CORE-2740 F1: the socket path is registry data, so only a plausible
+        // address is exported; an unusable one stays absent.
+        if (isDispatcherSocketAddress(hit.address)) out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
         // CORE-2740 F1: the registry name is display-only and may come from another
         // process's record, so it is reduced to one bounded line before export.
         out[XTRM_DISPATCHER_NAME_VAR] = cleanAgentName(hit.name) ?? want;
@@ -762,6 +764,19 @@ export function isLowercaseUuid(value: unknown): boolean {
  * accepts (shell-safe, at most 128 characters). A value that would be refused is
  * never passed, so a launch cannot fail on it.
  */
+/**
+ * A dispatcher address as the restore exports it (CORE-2740 F1): the `uds:`
+ * scheme and an absolute socket path, no control bytes, at most 512 characters.
+ * The value comes from another process's registry entry, so anything else is
+ * unknown and stays absent rather than reaching a runtime's environment.
+ */
+export function isDispatcherSocketAddress(value: unknown): boolean {
+    if (typeof value !== 'string' || value.length > 512) return false;
+    if (!value.startsWith('uds:')) return false;
+    const socket = value.slice(4);
+    return socket.startsWith('/') && !/[\u0000-\u001f\u007f]/.test(socket);
+}
+
 const DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
 export function isDispatcherLabel(value: unknown): boolean {
     return typeof value === 'string' && value.length <= 128 && DISPATCHER_LABEL.test(value);
@@ -914,14 +929,19 @@ function selectRestoreBinding(rows: TraceBindingRow[], select: DispatcherBinding
     }
     const workspace = clean(select.workspace);
     if (workspace) {
-        const own = rows.find((row) => row.workspace === workspace && row.participant);
-        if (own) return bindingRecordOf(own);
+        // The worker's own binding answers, whether or not it recorded a
+        // dispatcher: one that recorded none means ABSENT. Never another
+        // worktree's binding, which is how a shared Issue leaked a foreign
+        // dispatcher before CORE-2740.
+        const own = rows.find((row) => row.workspace === workspace);
+        return own ? bindingRecordOf(own) : null;
     }
-    // A ref taken from a live pane is not the worker's own word: only the
-    // workspace match above may answer it.
+    // No workspace to match on: only a caller that names the worker's own record
+    // may read the newest binding that has a dispatcher; a ref taken from a live
+    // pane may not.
     if (select.ownRecord === false) return null;
-    // Legacy record (launched before CORE-2740, so it names no binding id): the
-    // newest binding that names a dispatcher is that launch's own.
+    // Legacy caller (older code path, no workspace): the newest binding that
+    // names a dispatcher is the launch's own.
     const legacy = rows.find((row) => row.participant);
     return legacy ? bindingRecordOf(legacy) : null;
 }
@@ -936,6 +956,21 @@ function bindingCreatedAt(value: unknown): number {
     return Number.NEGATIVE_INFINITY;
 }
 
+/** One `sb provenance trace <ref> --json` read: its rows, or why it failed. */
+function readTraceBindingRows(
+    ref: string,
+    deps: { env?: NodeJS.ProcessEnv; run?: SbRunner; timeoutMs?: number },
+): { ok: true; rows: TraceBindingRow[] } | { ok: false; error?: string } {
+    const run = deps.run ?? defaultSbRunner;
+    try {
+        const result = run(['provenance', 'trace', ref, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+        if (!result.ok) return { ok: false, ...(result.error ? { error: result.error } : {}) };
+        return { ok: true, rows: parseTraceBindingRows(result.stdout) };
+    } catch (error) {
+        return { ok: false, error: (error as Error).message };
+    }
+}
+
 /**
  * Read the dispatcher a launch recorded for `ref`; null when none or unreadable.
  * `select` says which binding may answer (CORE-2740 F2); without it the newest
@@ -947,21 +982,15 @@ export function readDispatcherBinding(
 ): DispatcherBindingRecord | null {
     const wanted = clean(ref);
     if (!wanted) return null;
-    const run = deps.run ?? defaultSbRunner;
-    let result: { ok: boolean; stdout?: string; error?: string };
-    try {
-        result = run(['provenance', 'trace', wanted, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
-    } catch {
-        return null;
-    }
-    if (!result.ok) {
+    const trace = readTraceBindingRows(wanted, deps);
+    if (!trace.ok) {
         // CORE-2728 F6: an unreadable binding is not silence — one stderr line
         // names the issue and the reason, and the dispatcher stays ABSENT (never
         // the attacher's).
-        process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(result.error ?? 'sb gave no reason')}); the dispatcher stays absent\n`);
+        process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(trace.error ?? 'sb gave no reason')}); the dispatcher stays absent\n`);
         return null;
     }
-    return selectRestoreBinding(parseTraceBindingRows(result.stdout), deps);
+    return selectRestoreBinding(trace.rows, deps);
 }
 
 /**
@@ -984,16 +1013,10 @@ export function findLaunchBindingId(
     const wanted = clean(ref);
     const workspace = clean(deps.workspace);
     if (!wanted || !workspace) return null;
-    const run = deps.run ?? defaultSbRunner;
-    let result: { ok: boolean; stdout?: string; error?: string };
-    try {
-        result = run(['provenance', 'trace', wanted, '--json'], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
-    } catch {
-        return null;
-    }
-    if (!result.ok) return null;
+    const trace = readTraceBindingRows(wanted, deps);
+    if (!trace.ok) return null;
     const since = typeof deps.sinceMs === 'number' && Number.isFinite(deps.sinceMs) ? deps.sinceMs : null;
-    const own = parseTraceBindingRows(result.stdout).filter((row) => row.id
+    const own = trace.rows.filter((row) => row.id
         && row.workspace === workspace
         && (since === null || row.createdAt >= since));
     if (own.length === 0) return null;

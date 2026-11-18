@@ -14,7 +14,6 @@ import {
     XTRM_DISPATCHER_NAME_VAR,
     XTRM_DISPATCHER_PARTICIPANT_VAR,
     attachDispatcherEnv,
-    cleanAgentName,
     findLaunchBindingId,
     refreshDispatcherEnvByParticipant,
     type DispatcherIdentityDeps,
@@ -87,8 +86,21 @@ describe('CORE-2740 F1: a restored value must be a dispatcher label', () => {
         const env = refreshDispatcherEnvByParticipant('g04z', liveDispatcher('g04z', { name: hostile }));
         // The participant is the label; the name is display-only and single-line.
         expect(env[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('g04z');
-        expect(env[XTRM_DISPATCHER_NAME_VAR]).toBe(cleanAgentName(hostile));
         expect(env[XTRM_DISPATCHER_NAME_VAR]).toBe('lead [2J evil SECOND LINE');
+    });
+
+    it.each([
+        ['a relative socket path', 'run/cc/100.sock'],
+        ['a foreign scheme', 'unix:/run/cc/100.sock'],
+        ['a newline in the path', '/run/cc/100\nsock'],
+        ['an ESC in the path', '/run/cc/\u001b100.sock'],
+        ['an empty path', ''],
+        ['an over-long path', `/${'a'.repeat(520)}`],
+    ])('%s in the registry socket is not exported as an address', (_label, socket) => {
+        const env = refreshDispatcherEnvByParticipant('g04z', liveDispatcher('g04z', { socket }));
+        expect(env).not.toHaveProperty(XTRM_DISPATCHER_ADDRESS_VAR);
+        // The participant itself is still known and stays.
+        expect(env[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('g04z');
     });
 
     it('the attach path omits a hostile binding participant instead of exporting it', () => {
@@ -186,6 +198,25 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
             env: {},
             run: () => ({ ok: true, stdout }),
             bindingId: 'exb_mine',
+            workspace: WT_A,
+            ownRecord: true,
+            identity: liveDispatcher('attacker'),
+        });
+        expect(env).toEqual({});
+    });
+
+    it('a legacy record whose own binding recorded no dispatcher adopts none from another worktree', () => {
+        // CORE-2740 F2 (seconder act:ce631d40-f1c): without a binding id the
+        // worker's own worktree decides. Its own binding recorded no dispatcher,
+        // so the answer is absent — the other worktree's binding is not its own.
+        const stdout = traceStdout([
+            { id: 'exb_mine', dispatcherParticipantId: null, workspace: WT_A, createdAt: 100 },
+            { id: 'exb_other', dispatcherParticipantId: 'attacker', workspace: WT_B, createdAt: 200 },
+        ]);
+        const env = attachDispatcherEnv('CORE-2740', {
+            env: {},
+            run: () => ({ ok: true, stdout }),
+            bindingId: null,
             workspace: WT_A,
             ownRecord: true,
             identity: liveDispatcher('attacker'),

@@ -64136,7 +64136,7 @@ function refreshDispatcherEnvByParticipant(participant, deps = {}) {
   out[XTRM_DISPATCHER_PARTICIPANT_VAR] = want;
   const hit = live[0];
   if (hit) {
-    out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
+    if (isDispatcherSocketAddress(hit.address)) out[XTRM_DISPATCHER_ADDRESS_VAR] = hit.address;
     out[XTRM_DISPATCHER_NAME_VAR] = cleanAgentName(hit.name) ?? want;
     return out;
   }
@@ -64160,6 +64160,12 @@ function resolveDispatcherSessionForParticipant(participant, deps = {}) {
 var LOWERCASE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function isLowercaseUuid(value) {
   return typeof value === "string" && LOWERCASE_UUID.test(value);
+}
+function isDispatcherSocketAddress(value) {
+  if (typeof value !== "string" || value.length > 512) return false;
+  if (!value.startsWith("uds:")) return false;
+  const socket = value.slice(4);
+  return socket.startsWith("/") && !/[\u0000-\u001f\u007f]/.test(socket);
 }
 var DISPATCHER_LABEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]*$/;
 function isDispatcherLabel(value) {
@@ -64238,8 +64244,8 @@ function selectRestoreBinding(rows, select) {
   }
   const workspace = clean(select.workspace);
   if (workspace) {
-    const own2 = rows.find((row) => row.workspace === workspace && row.participant);
-    if (own2) return bindingRecordOf(own2);
+    const own2 = rows.find((row) => row.workspace === workspace);
+    return own2 ? bindingRecordOf(own2) : null;
   }
   if (select.ownRecord === false) return null;
   const legacy = rows.find((row) => row.participant);
@@ -64253,37 +64259,35 @@ function bindingCreatedAt(value) {
   }
   return Number.NEGATIVE_INFINITY;
 }
+function readTraceBindingRows(ref, deps) {
+  const run5 = deps.run ?? defaultSbRunner;
+  try {
+    const result = run5(["provenance", "trace", ref, "--json"], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
+    if (!result.ok) return { ok: false, ...result.error ? { error: result.error } : {} };
+    return { ok: true, rows: parseTraceBindingRows(result.stdout) };
+  } catch (error62) {
+    return { ok: false, error: error62.message };
+  }
+}
 function readDispatcherBinding(ref, deps = {}) {
   const wanted = clean(ref);
   if (!wanted) return null;
-  const run5 = deps.run ?? defaultSbRunner;
-  let result;
-  try {
-    result = run5(["provenance", "trace", wanted, "--json"], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
-  } catch {
-    return null;
-  }
-  if (!result.ok) {
-    process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(result.error ?? "sb gave no reason")}); the dispatcher stays absent
+  const trace = readTraceBindingRows(wanted, deps);
+  if (!trace.ok) {
+    process.stderr.write(`xt attach: the launch binding of ${wanted} could not be read (${oneLine(trace.error ?? "sb gave no reason")}); the dispatcher stays absent
 `);
     return null;
   }
-  return selectRestoreBinding(parseTraceBindingRows(result.stdout), deps);
+  return selectRestoreBinding(trace.rows, deps);
 }
 function findLaunchBindingId(ref, deps) {
   const wanted = clean(ref);
   const workspace = clean(deps.workspace);
   if (!wanted || !workspace) return null;
-  const run5 = deps.run ?? defaultSbRunner;
-  let result;
-  try {
-    result = run5(["provenance", "trace", wanted, "--json"], deps.env ?? process.env, deps.timeoutMs ?? PROVENANCE_TIMEOUT_MS);
-  } catch {
-    return null;
-  }
-  if (!result.ok) return null;
+  const trace = readTraceBindingRows(wanted, deps);
+  if (!trace.ok) return null;
   const since = typeof deps.sinceMs === "number" && Number.isFinite(deps.sinceMs) ? deps.sinceMs : null;
-  const own2 = parseTraceBindingRows(result.stdout).filter((row) => row.id && row.workspace === workspace && (since === null || row.createdAt >= since));
+  const own2 = trace.rows.filter((row) => row.id && row.workspace === workspace && (since === null || row.createdAt >= since));
   if (own2.length === 0) return null;
   const participant = clean(deps.participant);
   const preferred = participant ? own2.find((row) => row.participant === participant) : void 0;
@@ -78579,8 +78583,7 @@ function resolveWorkerIssue(worktreePath, deps = {}) {
   return null;
 }
 function bindingIdFromMeta(meta3) {
-  const raw = meta3 ? meta3.bindingId : void 0;
-  const value = typeof raw === "string" ? raw.trim() : "";
+  const value = typeof meta3?.bindingId === "string" ? meta3.bindingId.trim() : "";
   return value && SAFE_BINDING_ID.test(value) ? value : null;
 }
 function createAttachCommand() {

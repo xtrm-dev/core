@@ -166,8 +166,7 @@ export function resolveWorkerIssue(worktreePath: string, deps: WorkerIssueDeps =
 
 /** The binding id a session record names, when it is a plausible one. */
 function bindingIdFromMeta(meta: SessionMeta | null): string | null {
-    const raw = meta ? (meta as { bindingId?: unknown }).bindingId : undefined;
-    const value = typeof raw === 'string' ? raw.trim() : '';
+    const value = typeof meta?.bindingId === 'string' ? meta.bindingId.trim() : '';
     return value && SAFE_BINDING_ID.test(value) ? value : null;
 }
 
