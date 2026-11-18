@@ -141,6 +141,30 @@ describe("shipped XTRM themes", () => {
     }
   });
 
+  test("the prompt-box border is one flat dim line, whatever the thinking level", () => {
+    // pi paints the interactive editor's border from these tokens:
+    // InteractiveMode.updateEditorBorderColor() sets
+    // editor.borderColor = theme.getThinkingBorderColor(level), and bash mode
+    // swaps in getBashModeBorderColor(). Authoring them as a text-brightness
+    // ramp made the box a near-white line at high/xhigh/max, so they are pinned
+    // to the border token: flat, dim, and identical in every level and mode.
+    const levels = [
+      "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium",
+      "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
+    ];
+    for (const theme of THEMES) {
+      const border = resolve(theme, "border");
+      for (const token of levels) {
+        expect(resolve(theme, token), `${theme.name}.${token} must be the border colour`).toBe(border);
+      }
+      // Dim, not merely equal: the box sits further from the text ladder than
+      // the secondary text tier does — darker in a dark theme, lighter in a
+      // light one, so it stays closer to the background either way.
+      expect(luminance(border), `${theme.name} prompt box stays dimmer than muted`)
+        [theme.appearance === "light" ? "toBeGreaterThan" : "toBeLessThan"](luminance(resolve(theme, "muted")));
+    }
+  });
+
   test("the flat variants differ only in the tool-row backgrounds", () => {
     const pairs: Array<[Theme, Theme]> = [[dark, darkFlat], [light, lightFlat]];
     for (const [base, flat] of pairs) {

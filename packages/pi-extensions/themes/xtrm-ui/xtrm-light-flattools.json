@@ -68,14 +68,14 @@
     "syntaxType": "#2c7a7b",
     "syntaxOperator": "#3b4351",
     "syntaxPunctuation": "#55606f",
-    "thinkingOff": "textFaint",
-    "thinkingMinimal": "textMeta",
-    "thinkingLow": "textThinking",
-    "thinkingMedium": "textSecondary",
-    "thinkingHigh": "textEmphasis",
-    "thinkingXhigh": "textPrimary",
-    "thinkingMax": "textPrimary",
-    "bashMode": "textSecondary"
+    "thinkingOff": "border",
+    "thinkingMinimal": "border",
+    "thinkingLow": "border",
+    "thinkingMedium": "border",
+    "thinkingHigh": "border",
+    "thinkingXhigh": "border",
+    "thinkingMax": "border",
+    "bashMode": "border"
   },
   "export": {
     "pageBg": "#f5f7fa",
