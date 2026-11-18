@@ -48,9 +48,107 @@ import { resolveWorkerSessionId } from './session-identity.js';;
 import { parseIssueMarker, parseIssueMarkers, markerRunVerdict } from './review-posting.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
 
 /** One hermetic `sb provenance attach` may take at most this long. */
 export const ATTACH_TIMEOUT_MS = 5_000;
+
+/**
+ * CORE-2745: the same step when `sb` is remote, where every call is an ssh round
+ * trip (ADR-008) instead of a local open.
+ *
+ * One link makes at most seven `sb` calls: `project list`, the first attach, the
+ * claim read, `provenance dispatch`, `provenance allocate`, the attach retry and
+ * `issue link pr`. Measured on the 2026-11-18 host: 850-1906 ms per call (the
+ * four lead measurements at load1 about 13 read 1250-1906 ms). Seven calls of
+ * {@link REMOTE_SB_CALL_MS} of allowance each is 17.5 s, so 18 s bounds the worst
+ * case with margin; the local five seconds cannot cover even three calls.
+ */
+export const REMOTE_ATTACH_TIMEOUT_MS = 18_000;
+
+/** Per-call allowance the remote budget is sized from: the 1906 ms maximum, plus slack. */
+export const REMOTE_SB_CALL_MS = 2_500;
+
+/** The one knob for the whole link budget, in either mode. */
+export const LINK_TIMEOUT_ENV_VAR = 'XTRM_PR_LINK_TIMEOUT_MS';
+
+/** Bounds of {@link LINK_TIMEOUT_ENV_VAR}: a typo must not make the link a slow blocker. */
+export const LINK_TIMEOUT_MIN_MS = 2_000;
+export const LINK_TIMEOUT_MAX_MS = 120_000;
+
+/**
+ * Headroom kept inside a budget so this process answers before its caller's own
+ * kill: the shim allows the budget plus this tail (CORE-2631 review).
+ */
+export const LINK_TAIL_MS = 1_000;
+
+/** `sb remote setup` records its mode here; sb honours this override of the path. */
+export const SB_REMOTE_CONFIG_ENV_VAR = 'SUBSTRATE_REMOTE_CONFIG';
+
+/** Where sb keeps the remote setting, relative to the home directory. */
+export const SB_REMOTE_CONFIG_RELATIVE_PATH = path.join('.xtrm', 'config', 'substrate.json');
+
+export interface SbModeDeps {
+    env?: NodeJS.ProcessEnv;
+    readFile?: (file: string) => string;
+    homeDir?: string;
+}
+
+/** The file `sb` reads for its remote setting, honouring sb's own override. */
+export function sbRemoteConfigPath(env: NodeJS.ProcessEnv, homeDir = homedir()): string {
+    const override = (env[SB_REMOTE_CONFIG_ENV_VAR] ?? '').trim();
+    return override || path.join(homeDir, SB_REMOTE_CONFIG_RELATIVE_PATH);
+}
+
+/**
+ * Whether a parsed sb config says every call is forwarded over ssh. Tolerant by
+ * design: an unknown shape reads as no remote setting, so a link on a host with a
+ * newer sb keeps the fast local budget rather than waiting for a mode it cannot see.
+ */
+export function parseSbRemoteMode(text: string | null | undefined): boolean {
+    try {
+        const parsed = JSON.parse((text ?? '').trim()) as { remote?: unknown } | null;
+        const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
+        if (typeof remote === 'string') return remote.trim() !== '';
+        return Boolean(remote && typeof remote === 'object');
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Whether this session's `sb` runs in remote (ssh) mode, read from sb's own config
+ * and never from a probe call: a probe would cost exactly the latency the budget
+ * is there to pay for. `--db`/`SUBSTRATE_DB` name a local store, and sb never
+ * forwards those invocations, so an explicit local store means local mode.
+ */
+export function sbRemoteMode(deps: SbModeDeps = {}): boolean {
+    const env = deps.env ?? process.env;
+    if ((env.SUBSTRATE_DB ?? '').trim()) return false;
+    const read = deps.readFile ?? ((file: string) => readFileSync(file, 'utf8'));
+    let text: string;
+    try {
+        text = read(sbRemoteConfigPath(env, deps.homeDir));
+    } catch {
+        return false;
+    }
+    return parseSbRemoteMode(text);
+}
+
+/**
+ * The budget for the whole post-create link: the explicit override (clamped), else
+ * the mode's default. An invalid override falls back to the default silently: this
+ * step is fail-open, so a bad value must not become a warning of its own.
+ */
+export function resolveLinkBudgetMs(deps: SbModeDeps = {}): number {
+    const env = deps.env ?? process.env;
+    const raw = Number((env[LINK_TIMEOUT_ENV_VAR] ?? '').trim());
+    if (Number.isFinite(raw) && raw > 0) {
+        return Math.min(Math.max(Math.round(raw), LINK_TIMEOUT_MIN_MS), LINK_TIMEOUT_MAX_MS);
+    }
+    return sbRemoteMode(deps) ? REMOTE_ATTACH_TIMEOUT_MS : ATTACH_TIMEOUT_MS;
+}
 
 /**
  * A Substrate Issue ref. Hierarchical refs (`XTRM-184.2.3`) are valid: the
@@ -61,6 +159,14 @@ const ISSUE_REF = /^[A-Z][A-Z0-9]*-\d+(?:\.\d+)*$/;
 
 /** A ref-shaped token anywhere in a text, with its prefix captured. Literal. */
 const REF_SHAPED = /(?<![A-Za-z0-9_])([A-Z][A-Z0-9]*)-(?:\d+(?:\.\d+)*)(?![A-Za-z0-9])/gi;
+
+/**
+ * The outer kill one `xt identity pr-link` run gets: the same budget the link
+ * keeps for itself, plus the tail it needs to answer inside that kill (CORE-2745).
+ */
+export function resolveLinkCeilingMs(deps: SbModeDeps = {}): number {
+    return resolveLinkBudgetMs(deps) + LINK_TAIL_MS;
+}
 
 export interface CreatedPr {
     owner: string;
@@ -420,6 +526,11 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
     if (!pr) {
         return { attached: false, warning: 'gh pr create printed no pull request URL, so the new PR is not linked to a Substrate Issue' };
     }
+    // CORE-2745: one deadline for the WHOLE step, started before the first sb call
+    // (the project list is a round trip too), so the budget bounds the sum and not
+    // one receipt. It is sized by sb's mode: remote forwards every call over ssh.
+    const budgetMs = resolveLinkBudgetMs({ env, readFile: deps.readFile });
+    const deadline = Date.now() + budgetMs;
     const body = readCreateBody(argv, deps.readFile);
     const git = deps.runGit ?? defaultRunGit();
     const branchResult = git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
@@ -441,22 +552,71 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         return { attached: false, ref, canonical: pr.canonical, warning: `cannot resolve the Substrate project for ${ref}, so ${pr.canonical} is not linked` };
     }
     const run = deps.runAttach ?? defaultAttach;
-    // One deadline for the pair: the whole post-create step, not each receipt,
-    // is what must stay inside the budget.
-    const deadline = Date.now() + ATTACH_TIMEOUT_MS;
     const budget = (): number => Math.max(250, deadline - Date.now());
     // CORE-2631 review: recovery adds up to four calls (show, dispatch,
     // allocate, retry). With only the per-call floor those floors can outlive the
-    // deadline and run into the shim's own LINK_TIMEOUT_MS (6000), which SIGKILLs
-    // this process mid-sequence. Reserve a tail so the shim always gets control
-    // back, and give up honestly when nothing is left.
-    const RECOVERY_TAIL_MS = 1_000;
+    // deadline and run into the shim's own kill (the budget plus LINK_TAIL_MS),
+    // which SIGKILLs this process mid-sequence. Reserve the tail so the shim
+    // always gets control back, and give up honestly when nothing is left.
     const recoveryBudget = (): number => {
-        const left = deadline - RECOVERY_TAIL_MS - Date.now();
+        const left = deadline - LINK_TAIL_MS - Date.now();
         return left > 0 ? left : 0;
     };
 
     const attachArgv = withReceiptProject(['provenance', 'attach', ref, 'pr', pr.canonical], project);
+    /** One shell line that finishes the link from where this run stopped. */
+    const finishWith = (...steps: string[][]): string => steps.map((step) => ['sb', ...step].join(' ')).join(', then ');
+    // Everything a timeout's finish command names is built BEFORE the first
+    // recovery call, so an exhausted budget always reports an exact command.
+    const ownHolder = (env.SUBSTRATE_HOLDER ?? '').trim();
+    const showArgv = ['issue', 'show', ref, '--json'];
+    const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
+    const dispatchArgvOf = (holder: string | null, activation: string | null): string[] => {
+        // Dispatch: create the execution binding. --participant is required when
+        // the issue is live-held (anti-steal); omit it when unclaimed or unknown.
+        const args = ['provenance', 'dispatch', ref];
+        if (holder && ownHolder && ownHolder === holder) {
+            args.push('--participant', ownHolder);
+            // sb compares holder AND activation, so a claim carrying an
+            // activation rejects a participant without one.
+            if (activation) args.push('--activation', activation);
+        }
+        // CORE-2639: bind to the worker's own runtime session, not the tmux session
+        // id sb would otherwise record — every window in one tmux session shares
+        // that value, so it cannot attribute the binding. Absent from the
+        // environment means no flag, and sb keeps its own fallback.
+        const workerSession = resolveWorkerSessionId(env);
+        if (workerSession) args.push('--session', workerSession);
+        // CORE-2728: who dispatched THIS worker, from the participant xt exported at
+        // launch, and the dispatcher's own session when a live session of that
+        // participant carries a Claude session id. Absent stays absent: no flag.
+        const dispatcherParticipant = (env[XTRM_DISPATCHER_PARTICIPANT_VAR] ?? '').trim();
+        if (dispatcherParticipant && isDispatcherLabel(dispatcherParticipant)) {
+            args.push('--dispatcher-participant', dispatcherParticipant);
+            const dispatcherSession = resolveDispatcherSessionForParticipant(dispatcherParticipant, deps.dispatcherDeps ?? {});
+            if (dispatcherSession && isLowercaseUuid(dispatcherSession)) {
+                args.push('--dispatcher-session', dispatcherSession);
+            }
+        }
+        // --workspace is only meaningful when cwd is known; the shim always sets
+        // it, but tests may omit it.
+        if (deps.cwd) args.push('--workspace', cwd);
+        return withReceiptProject(args, project);
+    };
+    /**
+     * CORE-2745: ONE stderr line that names the step which ran out of time and the
+     * exact command that finishes the link, so nobody has to reconstruct the
+     * recovery by hand.
+     */
+    const outOfTime = (step: string, finish: string[][]): GhPrLinkResult => ({
+        attached: false,
+        ref,
+        canonical: pr.canonical,
+        argv: attachArgv,
+        warning: oneLine(`created ${pr.canonical}, but the Substrate link to ${ref} ran out of time at ${step}; finish with: ${finishWith(...finish)}`),
+    });
+    /** sb's own wording for a call this process killed at its budget. */
+    const timedOut = (error?: string): boolean => /no answer in \d+ ms|ETIMEDOUT/i.test(error ?? '');
     const t1 = run(attachArgv, env, budget());
     if (!t1.ok) {
         // CORE-2631: `attach` resolves a WorkReceipt, which only exists after
@@ -465,6 +625,9 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // once: dispatch -> allocate -> attach. A receipt that already exists makes
         // the first attach succeed, so this path is a no-op on repeat runs.
         const err = t1.error ?? '';
+        // A call that hit the budget is not a link defect: name the step and the
+        // command that finishes the job (CORE-2745).
+        if (timedOut(err)) return outOfTime('the first sb provenance attach', [attachArgv]);
         if (!/no_receipt/i.test(err)) {
             return {
                 attached: false,
@@ -474,15 +637,6 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
                 warning: `created ${pr.canonical}, but the Substrate link to ${ref} failed: ${oneLine(err || 'sb gave no reason')}`,
             };
         }
-        const outOfTime = (): GhPrLinkResult => ({
-            attached: false,
-            ref,
-            canonical: pr.canonical,
-            argv: attachArgv,
-            warning: `created ${pr.canonical}, but the Substrate link to ${ref} ran out of time before it could recover; run sb provenance dispatch ${ref}, then sb provenance allocate ${ref}, then re-link`,
-        });
-        if (recoveryBudget() <= 0) return outOfTime();
-
         // CORE-2631 review (pr-reviewer): decide --participant from the Issue's
         // claim state, not from env.SUBSTRATE_HOLDER alone (every agent process has
         // that variable, even for an unclaimed Issue). One read via the runner.
@@ -496,57 +650,48 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // found nothing, so every Issue looked unclaimed and a genuinely held one
         // lost its --participant. Both shapes are accepted because the unit tests
         // and older callers build the flat one.
+        //
+        // CORE-2745: in remote mode a round trip is an ssh call, so the read runs
+        // only when it can change the argv: no shell holder means no --participant
+        // either way (a), and a failed attach that already answered with the claim
+        // is reused instead (b).
         let claimHolder: string | null = null;
         let claimActivation: string | null = null;
         let claimReadFailed = false;
-        const showArgv = ['issue', 'show', ref, '--json'];
-        const showResult = run(showArgv, env, recoveryBudget());
-        if (!showResult.ok) {
-            claimReadFailed = true;
-        } else {
-            const parsed = parseClaimPayload(showResult.stdout ?? '');
-            if (!parsed) {
+        const claimFromAttach = ownHolder ? parseClaimPayload(t1.stdout ?? '') : null;
+        if (claimFromAttach) {
+            if (claimFromAttach.holder && !claimFromAttach.releasedAt) {
+                claimHolder = claimFromAttach.holder;
+                claimActivation = claimFromAttach.activationId ?? null;
+            }
+        } else if (ownHolder) {
+            if (recoveryBudget() <= 0) {
+                return outOfTime('the claim read (sb issue show)', [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+            }
+            const showResult = run(showArgv, env, recoveryBudget());
+            if (!showResult.ok) {
+                // A read that hit the budget ends the recovery; any other failure
+                // continues without a participant, as before.
+                if (timedOut(showResult.error)) {
+                    return outOfTime('the claim read (sb issue show)', [showArgv, dispatchArgvOf(null, null), allocateArgv, attachArgv]);
+                }
                 claimReadFailed = true;
-            } else if (parsed.holder && !parsed.releasedAt) {
-                claimHolder = parsed.holder;
-                claimActivation = parsed.activationId ?? null;
+            } else {
+                const parsed = parseClaimPayload(showResult.stdout ?? '');
+                if (!parsed) {
+                    claimReadFailed = true;
+                } else if (parsed.holder && !parsed.releasedAt) {
+                    claimHolder = parsed.holder;
+                    claimActivation = parsed.activationId ?? null;
+                }
             }
         }
-        const ownHolder = (env.SUBSTRATE_HOLDER ?? '').trim();
 
-        // Dispatch: create the execution binding. --participant is required when
-        // the issue is live-held (anti-steal); omit it when unclaimed.
-        const dispatchArgs = ['provenance', 'dispatch', ref];
-        if (claimHolder && ownHolder && ownHolder === claimHolder) {
-            dispatchArgs.push('--participant', ownHolder);
-            // sb compares holder AND activation, so a claim carrying an
-            // activation rejects a participant without one.
-            if (claimActivation) dispatchArgs.push('--activation', claimActivation);
-        }
-        // CORE-2639: bind to the worker's own runtime session, not the tmux session
-        // id sb would otherwise record — every window in one tmux session shares
-        // that value, so it cannot attribute the binding. Absent from the
-        // environment means no flag, and sb keeps its own fallback.
-        const workerSession = resolveWorkerSessionId(env);
-        if (workerSession) dispatchArgs.push('--session', workerSession);
-        // CORE-2728: who dispatched THIS worker, from the participant xt exported at
-        // launch, and the dispatcher's own session when a live session of that
-        // participant carries a Claude session id. Absent stays absent: no flag.
-        const dispatcherParticipant = (env[XTRM_DISPATCHER_PARTICIPANT_VAR] ?? '').trim();
-        if (dispatcherParticipant && isDispatcherLabel(dispatcherParticipant)) {
-            dispatchArgs.push('--dispatcher-participant', dispatcherParticipant);
-            const dispatcherSession = resolveDispatcherSessionForParticipant(dispatcherParticipant, deps.dispatcherDeps ?? {});
-            if (dispatcherSession && isLowercaseUuid(dispatcherSession)) {
-                dispatchArgs.push('--dispatcher-session', dispatcherSession);
-            }
-        }
-        // --workspace is only meaningful when cwd is known; the shim always sets
-        // it, but tests may omit it.
-        if (deps.cwd) dispatchArgs.push('--workspace', cwd);
-        const dispatchArgv = withReceiptProject(dispatchArgs, project);
-        if (recoveryBudget() <= 0) return outOfTime();
+        const dispatchArgv = dispatchArgvOf(claimHolder, claimActivation);
+        if (recoveryBudget() <= 0) return outOfTime('sb provenance dispatch', [dispatchArgv, allocateArgv, attachArgv]);
         const td = run(dispatchArgv, env, recoveryBudget());
         if (!td.ok) {
+            if (timedOut(td.error)) return outOfTime('sb provenance dispatch', [dispatchArgv, allocateArgv, attachArgv]);
             const why = claimReadFailed ? ' (the claim could not be read, so no participant was sent)' : '';
             return {
                 attached: false,
@@ -557,10 +702,10 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
             };
         }
         // Allocate: create the receipt from the binding.
-        const allocateArgv = withReceiptProject(['provenance', 'allocate', ref], project);
-        if (recoveryBudget() <= 0) return outOfTime();
+        if (recoveryBudget() <= 0) return outOfTime('sb provenance allocate', [allocateArgv, attachArgv]);
         const ta = run(allocateArgv, env, recoveryBudget());
         if (!ta.ok) {
+            if (timedOut(ta.error)) return outOfTime('sb provenance allocate', [allocateArgv, attachArgv]);
             return {
                 attached: false,
                 ref,
@@ -570,9 +715,10 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
             };
         }
         // Retry attach once.
-        if (recoveryBudget() <= 0) return outOfTime();
+        if (recoveryBudget() <= 0) return outOfTime('the sb provenance attach retry', [attachArgv]);
         const t1b = run(attachArgv, env, recoveryBudget());
         if (!t1b.ok) {
+            if (timedOut(t1b.error)) return outOfTime('the sb provenance attach retry', [attachArgv]);
             return {
                 attached: false,
                 ref,
@@ -608,11 +754,15 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // real reason behind advice that cannot fix it.
         const reason = oneLine(t2.error ?? 'sb gave no reason');
         const rangeShaped = /Invalid revision range|unknown revision|bad revision/i.test(reason);
-        const warning = !range.shallow
-            ? `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason}`
-            : rangeShaped
-                ? `linked ${pr.canonical} to ${ref}, but its commit evidence is unavailable in a shallow clone (${cwd}); run git fetch --unshallow to link the range`
-                : `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason} (this checkout is a shallow clone; git fetch --unshallow if the range is what is missing)`;
+        const warning = timedOut(t2.error)
+            // CORE-2745: the commit evidence is the last step of the link, so a
+            // budget that ends here still leaves the operator one exact command.
+            ? oneLine(`linked ${pr.canonical} to ${ref}, but its commit evidence ran out of time at sb issue link pr; finish with: ${finishWith(commitsArgv)}`)
+            : !range.shallow
+                ? `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason}`
+                : rangeShaped
+                    ? `linked ${pr.canonical} to ${ref}, but its commit evidence is unavailable in a shallow clone (${cwd}); run git fetch --unshallow to link the range`
+                    : `linked ${pr.canonical} to ${ref}, but its commit evidence failed: ${reason} (this checkout is a shallow clone; git fetch --unshallow if the range is what is missing)`;
         return {
             attached: true,
             ref,

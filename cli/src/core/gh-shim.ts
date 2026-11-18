@@ -29,6 +29,16 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { API_GROUP, GROUP_ROUTES, READ_GROUPS, WRITE_GROUPS } from './gh-shim-routes.js';
+import {
+    ATTACH_TIMEOUT_MS,
+    LINK_TAIL_MS,
+    LINK_TIMEOUT_ENV_VAR,
+    LINK_TIMEOUT_MAX_MS,
+    LINK_TIMEOUT_MIN_MS,
+    REMOTE_ATTACH_TIMEOUT_MS,
+    SB_REMOTE_CONFIG_ENV_VAR,
+    SB_REMOTE_CONFIG_RELATIVE_PATH,
+} from './gh-pr-link.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -111,6 +121,7 @@ ${GH_SHIM_MARKER}
 'use strict';
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const MARKER = '${GH_SHIM_FINGERPRINT}';
@@ -187,7 +198,46 @@ function xtQuiet(args, timeoutMs) {
 
 // CORE-2607: the Issue-to-PR link after a create. The budget bounds the whole
 // post-create step, so a slow or absent sb can never hold gh pr create open.
-const LINK_TIMEOUT_MS = 6000;
+// CORE-2745: the budget is sized by sb's mode, because remote sb pays one ssh
+// round trip per call and made every link of the local five seconds impossible.
+// The numbers below are inlined from cli/src/core/gh-pr-link.ts at install time;
+// a parity test holds them equal, and the kill is always the budget plus the tail
+// so the inner path ends by itself.
+const LINK_TIMEOUT_ENV_VAR = ${JSON.stringify(LINK_TIMEOUT_ENV_VAR)};
+const LINK_TIMEOUT_MIN_MS = ${LINK_TIMEOUT_MIN_MS};
+const LINK_TIMEOUT_MAX_MS = ${LINK_TIMEOUT_MAX_MS};
+const LINK_TAIL_MS = ${LINK_TAIL_MS};
+const LINK_BUDGET_MS = ${ATTACH_TIMEOUT_MS};
+const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS};
+const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)};
+const SB_REMOTE_CONFIG_RELATIVE = ${JSON.stringify(SB_REMOTE_CONFIG_RELATIVE_PATH)};
+
+/** Whether sb forwards every call over ssh, read from sb's own config only. */
+function sbRemoteMode() {
+  if ((process.env.SUBSTRATE_DB || '').trim()) return false;
+  try {
+    const file = (process.env[SB_REMOTE_CONFIG_ENV_VAR] || '').trim()
+      || path.join(os.homedir(), SB_REMOTE_CONFIG_RELATIVE);
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const remote = parsed && typeof parsed === 'object' ? parsed.remote : null;
+    return typeof remote === 'string' ? remote.trim() !== '' : Boolean(remote && typeof remote === 'object');
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * The kill this shim gives one link: the resolved budget (the same one xt keeps)
+ * plus the tail xt needs to answer inside it. An invalid override falls back to
+ * the mode's default silently, so a stray value cannot become a slow blocker.
+ */
+function linkTimeoutMs() {
+  const raw = Number((process.env[LINK_TIMEOUT_ENV_VAR] || '').trim());
+  const budget = Number.isFinite(raw) && raw > 0
+    ? Math.min(Math.max(Math.round(raw), LINK_TIMEOUT_MIN_MS), LINK_TIMEOUT_MAX_MS)
+    : (sbRemoteMode() ? REMOTE_LINK_BUDGET_MS : LINK_BUDGET_MS);
+  return budget + LINK_TAIL_MS;
+}
 
 // CORE-2619: a marker's run= must be the worker's own runtime session id. A tmux
 // session id ($N — what XTRM_SESSION_ID carries) is shared by every window in
@@ -237,7 +287,7 @@ function refuseBadRun(args, action) {
 function linkCreatedPr(stdout, args) {
   const linked = xtJson(
     ['identity', 'pr-link', '--argv', JSON.stringify(args), '--stdout', stdout, '--cwd', process.cwd()],
-    LINK_TIMEOUT_MS,
+    linkTimeoutMs(),
   );
   const warning = linked.data && typeof linked.data.warning === 'string' ? linked.data.warning : '';
   if (linked.status === 0 && linked.data && linked.data.attached === true) {

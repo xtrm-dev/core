@@ -9,18 +9,30 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import {
     ATTACH_TIMEOUT_MS,
+    LINK_TAIL_MS,
+    LINK_TIMEOUT_ENV_VAR,
+    LINK_TIMEOUT_MAX_MS,
+    LINK_TIMEOUT_MIN_MS,
+    REMOTE_ATTACH_TIMEOUT_MS,
+    REMOTE_SB_CALL_MS,
     chooseIssueRef,
     isShallowRepository,
     issueRefsInText,
     linkCreatedPr,
     parseCreatedPrUrl,
+    parseSbRemoteMode,
     readCreateBody,
     readCreateTitle,
+    resolveLinkBudgetMs,
+    resolveLinkCeilingMs,
     resolveLinkRange,
+    sbRemoteConfigPath,
+    sbRemoteMode,
+    type GhPrLinkResult,
     type RunGit,
 } from '../core/gh-pr-link.js';
 import type { SbProject } from '../core/sb-receipt.js';
@@ -74,6 +86,85 @@ function gitFake(options: {
 describe('the attach budget', () => {
     it('gives the attach five seconds, the coordinator ruling', () => {
         expect(ATTACH_TIMEOUT_MS).toBe(5000);
+    });
+});
+
+// CORE-2745: in remote mode every `sb` call is an ssh round trip, so the local
+// five seconds ran out by design. The budget follows sb's mode, read from sb's own
+// config (never a probe call), and one env var overrides it in either mode.
+const REMOTE_CONFIG = JSON.stringify({ remote: 'ssh:dawid@159.195.49.110', remoteSb: '/usr/bin/sb' });
+const LOCAL_CONFIG = JSON.stringify({ checkouts: {} });
+const localRead = () => {
+    throw new Error('ENOENT: no substrate.json');
+};
+
+describe('the link budget follows sb mode (CORE-2745)', () => {
+    it('keeps the five second budget in local mode', () => {
+        expect(resolveLinkBudgetMs({ env: {}, readFile: localRead })).toBe(ATTACH_TIMEOUT_MS);
+        expect(resolveLinkBudgetMs({ env: {}, readFile: () => LOCAL_CONFIG })).toBe(ATTACH_TIMEOUT_MS);
+    });
+
+    it('sizes a remote budget for the whole worst-case sequence of round trips', () => {
+        // Seven calls: project list, attach, claim read, dispatch, allocate, attach
+        // retry, issue link pr. The allowance covers the 1906 ms maximum measured.
+        expect(resolveLinkBudgetMs({ env: {}, readFile: () => REMOTE_CONFIG })).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        expect(REMOTE_ATTACH_TIMEOUT_MS).toBeGreaterThanOrEqual(7 * REMOTE_SB_CALL_MS);
+        expect(REMOTE_SB_CALL_MS).toBeGreaterThan(1906);
+        expect(REMOTE_ATTACH_TIMEOUT_MS).toBeGreaterThan(ATTACH_TIMEOUT_MS);
+    });
+
+    it('detects remote mode from sb\'s own config, never from a probe call', () => {
+        expect(sbRemoteMode({ env: {}, readFile: () => REMOTE_CONFIG })).toBe(true);
+        expect(sbRemoteMode({ env: {}, readFile: () => LOCAL_CONFIG })).toBe(false);
+        expect(sbRemoteMode({ env: {}, readFile: localRead })).toBe(false);
+        expect(sbRemoteMode({ env: {}, readFile: () => 'not json' })).toBe(false);
+        // An explicit local store is never forwarded, so it means local mode.
+        expect(sbRemoteMode({ env: { SUBSTRATE_DB: '/tmp/state.db' }, readFile: () => REMOTE_CONFIG })).toBe(false);
+    });
+
+    it('reads SUBSTRATE_REMOTE_CONFIG, sb\'s own override of the config path', () => {
+        const seen: string[] = [];
+        const readFile = (file: string) => {
+            seen.push(file);
+            return REMOTE_CONFIG;
+        };
+        const override = '/custom/substrate.json';
+        sbRemoteMode({ env: { SUBSTRATE_REMOTE_CONFIG: override }, readFile, homeDir: '/home/worker' });
+        sbRemoteMode({ env: {}, readFile, homeDir: '/home/worker' });
+        expect(seen[0]).toBe(override);
+        expect(seen[1]).toBe('/home/worker/.xtrm/config/substrate.json');
+        expect(sbRemoteConfigPath({ SUBSTRATE_REMOTE_CONFIG: override }, '/home/worker')).toBe(override);
+    });
+
+    it('reads only a non-empty remote setting as remote mode', () => {
+        expect(parseSbRemoteMode(JSON.stringify({ remote: 'ssh:host' }))).toBe(true);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: '   ' }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: null }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: '' }))).toBe(false);
+        expect(parseSbRemoteMode(JSON.stringify({ remote: { host: 'h' } }))).toBe(true);
+        expect(parseSbRemoteMode('{}')).toBe(false);
+        expect(parseSbRemoteMode('')).toBe(false);
+        expect(parseSbRemoteMode(null)).toBe(false);
+    });
+
+    it('lets one env var override the budget in either mode, clamped', () => {
+        expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: '25000' }, readFile: localRead })).toBe(25000);
+        expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: '25000' }, readFile: () => REMOTE_CONFIG })).toBe(25000);
+        // Clamped at both ends, so a stray value cannot turn the link into a blocker.
+        expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: '10' }, readFile: localRead })).toBe(LINK_TIMEOUT_MIN_MS);
+        expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: '999999' }, readFile: localRead })).toBe(LINK_TIMEOUT_MAX_MS);
+        // An invalid value falls back to the mode default silently, never an error.
+        for (const bad of ['', 'abc', '0', '-5', 'NaN']) {
+            expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: bad }, readFile: localRead })).toBe(ATTACH_TIMEOUT_MS);
+            expect(resolveLinkBudgetMs({ env: { [LINK_TIMEOUT_ENV_VAR]: bad }, readFile: () => REMOTE_CONFIG })).toBe(REMOTE_ATTACH_TIMEOUT_MS);
+        }
+    });
+
+    it('keeps the caller\'s kill above the budget it gives the link', () => {
+        expect(resolveLinkCeilingMs({ env: {}, readFile: localRead })).toBe(ATTACH_TIMEOUT_MS + LINK_TAIL_MS);
+        expect(resolveLinkCeilingMs({ env: {}, readFile: () => REMOTE_CONFIG })).toBe(REMOTE_ATTACH_TIMEOUT_MS + LINK_TAIL_MS);
+        const overridden = { env: { [LINK_TIMEOUT_ENV_VAR]: '9000' }, readFile: localRead };
+        expect(resolveLinkCeilingMs(overridden) - resolveLinkBudgetMs(overridden)).toBe(LINK_TAIL_MS);
     });
 });
 
@@ -471,6 +562,7 @@ function recoveryDeps(overrides: {
     env?: NodeJS.ProcessEnv;   // the process env the linker sees
     flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
     showFails?: boolean;       // the claim read fails outright
+    attachFailureStdout?: string; // the payload the failed attach answers with (CORE-2745)
     dispatcherDeps?: import('../core/dispatcher-identity.js').DispatcherIdentityDeps; // CORE-2728 live-session probe
 } = {}) {
     const calls: { kind: string; argv: string[] }[] = [];
@@ -509,7 +601,7 @@ function recoveryDeps(overrides: {
             }
             if (kind === 'attach') {
                 const err = attachErrors[attachIndex++];
-                if (err) return { ok: false, error: err, stdout: '' };
+                if (err) return { ok: false, error: err, stdout: overrides.attachFailureStdout ?? '' };
                 return { ok: true, stdout: '' };
             }
             if (kind === 'dispatch') {
@@ -1017,5 +1109,184 @@ describe('linkCreatedPr dispatch carries the dispatcher identity (CORE-2728)', (
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+// CORE-2745: the recovery in remote mode, timed. Every sb call costs a fixed wall
+// time, and a call that outlives the budget it was given is killed the way
+// spawnSync reports it ("no answer in N ms"). The clock is virtual, so the case is
+// deterministic and the assertions are about the budget arithmetic, not the host.
+const COMPLETE_BODY = ['pr', 'create', '--body', '<!-- xtrm issue=CORE-2607 holder=pi152-core run=01a1cc7e -->'];
+const NO_RECEIPT = 'no_receipt: no receipt for this issue; run sb provenance dispatch CORE-2607 first';
+
+function latencyDeps(options: {
+    perCallMs: number;
+    env?: NodeJS.ProcessEnv;
+    readFile?: (file: string) => string;
+    held?: boolean;
+    holder?: string;
+}): { result: GhPrLinkResult; calls: { kind: string; timeoutMs: number }[]; elapsedMs: number } {
+    const clock = { now: 1_000_000 };
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => clock.now);
+    const calls: { kind: string; timeoutMs: number }[] = [];
+    const holder = options.holder ?? 'pi152-core';
+    const { runGit } = gitFake({ branch: 'core-2745-budget', mergeBases: { 'origin/HEAD': BASE } });
+    let attachIndex = 0;
+    /** Charge one call and report a kill when its own budget cannot cover it. */
+    const spend = (kind: string, timeoutMs?: number): { ok: false; error: string } | null => {
+        calls.push({ kind, timeoutMs: timeoutMs ?? -1 });
+        clock.now += options.perCallMs;
+        if (typeof timeoutMs === 'number' && timeoutMs < options.perCallMs) {
+            return { ok: false, error: `sb (sb) exited null: sb: no answer in ${timeoutMs} ms` };
+        }
+        return null;
+    };
+    let result: GhPrLinkResult;
+    try {
+        result = linkCreatedPr(CREATED, COMPLETE_BODY, {
+            cwd: '/repo',
+            env: options.env ?? {},
+            runGit,
+            ...(options.readFile ? { readFile: options.readFile } : { readFile: () => { throw new Error('no file'); } }),
+            runSb: () => {
+                spend('project-list');
+                return { status: 0, stdout: projectList(PROJECTS), stderr: '' };
+            },
+            runAttach: (args, _env, timeoutMs) => {
+                const kind = args[1] === 'show' ? 'show'
+                    : args[1] === 'attach' ? 'attach'
+                        : args[1] === 'dispatch' ? 'dispatch'
+                            : args[1] === 'allocate' ? 'allocate'
+                                : 'issue-link';
+                const killed = spend(kind, timeoutMs);
+                if (killed) return killed;
+                if (kind === 'attach') {
+                    const failed = attachIndex++ === 0;
+                    return failed ? { ok: false, error: NO_RECEIPT, stdout: '' } : { ok: true, stdout: '' };
+                }
+                if (kind === 'show') {
+                    const claim = options.held === false ? null : { holder, activationId: null, releasedAt: null };
+                    return { ok: true, stdout: JSON.stringify({ schema: 'substrate-cli/v1', command: 'issue.show', ok: true, data: { claim } }) };
+                }
+                return { ok: true, stdout: '' };
+            },
+        });
+    } finally {
+        spy.mockRestore();
+    }
+    return { result, calls, elapsedMs: clock.now - 1_000_000 };
+}
+
+describe('the recovery fits the budget in remote mode (CORE-2745)', () => {
+    it('completes the whole sequence at 1500 ms per call, inside the remote budget', () => {
+        const { result, calls, elapsedMs } = latencyDeps({
+            perCallMs: 1_500,
+            readFile: () => REMOTE_CONFIG,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        expect(result.warning).toBeUndefined();
+        // Every step of the real sequence ran, and the sum stays inside the budget.
+        expect(calls.map((call) => call.kind)).toEqual(['project-list', 'attach', 'show', 'dispatch', 'allocate', 'attach', 'issue-link']);
+        expect(elapsedMs).toBe(7 * 1_500);
+        expect(elapsedMs).toBeLessThan(REMOTE_ATTACH_TIMEOUT_MS);
+        // Each call was given the remaining budget, never the local five seconds.
+        for (const call of calls.slice(1)) expect(call.timeoutMs).toBeGreaterThan(0);
+    });
+
+    it('the same latency cannot fit the local budget: one line names the step and the finish command', () => {
+        const { result } = latencyDeps({ perCallMs: 1_500, env: { SUBSTRATE_HOLDER: 'pi152-core' } });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/created xtrm-dev\/core#912, but the Substrate link to CORE-2607 ran out of time at the claim read \(sb issue show\)/);
+        expect(result.warning).toMatch(/finish with: sb issue show CORE-2607 --json, then sb provenance dispatch CORE-2607/);
+        expect(result.warning).toContain('--project prj_core');
+        // ONE stderr line: the shim prefixes it and never splits it.
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('names the step the budget ended at, and the exact command that finishes from there', () => {
+        // 6000 ms: the project list, attach and claim read fit; dispatch does not.
+        const { result } = latencyDeps({
+            perCallMs: 1_500,
+            env: { SUBSTRATE_HOLDER: 'pi152-core', [LINK_TIMEOUT_ENV_VAR]: '6000' },
+            held: true,
+        });
+        expect(result.attached).toBe(false);
+        expect(result.warning).toMatch(/ran out of time at sb provenance dispatch; finish with: sb provenance dispatch CORE-2607/);
+        expect(result.warning).toMatch(/then sb provenance allocate CORE-2607 --project prj_core, then sb provenance attach CORE-2607 pr xtrm-dev\/core#912 --project prj_core/);
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('names the move when the retry attach is what ran out of time', () => {
+        const { result, calls } = latencyDeps({
+            perCallMs: 1_500,
+            readFile: () => REMOTE_CONFIG,
+            env: { SUBSTRATE_HOLDER: 'pi152-core', [LINK_TIMEOUT_ENV_VAR]: '8500' },
+        });
+        // project list + attach + claim read + dispatch + allocate = 7500 ms of 8500,
+        // so the retry leaves no room: T1 stays unattached, and the line says so.
+        expect(result.attached).toBe(false);
+        expect(calls.at(-1)?.kind).toBe('allocate');
+        expect(calls.filter((call) => call.kind === 'attach')).toHaveLength(1);
+        expect(result.warning).toMatch(/ran out of time at the sb provenance attach retry; finish with: sb provenance attach CORE-2607 pr xtrm-dev\/core#912 --project prj_core/);
+        expect(result.warning).not.toMatch(/\n/);
+    });
+
+    it('names the commit-evidence command when only T2 runs out of time', () => {
+        // 10400 ms: T1 and the recovery land, the commit evidence does not.
+        const { result, calls } = latencyDeps({
+            perCallMs: 1_500,
+            readFile: () => REMOTE_CONFIG,
+            env: { SUBSTRATE_HOLDER: 'pi152-core', [LINK_TIMEOUT_ENV_VAR]: '10400' },
+        });
+        expect(calls.at(-1)?.kind).toBe('issue-link');
+        expect(result.attached).toBe(true);
+        expect(result.warning).toMatch(/linked xtrm-dev\/core#912 to CORE-2607, but its commit evidence ran out of time at sb issue link pr; finish with: sb issue link pr CORE-2607 --repo xtrm-dev\/core --number 912 --commits-range/);
+        expect(result.warning).not.toMatch(/\n/);
+    });
+});
+
+describe('the recovery makes fewer round trips (CORE-2745)', () => {
+    it('skips the claim read when the shell has no holder: no participant could be sent', () => {
+        const { result, calls } = recoveryDeps({ attachErrors: [NO_RECEIPT], env: {} });
+        expect(result.attached).toBe(true);
+        expect(calls.filter((call) => call.kind === 'show')).toHaveLength(0);
+        const dispatch = calls.find((call) => call.kind === 'dispatch');
+        expect(dispatch?.argv).not.toContain('--participant');
+    });
+
+    it('reuses the claim the failed attach already answered with', () => {
+        const payload = JSON.stringify({
+            schema: 'substrate-cli/v1',
+            command: 'provenance.attach',
+            ok: false,
+            error: NO_RECEIPT,
+            data: { claim: { holder: 'pi152-core', activationId: 'act-42', releasedAt: null } },
+        });
+        const { result, calls } = recoveryDeps({
+            attachErrors: [NO_RECEIPT],
+            attachFailureStdout: payload,
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(result.attached).toBe(true);
+        expect(calls.filter((call) => call.kind === 'show')).toHaveLength(0);
+        const dispatch = calls.find((call) => call.kind === 'dispatch');
+        expect(dispatch?.argv).toContain('--participant');
+        expect(dispatch?.argv[dispatch.argv.indexOf('--activation') + 1]).toBe('act-42');
+    });
+
+    it('still reads the claim when the attach answer carries none, and keeps the anti-steal rule', () => {
+        const { calls } = recoveryDeps({
+            attachErrors: [NO_RECEIPT],
+            attachFailureStdout: JSON.stringify({ schema: 'substrate-cli/v1', command: 'provenance.attach', ok: false, error: NO_RECEIPT }),
+            held: true,
+            holder: 'someone-else',
+            env: { SUBSTRATE_HOLDER: 'pi152-core' },
+        });
+        expect(calls.filter((call) => call.kind === 'show')).toHaveLength(1);
+        const dispatch = calls.find((call) => call.kind === 'dispatch');
+        // The shell holder differs from the claim holder: no participant, so sb's
+        // own anti-steal refusal is the message rather than a forged identity.
+        expect(dispatch?.argv).not.toContain('--participant');
     });
 });

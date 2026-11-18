@@ -358,11 +358,17 @@ Known limits, accepted rather than hidden:
 | `XTRM_MERGE_GUARD` | Gates the merge check. | unset = **off**; `on`, `1`, `true`, `yes` enable it |
 | `XTRM_MERGE_GUARD_OVERRIDE` | Coordinator/operator override of a refused merge; needs a reason and a resolvable head. | reason text |
 | `XTRM_MARKER_CHECK_TIMEOUT_MS` | Budget the `gh` shim gives `xt identity marker-check` before it kills the call and lets the `gh pr create`/`pr edit` proceed. | integer milliseconds, clamped **50–60000**, default **4000**; a non-numeric or non-positive value falls back to the default |
+| `XTRM_PR_LINK_TIMEOUT_MS` | Budget for the whole post-create link (`xt identity pr-link`: the project read, `provenance attach`, the claim read, the `dispatch`/`allocate` recovery and `issue link pr`). The shim kills the link at this budget plus a 1000 ms tail. | integer milliseconds, clamped **2000–120000**; default **5000** locally and **18000** when `sb` runs in remote mode (`remote` in `~/.xtrm/config/substrate.json`, or the file `SUBSTRATE_REMOTE_CONFIG` names); an invalid value falls back to the default |
 
 `XTRM_MARKER_CHECK_TIMEOUT_MS` exists because the marker check is fail-open: a slow or absent `xt` must never
 block a write. Raising it trades a longer worst-case create for more tolerance of a slow `sb`/`xt`; lowering it
 below the default makes a slow machine refuse less and proceed more. The value is clamped, so a stray entry in a
 launch environment cannot turn the check into a long blocker.
+
+`XTRM_PR_LINK_TIMEOUT_MS` exists because a remote `sb` (ADR-008) forwards every call over ssh: on the 2026-11-18
+host one call cost 850–1906 ms, and one link makes up to seven calls, so the local five seconds ran out by design
+and left PRs with no Substrate link. A link that still runs out prints one stderr line naming the step and the exact
+command that finishes it; the pull request itself is created before the budget starts and is never delayed by it.
 
 | Command | What it does |
 | --- | --- |

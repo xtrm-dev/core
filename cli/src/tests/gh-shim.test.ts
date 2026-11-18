@@ -15,6 +15,17 @@ import {
     ghShimStatus,
     installGhShim,
 } from '../core/gh-shim.js';
+import {
+    ATTACH_TIMEOUT_MS,
+    LINK_TAIL_MS,
+    LINK_TIMEOUT_ENV_VAR,
+    LINK_TIMEOUT_MAX_MS,
+    LINK_TIMEOUT_MIN_MS,
+    REMOTE_ATTACH_TIMEOUT_MS,
+    resolveLinkBudgetMs,
+    resolveLinkCeilingMs,
+    SB_REMOTE_CONFIG_ENV_VAR,
+} from '../core/gh-pr-link.js';
 
 let tmp = '';
 let realBin = '';
@@ -52,6 +63,47 @@ describe('findRealGh', () => {
     it('returns null when only the shim is on PATH', () => {
         installGhShim(deps());
         expect(findRealGh({ ...deps(), env: { PATH: shimDir } })).toBeNull();
+    });
+});
+
+// CORE-2745: the shim owns the outer kill for one link, and the inner path owns
+// the budget inside it. The numbers are inlined into the generated shim at install
+// time, so this case locks the ordering the two files have to keep: the kill is
+// always the budget plus the tail, in both modes and for an override.
+describe('the link budget the shim embeds (CORE-2745)', () => {
+    const REMOTE_CONFIG = JSON.stringify({ remote: 'ssh:dawid@159.195.49.110' });
+    const localRead = () => {
+        throw new Error('ENOENT: no substrate.json');
+    };
+
+    it('inlines the budget, the clamp and the tail from gh-pr-link.ts', () => {
+        const source = ghShimSource(null);
+        expect(source).toContain(`const LINK_TIMEOUT_ENV_VAR = ${JSON.stringify(LINK_TIMEOUT_ENV_VAR)}`);
+        expect(source).toContain(`const LINK_TIMEOUT_MIN_MS = ${LINK_TIMEOUT_MIN_MS}`);
+        expect(source).toContain(`const LINK_TIMEOUT_MAX_MS = ${LINK_TIMEOUT_MAX_MS}`);
+        expect(source).toContain(`const LINK_TAIL_MS = ${LINK_TAIL_MS}`);
+        expect(source).toContain(`const LINK_BUDGET_MS = ${ATTACH_TIMEOUT_MS}`);
+        expect(source).toContain(`const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS}`);
+        expect(source).toContain(`const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)}`);
+        // One function decides it at runtime, from sb's own config.
+        expect(source).toContain('function sbRemoteMode()');
+        expect(source).toContain('return budget + LINK_TAIL_MS;');
+    });
+
+    it('kills the link after the budget the inner path keeps, never before it', () => {
+        for (const deps of [
+            { env: {}, readFile: localRead },
+            { env: {}, readFile: () => REMOTE_CONFIG },
+            { env: { [LINK_TIMEOUT_ENV_VAR]: '2000' }, readFile: localRead },
+            { env: { [LINK_TIMEOUT_ENV_VAR]: '45000' }, readFile: () => REMOTE_CONFIG },
+        ]) {
+            expect(resolveLinkCeilingMs(deps)).toBe(resolveLinkBudgetMs(deps) + LINK_TAIL_MS);
+            expect(resolveLinkCeilingMs(deps)).toBeGreaterThan(resolveLinkBudgetMs(deps));
+        }
+    });
+
+    it('the local kill stays the six seconds the shim has always allowed', () => {
+        expect(resolveLinkCeilingMs({ env: {}, readFile: localRead })).toBe(6000);
     });
 });
 
