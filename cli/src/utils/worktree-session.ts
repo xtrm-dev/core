@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, recordDispatcherBinding, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -2623,6 +2623,12 @@ function markPathSkipWorktree(worktreePath: string, pathspec: string): void {
 export interface SessionMeta {
     runtime: 'claude' | 'pi' | 'codex';
     launchedAt: string;
+    /**
+     * CORE-2728: the Substrate Issue this session was launched for (`--bead`).
+     * Persisted so `xt attach` can find the launch binding — and the original
+     * dispatcher — after the tmux pane (and its @agent_bead) is gone.
+     */
+    bead?: string;
 }
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
@@ -2630,9 +2636,11 @@ function sessionMetaPath(worktreePath: string): string {
     return path.join(worktreePath, '.xtrm', 'session-meta.json');
 }
 
-export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi'): boolean {
+export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi', bead?: string | null): boolean {
     try {
         const meta: SessionMeta = { runtime, launchedAt: new Date().toISOString() };
+        const issueRef = (bead ?? '').trim();
+        if (issueRef) meta.bead = issueRef;
         const dest = sessionMetaPath(worktreePath);
         mkdirSync(path.dirname(dest), { recursive: true });
         writeFileSync(dest, JSON.stringify(meta, null, 2));
@@ -3349,7 +3357,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         // Non-fatal: bd will recover via git common-dir resolution regardless.
     }
 
-    const metadataPersisted = writeSessionMeta(worktreePath, runtime);
+    const metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
     if (!structuredOutput) {
         console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
         console.log(kleur.dim('  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/'));
@@ -3646,7 +3654,20 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
-    const dispatcherEnv = buildDispatcherEnv(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
+    // CORE-2728: the same resolution is persisted on the launch binding, so
+    // `xt attach` can restore the ORIGINAL dispatcher later.
+    const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
+    const dispatcherEnv = dispatcher.env;
+    if (bead) {
+        // Before the runtime starts, so the binding precedes the work. A failed or
+        // old sb is one warning; the launch itself never fails on it.
+        const recorded = recordDispatcherBinding({
+            ref: bead,
+            resolution: dispatcher.resolution,
+            workspace: worktreePath,
+        });
+        if (recorded.warning) process.stderr.write(recorded.warning);
+    }
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
     const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.

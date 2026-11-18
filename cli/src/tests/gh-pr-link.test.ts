@@ -6,7 +6,7 @@
 // ref or a warn-and-skip, and the exact `sb provenance attach` argv.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -471,6 +471,7 @@ function recoveryDeps(overrides: {
     env?: NodeJS.ProcessEnv;   // the process env the linker sees
     flatClaim?: boolean;       // answer with the flat {claim} shape instead of the envelope
     showFails?: boolean;       // the claim read fails outright
+    dispatcherDeps?: import('../core/dispatcher-identity.js').DispatcherIdentityDeps; // CORE-2728 live-session probe
 } = {}) {
     const calls: { kind: string; argv: string[] }[] = [];
     const { runGit } = gitFake({
@@ -488,6 +489,7 @@ function recoveryDeps(overrides: {
         runGit,
         runSb,
         readFile: () => { throw new Error('no file'); },
+        ...(overrides.dispatcherDeps ? { dispatcherDeps: overrides.dispatcherDeps } : {}),
         runAttach: (args) => {
             const kind = args[1]; // show | attach | dispatch | allocate
             calls.push({ kind, argv: [...args] });
@@ -900,5 +902,120 @@ describe('resolveWorkerSessionId', () => {
 
     it('skips a tmux-shaped value and keeps looking', () => {
         expect(resolveWorkerSessionId({ PI_SESSION_ID: '$1', CLAUDE_SESSION_ID: 'c-2' })).toBe('c-2');
+    });
+});
+
+// CORE-2728 (D8): the recovery dispatch carries WHO dispatched this worker (its own
+// launch-recalled participant) and the dispatcher's session when a live session of
+// that participant carries a Claude session id. Absent stays absent.
+describe('linkCreatedPr dispatch carries the dispatcher identity (CORE-2728)', () => {
+    const SESSION_UUID = '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce';
+
+    function registry(
+        holder: string,
+        sessionId: string | null = SESSION_UUID,
+    ): { dir: string; deps: import('../core/dispatcher-identity.js').DispatcherIdentityDeps } {
+        const dir = mkdtempSync(join(tmpdir(), 'xtrm-gh-pr-link-dispatcher-'));
+        mkdirSync(join(dir, 'sessions'), { recursive: true });
+        writeFileSync(join(dir, 'sessions', '100.json'), JSON.stringify({
+            pid: 100,
+            name: 'g04z-lead',
+            messagingSocketPath: '/run/cc/100.sock',
+            ...(sessionId === null ? {} : { sessionId }),
+        }));
+        return {
+            dir,
+            deps: {
+                sessionsDir: join(dir, 'sessions'),
+                readProcess: () => ({ ppid: 1 }),
+                readEnviron: (pid: number) => (pid === 100 ? { SUBSTRATE_HOLDER: holder } : null),
+                env: {},
+            },
+        };
+    }
+
+    it('passes --dispatcher-participant and --dispatcher-session from the worker environment', () => {
+        const { dir, deps } = registry('g04z');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                env: { SUBSTRATE_HOLDER: 'pi152-core', XTRM_DISPATCHER_PARTICIPANT: 'g04z' },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).toContain('--dispatcher-participant');
+            expect(dispatch?.argv[dispatch.argv.indexOf('--dispatcher-participant') + 1]).toBe('g04z');
+            expect(dispatch?.argv).toContain('--dispatcher-session');
+            expect(dispatch?.argv[dispatch.argv.indexOf('--dispatcher-session') + 1]).toBe(SESSION_UUID);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('passes no dispatcher flag when the worker environment names no participant', () => {
+        const { dir, deps } = registry('g04z');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                env: { SUBSTRATE_HOLDER: 'pi152-core' },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).not.toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('CORE-2728 F5: a tmux `$N` registry session id passes no --dispatcher-session', () => {
+        const { dir, deps } = registry('g04z', '$42');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                env: { XTRM_DISPATCHER_PARTICIPANT: 'g04z' },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('CORE-2728 F6: a participant sb would refuse passes neither dispatcher flag', () => {
+        const { dir, deps } = registry('g04z');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                // 129 characters: over the Substrate label bound -> no flag at all.
+                env: { XTRM_DISPATCHER_PARTICIPANT: `not a label-${'x'.repeat(117)}` },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).not.toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+            // The session is only ever looked up FOR a passed participant.
+            expect(dispatch?.argv).toContain('CORE-2607');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a participant with no live session passes the participant and no session', () => {
+        const { dir, deps } = registry('someone-else');
+        try {
+            const { calls } = recoveryDeps({
+                attachErrors: ['no_receipt: no receipt for this issue'],
+                env: { XTRM_DISPATCHER_PARTICIPANT: 'g04z' },
+                dispatcherDeps: deps,
+            });
+            const dispatch = calls.find((c) => c.kind === 'dispatch');
+            expect(dispatch?.argv).toContain('--dispatcher-participant');
+            expect(dispatch?.argv).not.toContain('--dispatcher-session');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 });

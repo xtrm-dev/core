@@ -37,6 +37,13 @@
  */
 
 import { runReceipt, listProjects, resolveReceiptProject, withReceiptProject, type ReceiptProjectDeps, type SbProject } from './sb-receipt.js';
+import {
+    XTRM_DISPATCHER_PARTICIPANT_VAR,
+    isDispatcherLabel,
+    isLowercaseUuid,
+    resolveDispatcherSessionForParticipant,
+    type DispatcherIdentityDeps,
+} from './dispatcher-identity.js';
 import { resolveWorkerSessionId } from './session-identity.js';;
 import { parseIssueMarker, parseIssueMarkers, markerRunVerdict } from './review-posting.js';
 import { spawnSync } from 'node:child_process';
@@ -334,6 +341,11 @@ export interface GhPrLinkDeps extends ReceiptProjectDeps {
      * store is touched and can route on the argv.
      */
     runAttach?: (args: string[], env: NodeJS.ProcessEnv, timeoutMs?: number) => { ok: boolean; error?: string; stdout?: string };
+    /**
+     * CORE-2728: the live-session probe behind the dispatcher session id; tests
+     * inject a temp registry instead of touching the host's.
+     */
+    dispatcherDeps?: DispatcherIdentityDeps;
 }
 
 export interface GhPrLinkResult {
@@ -517,6 +529,17 @@ function linkOrWarn(stdout: string | null | undefined, argv: string[], deps: GhP
         // environment means no flag, and sb keeps its own fallback.
         const workerSession = resolveWorkerSessionId(env);
         if (workerSession) dispatchArgs.push('--session', workerSession);
+        // CORE-2728: who dispatched THIS worker, from the participant xt exported at
+        // launch, and the dispatcher's own session when a live session of that
+        // participant carries a Claude session id. Absent stays absent: no flag.
+        const dispatcherParticipant = (env[XTRM_DISPATCHER_PARTICIPANT_VAR] ?? '').trim();
+        if (dispatcherParticipant && isDispatcherLabel(dispatcherParticipant)) {
+            dispatchArgs.push('--dispatcher-participant', dispatcherParticipant);
+            const dispatcherSession = resolveDispatcherSessionForParticipant(dispatcherParticipant, deps.dispatcherDeps ?? {});
+            if (dispatcherSession && isLowercaseUuid(dispatcherSession)) {
+                dispatchArgs.push('--dispatcher-session', dispatcherSession);
+            }
+        }
         // --workspace is only meaningful when cwd is known; the shim always sets
         // it, but tests may omit it.
         if (deps.cwd) dispatchArgs.push('--workspace', cwd);

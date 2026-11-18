@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DISPATCHER_ENV_KEYS } from '../core/dispatcher-identity.js';
+import { DISPATCHER_ENV_KEYS, attachDispatcherEnv } from '../core/dispatcher-identity.js';
+import { resolveWorkerIssueRef } from '../commands/attach.js';
 
 const mocked = vi.hoisted(() => ({ spawnSync: vi.fn() }));
 
@@ -608,5 +609,161 @@ describe('Codex worktree launcher', () => {
         expect(mocked.spawnSync).toHaveBeenCalledWith(
             'git', ['worktree', 'remove', '--force', worktreePath], expect.objectContaining({ cwd: repoRoot }),
         );
+    });
+
+    /**
+     * A real Codex `--bead` launch on a mocked spawn surface. `sbResult` models the
+     * launch-time `sb provenance dispatch` answer, so M9 can fail it.
+     */
+    async function beadLaunch(sbResult: { status: number | null; stdout?: string; stderr?: string } = { status: 0, stdout: '{}' }) {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-bead-dispatch-'));
+        roots.push(repoRoot);
+        const codexHome = path.join(repoRoot, 'codex-home');
+        const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-demo`);
+        process.env.CODEX_HOME = codexHome;
+        process.chdir(repoRoot);
+        fs.ensureDirSync(path.join(repoRoot, '.beads'));
+
+        const sbCalls: string[][] = [];
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            const joined = args.join(' ');
+            if (command === 'sb') {
+                sbCalls.push(args);
+                return { status: sbResult.status, stdout: sbResult.stdout ?? '', stderr: sbResult.stderr ?? '' };
+            }
+            if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --show-toplevel') {
+                return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+            }
+            if (command === 'git' && joined === 'rev-parse --git-common-dir') {
+                return { status: 0, stdout: '.git\n', stderr: '' };
+            }
+            if (command === 'git' && joined.startsWith('show-ref --verify')) {
+                return { status: 1, stdout: '', stderr: '' };
+            }
+            if (command === 'bd' && args[0] === 'worktree') {
+                fs.ensureDirSync(worktreePath);
+                return { status: 0, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
+            if (command === 'tmux' && args[0] === 'wait-for' && args[1] === '-S') {
+                const sessions = path.join(codexHome, 'sessions', '2026', '08', '02');
+                fs.ensureDirSync(sessions);
+                fs.writeFileSync(path.join(sessions, 'rollout.jsonl'), `${JSON.stringify({
+                    type: 'session_meta',
+                    payload: {
+                        session_id: '019fc3bc-fb7a-7ae0-9536-125624bf726b',
+                        id: '019fc3bc-fb7a-7ae0-9536-125624bf726b',
+                        timestamp: new Date().toISOString(),
+                        cwd: worktreePath,
+                        cli_version: '0.146.0',
+                    },
+                })}\n`);
+                return { status: 0, stdout: '', stderr: '' };
+            }
+            if (command === 'tmux' && args[0] === 'list-panes') return { status: 0, stdout: '%17\n', stderr: '' };
+            if (command === 'tmux' && args[0] === 'list-sessions') return { status: 0, stdout: 'codex-demo\t$42\n', stderr: '' };
+            if (command === 'tmux' && args[0] === 'display-message') return { status: 0, stdout: '$42\n', stderr: '' };
+            if (command === path.join(repoRoot, 'bin', 'codex') && args[0] === '--version') {
+                return { status: 0, stdout: 'codex-cli 0.146.0\n', stderr: '' };
+            }
+            return { status: 0, stdout: '', stderr: '' };
+        });
+
+        const savedHome = process.env.HOME;
+        const homeRoot = path.join(repoRoot, 'home');
+        process.env.HOME = homeRoot;
+        const sessionsDir = path.join(homeRoot, '.claude', 'sessions');
+        fs.ensureDirSync(sessionsDir);
+        fs.writeJsonSync(path.join(sessionsDir, '100.json'), {
+            pid: 100,
+            name: 'g04z-lead',
+            messagingSocketPath: '/run/cc/100.sock',
+            sessionId: '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce',
+        });
+        const table: Record<number, { ppid: number }> = { 300: { ppid: 200 }, 200: { ppid: 100 }, 100: { ppid: 1 } };
+        const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const stderrLines: string[] = [];
+        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            stderrLines.push(String(chunk));
+            return true;
+        }) as never);
+        exitByThrow();
+        const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+        const launch = launchCodexWorktreeSession({
+            name: 'demo',
+            attach: false,
+            json: true,
+            yolo: false,
+            bead: 'CORE-2728',
+            dispatcherDeps: {
+                sessionsDir,
+                startPid: 300,
+                readProcess: (pid: number) => table[pid] ?? null,
+                readEnviron: (pid: number) => (pid === 100 ? { SUBSTRATE_HOLDER: 'g04z' } : null),
+                env: {},
+            },
+        });
+        await expect(launch).rejects.toThrow('exit:0');
+        stderrSpy.mockRestore();
+        process.env.HOME = savedHome;
+        return { sbCalls, stderrLines, stdoutSpy, worktreePath, sessionsDir };
+    }
+
+    it('a --bead launch records the dispatcher on the Substrate binding (CORE-2728)', async () => {
+        const { sbCalls, stderrLines, stdoutSpy, worktreePath, sessionsDir } = await beadLaunch();
+
+        expect(sbCalls).toHaveLength(1);
+        expect(sbCalls[0]).toEqual([
+            'provenance', 'dispatch', 'CORE-2728',
+            '--dispatcher-participant', 'g04z',
+            '--dispatcher-session', '01a1ec56-3da4-77fb-aed5-c6dee5eb40ce',
+            '--workspace', worktreePath,
+        ]);
+        expect(stderrLines).toEqual([]);
+        expect(stdoutSpy).toHaveBeenCalled();
+        // CORE-2728 S1: the bead rides the Codex session record, so `xt attach`
+        // can resolve the issue (and the binding) with no pane left at all.
+        expect(fs.readJsonSync(path.join(worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
+            runtime: 'codex',
+            threadId: '019fc3bc-fb7a-7ae0-9536-125624bf726b',
+            bead: 'CORE-2728',
+        });
+        // End to end: a real Codex --bead launch, NO pane, then attach resolves
+        // the ref from the record and restores the original participant.
+        const ref = resolveWorkerIssueRef(worktreePath, { paneBead: () => null });
+        expect(ref).toBe('CORE-2728');
+        const restored = attachDispatcherEnv(ref, {
+            env: {},
+            run: () => ({
+                ok: true,
+                stdout: JSON.stringify({
+                    schema: 'substrate-cli/v1', command: 'provenance.trace', ok: true,
+                    data: { bindings: [{ id: 'exb_1', dispatcherParticipantId: 'g04z', createdAt: 1 }] },
+                }),
+            }),
+            identity: {
+                sessionsDir,
+                readProcess: () => ({ ppid: 1 }),
+                readEnviron: (pid: number) => (pid === 100 ? { SUBSTRATE_HOLDER: 'g04z' } : null),
+                env: {},
+            },
+        });
+        expect(restored.XTRM_DISPATCHER_PARTICIPANT).toBe('g04z');
+        expect(restored.XTRM_DISPATCHER_ADDRESS).toBe('uds:/run/cc/100.sock');
+    });
+
+    it('CORE-2728 M9: a failed sb still warns once and the launch continues', async () => {
+        const { sbCalls, stderrLines, worktreePath } = await beadLaunch({ status: 1, stdout: '', stderr: 'no store' });
+        expect(sbCalls).toHaveLength(1);
+        // One warning, no stack, and the launch still wrote its record and outcome.
+        const warnings = stderrLines.filter((line) => line.includes('could not record the dispatcher'));
+        expect(warnings).toEqual([
+            'xt: could not record the dispatcher on CORE-2728 (launch continues): sb (sb) exited 1: no store\n',
+        ]);
+        expect(fs.readJsonSync(path.join(worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
+            runtime: 'codex',
+            bead: 'CORE-2728',
+        });
     });
 });

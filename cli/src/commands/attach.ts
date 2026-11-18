@@ -8,14 +8,14 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
-import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled } from '../utils/worktree-session.js';
+import { resolveWorktreePaneBead } from '../utils/worktree-pane-bead.js';
+import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled, readSessionMeta, type SessionMeta } from '../utils/worktree-session.js';
 import {
     SUBSTRATE_HOLDER_VAR,
     XTRM_AGENT_NAME_VAR,
+    attachDispatcherEnv,
     cleanAgentName,
-    refreshDispatcherEnv,
     stripDispatcherEnv,
-    type DispatcherIdentityDeps,
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import type { WorktreeInfo } from './worktree.js';
@@ -43,22 +43,22 @@ export function matchWorktree(worktrees: WorktreeInfo[], name: string): Worktree
 }
 
 /**
- * Spawn environment for a resumed session (CORE-2432 R8): freshly resolved
- * dispatcher identity on top of the base env, plus the Claude MCP env for
- * claude resumes. Separated for tests; the action passes no deps (live lookup).
+ * Spawn environment for a resumed session (CORE-2432 R8). `dispatcherEnv` is the
+ * dispatcher RESTORED from the worker's launch binding (CORE-2728) — never a
+ * value resolved from the attacher's environment or ancestor chain. Separated
+ * for tests; the action passes the binding-derived record (live lookup).
  */
 export function buildAttachEnv(
     base: NodeJS.ProcessEnv,
     runtime: string,
-    dispatcherDeps: DispatcherIdentityDeps = {},
+    dispatcherEnv: Record<string, string> = {},
     holder: string | null = null,
     worktreePath: string | null = null,
 ): NodeJS.ProcessEnv {
-    const dispatcherEnv = refreshDispatcherEnv(dispatcherDeps);
     // D6 (CORE-2727): `base` is the ATTACHER's environment. Its dispatcher keys,
     // agent name, parent pane/session and git identity describe the session the
     // operator typed in, not the session being resumed, so they are stripped
-    // before anything is re-added: only a freshly resolved value and the resumed
+    // before anything is re-added: only the restored dispatcher and the resumed
     // worker's own identity may survive. Unknown stays absent.
     const stripped = stripDispatcherEnv(base);
     // Lead decision (CORE-2727): the resumed session is its own worker, so it gets
@@ -87,6 +87,57 @@ export function buildAttachEnv(
 export function holderFromWorktreePath(worktreePath: string): string | null {
     const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec(basename(worktreePath));
     return match?.[1] ?? null;
+}
+
+/** A Substrate/Beads issue reference this command may pass to `sb` (no flags, no spaces). */
+const SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** What the issue lookup may read; every seam is injectable for tests. */
+export interface WorkerIssueDeps {
+    readMeta?: (worktreePath: string) => SessionMeta | null;
+    /** The bead a live pane records for this worktree; null when none or ambiguous. */
+    paneBead?: (worktreePath: string) => string | null;
+}
+
+/**
+ * The session record a resumed worktree wrote. A Codex record is validated by its
+ * own reader (CORE-2728 S1 carries the bead there), so a damaged Codex file cannot
+ * hand the attach a bead the reader would reject; anything else is the plain
+ * launcher record.
+ */
+function readSessionRecord(worktreePath: string): SessionMeta | null {
+    const codex = readCodexWorktreeSession(worktreePath);
+    if (codex) {
+        return {
+            runtime: 'codex',
+            launchedAt: codex.launchedAt,
+            ...(codex.bead ? { bead: codex.bead } : {}),
+        };
+    }
+    return readSessionMeta(worktreePath);
+}
+
+/**
+ * The Substrate Issue a resumed worktree was launched for (CORE-2728). The
+ * launcher's session record persists it; a live pane's recorded bead is the
+ * fallback. A non-string, malformed or ambiguous value is ABSENT — never a
+ * guess and never a TypeError.
+ */
+export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDeps = {}): string | null {
+    const meta = (deps.readMeta ?? readSessionRecord)(worktreePath);
+    const raw = meta ? meta.bead : undefined;
+    const fromMeta = typeof raw === 'string' ? raw.trim() : '';
+    if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) return fromMeta;
+    const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
+    let fromPane: unknown;
+    try {
+        fromPane = paneBead(worktreePath);
+    } catch {
+        return null;
+    }
+    const candidate = typeof fromPane === 'string' ? fromPane.trim() : '';
+    if (candidate && SAFE_ISSUE_REF.test(candidate)) return candidate;
+    return null;
 }
 
 export function createAttachCommand(): Command {
@@ -187,9 +238,13 @@ export function createAttachCommand(): Command {
             }
 
             // Substrate MCP needs these before the process starts; claude only. CORE-2290.
-            // CORE-2432 R8: a resumed session gets freshly resolved dispatcher
-            // identity instead of stale inherited XTRM_DISPATCHER_* values.
-            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, {}, holderFromWorktreePath(target.path), target.path) });
+            // CORE-2728 (operator decision b): the resumed session gets its ORIGINAL
+            // dispatcher back, read from the binding this worker's launch wrote. No
+            // binding (or no live session) leaves the dispatcher absent — the
+            // attacher is never adopted.
+            const issueRef = resolveWorkerIssueRef(target.path);
+            const restoredDispatcher = attachDispatcherEnv(issueRef);
+            const result = spawnSync(runtime, resumeArgs, { cwd: target.path, stdio: 'inherit', env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
 
             process.exit(result.status ?? 0);
         });
