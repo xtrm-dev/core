@@ -147,21 +147,26 @@ describe("shipped XTRM themes", () => {
     // editor.borderColor = theme.getThinkingBorderColor(level), and bash mode
     // swaps in getBashModeBorderColor(). Authoring them as a text-brightness
     // ramp made the box a near-white line at high/xhigh/max, so they are pinned
-    // to the border token: flat, dim, and identical in every level and mode.
+    // to borderAccent: flat, dim, and identical in every level and mode. It is
+    // the token the header frame already uses, so the two boxes share one edge.
     const levels = [
       "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium",
       "thinkingHigh", "thinkingXhigh", "thinkingMax", "bashMode",
     ];
     for (const theme of THEMES) {
-      const border = resolve(theme, "border");
+      const edge = resolve(theme, "borderAccent");
       for (const token of levels) {
-        expect(resolve(theme, token), `${theme.name}.${token} must be the border colour`).toBe(border);
+        expect(resolve(theme, token), `${theme.name}.${token} must be the edge colour`).toBe(edge);
       }
       // Dim, not merely equal: the box sits further from the text ladder than
       // the secondary text tier does — darker in a dark theme, lighter in a
       // light one, so it stays closer to the background either way.
-      expect(luminance(border), `${theme.name} prompt box stays dimmer than muted`)
+      expect(luminance(edge), `${theme.name} prompt box stays dimmer than muted`)
         [theme.appearance === "light" ? "toBeGreaterThan" : "toBeLessThan"](luminance(resolve(theme, "muted")));
+      // And it reads as a box, not as nothing: the edge stays clear of the faint
+      // fills it sits on.
+      expect(luminance(edge), `${theme.name} prompt box is visible above the faintest border`)
+        [theme.appearance === "light" ? "toBeLessThan" : "toBeGreaterThan"](luminance(resolve(theme, "borderMuted")));
     }
   });
 
