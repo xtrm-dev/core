@@ -59,7 +59,7 @@ function mergeRecords(): string[][] {
 
 function runShim(args: string[], env: Record<string, string> = {}, cwd?: string): { status: number | null; stdout: string; stderr: string } {
     const inherited = { ...process.env };
-    for (const key of ['XTRM_MERGE_GUARD', 'XTRM_MERGE_GUARD_OVERRIDE', 'XTRM_ROLE', 'SUBSTRATE_HOLDER', 'STUB_ROLE', 'STUB_CHECK', 'STUB_SB', 'STUB_GH_EXIT', 'STUB_GH_TWO_URLS']) {
+    for (const key of ['XTRM_MERGE_GUARD', 'XTRM_MERGE_GUARD_OVERRIDE', 'XTRM_ROLE', 'SUBSTRATE_HOLDER', 'STUB_ROLE', 'STUB_CHECK', 'STUB_SB', 'STUB_GH_EXIT', 'STUB_GH_TWO_URLS', 'STUB_XT_LINK', 'SUBSTRATE_DB', 'SUBSTRATE_REMOTE_CONFIG', 'XTRM_PR_LINK_TIMEOUT_MS']) {
         delete inherited[key];
     }
     const result = spawnSync(process.execPath, [shim, ...args], {
@@ -68,6 +68,9 @@ function runShim(args: string[], env: Record<string, string> = {}, cwd?: string)
             ...inherited,
             PATH: `${bin}:${process.env.PATH ?? ''}`,
             SUBSTRATE_HOLDER: 'core-xt-pi-0fln',
+            // CORE-2745: never let the host's own sb remote config leak into a
+            // case; a missing file is local mode, which is what these assert.
+            SUBSTRATE_REMOTE_CONFIG: join(root, 'no-sb-remote.json'),
             ...env,
         },
         ...(cwd ? { cwd } : {}),
@@ -216,6 +219,12 @@ if (argv[0] === 'identity' && argv[1] === 'resolve-gh') {
   process.exit(result.status === null ? 1 : result.status);
 }
 if (argv[0] === 'identity' && argv[1] === 'pr-link') {
+  // CORE-2745: a link that hangs must die at the budget plus the tail, never hold
+  // the create open. The hang is far longer than any budget a case sets.
+  if (process.env.STUB_XT_LINK === 'hang') {
+    setTimeout(() => process.exit(0), 30000);
+    return;
+  }
   // CORE-2607: the REAL link resolution runs; the stubbed sb records the argv.
   const result = runDist(['identity', 'pr-link', ...argv.slice(2)]);
   process.stdout.write(result.stdout || '');
@@ -854,6 +863,29 @@ describe('the Issue-to-PR link after gh pr create (CORE-2607)', () => {
         const result = runShim(['pr', 'create', '--body', MARKER_BODY], { HOME: root }, repo.dir);
         expect(result.status).toBe(0);
         expect(attachCalls()).toEqual([t1(), t2(['--commit', repo.head])]);
+    });
+
+    // CORE-2745: the link budget is a kill this shim owns. A hung link must end at
+    // the budget plus the tail (never at a fixed six seconds), leave the create's
+    // own output untouched, and report the miss in ONE warning line.
+    it('kills a hung link at the budget it was given, plus the tail', () => {
+        const repo = scratchRepo();
+        const started = Date.now();
+        const result = runShim(['pr', 'create', '--body', MARKER_BODY], {
+            HOME: root,
+            STUB_XT_LINK: 'hang',
+            XTRM_PR_LINK_TIMEOUT_MS: '2000',
+        }, repo.dir);
+        const elapsed = Date.now() - started;
+        // The create's own exit code, stdout and stderr are the real gh's.
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe(CREATE_STDOUT);
+        // 2000 ms budget + 1000 ms tail, with slack for process start-up: a fixed
+        // 6000 ms kill (the local default) fails this by a wide margin.
+        expect(elapsed).toBeLessThan(5500);
+        const said = warnings(result.stderr);
+        expect(said).toHaveLength(1);
+        expect(said[0]).toMatch(/not linked to its Substrate Issue/);
     });
 });
 
