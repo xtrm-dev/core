@@ -490,6 +490,7 @@ def test_tools_reminder_fires_once_per_threshold_and_rearms(env, monkeypatch):
     assert warn(env, 20_000) == ""
     first = warn(env, 36_000)
     assert "TOOLS CHECK at 36% context (lead)" in first and "journal-search" in first and "pr-reviewer" in first
+    assert "--help" in first  # the journal-search card states the discovery rule, not a fixed flag set
     assert warn(env, 40_000) == ""
     assert "TOOLS CHECK" in warn(env, 61_000)
     assert "EARLY" in warn(env, 71_000) and "TOOLS CHECK" not in warn(env, 72_000)
