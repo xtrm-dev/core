@@ -993,7 +993,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
-          "hash": "030423c907c5590091843bb3eff141a6eaeec9b762578568be6cd7e33239b7de",
+          "hash": "39d3a791e1d8cfb5edfaee2a1c39da10c9311c6b916f9cd460f983c6be001490",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/pm_hook_common.py": {
