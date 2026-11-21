@@ -279,6 +279,19 @@ export interface PostReviewInput {
     expectedModel?: string | null;
 }
 
+/**
+ * XTRM-962: the model a review body is allowed to name, derived rather than
+ * remembered. `--model` and `$XTRM_REVIEW_MODEL` are documented as cross-checks
+ * and win when set; otherwise the session's own `$PI_MODEL` — which the runtime
+ * re-exports for every shell command — is the expectation. Returning null means
+ * "nothing to compare against, so do not check", never "any model is fine".
+ */
+export function resolveExpectedModel(opts: { model?: string } = {}, env: NodeJS.ProcessEnv = process.env): string | null {
+    const explicit = String(opts.model ?? env.XTRM_REVIEW_MODEL ?? '').trim();
+    if (explicit) return explicit;
+    return (env.PI_MODEL ?? '').trim() || null;
+}
+
 export interface PostedReview {
     id: number;
     url: string;

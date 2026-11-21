@@ -51,6 +51,7 @@ import {
     postReview,
     reviewReceiptArgs,
     sha12,
+    resolveExpectedModel,
     ReviewRefused,
     type ReviewVerdict,
 } from '../core/review-posting.js';
@@ -466,7 +467,7 @@ export function createIdentityCommand(): Command {
         .option('--approve', 'Cross-check: must agree with a PASS body', false)
         .option('--request-changes', 'Cross-check: must agree with a FAIL body', false)
         .option('--comment', 'Cross-check: must agree with a PARTIAL body', false)
-        .option('--model <model>', 'Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL)')
+        .option('--model <model>', 'Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL, else the session\'s $PI_MODEL)')
         .option('--json', 'Emit JSON', false)
         .action(async (opts: {
             repo: string; pr: string; body?: string; bodyFile?: string; head?: string;
@@ -512,7 +513,7 @@ export function createIdentityCommand(): Command {
                     activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? '').trim() || null,
                     expectedHead: (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? '').trim() || null,
                     expectedVerdict: flagVerdict,
-                    expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? '').trim() || null,
+                    expectedModel: resolveExpectedModel(opts),
                 }, { token, slug: appSlugForRole('reviewer', map), apiBase: DEFAULT_API_BASE });
                 let journaled: { ok: boolean; error?: string } | null = null;
                 if (posted.issueRef) journaled = runSb(reviewReceiptArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole('reviewer', map)));

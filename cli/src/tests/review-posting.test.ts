@@ -28,6 +28,7 @@ import {
     ReviewRefused,
     type PostedReview,
     type PostReviewInput,
+    resolveExpectedModel,
 } from '../core/review-posting.js';
 
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01';
@@ -309,6 +310,53 @@ describe('postReview', () => {
         await expect(postReview(input({ expectedHead: 'f'.repeat(40) }), github.deps))
             .rejects.toThrow(/does not match line 1/);
         expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('derives the expected model from the session when no flag or env names one', () => {
+        // XTRM-962: #472's review 6006087289 said claude-sonnet-5-5 on a
+        // deepseek/deepseek-v4.1-flash session, because the header was written
+        // from memory. The default must come from the runtime.
+        expect(resolveExpectedModel({}, { PI_MODEL: 'deepseek/deepseek-v4.1-flash' } as NodeJS.ProcessEnv))
+            .toBe('deepseek/deepseek-v4.1-flash');
+        // An explicit --model wins over the session, as documented.
+        expect(resolveExpectedModel({ model: 'opus' }, { PI_MODEL: 'sonnet' } as NodeJS.ProcessEnv)).toBe('opus');
+        // $XTRM_REVIEW_MODEL wins over $PI_MODEL.
+        expect(resolveExpectedModel({}, { XTRM_REVIEW_MODEL: 'reviewer-x', PI_MODEL: 'sonnet' } as NodeJS.ProcessEnv))
+            .toBe('reviewer-x');
+        // No runtime model (an ordinary shell calling the shim): no guess.
+        expect(resolveExpectedModel({}, {} as NodeJS.ProcessEnv)).toBe(null);
+        expect(resolveExpectedModel({}, { PI_MODEL: '   ' } as NodeJS.ProcessEnv)).toBe(null);
+    });
+
+    it('refuses a body whose header names a model the session is not running', async () => {
+        const github = fakeGitHub(headRoutes());
+        const expectedModel = resolveExpectedModel({}, { PI_MODEL: 'deepseek/deepseek-v4.1-flash' } as NodeJS.ProcessEnv);
+        await expect(postReview(input({ expectedModel }), github.deps))
+            .rejects.toThrow(/--model says deepseek\/deepseek-v4\.1-flash, line 1 says sonnet; line 1 is authoritative/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('posts when the header names the model the session is running', async () => {
+        const github = fakeGitHub(headRoutes({
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 56, state: 'COMMENTED', html_url: 'u' } },
+        }));
+        const expectedModel = resolveExpectedModel({}, { PI_MODEL: 'sonnet' } as NodeJS.ProcessEnv);
+        const posted = await postReview(input({ expectedModel }), github.deps);
+        expect(posted.id).toBe(56);
+        // The post happened, and the body still names the session's model.
+        const body = String((github.calls.find((call) => call.method === 'POST')?.body as { body?: string })?.body ?? '');
+        expect(body.split('\n')[0]).toBe(`Review by reviewer (sonnet) at head ${sha12(HEAD)}`);
+    });
+
+    it('still posts when the session exposes no model at all', async () => {
+        // A plain `gh pr review` from a shell has no PI_MODEL; refusing every
+        // such post would break the shim's public path, so the check is off.
+        const github = fakeGitHub(headRoutes({
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 57, state: 'COMMENTED', html_url: 'u' } },
+        }));
+        const expectedModel = resolveExpectedModel({}, {} as NodeJS.ProcessEnv);
+        expect(expectedModel).toBe(null);
+        await expect(postReview(input({ expectedModel }), github.deps)).resolves.toMatchObject({ id: 57 });
     });
 
     it('refuses a body that fails the lint before any network call', async () => {
