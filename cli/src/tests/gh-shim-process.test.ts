@@ -342,13 +342,36 @@ describe('the resolved role, not the raw string', () => {
         expect(readLog(ghLog)).toHaveLength(0);
     });
 
-    it('leaves the merge to the guard when the guard flag is off', () => {
+    // XTRM-957: the off state is a REFUSAL, asserted on the exit status so the
+    // test survives a copy edit of the message.
+    it('refuses an unguarded merge with a distinct exit status, and merges nothing', () => {
         const result = runShim(['pr', 'merge', '524', '--repo', 'xtrm-dev/specialists', '--squash'], { STUB_ROLE: 'worker' });
+        expect(result.status).toBe(3);
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge')).toHaveLength(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'merge-check')).toHaveLength(0);
+    });
+
+    it('refuses the same way when the guard variable is set to something that cannot enable it', () => {
+        // Configured on paper, unenforced in fact: a path to a file that is not a
+        // guard setting must not behave differently from an unset variable.
+        const result = runShim(['pr', 'merge', '524', '--repo', 'xtrm-dev/specialists', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: join(root, 'merge-guard.json') });
+        expect(result.status).toBe(3);
+        expect(readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge')).toHaveLength(0);
+    });
+
+    it('merges unchecked only with the per-command flag, and says that no check ran', () => {
+        const result = runShim(['pr', 'merge', '524', '--repo', 'xtrm-dev/specialists', '--squash', '--no-guard'], { STUB_ROLE: 'worker' });
         expect(result.status).toBe(0);
-        expect(result.stderr).toMatch(/merge guard is off/);
+        expect(result.stderr).toMatch(/UNCHECKED/);
+        // The flag is the shim's, never forwarded to the real gh.
         const merges = readLog(ghLog).filter((argv) => argv[0] === 'pr' && argv[1] === 'merge');
         expect(merges[0]).toEqual(['pr', 'merge', '524', '--repo', 'xtrm-dev/specialists', '--squash']);
-        expect(readLog(xtLog).filter((argv) => argv[1] === 'merge-check')).toHaveLength(0);
+    });
+
+    it('keeps the passing path silent: no guard line at all on an allowed merge', () => {
+        const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
+        expect(result.status).toBe(0);
+        expect(result.stderr).not.toMatch(/merge guard|UNCHECKED|not configured/);
     });
 });
 
