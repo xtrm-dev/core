@@ -174,6 +174,33 @@ describe('Journal receipts use only bounded result fields (live finding)', () =>
 });
 
 describe('mergeCheck', () => {
+    // XTRM-957: an unchecked merge is a refusal, not an allow. Downstream consumers
+    // (the shim, the review-gate hook) read `allow`, so an allow here is the exact
+    // false negative this block exists to prevent.
+    it('refuses when the guard is not configured, and names the per-command way past it', async () => {
+        const github = fakeGitHub({});
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { env: { SUBSTRATE_HOLDER: 'core-2528-worker' } }));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/^merge guard not configured: XTRM_MERGE_GUARD is not set/);
+        expect(decision.message).toContain('--no-guard');
+        expect(decision.message).toContain('XTRM_MERGE_GUARD=on');
+        // No GitHub read happens: the decision is made before any network access.
+        expect(github.calls).toHaveLength(0);
+    });
+
+    it('refuses an unreadable value on the same terms as an unset one', async () => {
+        const github = fakeGitHub({});
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { env: { SUBSTRATE_HOLDER: 'core-2528-worker', XTRM_MERGE_GUARD: '/etc/xtrm/merge-guard.json' } }));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/is not an enabled value/);
+    });
+
+    it('treats an explicit off value as not configured, not as consent', async () => {
+        const github = fakeGitHub({});
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { env: { SUBSTRATE_HOLDER: 'core-2528-worker', XTRM_MERGE_GUARD: 'off' } }));
+        expect(decision.allow).toBe(false);
+    });
+
     it('refuses when no reviewer-App review exists', async () => {
         const github = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': pull(),
@@ -302,11 +329,13 @@ describe('mergeCheck', () => {
         expect((await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { runSb: tooEarly.runSb }))).allow).toBe(false);
     });
 
-    it('is off unless XTRM_MERGE_GUARD is set, and then allows without reading GitHub', async () => {
+    // XTRM-957 overturned what this case used to assert: unset was an ALLOW, so a
+    // merge with no evaluation looked like one that passed. It is a refusal now.
+    it('refuses when XTRM_MERGE_GUARD is not set, and never reads GitHub', async () => {
         const github = fakeGitHub({});
         const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(github, { env: { SUBSTRATE_HOLDER: 'core-2528-worker' } }));
-        expect(decision.allow).toBe(true);
-        expect(decision.reason).toMatch(/merge guard is off/);
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/^merge guard not configured/);
         expect(github.calls).toHaveLength(0);
     });
 
