@@ -376,6 +376,27 @@ describe('the resolved role, not the raw string', () => {
 });
 
 describe('the guard flag ON path', () => {
+    // XTRM-957 review finding A: the bypass flag is the shim's own, so a guarded
+    // merge that carries it must not forward it to the real gh (which rejects it)
+    // and must not merge unchecked either. It is a contradiction, refused as one.
+    it('refuses --no-guard when the guard is on, instead of forwarding a flag gh does not know', () => {
+        const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash', '--no-guard'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on' });
+        expect(result.status).toBe(2);
+        expect(result.stderr).toMatch(/only applies when it is not configured/);
+        expect(readLog(ghLog).filter((argv) => argv[1] === 'merge')).toHaveLength(0);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'merge-check')).toHaveLength(0);
+    });
+
+    // XTRM-957 review finding B: a guard that blocks its own documentation invites
+    // the workaround it exists to prevent.
+    it('passes --help through instead of refusing it', () => {
+        const result = runShim(['pr', 'merge', '--help'], { STUB_ROLE: 'worker' });
+        expect(result.status).toBe(0);
+        const merges = readLog(ghLog).filter((argv) => argv[1] === 'merge');
+        expect(merges[0]).toEqual(['pr', 'merge', '--help']);
+        expect(readLog(xtLog).filter((argv) => argv[1] === 'merge-check')).toHaveLength(0);
+    });
+
     it('refuses before calling the real gh when merge-check refuses', () => {
         // The stub xt returns exit 0 unless STUB_CHECK=refuse.
         const result = runShim(['pr', 'merge', '123', '--repo', 'xtrm-dev/core', '--squash'], { STUB_ROLE: 'worker', XTRM_MERGE_GUARD: 'on', STUB_CHECK: 'refuse' });
