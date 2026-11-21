@@ -146,6 +146,12 @@ xt worktree remove xt/ab3k
 
 When multiple `xt/*` PRs are open at once, drain the queue from a normal checkout, oldest PR first, with `gh pr merge --rebase --delete-branch`: CI must be green on the current head, then rebase the remaining queued xt branches onto the updated target branch and push them with `--force-with-lease`. Inspect queue order and CI status with `gh pr list --state open --json number,createdAt,headRefName`. The `xt merge` wrapper for this loop was retired in CORE-2552; the `xt-merge` Specialist definition remains available for ad-hoc dispatch.
 
+### When the merge guard is not configured
+
+The `gh` shim refuses a merge when `XTRM_MERGE_GUARD` is not set to `on`, `1`, `true` or `yes` — an unset variable and a value that cannot enable the guard (a path, a typo) are refused the same way. Launched agent sessions export `XTRM_MERGE_GUARD=on` by default, so this affects a shell that did not come from `xt`, and the operator's own checkout when the variable is unset. The refusal exits `3` and merges nothing.
+
+To merge in that state, pass the flag on that one command: `gh pr merge <n> --squash --no-guard`. The merge runs, the output states that no review check ran, and the flag is consumed by the shim — never forwarded to `gh`. There is no session-wide or environment-wide equivalent: a setting that persists across commands is how an unguarded merge stayed invisible. In that state the operator or the coordinator carries the review evidence by hand; a worker that needs a guard-checked merge should ask for one rather than reach for the flag.
+
 ## Session Close & Merge Pipeline
 
 The publish lifecycle for a worktree session has two stages: **close** (run from inside the worktree) and **merge** (run from the main checkout).

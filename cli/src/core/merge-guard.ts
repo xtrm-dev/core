@@ -45,9 +45,36 @@ export const ISSUE_LOOKUP_TIMEOUT_MS = 5_000;
  * `XTRM_MERGE_GUARD=on|1|true|yes` turns it on.
  */
 export const MERGE_GUARD_ENV_VAR = 'XTRM_MERGE_GUARD';
+
+/**
+ * The only way past a guard that is not on: a flag on THIS command (XTRM-957).
+ * A session-wide switch cannot be the escape hatch, because a session-wide switch
+ * is what made the last unguarded merge look like a checked one.
+ */
+export const MERGE_GUARD_BYPASS_FLAG = '--no-guard';
+
+/** The one definition site of the refusal's opening line. */
+export const MERGE_GUARD_UNCONFIGURED = 'merge guard not configured';
+
+/**
+ * Two states, and the second must never look like a pass (XTRM-957).
+ * `unconfigured` covers an unset variable AND a value that cannot enable the
+ * guard: a path, a typo, an unparsable token. A configuration that looks set on
+ * paper and enforces nothing is the failure mode, so both are refused the same
+ * way rather than only the unset case.
+ */
+export type MergeGuardState = { kind: 'on' } | { kind: 'unconfigured'; detail: string };
+
+export function mergeGuardState(env: NodeJS.ProcessEnv = process.env): MergeGuardState {
+    const raw = (env[MERGE_GUARD_ENV_VAR] ?? '').trim();
+    if (!raw) return { kind: 'unconfigured', detail: `${MERGE_GUARD_ENV_VAR} is not set` };
+    const value = raw.toLowerCase();
+    if (value === 'on' || value === '1' || value === 'true' || value === 'yes') return { kind: 'on' };
+    return { kind: 'unconfigured', detail: `${MERGE_GUARD_ENV_VAR}='${raw}' is not an enabled value (on|1|true|yes)` };
+}
+
 export function mergeGuardEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-    const value = (env[MERGE_GUARD_ENV_VAR] ?? '').trim().toLowerCase();
-    return value === 'on' || value === '1' || value === 'true' || value === 'yes';
+    return mergeGuardState(env).kind === 'on';
 }
 
 export interface RunResult { status: number | null; stdout: string; stderr: string }
@@ -331,8 +358,15 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
         message: `merge allowed for ${input.repo}#${input.pr}: ${reason}`,
     });
 
-    if (!mergeGuardEnabled(deps.env ?? process.env)) {
-        return allow(`merge guard is off (${MERGE_GUARD_ENV_VAR} is not set); the merge is not checked`);
+    // XTRM-957: an unchecked merge is a REFUSAL here, not an allow. This function
+    // feeds both the shim and the review-gate hook, and an `allow` for an unset
+    // variable is exactly the false negative: every consumer saw success.
+    const guard = mergeGuardState(env);
+    if (guard.kind !== 'on') {
+        return deny(`${MERGE_GUARD_UNCONFIGURED}: ${guard.detail}; this merge was not checked`, {}, [
+            `set ${MERGE_GUARD_ENV_VAR}=on to enforce the guard here`,
+            `or pass ${MERGE_GUARD_BYPASS_FLAG} on the merge command itself to merge unchecked`,
+        ]);
     }
 
     // ── Reads. Any failure is a refusal (fail closed). ──────────────────────
