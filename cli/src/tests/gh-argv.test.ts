@@ -126,11 +126,14 @@ describe('xt identity merge-check --gh-args (report E)', () => {
         delete env.SUBSTRATE_HOLDER;
         delete env.XTRM_MERGE_GUARD;
         const result = spawnSync(process.execPath, [dist, 'identity', 'merge-check', '--gh-args', JSON.stringify(['pr', 'merge', '5']), '--cwd', root, '--json'], { encoding: 'utf8', env, timeout: 20000, killSignal: 'SIGKILL' });
-        expect(result.status).toBe(0);
+        expect(result.status).toBe(1);
         const decision = JSON.parse(result.stdout);
         expect(decision.repo).toBe('o/r');
         expect(decision.pr).toBe(5);
-        expect(decision.message).toMatch(/merge guard is off/);
+        // XTRM-957: unset is a refusal, and the CLI reports it through its exit
+        // status, so a caller cannot mistake "not checked" for "checked and fine".
+        expect(decision.allow).toBe(false);
+        expect(decision.message).toMatch(/merge guard not configured/);
     });
 
     it('fails when --gh-args is ignored (the option is not decorative)', () => {

@@ -40,6 +40,7 @@ import {
     SB_REMOTE_CONFIG_RELATIVE_PATH,
     SB_REMOTE_MODE_SOURCE,
 } from './gh-pr-link.js';
+import { MERGE_GUARD_BYPASS_FLAG, MERGE_GUARD_ENV_VAR, MERGE_GUARD_UNCONFIGURED } from './merge-guard.js';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -51,8 +52,10 @@ import path from 'node:path';
 // NOT CURRENT and `xt identity setup` reinstalls it.
 // CORE-2745 bumped it to v2: a v1 shim kept a fixed 6000 ms link kill against an
 // inner budget that is now 18000 ms in remote mode.
+// XTRM-957 bumped it to v3: a v2 shim merged unchecked and exited 0 when the guard
+// was not configured, so it must be reinstalled rather than kept.
 export const GH_SHIM_DETECT = 'xtrm-gh-agent-shim';
-export const GH_SHIM_FINGERPRINT = `${GH_SHIM_DETECT} v2`;
+export const GH_SHIM_FINGERPRINT = `${GH_SHIM_DETECT} v3`;
 export const GH_SHIM_MARKER = `// ${GH_SHIM_FINGERPRINT}`;
 const REAL_GH_PLACEHOLDER = '__XTRM_REAL_GH__';
 
@@ -218,6 +221,16 @@ const LINK_BUDGET_MS = ${ATTACH_TIMEOUT_MS};
 const REMOTE_LINK_BUDGET_MS = ${REMOTE_ATTACH_TIMEOUT_MS};
 const SB_REMOTE_CONFIG_ENV_VAR = ${JSON.stringify(SB_REMOTE_CONFIG_ENV_VAR)};
 const SB_REMOTE_CONFIG_RELATIVE = ${JSON.stringify(SB_REMOTE_CONFIG_RELATIVE_PATH)};
+
+// XTRM-957: the guard's off state is a refusal, and the only bypass is the flag
+// on this command. The three names below come from cli/src/core/merge-guard.ts so
+// the shim cannot invent a second spelling of either the state or the escape.
+const MERGE_GUARD_ENV_VAR = ${JSON.stringify(MERGE_GUARD_ENV_VAR)};
+const MERGE_GUARD_UNCONFIGURED = ${JSON.stringify(MERGE_GUARD_UNCONFIGURED)};
+const MERGE_GUARD_BYPASS_FLAG = ${JSON.stringify(MERGE_GUARD_BYPASS_FLAG)};
+const MERGE_GUARD_EXIT_UNCONFIGURED = 3;
+// A flag that only applies to the unconfigured guard, used while the guard is on.
+const MERGE_GUARD_EXIT_MISAPPLIED_FLAG = 2;
 
 // CORE-2745 review (MEDIUM): this is the SAME function the module uses, embedded
 // as source text, so the shim's mode check cannot drift from sb's own precedence.
@@ -420,9 +433,14 @@ function reviewerApiVerdict(args) {
   return null;
 }
 
-function mergeGuardOn() {
-  const value = (process.env.XTRM_MERGE_GUARD || '').trim().toLowerCase();
-  return value === 'on' || value === '1' || value === 'true' || value === 'yes';
+// XTRM-957: only an explicitly enabling value enables the guard. Anything else -
+// unset, a path, a typo, an unparsable token - is "not configured" and refuses below.
+function mergeGuardState() {
+  const raw = (process.env[MERGE_GUARD_ENV_VAR] || '').trim();
+  if (!raw) return { kind: 'unconfigured', detail: MERGE_GUARD_ENV_VAR + ' is not set' };
+  const value = raw.toLowerCase();
+  if (value === 'on' || value === '1' || value === 'true' || value === 'yes') return { kind: 'on' };
+  return { kind: 'unconfigured', detail: MERGE_GUARD_ENV_VAR + "='" + raw + "' is not an enabled value (on|1|true|yes)" };
 }
 
 function isMergeApi(args) {
@@ -580,14 +598,37 @@ function main() {
   }
 
   if (verb === 'merge') {
+    // Asking the tool for its own documentation must never be a refusal: a guard
+    // that blocks its own help text invites the workaround it exists to prevent.
+    if (args.indexOf('--help') >= 0 || args.indexOf('-h') >= 0) { pass(real, args); return; }
     if (isRestricted(roleOf())) die('the reviewer role may not merge; ask the worker or coordinator');
-    // Flag-gated and OFF by default (CORE-2528 rev 4 R3): with the guard off the
-    // command passes through untouched, before any resolution can fail.
-    if (!mergeGuardOn()) {
-      process.stderr.write('gh (xtrm): merge guard is off (XTRM_MERGE_GUARD is not set); the merge is not checked\\n');
-      pass(real, args);
+    // XTRM-957: a merge the guard did not check must not look like one it passed.
+    // Not-configured used to print a note, merge anyway, and exit 0, so every
+    // consumer of the exit status saw success. It is now a refusal with its own
+    // exit code, and the ONLY way past it is the per-command flag: a session-wide
+    // switch (env) is what made this invisible, so env cannot reopen it.
+    const guard = mergeGuardState();
+    // XTRM-957 review finding A: the bypass flag is the shim's own, so it leaves
+    // the argv exactly once, before either the guard decision or the real gh sees
+    // it. Stripping it only on the unconfigured path forwarded a flag the real gh
+    // does not know, which turned a guarded merge into an opaque usage error.
+    const argv = args.filter((arg) => arg !== MERGE_GUARD_BYPASS_FLAG);
+    const bypass = argv.length !== args.length;
+    if (guard.kind !== 'on') {
+      if (!bypass) {
+        process.stderr.write('gh (xtrm): ' + MERGE_GUARD_UNCONFIGURED + ' (' + guard.detail + '); refusing the merge, nothing was merged. Pass ' + MERGE_GUARD_BYPASS_FLAG + ' on this command to merge unchecked.\\n');
+        process.exit(MERGE_GUARD_EXIT_UNCONFIGURED);
+      }
+      process.stderr.write('gh (xtrm): merging UNCHECKED (' + MERGE_GUARD_BYPASS_FLAG + '): no review check ran for this merge\\n');
+      pass(real, argv);
+    } else if (bypass) {
+      // Refused rather than honoured: with the guard on, a bypass flag is a
+      // contradiction, and silently merging unchecked there would be the same
+      // "no evaluation reads as a pass" defect this issue is about.
+      process.stderr.write('gh (xtrm): the guard is on; ' + MERGE_GUARD_BYPASS_FLAG + ' only applies when it is not configured. Nothing was merged.\\n');
+      process.exit(MERGE_GUARD_EXIT_MISAPPLIED_FLAG);
     }
-    const checked = xtJson(['identity', 'merge-check', '--gh-args', JSON.stringify(args), '--cwd', process.cwd(), '--json']);
+    const checked = xtJson(['identity', 'merge-check', '--gh-args', JSON.stringify(argv), '--cwd', process.cwd(), '--json']);
     if (checked.status !== 0 || !checked.data || checked.data.allow !== true) {
       const message = (checked.data && checked.data.message) || checked.stderr || 'the merge guard refused this merge';
       process.stderr.write(message + '\\n');
