@@ -38,6 +38,7 @@ index:
     - {path: scripts/jira.py, when: "Jira REST reads, moves, links, attachments (never comments)", see: [run]}
     - {path: scripts/post-guard.py, when: "Every Jira comment; --mention-first for the operator", see: [run]}
     - {path: scripts/route_target.py, when: "Addressing the manager, a lead, the board helper or the team by role", see: [roles]}
+    - {path: scripts/pm_park.py, when: "Park a long-idle lead and wake it by time or event (references/continuity.md, Park and wake)", see: [roles]}
     - {path: scripts/pm_session.py, when: "First step of every session and after compaction: role, bound issue, kit, common goal", see: [roles, operations]}
     - {path: ../journal-search/SKILL.md, when: "Finding where something was decided, reported or handed off without knowing the issue", see: [run]}
 ---

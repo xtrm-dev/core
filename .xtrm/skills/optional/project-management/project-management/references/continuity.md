@@ -57,3 +57,27 @@ Read after every compaction, before a resume or a day-boundary handover.
   `systemd-run --user` transient units for durable timers.
 - `/new` in an `xt pi` pane drops its messaging name, skills and background tasks: the resume line re-loads skills (`/skill:<name>`), re-exports
   `SUBSTRATE_HOLDER`, names the handoff entry; the worker re-arms its own timers; tell peers the new name.
+
+## Park and wake (operator ruling, 2026-11-22; CORE-2764, CORE-2765)
+
+A lead that only waits for hours holds about 0.85 GB for nothing. `scripts/pm_park.py` parks it and wakes it later from a systemd user
+timer, which outlives every session (a cron held by a session dies with it).
+
+- **Who parks:** the manager, to relieve a lead; a lead itself, after it has told the manager its intention and wake (`--self --manager-told`).
+  A lead does not park inside two hours of a GO or production duty, nor while it owns live children. Workers and specialists are not parked.
+- **Park:** write the `handoff` entry as your last action on your issue, then
+  `pm_park.py park <name> --ref <ref> --role <role> (--at <UTC> | --check '<cmd>' --deadline <UTC>) [--reason ...]`. It refuses unless the
+  handoff is the session's last entry on `<ref>`, `--self` comes with `--manager-told`, and a wake is set. It writes
+  `$PM_STATE_DIR/parked/<name>.json`, creates one timer, journals `park` on `<ref>` and prints the pane to close. Verify the record
+  (`pm_park.py list`), then close the pane. Post one Jira comment for the whole park batch through the board helper.
+- **Wake:** `--at` wakes at the time. `--check` runs `<cmd>` on every timer fire: exit 0 wakes, exit 1 means not yet, any other exit, a
+  timeout or the `--deadline` wakes anyway and the `wake` entry says why. A shut launch gate (load1 15, memory PSI full avg10 10,
+  MemAvailable 4 GB) retries later and never skips. The wake writes `parked/<name>.digest.md` (`sb issue resume`, journal entries since
+  the park, answers-inbox rows naming the session, merged PRs), opens a tmux window in the same worktree, starts a FRESH session of the
+  same runtime, name and role (not `--continue`), pastes the respawn nudge, then journals `wake`. After 3 failed attempts it journals a
+  `blocker` for the manager. Stop a wrong park with `systemctl --user stop pm-park-<name>.timer`.
+- **Peers write to the journal of a parked session's issue, not to its socket:** a message to a dead socket is lost. `route_target.py --team`
+  shows parked sessions on a `parked` line. The woken session reads the handoff and the digest, finds the manager and tells it it is back.
+- **Instance settings** (pm_config): `park_launch` (start command; default `claude --dangerously-skip-permissions`, add `--channels ...` there),
+  `park_max_attempts`, `park_retry_s`, `park_nudge_delay_s`, `park_check_timeout_s`, and the gate limits `park_gate_load1`,
+  `park_gate_psi_full`, `park_gate_mem_gb` (defaults as above; tune them to the host's core count).
