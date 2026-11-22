@@ -90,6 +90,12 @@ describe('codex K1 launch contract (characterization)', () => {
     // Sandbox HOME (test/setup.ts guards the real ~/.xtrm tree) and force the
     // outside-tmux shape so `currentPaneMode` is deterministic.
     process.env.HOME = path.join(tempRoot, 'home');
+    // XTRM-970: a claude seat's model must be resolvable at launch. The hermetic
+    // install declares one where a real install keeps it — CLAUDE_CONFIG_DIR when
+    // the harness sandboxes it, otherwise the sandboxed HOME.
+    const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME!, '.claude');
+    fs.ensureDirSync(configDir);
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
     await fs.ensureDir(process.env.HOME);
     delete process.env.TMUX;
 

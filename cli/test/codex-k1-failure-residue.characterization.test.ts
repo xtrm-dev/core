@@ -109,6 +109,10 @@ beforeAll(() => {
     if (!fs.existsSync(CLI_BIN)) throw new Error(`built CLI missing at ${CLI_BIN} — run: npm run build`);
 
     sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-k1-'));
+    // XTRM-970: the sandbox HOME is the seat's install; a claude launch now
+    // refuses when nothing names a model, so the fixture declares one.
+    fs.mkdirSync(path.join(sandbox, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(sandbox, '.claude', 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
 
     binNoRuntime = path.join(sandbox, 'bin-no-runtime');
     binFakeRuntime = path.join(sandbox, 'bin-fake-runtime');

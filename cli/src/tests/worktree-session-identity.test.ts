@@ -186,6 +186,12 @@ describe('xt/tmux launcher session-identity propagation', () => {
     previousDispatchEnv = Object.fromEntries(DISPATCH_KEYS.map((k) => [k, process.env[k]]));
     for (const k of DISPATCH_KEYS) delete process.env[k];
     process.env.HOME = homeRoot;
+    // XTRM-970: a claude seat's model must be resolvable at launch. The hermetic
+    // install declares one where a real install keeps it — CLAUDE_CONFIG_DIR when
+    // the harness sandboxes it, otherwise the sandboxed HOME.
+    const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME!, '.claude');
+    fs.ensureDirSync(configDir);
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
     process.env.XTRM_SKIP_RUNTIME_COMPAT = '1';
     delete process.env.TMUX;
     process.chdir(repoRoot);

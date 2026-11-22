@@ -67230,6 +67230,71 @@ function passthroughModels(passthrough) {
 function effectiveModel(model, passthrough) {
   return [model, ...passthroughModels(passthrough)].filter((candidate) => Boolean(candidate)).at(-1);
 }
+var LAUNCH_MODEL_VAR = "PI_MODEL";
+function launchedModel(runtimeArgs) {
+  const found = [];
+  for (let i = 0; i < runtimeArgs.length; i += 1) {
+    const arg = runtimeArgs[i];
+    if (arg === "--") break;
+    if (arg === "--model" && runtimeArgs[i + 1] !== void 0) {
+      found.push(runtimeArgs[i + 1]);
+      i += 1;
+    } else if (arg.startsWith("--model=")) {
+      found.push(arg.slice("--model=".length));
+    }
+  }
+  const model = found.map((candidate) => candidate.trim()).filter(Boolean).at(-1);
+  return model || void 0;
+}
+function resolveLauncherModel(runtime, runtimeArgs, env3 = process.env, settingsModel) {
+  const declared = launchedModel(runtimeArgs);
+  if (declared) return { model: declared, source: "--model" };
+  if (runtime === "claude") {
+    const runtimeDefault = (env3.ANTHROPIC_MODEL ?? "").trim();
+    if (runtimeDefault) return { model: runtimeDefault, source: "ANTHROPIC_MODEL" };
+    const fromSettings = (settingsModel ?? "").trim();
+    if (fromSettings) return { model: fromSettings, source: "settings.json" };
+  }
+  return { source: "unresolved" };
+}
+function claudeSettingsModel(opts = {}) {
+  const env3 = opts.env ?? process.env;
+  const home = (env3.HOME ?? "").trim() || import_node_os14.default.homedir();
+  const configDir = (env3.CLAUDE_CONFIG_DIR ?? "").trim() || import_node_path22.default.join(home, ".claude");
+  const files = [
+    opts.projectDir ? import_node_path22.default.join(opts.projectDir, ".claude", "settings.json") : null,
+    import_node_path22.default.join(configDir, "settings.json")
+  ].filter((file2) => Boolean(file2));
+  for (const file2 of files) {
+    try {
+      const parsed = JSON.parse((0, import_node_fs8.readFileSync)(file2, "utf8"));
+      const model = typeof parsed.model === "string" ? parsed.model.trim() : "";
+      if (model) return model;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function stripLauncherModelVar(env3) {
+  const out = { ...env3 };
+  delete out[LAUNCH_MODEL_VAR];
+  return out;
+}
+function launcherModelEnv(runtime, runtimeArgs, env3, settingsModel, refuse = (message) => {
+  process.stderr.write(message);
+  process.exit(1);
+}) {
+  const resolved = resolveLauncherModel(runtime, runtimeArgs, env3, settingsModel);
+  if (!resolved.model) {
+    if (runtime === "claude") {
+      refuse(
+        '\n  \u2717 cannot resolve the model this claude seat would run: no --model argument, no ANTHROPIC_MODEL,\n    and no "model" in .claude/settings.json or ~/.claude/settings.json\n  Pass --model <id>, set ANTHROPIC_MODEL, or declare specialist.execution.model on the role.\n  A seat that starts without a known model posts reviews whose model header nothing can check (XTRM-970).\n'
+      );
+    }
+    return {};
+  }
+  return { [LAUNCH_MODEL_VAR]: resolved.model };
+}
 var ROLE_GUARDED_PI_FLAGS = [
   "--session-dir",
   "--name",
@@ -69090,12 +69155,12 @@ async function launchWorktreeSession(opts) {
     dispatcherDeps: opts.dispatcherDeps
   };
   if (resolvedRole) {
-    await launchTmuxSession({ ...common, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
+    await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
     return;
   }
   const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model) || Boolean(thinking) || explicitSkillPaths.length > 0 || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window);
   if (carriesLaunchState) {
-    await launchTmuxSession({ ...common, mode: "bare" });
+    await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "bare" });
     return;
   }
   const runtimeCmd = runtime === "claude" ? "claude" : "pi";
@@ -69111,7 +69176,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process10.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelEnv(runtime, runtimeArgs, process.env, runtime === "claude" ? claudeSettingsModel({ projectDir: mainRepoRoot }) : void 0), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -69216,6 +69281,8 @@ async function launchTmuxSession(args) {
   };
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
+  const modelEnv = launcherModelEnv(runtime, plan.runtimeArgs, process.env, runtime === "claude" ? claudeSettingsModel({ projectDir: args.repoRoot ?? worktreePath }) : void 0);
+  const launchEnv = stripLauncherModelVar(process.env);
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) });
   const dispatcherEnv = dispatcher.env;
@@ -69274,7 +69341,7 @@ async function launchTmuxSession(args) {
       const runtimeResult = (0, import_node_child_process10.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
+        env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
       });
       process.exit(runtimeResult.status ?? 0);
     }
@@ -69282,7 +69349,7 @@ async function launchTmuxSession(args) {
     const runtimeProcess = (0, import_node_child_process10.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
-      env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
+      env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
     });
     const runtimeExit = new Promise((resolve6) => {
       runtimeProcess.once("error", () => resolve6(1));
@@ -69347,6 +69414,9 @@ async function launchTmuxSession(args) {
     // environment, not this process's, so exported launch context never
     // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
     ...forwardedLaunchEnv(),
+    // XTRM-970: the model this seat runs, after everything that could carry a
+    // stale one from the server's environment.
+    ...modelEnv,
     // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
     // the pane gets the launcher's PATH with the shim directory first. Without
     // this, a launched review posts as the operator instead of the App.

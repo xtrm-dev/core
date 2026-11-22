@@ -68,6 +68,12 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     const externalSkill = path.join(tempRoot, 'external', 'hidden-skill');
     const previousHome = process.env.HOME;
     process.env.HOME = path.join(tempRoot, 'home');
+    // XTRM-970: a claude seat's model must be resolvable at launch. The hermetic
+    // install declares one where a real install keeps it — CLAUDE_CONFIG_DIR when
+    // the harness sandboxes it, otherwise the sandboxed HOME.
+    const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME!, '.claude');
+    fs.ensureDirSync(configDir);
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
     await fs.ensureDir(repoRoot);
     await fs.ensureDir(externalSkill);
     await fs.writeFile(path.join(externalSkill, 'SKILL.md'), '# hidden');
