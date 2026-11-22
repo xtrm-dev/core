@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyReap, branchLineMatches, isMergedIntoMain, planReap, printCleanPlan, readProcessTableOrRefuse, selectCleanTargets, worktreeListStatus, type WorktreeInfo } from '../commands/worktree.js';
+import { applyCleanRemoval, applyReap, branchLineMatches, isMergedWorktree, scanCleanTargets, selectOrphanTargets, isMergedIntoMain, planReap, printCleanPlan, readProcessTableOrRefuse, selectCleanTargets, worktreeListStatus, type WorktreeInfo } from '../commands/worktree.js';
 import { readProcessCwds } from '../core/worktree-reap.js';
 
 const created: string[] = [];
@@ -232,5 +232,145 @@ describe('worktreeListStatus', () => {
         // And the answer stays "open" when the HEAD is anything the predicate cannot
         // read as a commit: no silent merged-by-default for a tree it cannot identify.
         expect(worktreeListStatus(tree({ path: repo, branch: '', head: 'not-a-sha' }), repo)).toBe('open');
+    });
+});
+
+describe('selectOrphanTargets', () => {
+    it('keeps an orphan directory a session is running in, and names its pids', () => {
+        const cwds = new Map<string, number[]>([
+            [path.join('/tmp', 'managed', 'orphan-live'), [9191]],
+            [path.join('/tmp', 'managed', 'orphan-idle'), []],
+        ]);
+        const plan = selectOrphanTargets(['/tmp/managed/orphan-live', '/tmp/managed/orphan-idle'], cwds);
+
+        expect(plan.skippedLive.map(t => t.path)).toEqual(['/tmp/managed/orphan-live']);
+        expect(plan.skippedLive[0]?.livePids).toEqual([9191]);
+        expect(plan.removable.map(t => t.path)).toEqual(['/tmp/managed/orphan-idle']);
+    });
+
+    it('keeps an orphan whose child process sits in a subdirectory of it', () => {
+        const cwds = new Map<string, number[]>([[path.join('/tmp/managed/orphan-live', 'packages', 'x'), [42]]]);
+        const plan = selectOrphanTargets(['/tmp/managed/orphan-live'], cwds);
+        expect(plan.removable).toEqual([]);
+        expect(plan.skippedLive[0]?.livePids).toEqual([42]);
+    });
+});
+
+describe('scanCleanTargets', () => {
+    it('refuses the whole scan when the process table cannot be read, and never asks the merge predicate', () => {
+        let asked = 0;
+        const scan = scanCleanTargets({
+            worktrees: [{ path: '/tmp/wt', branch: 'refs/heads/xt/1', head: 'abc1234', prunable: false }],
+            orphans: ['/tmp/managed/orphan'],
+            merged: () => {
+                asked += 1;
+                return true;
+            },
+            readTable: () => null,
+        });
+
+        expect(scan).toBeNull();
+        expect(asked).toBe(0);
+    });
+
+    it('puts a live orphan in the skipped class the printer shows, so it is not removed silently', () => {
+        const scan = scanCleanTargets({
+            worktrees: [],
+            orphans: ['/tmp/managed/orphan-live'],
+            merged: () => true,
+            readTable: () => new Map([[path.join('/tmp/managed/orphan-live'), [77]]]),
+        });
+
+        expect(scan?.orphans).toEqual([]);
+        expect(scan?.plan.skippedLive.map(t => t.path)).toEqual(['/tmp/managed/orphan-live']);
+    });
+});
+
+describe('applyCleanRemoval', () => {
+    const target = (p: string) => ({ path: p, branch: 'xt/1', livePids: [] as number[] });
+
+    it('removes an idle target', () => {
+        const removed: string[] = [];
+        const result = applyCleanRemoval('/repo', [target('/tmp/a')], {
+            readCwds: () => new Map(),
+            remove: (p) => {
+                removed.push(p);
+                return { ok: true, message: `removed ${p}` };
+            },
+        });
+
+        expect(removed).toEqual(['/tmp/a']);
+        expect(result.removed).toEqual(['/tmp/a']);
+    });
+
+    it('keeps a target that became live after the scan, so a scan-time answer cannot authorise a delete', () => {
+        const removed: string[] = [];
+        const result = applyCleanRemoval('/repo', [target('/tmp/a')], {
+            readCwds: () => new Map([['/tmp/a', [31]]]),
+            remove: (p) => {
+                removed.push(p);
+                return { ok: true, message: p };
+            },
+        });
+
+        expect(removed).toEqual([]);
+        expect(result.becameLive).toEqual(['/tmp/a']);
+    });
+
+    it('refuses rather than assumes when the re-read cannot enumerate processes', () => {
+        const removed: string[] = [];
+        const result = applyCleanRemoval('/repo', [target('/tmp/a')], {
+            readCwds: () => {
+                throw new Error('cannot enumerate process working directories under /proc: EACCES');
+            },
+            remove: (p) => {
+                removed.push(p);
+                return { ok: true, message: p };
+            },
+        });
+
+        expect(removed).toEqual([]);
+        expect(result.unreadable).toEqual(['/tmp/a']);
+    });
+});
+
+describe('isMergedIntoMain: a git failure is not an answer', () => {
+    it('keeps the tree when the merged-branch listing fails, rather than calling it merged', () => {
+        const repo = makeRepo();
+        const merged = isMergedIntoMain('xt/1', repo, undefined, () => ({ status: 128, stdout: null }));
+        expect(merged).toBe(false);
+    });
+
+    it('keeps a detached tree when the ancestry probe fails', () => {
+        const repo = makeRepo();
+        const merged = isMergedIntoMain('', repo, 'abcdef1234567', () => ({ status: 129 }));
+        expect(merged).toBe(false);
+    });
+
+    it('answers merged when the listing names the branch it was asked about', () => {
+        const repo = makeRepo();
+        const merged = isMergedIntoMain('xt/1', repo, undefined, () => ({ status: 0, stdout: '  xt/1\n' }));
+        expect(merged).toBe(true);
+    });
+});
+
+describe('isMergedWorktree: a branchless tree asks no PR', () => {
+    it('never asks about a PR for a detached tree, even when the HEAD is not merged', () => {
+        const asked: string[] = [];
+        const merged = isMergedWorktree({ path: '/tmp/wt', branch: '', head: 'deadbeef', prunable: false }, '/repo', (branch) => {
+            asked.push(branch);
+            return { state: 'MERGED' };
+        });
+        expect(merged).toBe(false);
+        expect(asked).toEqual([]);
+    });
+
+    it('asks the PR state when there is a branch and the merge predicate said no', () => {
+        const repo = makeRepo();
+        const merged = isMergedWorktree({ path: '/tmp/wt', branch: 'xt/unmerged', head: '', prunable: false }, repo, (branch) => {
+            expect(branch).toBe('xt/unmerged');
+            return { state: 'MERGED' };
+        });
+        expect(merged).toBe(true);
     });
 });

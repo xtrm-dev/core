@@ -319,8 +319,19 @@ function runGitWorktreePrune(repoRoot: string): { ok: boolean; message: string }
     };
 }
 
+/** Runs one git command; injectable so a git failure is a case a test can reach. */
+export type GitProbe = (args: string[]) => { status: number | null; stdout?: unknown };
+
 /** Check if a branch has been merged into the default branch */
-export function isMergedIntoMain(branch: string, repoRoot: string, head?: string): boolean {
+export function isMergedIntoMain(
+    branch: string,
+    repoRoot: string,
+    head?: string,
+    spawn: GitProbe = (args) => {
+        const r = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' });
+        return { status: r.status, stdout: r.stdout };
+    },
+): boolean {
     const branchShort = branch.replace('refs/heads/', '');
     // CORE-2340: resolve the default branch dynamically instead of assuming
     // origin/main (same resolution order as worktree branch creation).
@@ -333,17 +344,15 @@ export function isMergedIntoMain(branch: string, repoRoot: string, head?: string
         // their HEAD held. Ask the commit instead, and refuse when there is none.
         const sha = (head ?? '').trim();
         if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
-        const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', sha, baseRef], {
-            cwd: repoRoot, stdio: 'pipe',
-        });
+        const ancestor = spawn(['merge-base', '--is-ancestor', sha, baseRef]);
         return ancestor.status === 0;
     }
 
-    const r = spawnSync('git', ['branch', '--merged', baseRef, '--list', branchShort], {
-        cwd: repoRoot, encoding: 'utf8', stdio: 'pipe',
-    });
+    const r = spawn(['branch', '--merged', baseRef, '--list', branchShort]);
+    // A git failure is not an answer. Saying "not merged" keeps the tree, which is
+    // the safe direction; saying "merged" would hand it to a deletion loop.
     if (r.status !== 0) return false;
-    return branchLineMatches(r.stdout ?? '', branchShort);
+    return branchLineMatches(String(r.stdout ?? ''), branchShort);
 }
 
 /**
@@ -363,12 +372,23 @@ export function branchLineMatches(stdout: string, branchShort: string): boolean 
         .includes(branchShort);
 }
 
-/** A worktree whose content is already on the base branch, by branch, HEAD, or merged PR. */
-export function isMergedWorktree(wt: WorktreeInfo, repoRoot: string): boolean {
+/**
+ * A worktree whose content is already on the base branch, by branch, HEAD, or merged PR.
+ *
+ * The PR lookup is injectable because the branchless case is a refusal, and a refusal
+ * with no falsifier is a comment: `getPrStatus('')` would otherwise be reached by any
+ * future edit that moved the guard below it.
+ */
+export function isMergedWorktree(
+    wt: WorktreeInfo,
+    repoRoot: string,
+    prState: (branch: string, repoRoot: string) => { state: string } = getPrStatus as (branch: string, repoRoot: string) => { state: string },
+): boolean {
     if (isMergedIntoMain(wt.branch, repoRoot, wt.head)) return true;
-    // A detached worktree has no branch for the PR lookup to ask about.
+    // A detached worktree has no branch for the PR lookup to ask about, and asking
+    // about "" would answer about nothing while looking like an answer.
     if (!wt.branch) return false;
-    return getPrStatus(wt.branch, repoRoot).state === 'MERGED';
+    return prState(wt.branch, repoRoot).state === 'MERGED';
 }
 
 export interface CleanTarget {
@@ -421,6 +441,125 @@ export function selectCleanTargets(
     }
 
     return { removable, skippedLive, unmerged };
+}
+
+/**
+ * Classify orphan managed directories by the same liveness predicate.
+ *
+ * The sweep used to delete every directory `git worktree list` did not name, which
+ * is not the same set as "nobody is working in it": a directory whose git metadata
+ * was pruned while a session still runs there looks exactly like a dead one. The
+ * process table answers that question, so it is asked here as it is for worktrees.
+ */
+export function selectOrphanTargets(orphans: string[], cwds: Map<string, number[]>): CleanPlan {
+    const removable: CleanTarget[] = [];
+    const skippedLive: CleanTarget[] = [];
+
+    for (const path of orphans) {
+        const livePids = livePidsFor(path, cwds);
+        const target: CleanTarget = { path, branch: "", livePids };
+        if (livePids.length > 0) skippedLive.push(target);
+        else removable.push(target);
+    }
+
+    return { removable, skippedLive, unmerged: [] };
+}
+
+export interface CleanScanInput {
+    worktrees: WorktreeInfo[];
+    orphans: string[];
+    merged: (wt: WorktreeInfo) => boolean;
+    readTable?: () => Map<string, number[]> | null;
+}
+
+export interface CleanScan {
+    plan: CleanPlan;
+    orphans: CleanTarget[];
+}
+
+/**
+ * One scan for both worktrees and orphan directories, refused as a whole.
+ *
+ * The scan is a unit because the refusal is: a caller that could read the table for
+ * the worktrees and substitute an empty map for the orphans would delete work in the
+ * window it exists to protect. `null` means the table could not be read and nothing
+ * may be classified — the predicate is never consulted, so the answer cannot look
+ * like "no targets".
+ */
+export function scanCleanTargets(input: CleanScanInput): CleanScan | null {
+    const readTable = input.readTable ?? readProcessTableOrRefuse;
+    const cwds = readTable();
+    if (cwds === null) return null;
+
+    const plan = selectCleanTargets(input.worktrees, input.merged, cwds);
+    const orphanPlan = selectOrphanTargets(input.orphans, cwds);
+
+    return {
+        plan: {
+            removable: plan.removable,
+            skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+            unmerged: plan.unmerged,
+        },
+        orphans: orphanPlan.removable,
+    };
+}
+
+export interface CleanRemovalResult {
+    removed: string[];
+    /** In use when the table was re-read: the only condition that can flip between scan and delete. */
+    becameLive: string[];
+    /** The table could not be read, so removal was refused rather than guessed. */
+    unreadable: string[];
+}
+
+export interface CleanRemovalOptions {
+    readCwds?: () => Map<string, number[]>;
+    remove?: (path: string) => { ok: boolean; message: string };
+}
+
+/**
+ * Remove targets, re-reading liveness immediately before each removal.
+ *
+ * Extracted so the re-read is testable: while the loop lived inside the `clean`
+ * action, deleting the re-read, swallowing its throw, or deleting the liveness
+ * branch each left the whole suite green. `readCwds` and `remove` are injectable for
+ * the same reason a seam exists anywhere — a decision that cannot be made to fail is
+ * not a decision.
+ */
+export function applyCleanRemoval(
+    repoRoot: string,
+    targets: CleanTarget[],
+    options: CleanRemovalOptions = {},
+): CleanRemovalResult {
+    const readCwds = options.readCwds ?? (() => readProcessCwds('/proc', { strict: true }));
+    const remove = options.remove ?? ((path: string) => removeWorktreeEntry(repoRoot, path));
+    const result: CleanRemovalResult = { removed: [], becameLive: [], unreadable: [] };
+
+    for (const target of targets) {
+        let liveNow: number[];
+        try {
+            liveNow = livePidsFor(target.path, readCwds());
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(kleur.yellow(`  ⚠ Kept ${target.path}: ${message}`));
+            result.unreadable.push(target.path);
+            continue;
+        }
+        if (liveNow.length > 0) {
+            console.log(kleur.yellow(`  ⚠ Kept ${target.path}: became live during the scan (pids ${liveNow.join(',')})`));
+            result.becameLive.push(target.path);
+            continue;
+        }
+        const removal = remove(target.path);
+        if (removal.ok) {
+            result.removed.push(target.path);
+            console.log(t.success(`  ✓ ${removal.message}`));
+        } else {
+            console.log(kleur.yellow(`  ⚠ ${removal.message}`));
+        }
+    }
+
+    return result;
 }
 
 function normalizeBranchName(branch: string): string {
@@ -1608,16 +1747,21 @@ export function createWorktreeCommand(): Command {
             const worktrees = listXtWorktrees(repoRoot);
 
             // A worktree whose session is still running is not a cleanup target, and
-            // the process table is the only thing that knows. Refuse rather than guess
-            // when it cannot be read: an empty map and an unreadable one look alike.
-            const cwds = readProcessTableOrRefuse();
-            if (cwds === null) return;
+            // the process table is the only thing that knows. `scanCleanTargets` refuses
+            // as a whole when it cannot be read: an empty map and an unreadable one look
+            // alike, and the difference is somebody's uncommitted work.
+            const scan = scanCleanTargets({
+                worktrees,
+                orphans: opts.orphans ? listOrphanManagedDirs(repoRoot) : [],
+                merged: wt => isMergedWorktree(wt, repoRoot),
+            });
+            if (scan === null) return;
 
-            const plan = selectCleanTargets(worktrees, wt => isMergedWorktree(wt, repoRoot), cwds);
-            const merged = plan.removable;
-            const skippedLive = plan.skippedLive;
-            const unmerged = plan.unmerged;
-            const orphanDirs = opts.orphans ? listOrphanManagedDirs(repoRoot) : [];
+            const merged = scan.plan.removable;
+            const skippedLive = scan.plan.skippedLive;
+            const unmerged = scan.plan.unmerged;
+            const orphanPlan = { removable: scan.orphans };
+            const orphanDirs = scan.orphans.map(orphan => orphan.path);
 
             if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
                 if (!opts.orphans) {
@@ -1657,44 +1801,24 @@ export function createWorktreeCommand(): Command {
                 return;
             }
 
-            let removedCount = 0;
-
-            for (const wt of merged) {
-                // Re-read the process table immediately before the removal: the one
-                // condition that can flip between scan and delete is "in use now".
-                let liveNow: number[];
-                try {
-                    liveNow = livePidsFor(wt.path, readProcessCwds('/proc', { strict: true }));
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    console.log(kleur.yellow(`  ⚠ Kept ${wt.path}: ${message}`));
-                    continue;
-                }
-                if (liveNow.length > 0) {
-                    console.log(kleur.yellow(`  ⚠ Kept ${wt.path}: became live during the scan (pids ${liveNow.join(',')})`));
-                    continue;
-                }
-                const result = removeWorktreeEntry(repoRoot, wt.path);
-                if (result.ok) {
-                    removedCount += 1;
-                    console.log(t.success(`  ✓ ${result.message}`));
-                } else {
-                    console.log(kleur.yellow(`  ⚠ ${result.message}`));
-                }
-            }
+            const removal = applyCleanRemoval(repoRoot, merged);
+            let removedCount = removal.removed.length;
 
             if (opts.orphans) {
-                for (const orphan of orphanDirs) {
-                    try {
-                        rmSync(orphan, { recursive: true, force: true });
-                        removedCount += 1;
-                        unregisterPluginsForWorktree(orphan);
-                        console.log(t.success(`  ✓ Removed orphan directory ${orphan}`));
-                    } catch (error) {
-                        const message = error instanceof Error ? error.message : String(error);
-                        console.log(kleur.yellow(`  ⚠ Could not remove ${orphan}: ${message}`));
-                    }
-                }
+                const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+                    remove: (path) => {
+                        if (!existsSync(path)) return { ok: true, message: `Removed orphan directory ${path}` };
+                        try {
+                            rmSync(path, { recursive: true, force: true });
+                            return { ok: true, message: `Removed orphan directory ${path}` };
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error);
+                            return { ok: false, message: `Could not remove ${path}: ${message}` };
+                        }
+                    },
+                });
+                for (const path of orphanRemoval.removed) unregisterPluginsForWorktree(path);
+                removedCount += orphanRemoval.removed.length;
 
                 const pruneResult = runGitWorktreePrune(repoRoot);
                 if (pruneResult.ok) {
