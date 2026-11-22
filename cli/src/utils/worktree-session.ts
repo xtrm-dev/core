@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, recordDispatcherBinding, stripDispatcherEnv, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, recordDispatcherBinding, stripDispatcherEnv, withRestoredDispatcher, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -235,6 +235,25 @@ export interface WorktreeSessionOptions {
      * Omitted in production: the module's /proc defaults apply.
      */
     dispatcherDeps?: DispatcherIdentityDeps;
+    /**
+     * CORE-2775: start a FRESH runtime session in a worktree that already exists
+     * (`xt attach --fresh`), through this same builder. Everything the launch
+     * derives from the worktree (slug, name, branch) is taken from it instead of
+     * being created; the worktree is never created, reset or rolled back, and the
+     * dispatcher comes from the worktree's own launch binding, not from the caller.
+     */
+    existingWorktree?: ExistingWorktree;
+}
+
+/** An xt worktree a fresh session is started in (CORE-2775). */
+export interface ExistingWorktree {
+    path: string;
+    /** Short branch name checked out in the worktree (`xt/<slug>`). */
+    branch: string;
+    /** The launch slug: the worker's Substrate holder, taken from the directory name. */
+    slug: string;
+    /** Dispatcher env restored from the worktree's launch binding; empty when none. */
+    dispatcher: Record<string, string>;
 }
 
 function worktreeHasProjectUserPacks(worktreePath: string): boolean {
@@ -3146,7 +3165,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // as a required positional, so there is no roleless render and --bead is
     // metadata only (pane option + env + picker preview). A tag and a body
     // don't conflict. xtrm-3xgs5.
-    if (roleName && bead && prompt) {
+    if (roleName && bead && prompt && !opts.existingWorktree) {
         console.error(kleur.red('\n  ✗ --bead and --prompt are mutually exclusive; pick one\n'));
         process.exit(1);
     }
@@ -3194,7 +3213,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         console.error(kleur.red('\n  ✗ Not inside a git repository\n'));
         process.exit(1);
     }
-    if (currentRepoRoot !== mainRepoRoot) {
+    if (currentRepoRoot !== mainRepoRoot && !opts.existingWorktree) {
         console.error(kleur.red('\n  ✗ Refusing to create nested worktree from inside an existing worktree.\n'));
         console.error(kleur.dim(`  current worktree: ${currentRepoRoot}`));
         console.error(kleur.dim(`  main repo root:  ${mainRepoRoot}`));
@@ -3216,6 +3235,9 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // Structured claude pack entries (bound '/<name>' + canonical identity),
     // computed preflight and consumed by gates and worktree materialization.
     let claudePackEntries: ClaudePackSkillEntry[] = [];
+    // CORE-2775: a fresh session in an existing worktree is told what to do by --prompt;
+    // its bead is metadata (pane option, env), as in a bare launch, never a task to render.
+    const renderBead = Boolean(bead) && !opts.existingWorktree;
     if (roleName) {
         try {
             resolvedRole = resolveRole(roleName, mainRepoRoot, runtime, Boolean(model));
@@ -3327,11 +3349,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 claudeExplicitLines = composeClaudeExplicitLines(mainRepoRoot, explicitSkillPaths, claudePackEntries, roleCommandNames);
             }
 
-            const rawBody = bead
+            const rawBody = renderBead && bead
                 ? (renderedTask = renderRoleTask({ role: roleName, bead, cwd: mainRepoRoot, runtime })).initialPrompt
                 : (prompt ?? '');
             let untrustedBody = rawBody;
-            if (bead && probe.ok && trustedSkillPrefix) {
+            if (renderBead && probe.ok && trustedSkillPrefix) {
                 if (!rawBody.startsWith(trustedSkillPrefix)) {
                     throw new Error('render-task output does not start with the exact trusted sp skill prefix.');
                 }
@@ -3345,7 +3367,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // terminal — so it is exempt here exactly as it is in bare mode.
             // This replaces the uniform check with the rule it was always
             // reaching for. xtrm-3xgs5 (see PR #439 for the bare half).
-            if (bead) {
+            if (renderBead) {
                 const rawSlashCheck = checkPositionZeroSlash(untrustedBody, runtime, '');
                 if (!rawSlashCheck.ok) throw new Error(rawSlashCheck.error);
             }
@@ -3366,7 +3388,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // prefix the check degenerates to the leading-'/' rule, which
             // only an untrusted bead-derived body needs. Both fire before
             // worktree creation.
-            if (trustedPrefix || bead) {
+            if (trustedPrefix || renderBead) {
                 const slashCheck = checkPositionZeroSlash(composedTurn1Body, runtime, trustedPrefix);
                 if (!slashCheck.ok) throw new Error(slashCheck.error);
             }
@@ -3377,7 +3399,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             const byteCheck = checkByteCeiling({
                 systemPrompt: resolvedRole.systemPrompt,
                 body: composedTurn1Body,
-                source: bead ? 'bead' : 'prompt',
+                source: renderBead ? 'bead' : 'prompt',
             });
             if (!byteCheck.ok) throw new Error(byteCheck.error);
         } catch (err) {
@@ -3435,7 +3457,8 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const cwdBasename = path.basename(mainRepoRoot);
 
     // Resolve slug — shared by both branch and worktree path so they're linked
-    const slug = name ?? randomSlug(4);
+    const existing = opts.existingWorktree;
+    const slug = existing?.slug ?? name ?? randomSlug(4);
 
     // Reuse is resolved before any worktree, branch, or runtime scaffolding is
     // created. Otherwise a successful session reuse leaves the provisional
@@ -3474,17 +3497,20 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}\n`);
 
     // Worktree path: inside repo under .xtrm/worktrees/
-    const worktreeName = `${cwdBasename}-xt-${runtime}-${slug}`;
-    const worktreePath = path.join(mainRepoRoot, '.xtrm', 'worktrees', worktreeName);
+    const worktreeName = existing ? path.basename(existing.path) : `${cwdBasename}-xt-${runtime}-${slug}`;
+    const worktreePath = existing ? existing.path : path.join(mainRepoRoot, '.xtrm', 'worktrees', worktreeName);
 
     // Branch name
-    const branchName = `xt/${slug}`;
+    const branchName = existing ? existing.branch : `xt/${slug}`;
 
-    const structuredPathCheck = checkStructuredLaunchPaths({
-        json: structuredOutput,
-        worktreePath,
-        branchName,
-    });
+    // A fresh session reuses a worktree that exists, which is what this check refuses.
+    const structuredPathCheck = existing
+        ? { ok: true as const }
+        : checkStructuredLaunchPaths({
+            json: structuredOutput,
+            worktreePath,
+            branchName,
+        });
     if (!structuredPathCheck.ok) {
         console.error(kleur.red(`\n  ✗ ${structuredPathCheck.error}\n`));
         process.exit(1);
@@ -3502,114 +3528,130 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         console.log(kleur.dim(`  branch:   ${branchName}\n`));
     }
 
-    // Git-first worktree create (CORE-2307): `git worktree add` is the
-    // primary path — launchers must not require bd. When bd exists it is
-    // attempted as a FALLBACK for its canonical .beads/redirect setup
-    // only if git itself failed; observable behavior is identical and the
-    // post-create .beads removal below is shared by both paths.
-    // Flag surface untouched in this lane (XTRM-93 owns --bead).
-    if (existsSync(worktreePath)) {
-        console.error(kleur.red('\n  ✗ Worktree path already exists. Refusing to reuse stale directory.\n'));
-        console.error(kleur.dim(`  path: ${worktreePath}`));
-        console.error(kleur.dim('\n  Remediation:'));
-        console.error(kleur.dim('    xt worktree doctor'));
-        console.error(kleur.dim('    xt worktree clean --orphans --yes\n'));
-        process.exit(1);
-    }
-
-    // SEC-FINAL-01: record whether THIS invocation creates the branch. A
-    // pre-existing xt/<slug> branch may legitimately be reused by design;
-    // rollback must never delete a branch it did not create.
-    const branchExistedBefore = spawnSync('git', ['rev-parse', '--verify', branchName], {
-        cwd: mainRepoRoot, stdio: 'pipe',
-    }).status === 0;
-    const branchCreatedByLauncher = !branchExistedBefore;
-
-    // CORE-2340: the new branch must start at a fresh origin/<default>, never
-    // at the main checkout's local HEAD (on this multi-session host that is
-    // often another session's branch or a stale master). Offline is a hard
-    // error — a wrong base produces wrong PR diffs.
-    const base = fetchWorktreeBase(mainRepoRoot, opts.base);
-    if (!base.ok) {
-        console.error(kleur.red(`\n  ✗ Could not resolve worktree base: ${base.error}\n`));
-        process.exit(1);
-    }
-
-    const branchExistsNow = spawnSync('git', ['rev-parse', '--verify', branchName], {
-        cwd: mainRepoRoot, stdio: 'pipe',
-    }).status === 0;
-
-    const gitArgs = branchExistsNow
-        ? ['worktree', 'add', worktreePath, branchName]
-        : ['worktree', 'add', '-b', branchName, worktreePath, base.ref];
-
-    const gitResult = spawnSync('git', gitArgs, {
-        cwd: mainRepoRoot,
-        stdio: structuredOutput ? 'pipe' : 'inherit',
-    });
-
-    if (gitResult.error || gitResult.status !== 0) {
-        // Fallback: bd worktree create (canonical .beads/redirect setup)
-        // for projects where bd manages the worktree layout.
-        if (gitResult.status !== 0 && !gitResult.error) {
-            if (!structuredOutput) console.log(kleur.dim('  git worktree add failed, trying bd worktree create'));
+    // SEC-FINAL-01: only a launch that creates the branch may delete it on rollback.
+    let branchCreatedByLauncher = false;
+    let metadataPersisted: boolean;
+    if (existing) {
+        if (!existsSync(worktreePath)) {
+            console.error(kleur.red(`\n  ✗ Worktree ${worktreePath} does not exist; nothing to start a fresh session in.\n`));
+            process.exit(1);
         }
-        // bd's --branch takes no start point; pre-create the branch at the
-        // resolved base so the fallback reuses it (or fails loudly) instead of
-        // silently branching off the local HEAD (CORE-2340).
-        if (!branchExistsNow) {
-            const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
-                cwd: mainRepoRoot, stdio: 'pipe',
+        // The session record is the worktree's own: kept as it is, so attach still finds
+        // the bead and the binding id it names.
+        metadataPersisted = readSessionMeta(worktreePath) !== null;
+        if (!structuredOutput) {
+            console.log(kleur.green(`\n  ✓ Existing worktree — starting a fresh ${runtime} session...\n`));
+        }
+    } else {
+        // Git-first worktree create (CORE-2307): `git worktree add` is the
+        // primary path — launchers must not require bd. When bd exists it is
+        // attempted as a FALLBACK for its canonical .beads/redirect setup
+        // only if git itself failed; observable behavior is identical and the
+        // post-create .beads removal below is shared by both paths.
+        // Flag surface untouched in this lane (XTRM-93 owns --bead).
+        if (existsSync(worktreePath)) {
+            console.error(kleur.red('\n  ✗ Worktree path already exists. Refusing to reuse stale directory.\n'));
+            console.error(kleur.dim(`  path: ${worktreePath}`));
+            console.error(kleur.dim('\n  Remediation:'));
+            console.error(kleur.dim('    xt worktree doctor'));
+            console.error(kleur.dim('    xt worktree clean --orphans --yes\n'));
+            process.exit(1);
+        }
+
+        // SEC-FINAL-01: record whether THIS invocation creates the branch. A
+        // pre-existing xt/<slug> branch may legitimately be reused by design;
+        // rollback must never delete a branch it did not create.
+        const branchExistedBefore = spawnSync('git', ['rev-parse', '--verify', branchName], {
+            cwd: mainRepoRoot, stdio: 'pipe',
+        }).status === 0;
+        branchCreatedByLauncher = !branchExistedBefore;
+
+        // CORE-2340: the new branch must start at a fresh origin/<default>, never
+        // at the main checkout's local HEAD (on this multi-session host that is
+        // often another session's branch or a stale master). Offline is a hard
+        // error — a wrong base produces wrong PR diffs.
+        const base = fetchWorktreeBase(mainRepoRoot, opts.base);
+        if (!base.ok) {
+            console.error(kleur.red(`\n  ✗ Could not resolve worktree base: ${base.error}\n`));
+            process.exit(1);
+        }
+
+        const branchExistsNow = spawnSync('git', ['rev-parse', '--verify', branchName], {
+            cwd: mainRepoRoot, stdio: 'pipe',
+        }).status === 0;
+
+        const gitArgs = branchExistsNow
+            ? ['worktree', 'add', worktreePath, branchName]
+            : ['worktree', 'add', '-b', branchName, worktreePath, base.ref];
+
+        const gitResult = spawnSync('git', gitArgs, {
+            cwd: mainRepoRoot,
+            stdio: structuredOutput ? 'pipe' : 'inherit',
+        });
+
+        if (gitResult.error || gitResult.status !== 0) {
+            // Fallback: bd worktree create (canonical .beads/redirect setup)
+            // for projects where bd manages the worktree layout.
+            if (gitResult.status !== 0 && !gitResult.error) {
+                if (!structuredOutput) console.log(kleur.dim('  git worktree add failed, trying bd worktree create'));
+            }
+            // bd's --branch takes no start point; pre-create the branch at the
+            // resolved base so the fallback reuses it (or fails loudly) instead of
+            // silently branching off the local HEAD (CORE-2340).
+            if (!branchExistsNow) {
+                const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
+                    cwd: mainRepoRoot, stdio: 'pipe',
+                });
+                if (branchAtBase.error || branchAtBase.status !== 0) {
+                    console.error(kleur.red(`\n  ✗ Could not start branch ${branchName} at ${base.ref}\n`));
+                    process.exit(1);
+                }
+            }
+            const bdResult = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
+                cwd: mainRepoRoot, stdio: structuredOutput ? 'pipe' : 'inherit',
             });
-            if (branchAtBase.error || branchAtBase.status !== 0) {
-                console.error(kleur.red(`\n  ✗ Could not start branch ${branchName} at ${base.ref}\n`));
+            if (bdResult.error || bdResult.status !== 0) {
+                console.error(kleur.red(`\n  ✗ Failed to create worktree at ${worktreePath}\n`));
                 process.exit(1);
             }
         }
-        const bdResult = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
-            cwd: mainRepoRoot, stdio: structuredOutput ? 'pipe' : 'inherit',
-        });
-        if (bdResult.error || bdResult.status !== 0) {
-            console.error(kleur.red(`\n  ✗ Failed to create worktree at ${worktreePath}\n`));
-            process.exit(1);
+
+        // Normalize parent's core.hooksPath to absolute if it's still the bd
+        // relative default — safety net for older bd installs (see xtrm-2s44).
+        normalizeParentHooksPath(mainRepoRoot);
+
+        // CORE-2570: write xtrm.issue worktree binding when an Issue is bound.
+        const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
+        if (boundIssue) {
+            const binding = setWorktreeIssue(worktreePath, boundIssue);
+            // Fail-open: a missing binding must not block the launch, but it must
+            // not be invisible either.
+            if (!binding.ok) console.error(kleur.yellow(`  ⚠ xtrm.issue binding not written: ${binding.error}`));
         }
-    }
 
-    // Normalize parent's core.hooksPath to absolute if it's still the bd
-    // relative default — safety net for older bd installs (see xtrm-2s44).
-    normalizeParentHooksPath(mainRepoRoot);
+        // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
+        // its DB via git common-dir discovery (shared-server mode + absolute
+        // core.hooksPath at the parent's .beads/hooks/), so no on-disk .beads/ is
+        // needed. The previous dir->symlink approach made bd happy but caused a
+        // serious merge hazard: any commit/PR carrying the .beads symlink (mode
+        // 120000) wipes the parent's .beads/ on squash-merge (see infra repo PR
+        // #39, 2026-05-12). With the directory gone, the tracked .beads/* paths
+        // are masked via skip-worktree so the index/worktree delta does not
+        // surface in `git status` or checkpoint diffs.
+        // See xtrm-cbjo (this fix) supersedes xtrm-as7d / xtrm-nsca / unitAI-u08e8.
+        try {
+            rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
+            markPathSkipWorktree(worktreePath, '.beads');
+        } catch {
+            // Non-fatal: bd will recover via git common-dir resolution regardless.
+        }
 
-    // CORE-2570: write xtrm.issue worktree binding when an Issue is bound.
-    const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
-    if (boundIssue) {
-        const binding = setWorktreeIssue(worktreePath, boundIssue);
-        // Fail-open: a missing binding must not block the launch, but it must
-        // not be invisible either.
-        if (!binding.ok) console.error(kleur.yellow(`  ⚠ xtrm.issue binding not written: ${binding.error}`));
-    }
-
-    // Remove worktree-local .beads/ entirely. bd inside the worktree resolves
-    // its DB via git common-dir discovery (shared-server mode + absolute
-    // core.hooksPath at the parent's .beads/hooks/), so no on-disk .beads/ is
-    // needed. The previous dir->symlink approach made bd happy but caused a
-    // serious merge hazard: any commit/PR carrying the .beads symlink (mode
-    // 120000) wipes the parent's .beads/ on squash-merge (see infra repo PR
-    // #39, 2026-05-12). With the directory gone, the tracked .beads/* paths
-    // are masked via skip-worktree so the index/worktree delta does not
-    // surface in `git status` or checkpoint diffs.
-    // See xtrm-cbjo (this fix) supersedes xtrm-as7d / xtrm-nsca / unitAI-u08e8.
-    try {
-        rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
-        markPathSkipWorktree(worktreePath, '.beads');
-    } catch {
-        // Non-fatal: bd will recover via git common-dir resolution regardless.
-    }
-
-    const metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
-    if (!structuredOutput) {
-        console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
-        console.log(kleur.dim('  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/'));
-        console.log(kleur.dim('        if lint/tests need them, run this repo\'s normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n'));
+        metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
+        if (!structuredOutput) {
+            console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
+            console.log(kleur.dim('  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/'));
+            console.log(kleur.dim('        if lint/tests need them, run this repo\'s normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n'));
+        }
     }
 
     // Pi runtime bootstrap is handled globally. Project dependency setup is still repo-owned.
@@ -3665,7 +3707,8 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         // Roll back the launcher-created worktree (and its branch only when
         // this invocation created the branch — a pre-existing reused
         // xt/<slug> ref must survive provisioning failure, SEC-FINAL-01).
-        rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
+        // A fresh session never created the worktree, so it never removes it.
+        if (!existing) rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
         throw error;
     }
 
@@ -3701,6 +3744,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         window: Boolean(opts.window),
         hasInitialPrompt,
         dispatcherDeps: opts.dispatcherDeps,
+        restoredDispatcher: existing?.dispatcher,
     };
 
     if (resolvedRole) {
@@ -3710,7 +3754,8 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
     const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model)
         || Boolean(thinking) || explicitSkillPaths.length > 0
-        || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window);
+        || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window)
+        || Boolean(existing);
     if (carriesLaunchState) {
         await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: 'bare' });
         return;
@@ -3834,6 +3879,8 @@ type TmuxLaunchArgs = {
     hasInitialPrompt?: boolean;
     /** CORE-2726: dispatcher-identity probing seam, forwarded from WorktreeSessionOptions. */
     dispatcherDeps?: DispatcherIdentityDeps;
+    /** CORE-2775: the dispatcher restored from the worktree's binding (fresh session); absent for a first launch. */
+    restoredDispatcher?: Record<string, string>;
 } & (
     | {
         mode: 'role';
@@ -3921,8 +3968,12 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // CORE-2728: the same resolution is persisted on the launch binding, so
     // `xt attach` can restore the ORIGINAL dispatcher later.
     const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
-    const dispatcherEnv = dispatcher.env;
-    if (bead) {
+    // CORE-2775: a fresh session in an existing worktree keeps its ORIGINAL dispatcher
+    // (the worktree's binding), never the caller's, and writes no second binding.
+    const dispatcherEnv = args.restoredDispatcher
+        ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher)
+        : dispatcher.env;
+    if (bead && !args.restoredDispatcher) {
         // Before the runtime starts, so the binding precedes the work. A failed or
         // old sb is one warning; the launch itself never fails on it.
         const dispatchStartedMs = Date.now();

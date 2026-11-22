@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import prompts from 'prompts';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { t } from '../utils/theme.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
@@ -9,7 +10,8 @@ import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
 import { resolveWorktreePaneBead } from '../utils/worktree-pane-bead.js';
-import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled, readSessionMeta, type SessionMeta } from '../utils/worktree-session.js';
+import { SPECIALISTS_CHANNEL_ENTRY, claudeMcpEnv, specialistsPluginInstalled, readSessionMeta, launchWorktreeSession, type SessionMeta, type WorktreeSessionOptions } from '../utils/worktree-session.js';
+import { launchCodexWorktreeSession } from '../utils/codex-worktree-session.js';
 import {
     SUBSTRATE_HOLDER_VAR,
     XTRM_AGENT_NAME_VAR,
@@ -175,11 +177,111 @@ export function resolveWorkerIssueRef(worktreePath: string, deps: WorkerIssueDep
     return resolveWorkerIssue(worktreePath, deps)?.ref ?? null;
 }
 
+/** What `xt attach --fresh` accepts: the launch flags of `xt claude|pi`, minus what creates a worktree. */
+export interface FreshAttachOptions {
+    role?: string;
+    model?: string;
+    /** Text, or `@<file>` to read it from a file. */
+    prompt?: string;
+    bead?: string;
+    attach?: boolean;
+    window?: boolean;
+    newSession?: boolean;
+    parent?: string;
+    /** Argv after `--`, forwarded verbatim to the runtime (guarded by the launcher). */
+    passthrough?: string[];
+}
+
+/** The fresh-only options a caller gave; without --fresh they would be silently ignored. */
+export function freshOnlyOptions(opts: FreshAttachOptions & { yolo?: boolean }): string[] {
+    const given: string[] = [];
+    if (opts.role !== undefined) given.push('--role');
+    if (opts.model !== undefined) given.push('--model');
+    if (opts.prompt !== undefined) given.push('--prompt');
+    if (opts.bead !== undefined) given.push('--bead');
+    if (opts.window) given.push('--window');
+    if (opts.newSession) given.push('--new-session');
+    if (opts.parent !== undefined) given.push('--parent');
+    if (opts.attach === false) given.push('--no-attach');
+    if (opts.yolo !== undefined) given.push(opts.yolo ? '--yolo' : '--no-yolo');
+    return given;
+}
+
+/** `@file` reads the prompt from the file; anything else is the prompt itself. */
+export function readFreshPrompt(raw: string | undefined, read: (file: string) => string = (f) => readFileSync(f, 'utf8')): string | undefined {
+    if (raw === undefined) return undefined;
+    if (!raw.startsWith('@')) return raw;
+    return read(raw.slice(1));
+}
+
+/**
+ * The launch a FRESH session in an existing xt worktree is made from (CORE-2775).
+ * The options feed the same launcher as `xt claude|pi|codex`; the worktree-derived
+ * identity (slug = holder, name, branch) and the dispatcher restored from the
+ * worktree's own launch binding replace what a first launch derives or creates.
+ * Throws a one-line message when the worktree does not carry enough to restart.
+ */
+export function buildFreshLaunchOptions(
+    target: WorktreeInfo,
+    opts: FreshAttachOptions,
+    deps: { issue?: WorkerIssue | null; dispatcher?: Record<string, string> } = {},
+): WorktreeSessionOptions {
+    const slug = holderFromWorktreePath(target.path);
+    if (!slug) throw new Error(`the worktree name ${basename(target.path)} does not follow <repo>-xt-<runtime>-<slug>; cannot derive its holder`);
+    const issue = deps.issue === undefined ? resolveWorkerIssue(target.path) : deps.issue;
+    const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue?.ref ?? null, {
+        bindingId: issue?.bindingId ?? null,
+        workspace: target.path,
+    });
+    return {
+        runtime: target.runtime === 'pi' ? 'pi' : 'claude',
+        role: opts.role,
+        bead: opts.bead ?? issue?.ref,
+        prompt: readFreshPrompt(opts.prompt),
+        model: opts.model,
+        attach: opts.attach,
+        window: Boolean(opts.window),
+        newSession: Boolean(opts.newSession),
+        parent: opts.parent,
+        passthrough: opts.passthrough,
+        existingWorktree: {
+            path: target.path,
+            branch: target.branch.replace('refs/heads/', ''),
+            slug,
+            dispatcher,
+        },
+    };
+}
+
 export function createAttachCommand(): Command {
     return new Command('attach')
         .description('Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session')
         .argument('[name]', 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")')
-        .action(async (name: string | undefined) => {
+        .option('--fresh', 'Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding')
+        .option('--role <name>', 'With --fresh: launch as this specialist role')
+        .option('--model <name>', 'With --fresh: forward --model <name> to the runtime')
+        .option('--prompt <text|@file>', 'With --fresh: the initial user prompt, or @<file> to read it from a file')
+        .option('--bead <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
+        .option('--window', 'With --fresh, open a detached window in the current session; prints <session>:<pane_id>')
+        .option('--new-session', 'With --fresh: force a new session')
+        .option('--no-attach', 'With --fresh: create the session detached and print session:pane')
+        .option('--parent <target>', 'With --fresh: @agent_parent_session of the pane (session name or id)')
+        .option('--yolo', 'With --fresh on a Codex worktree: disable sandboxing and approval prompts (default)')
+        .option('--no-yolo', 'With --fresh on a Codex worktree: workspace-write sandbox with on-request approval')
+        .allowExcessArguments(true)
+        .action(async (name: string | undefined, opts: FreshAttachOptions & { fresh?: boolean; yolo?: boolean }, command: Command) => {
+            // Words after `--` reach commander as excess arguments; only --fresh forwards them to the runtime.
+            const extra = command.args.slice(name === undefined ? 0 : 1);
+            const freshOnly = freshOnlyOptions(opts);
+            if (!opts.fresh && (freshOnly.length > 0 || extra.length > 0)) {
+                const what = freshOnly.length > 0 ? `${freshOnly.join(', ')} need --fresh` : `unexpected argument${extra.length > 1 ? 's' : ''}: ${extra.join(' ')}`;
+                console.error(kleur.red(`\n  ✗ ${what}\n`));
+                process.exit(1);
+            }
+            if (opts.fresh && !name) {
+                console.error(kleur.red('\n  ✗ --fresh needs the worktree name (no interactive picker for a restart)\n'));
+                process.exit(1);
+            }
             const repoRoot = getRepoRoot(process.cwd());
             const worktrees = listXtWorktrees(repoRoot);
 
@@ -234,7 +336,38 @@ export function createAttachCommand(): Command {
             }
 
             const branch = target.branch.replace('refs/heads/', '');
+            if (opts.fresh && !target.runtime && !process.stdin.isTTY) {
+                // No session record names the runtime and nobody can answer a prompt (a timer wake).
+                console.error(kleur.red(`\n  ✗ cannot tell which runtime ${basename(target.path)} was launched with (no session record) and there is no terminal to ask\n`));
+                process.exit(1);
+            }
             const runtime = target.runtime ?? await pickRuntime();
+
+            if (opts.fresh) {
+                let launch: WorktreeSessionOptions;
+                try {
+                    launch = buildFreshLaunchOptions(target, { ...opts, passthrough: extra });
+                } catch (error) {
+                    console.error(kleur.red(`\n  ✗ ${error instanceof Error ? error.message : String(error)}\n`));
+                    process.exit(1);
+                }
+                launch.runtime = runtime === 'pi' ? 'pi' : 'claude';
+                if (runtime === 'codex') {
+                    if (opts.parent) {
+                        console.error(kleur.red('\n  ✗ --parent is not supported for a Codex session\n'));
+                        process.exit(1);
+                    }
+                    // --new-session is implied: the Codex launcher always creates its own session.
+                    await launchCodexWorktreeSession({
+                        role: launch.role, bead: launch.bead, prompt: launch.prompt, model: launch.model,
+                        attach: launch.attach, window: launch.window, yolo: opts.yolo !== false,
+                        passthrough: extra, existingWorktree: launch.existingWorktree,
+                    });
+                } else {
+                    await launchWorktreeSession(launch);
+                }
+                return;
+            }
 
             let resumeArgs: string[];
             if (runtime === 'codex') {

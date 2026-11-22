@@ -3,12 +3,14 @@
 
 A session that only waits for hours holds memory for nothing. `park` records it and sets one systemd user timer;
 the caller then closes its pane. `wake` (run by the timer) decides whether the wake is due, passes the launch
-preflight gate, writes a digest, opens a tmux window in the same worktree, starts a FRESH session of the same runtime
-with the same name and role, and pastes the respawn nudge. The record is $PM_STATE_DIR/parked/<name>.json; the
+preflight gate, writes a digest, and starts a FRESH session through `xt attach <worktree> --fresh` (CORE-2775): the
+one xt launch builder gives it the environment, runtime arguments and tmux pane options of a normal xt launch, and
+the dispatcher restored from the worktree's own binding. The respawn nudge is its initial prompt (`--prompt @file`);
+it is pasted into the pane only when it does not show there. The record is $PM_STATE_DIR/parked/<name>.json; the
 record and the Substrate journal of <ref> are the only memory: the timer is a systemd unit, so it outlives every session.
 
   pm_park.py park NAME --ref REF --role ROLE (--at UTC | --check CMD --deadline UTC) [--self --manager-told]
-                 [--reason TEXT] [--every SECONDS] [--worktree DIR] [--runtime claude|pi] [--pane ID] [--model M]
+                 [--reason TEXT] [--every SECONDS] [--worktree DIR] [--runtime claude|pi|codex] [--pane ID] [--model M] [--launch-role ROLE|none]
   pm_park.py wake NAME [--force]        run by the timer: check, gate, digest, launch, nudge
   pm_park.py list [--json]              parked sessions: wake spec, unit, state
 
@@ -17,8 +19,8 @@ told the manager); a wake is set. With --check, CMD exit 0 wakes, 1 means not ye
 --every seconds), any other exit, a timeout or a passed --deadline wakes anyway and says so. The check is stored and
 journaled verbatim: it must not contain credentials. All times are UTC.
 The agent never starts from the timer directly: always inside a tmux window. Settings (pm_config, PM_ prefix):
-park_launch (command that starts the runtime; default `claude --dangerously-skip-permissions` or `pi`),
-park_max_attempts (3), park_retry_s (300), park_nudge_delay_s (20), park_check_timeout_s (120), and the gate limits
+park_launch (EXTRA runtime arguments, passed after `--`; default none: xt supplies every other argument), park_xt
+(the xt binary, default `xt`), park_max_attempts (3), park_retry_s (300), park_nudge_delay_s (20), park_check_timeout_s (120), and the gate limits
 park_gate_load1 (15), park_gate_psi_full (10), park_gate_mem_gb (4).
 """
 from __future__ import annotations
@@ -45,8 +47,6 @@ LIVE_STATES = ("parked", "waking")
 GATE_LOAD1, GATE_PSI_FULL, GATE_MEM_KB = 15.0, 10.0, 4 * 1024 * 1024
 PROC = "/proc"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-LAUNCH_DEFAULT = {"claude": "claude --dangerously-skip-permissions", "pi": "pi"}
-LAUNCH_ROLE = {"board_helper": "board-helper"}
 PASS_ENV = ("PATH", "PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR", "TMUX_TMPDIR")
 SCRIPT = pathlib.Path(__file__).resolve()
 
@@ -217,6 +217,24 @@ def tmux_fact(pane: str, fmt_: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
+def pane_option(pane: str | None, key: str) -> str | None:
+    if not pane:
+        return None
+    r = run(["tmux", "show-options", "-p", "-t", pane, "-qv", key])
+    return r.stdout.strip() or None if r.returncode == 0 else None
+
+
+def recorded_runtime(worktree: str, requested: str | None) -> str:
+    """The runtime to restart: the one asked for, else the worktree's own session record, else claude."""
+    if requested:
+        return requested
+    try:
+        meta = json.loads((pathlib.Path(worktree) / ".xtrm" / "session-meta.json").read_text())
+    except (OSError, ValueError):
+        return "claude"
+    return meta.get("runtime") if meta.get("runtime") in ("claude", "pi", "codex") else "claude"
+
+
 def park(a: argparse.Namespace) -> int:
     if not NAME_RE.match(a.name):
         raise ParkError(f"name {a.name!r} must match {NAME_RE.pattern}")
@@ -265,8 +283,26 @@ def park(a: argparse.Namespace) -> int:
     if not pathlib.Path(worktree).is_dir():
         raise ParkError(f"refused: worktree {worktree} is not a directory")
     session = tmux_fact(pane, "#{session_name}") if pane else None
-    rec = {"name": a.name, "role": a.role, "ref": a.ref, "worktree": str(pathlib.Path(worktree).resolve()),
-           "runtime": a.runtime, "model": a.model, "tmux_target": f"{session}:" if session else None,
+    # The launch role is what the relaunch needs to give the woken session the same role, system prompt and pane
+    # role. A readable pane without @agent_role is a bare launch (no role); an unreadable pane cannot say.
+    if a.launch_role:
+        launch_role = None if a.launch_role == "none" else a.launch_role
+    elif pane and tmux_fact(pane, "#{pane_id}"):
+        launch_role = pane_option(pane, "@agent_role")
+    else:
+        raise ParkError("refused: the launch role of the session cannot be read (no readable pane); pass "
+                        "--launch-role <the role it was launched with> or --launch-role none for a bare launch")
+    worktree = str(pathlib.Path(worktree).resolve())
+    # What the relaunch needs, read from the live pane and the worktree now: the pane is gone at wake time.
+    rec = {"name": a.name, "role": a.role, "ref": a.ref, "worktree": worktree,
+           "xt_name": pathlib.Path(worktree).name,
+           # A normal xt launch does not carry these into the pane, so the nudge names them (operator-lead ruling, CORE-2775).
+           "pm_env": {k: os.environ[k] for k in ("PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR") if os.environ.get(k)}, "launch_role": launch_role,
+           # Only a pane that carried @agent_bead gets --bead on the wake; the Issue a parked pane was
+           # launched for otherwise comes back from the worktree's own record.
+           "agent_bead": pane_option(pane, "@agent_bead"),
+           "parent_session": pane_option(pane, "@agent_parent_session"),
+           "runtime": recorded_runtime(worktree, a.runtime), "model": a.model, "tmux_target": f"{session}:" if session else None,
            "pane_id": pane, "park_time": fmt(t0), "handoff_seq": handoff_seq, "park_seq": None, "wake": wake,
            "reason": a.reason, "self": bool(a.self), "unit": unit_name(a.name), "state": "parked", "attempts": 0,
            "gate_waits": 0, "retry_s": setting_int("PM_PARK_RETRY_S", 300), "wake_time": None, "wake_cause": None,
@@ -388,10 +424,15 @@ def nudge_text(rec: dict, woken: dt.datetime, cause: str, note: str | None, dige
     role_file = str(refs) if refs.is_file() else f"the {rec['role']} role file of the project-management pack"
     kit = SCRIPT.parent / "pm_session.py"
     route = SCRIPT.parent / "route_target.py"
+    pm_env = rec.get("pm_env") or {}
+    prefix = " ".join(f"{k}={shlex.quote(v)}" for k, v in pm_env.items())
+    env_line = ([f"Every Bash call starts a fresh shell, so PREFIX each pm_* command with the settings of the parked "
+                 f"session, e.g. `{prefix} python3 {kit} show`."] if prefix else [])
     return "\n".join([
         f"[pm_park wake {rec['name']}] You were respawned after a pause: a fresh session, not a resume of the old one.",
         f"Parked {rec['park_time']} UTC, woken {fmt(woken)} UTC. Reason for the pause: {rec['reason']}. "
         f"Wake cause: {cause}" + (f" ({note})" if note else "") + ".",
+        *env_line,
         f"1. Load your role file {role_file} and the session kit: python3 {kit} show.",
         f"2. Read your handoff, journal seq {rec['handoff_seq']} on {rec['ref']} "
         f"(sb journal show {rec['ref']} --kind handoff), and the digest {digest_path}.",
@@ -400,19 +441,22 @@ def nudge_text(rec: dict, woken: dt.datetime, cause: str, note: str | None, dige
         f"[end pm_park wake {rec['name']}]"])
 
 
-def window_env(rec: dict) -> dict:
-    env = {"SUBSTRATE_HOLDER": rec["name"], "XTRM_AGENT_NAME": rec["name"],
-           "XTMUX_AGENT_ROLE": LAUNCH_ROLE.get(rec["role"], rec["role"]), "SUBSTRATE_ISSUE_REF": rec["ref"]}
-    if rec["runtime"] == "claude":
-        env.update(MCP_SDK_GENERATION=os.environ.get("MCP_SDK_GENERATION") or "v2",
-                   MCP_PROTOCOL_NEGOTIATION=os.environ.get("MCP_PROTOCOL_NEGOTIATION") or "auto")
-    env.update({k: os.environ[k] for k in ("PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR") if os.environ.get(k)})
-    return env
-
-
-def launch_command(rec: dict) -> str:
-    base = pm_config.get("PM_PARK_LAUNCH") or LAUNCH_DEFAULT[rec["runtime"]]
-    return "exec " + str(base) + (f" --model {shlex.quote(rec['model'])}" if rec.get("model") else "")
+def xt_command(rec: dict, nudge_file: pathlib.Path) -> list[str]:
+    """The one launch: `xt attach <worktree> --fresh` with the facts recorded at park time. Nothing of the
+    environment, the runtime arguments or the pane options is built here."""
+    cmd = [str(pm_config.get("PM_PARK_XT") or "xt"), "attach", rec.get("xt_name") or pathlib.Path(rec["worktree"]).name,
+           "--fresh", "--new-session", "--no-attach", "--prompt", f"@{nudge_file}"]
+    if rec.get("agent_bead"):
+        cmd += ["--bead", rec["agent_bead"]]
+    if rec.get("launch_role"):
+        cmd += ["--role", rec["launch_role"]]
+    if rec.get("model"):
+        cmd += ["--model", rec["model"]]
+    parent = rec.get("parent_session")
+    if parent and run(["tmux", "display-message", "-p", "-t", parent, "#{session_id}"]).returncode == 0:
+        cmd += ["--parent", parent]  # the lead's session may be gone by now; xt refuses a parent it cannot find
+    extra = shlex.split(str(pm_config.get("PM_PARK_LAUNCH") or ""))
+    return cmd + (["--"] + extra if extra else [])
 
 
 def pane_alive(pane: str) -> bool:
@@ -420,19 +464,17 @@ def pane_alive(pane: str) -> bool:
     return r.returncode == 0 and r.stdout.strip() == "0"
 
 
-def open_window(rec: dict) -> str:
-    """Open a detached tmux window in the worktree and start the runtime in it; return its pane id."""
-    env = [x for k, v in window_env(rec).items() for x in ("-e", f"{k}={v}")]
-    common = ["-d", "-P", "-F", "#{pane_id}", "-n", rec["name"], "-c", rec["worktree"], *env, launch_command(rec)]
-    session = (rec.get("tmux_target") or "").rstrip(":")
-    r = run(["tmux", "new-window", "-t", f"{session}:", *common]) if session else None
-    if r is None or r.returncode != 0:
-        # The old pane was the last window of its session, so the session is gone with it: make it again.
-        session = session or rec["name"]
-        r = run(["tmux", "new-session", "-s", session, *common])
+def start_session(rec: dict, nudge_file: pathlib.Path) -> str:
+    """Start the fresh session through xt and return its pane id (xt prints `session:pane` and exits)."""
+    cmd = xt_command(rec, nudge_file)
+    r = run(cmd, timeout=180)
     if r.returncode != 0:
-        raise ParkError(f"tmux could not open a window: {(r.stderr or r.stdout).strip()[:200]}")
-    return r.stdout.strip()
+        raise ParkError(f"{shlex.join(cmd[:3])} failed ({r.returncode}): {(r.stderr or r.stdout).strip()[:300]}")
+    last = (r.stdout.strip().splitlines() or [""])[-1]
+    pane = last.rsplit(":", 1)[-1]
+    if not re.fullmatch(r"%\d+", pane):
+        raise ParkError(f"xt attach --fresh printed no session:pane (got {last[:120]!r})")
+    return pane
 
 
 def confirm_alive(pane: str) -> bool:
@@ -443,10 +485,19 @@ def confirm_alive(pane: str) -> bool:
     return True
 
 
-def send_nudge(pane: str, text: str, marker: str, end_marker: str) -> bool:
-    """Paste the nudge, press Enter, and look for its first or last tag in the pane (the TUI scrolls the first line
-    away once the session answers); one retry when neither is there."""
+def nudge_shown(pane: str, marker: str, end_marker: str) -> bool:
+    cap = run(["tmux", "capture-pane", "-p", "-J", "-S", "-300", "-t", pane])
+    shown = " ".join((cap.stdout or "").split())
+    return marker in shown or end_marker in shown
+
+
+def send_nudge(pane: str, text: str, marker: str, end_marker: str, delivered: bool = False) -> bool:
+    """Confirm the nudge reached the session, by its first or last tag in the pane (the TUI scrolls the first line
+    away once the session answers). `delivered` means xt already gave it as the initial prompt: look first and paste
+    only when it is not there. Otherwise paste it, press Enter, look again; one retry."""
     sleep(setting_int("PM_PARK_NUDGE_DELAY_S", 20))
+    if delivered and pane_alive(pane) and nudge_shown(pane, marker, end_marker):
+        return True
     for _ in range(2):
         if not pane_alive(pane):
             return False
@@ -456,9 +507,7 @@ def send_nudge(pane: str, text: str, marker: str, end_marker: str) -> bool:
         sleep(1)
         run(["tmux", "send-keys", "-t", pane, "Enter"])
         sleep(3)
-        cap = run(["tmux", "capture-pane", "-p", "-J", "-S", "-300", "-t", pane])
-        shown = " ".join((cap.stdout or "").split())
-        if marker in shown or end_marker in shown:
+        if nudge_shown(pane, marker, end_marker):
             return True
         sleep(5)
     return False
@@ -506,16 +555,19 @@ def wake(a: argparse.Namespace) -> int:
         dpath = digest(rec, woken, rec["wake_cause"])
         pm_role.write(rec["role"], rec["worktree"])
         pm_session.init(None, rec["ref"], rec["worktree"], own=False)
+        text = nudge_text(rec, woken, cause, note, dpath)
+        nudge_file = parked_dir() / f"{a.name}.nudge.md"
+        nudge_file.write_text(text + "\n")
         pane = rec.get("wake_pane")
-        if not (pane and pane_alive(pane)):
-            pane = open_window(rec)
+        started = not (pane and pane_alive(pane))
+        if started:
+            pane = start_session(rec, nudge_file)
             rec["wake_pane"] = pane
             save(rec)
         if not confirm_alive(pane):
-            raise ParkError(f"pane {pane} died within seconds of the start; check the launch command "
-                            f"({launch_command(rec)}) and PATH of unit {rec['unit']}")
-        text = nudge_text(rec, woken, cause, note, dpath)
-        if not send_nudge(pane, text, f"[pm_park wake {rec['name']}]", f"[end pm_park wake {rec['name']}]"):
+            raise ParkError(f"pane {pane} died within seconds of the start; run `{shlex.join(xt_command(rec, nudge_file))}` "
+                            f"by hand in {rec['worktree']} and check the PATH of unit {rec['unit']}")
+        if not send_nudge(pane, text, f"[pm_park wake {rec['name']}]", f"[end pm_park wake {rec['name']}]", delivered=started):
             raise ParkError(f"the nudge did not show in pane {pane}")
     except Exception as exc:  # noqa: BLE001 - any failure of an attempt is counted, never left as 'waking' for ever
         rec["attempts"] += 1
@@ -587,9 +639,12 @@ def main(argv: list[str]) -> int:
     p.add_argument("--manager-told", action="store_true")
     p.add_argument("--reason", default="long idle wait")
     p.add_argument("--worktree")
-    p.add_argument("--runtime", choices=("claude", "pi"), default="claude")
+    p.add_argument("--runtime", choices=("claude", "pi", "codex"), default=None,
+                   help="default: the runtime recorded in the worktree's session record, else claude")
     p.add_argument("--pane")
     p.add_argument("--model")
+    p.add_argument("--launch-role", help="the role the session was launched with, or `none` for a bare launch; "
+                   "default: read from the pane's @agent_role")
     p.set_defaults(fn=park)
     w = sub.add_parser("wake")
     w.add_argument("name")
