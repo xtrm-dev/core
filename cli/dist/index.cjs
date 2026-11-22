@@ -68570,6 +68570,13 @@ function gitMainRepoRoot(cwd) {
   const commonDir = import_node_path22.default.isAbsolute(raw) ? raw : import_node_path22.default.resolve(cwd, raw);
   return commonDir.endsWith("/.git") || commonDir.endsWith("\\.git") ? import_node_path22.default.dirname(commonDir) : commonDir;
 }
+function refuseModelAfterRollback(worktree) {
+  return (message) => {
+    rollbackLauncherWorktree(worktree.mainRepoRoot, worktree.worktreePath, worktree.branchName, worktree.branchCreatedByLauncher);
+    process.stderr.write(message);
+    process.exit(1);
+  };
+}
 function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, deleteBranch) {
   const removal = (0, import_node_child_process10.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], {
     cwd: mainRepoRoot,
@@ -69202,6 +69209,7 @@ async function launchWorktreeSession(opts) {
     attach,
     worktreePath,
     branchName,
+    branchCreatedByLauncher,
     metadataPersisted,
     modelOverride: model,
     thinkingOverride: thinking,
@@ -69240,7 +69248,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process10.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -69345,7 +69353,17 @@ async function launchTmuxSession(args) {
   };
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
-  const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, { worktreePath, mainRepoRoot: args.repoRoot, env: process.env });
+  const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, {
+    worktreePath,
+    mainRepoRoot: args.repoRoot,
+    env: process.env,
+    refuse: refuseModelAfterRollback({
+      mainRepoRoot: args.repoRoot ?? process.cwd(),
+      worktreePath,
+      branchName,
+      branchCreatedByLauncher: args.branchCreatedByLauncher ?? false
+    })
+  });
   const launchEnv = stripLauncherModelVar(process.env);
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) });

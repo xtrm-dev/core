@@ -81,11 +81,16 @@ interface LaunchHarness {
     /** Plant <worktree>/.xtrm/hooks/statusline.mjs at creation so the launch
      * runs with a worktree-local hook script present (global-statusline regression). */
     seedStatusline: boolean;
+    /** CORE-2760: leave the hermetic install with no resolvable claude model, so the
+     * launch refuses. The seat has no --model, no ANTHROPIC_MODEL and no settings file. */
+    unresolvableModel: boolean;
     oldSp: boolean;
     extraSkills: string[];
     roleSpecPaths?: string[];
     roleSpNames?: string[];
     role?: string;
+    /** The model the role spec declares. '' leaves the role with none, so the launch must refuse. */
+    roleModel?: string;
     runtime: 'claude' | 'pi';
     codex: boolean;
     fromSubdir: boolean;
@@ -144,7 +149,13 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
     // the harness sandboxes it, otherwise the sandboxed HOME.
     const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME!, '.claude');
     fs.ensureDirSync(configDir);
-    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
+    if (h.unresolvableModel) {
+        // CORE-2760: no settings model at all, and the caller unsets ANTHROPIC_MODEL.
+        fs.removeSync(path.join(configDir, 'settings.json'));
+        delete process.env.ANTHROPIC_MODEL;
+    } else {
+        fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
+    }
 
     const packSkillDir = path.join(repoRoot, '.xtrm', 'skills', 'infra', PACK_NAME);
     fs.ensureDirSync(packSkillDir);
@@ -184,7 +195,8 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
                 return { status: 1, stdout: '', stderr: "unknown option '--surface'" };
             }
             spViewCalls.push({ argv: args, cwd: (mo.cwd as string | undefined) ?? '' });
-            return { status: 0, stdout: canonicalSpec(specPaths), stderr: '' };
+            // CORE-2760: a role that declares no model leaves the launch with nothing to resolve.
+            return { status: 0, stdout: canonicalSpec(specPaths, h.roleModel ?? 'claude-opus-5'), stderr: '' };
         }
         if (command === 'sp' && args[0] === 'render-skill-prefix' && args[1] === '--help') {
             return h.oldSp ? { status: 1, stdout: '', stderr: "unknown option '--help'" } : { status: 0, stdout: '', stderr: '' };
@@ -427,9 +439,11 @@ function harnessOpts(over: Partial<LaunchHarness> = {}): LaunchHarness {
         seededWorktreeCopy: true,
         branchPreExists: false,
         seedStatusline: false,
+        unresolvableModel: false,
         oldSp: false,
         extraSkills: [],
         role: 'sync-role',
+        roleModel: 'claude-opus-5',
         runtime: 'claude',
         codex: false,
         fromSubdir: false,
@@ -1363,5 +1377,101 @@ describe('launch records the dispatcher on the Substrate binding (CORE-2728)', (
         const meta = fs.readJsonSync(path.join(h.worktreePath, '.xtrm', 'session-meta.json')) as Record<string, unknown>;
         expect(meta.runtime).toBe('claude');
         expect(meta).not.toHaveProperty('bead');
+    });
+});
+
+/**
+ * CORE-2760. The model refusal (XTRM-970) sits on a path that runs *after* the worktree exists, so
+ * before this fix every misconfigured `xt claude` printed `✓ Worktree ready`, refused, and left a
+ * worktree directory and an `xt/<name>` branch behind — the next launch of that window then collided
+ * with the branch. The comment above the resolution claimed the refusal preceded all worktree work.
+ *
+ * These drive the REAL launch path with no resolvable model and assert the composition, not the
+ * pieces: exit 1, the three remedies the refusal names, no child process carrying `PI_MODEL`, and no
+ * worktree or launcher-created branch left registered.
+ */
+describe('CORE-2760: a model refusal leaves no worktree, no branch and no PI_MODEL', () => {
+    function captureStderr(): string[] {
+        const chunks: string[] = [];
+        vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+            chunks.push(String(chunk));
+            return true;
+        }) as never);
+        return chunks;
+    }
+
+    function expectRefusalShape(chunks: string[]): void {
+        const text = chunks.join('');
+        // The three lines a reviewer verified stay three lines, and each remedy is still named.
+        expect(text).toContain('cannot resolve the model this claude seat would run');
+        // CORE-2761 amended the middle remedy to the directory the seat runs in.
+        expect(text).toContain('Pass --model <id>, set ANTHROPIC_MODEL, copy the settings file into the worktree,');
+        expect(text).toContain('or declare specialist.execution.model on the role.');
+        expect(text).toContain('.claude/settings.json or ~/.claude/settings.json');
+    }
+
+    function expectNothingSpawnedWithAModel(r: LaunchResult): void {
+        // (c) no child process environment contains PI_MODEL — and here, no child at all.
+        expect(r.callLog.filter((call) => call.env && 'PI_MODEL' in call.env)).toEqual([]);
+        expect(r.callLog.some((call) => call.command === 'claude' || call.command === 'pi')).toBe(false);
+    }
+
+    it('bare launch refuses with exit 1 and removes the worktree it had already created', async () => {
+        const chunks = captureStderr();
+        const r = await claudeLaunch({ role: 'NONE', unresolvableModel: true });
+        expect(r.error).toMatch(/^exit:1/);
+        expectRefusalShape(chunks);
+        expectNothingSpawnedWithAModel(r);
+        // (d) the worktree and the branch this invocation created are both gone.
+        expect(r.calls.worktreeRemoveCalls).toBeGreaterThan(0);
+        expect(r.calls.branchDeleteCalls).toBeGreaterThan(0);
+        expect(fs.pathExistsSync(r.worktreePath)).toBe(false);
+    });
+
+    it('role launch on the tmux path ends the same way', async () => {
+        const chunks = captureStderr();
+        // The role declares no model, so nothing resolves it: settings and ANTHROPIC_MODEL are absent too.
+        const r = await claudeLaunch({ unresolvableModel: true, roleModel: '' });
+        expect(r.error).toMatch(/^exit:1/);
+        expectRefusalShape(chunks);
+        expectNothingSpawnedWithAModel(r);
+        expect(r.calls.worktreeRemoveCalls).toBeGreaterThan(0);
+        expect(r.calls.branchDeleteCalls).toBeGreaterThan(0);
+        expect(fs.pathExistsSync(r.worktreePath)).toBe(false);
+    });
+
+    it('a pre-existing reused branch survives the refusal (SEC-FINAL-01 still holds)', async () => {
+        const chunks = captureStderr();
+        const r = await claudeLaunch({ role: 'NONE', unresolvableModel: true, branchPreExists: true });
+        expect(r.error).toMatch(/^exit:1/);
+        expectRefusalShape(chunks);
+        expect(r.calls.worktreeRemoveCalls).toBeGreaterThan(0);
+        expect(r.calls.branchDeleteCalls).toBe(0);
+    });
+
+    it('a second refusing launch in the same fixture gives the same refusal, not an exists collision', async () => {
+        const first = await claudeLaunch({ role: 'NONE', unresolvableModel: true });
+        expect(first.error).toMatch(/^exit:1/);
+        // Same repo, same worktree path and same branch: the state a second launch would collide with.
+        // The home is fresh because the harness seeds a hermetic install per run, and the collision
+        // surface this issue is about is the worktree and its branch in the repo, not the home.
+        const chunks = captureStderr();
+        const second = await runLaunch(
+            harnessOpts({
+                repoRoot: first.repoRoot,
+                worktreePath: first.worktreePath,
+                branchName: first.branchName,
+                role: 'NONE',
+                unresolvableModel: true,
+            }),
+            { name: 'demo', runtime: 'claude', role: undefined, newSession: true, attach: false, skills: [], prompt: 'smoke body', model: undefined, passthrough: undefined, json: false },
+        );
+        expect(second.error, "the second launch refuses for the same reason, not for a collision").toMatch(/^exit:1/);
+        expect(second.error).not.toMatch(/already exists/i);
+        expect(second.error).not.toMatch(/Failed to create worktree/);
+        // The same three-line refusal, from a worktree this second launch created again.
+        expect(second.calls.worktreeRemoveCalls).toBeGreaterThan(0);
+        expect(fs.pathExistsSync(second.worktreePath)).toBe(false);
+        expectRefusalShape(chunks);
     });
 });

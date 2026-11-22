@@ -2732,6 +2732,28 @@ function gitMainRepoRoot(cwd: string): string | null {
  * worktree removal itself fails, report that the branch may remain. Exported
  * for unit testing.
  */
+/**
+ * The refusal a launch gives when it cannot resolve the model, with the worktree cleaned up first.
+ *
+ * XTRM-970 put this refusal on a path that runs AFTER the worktree exists, while its comment claimed
+ * otherwise (CORE-2760). A misconfigured `xt claude` printed `✓ Worktree ready`, refused, and left a
+ * worktree directory and an `xt/<name>` branch behind; the next launch of that window then collided
+ * with the branch. Refusing earlier is not the fix: the model is read from the directory the seat
+ * runs in (CORE-2761), which only exists once the worktree does. So the refusal takes back what this
+ * invocation created — `git worktree remove --force` (never `rm -rf`), and `git branch -D` only when
+ * the branch did not exist before (SEC-FINAL-01). A pre-existing branch survives, as it does on any
+ * other provisioning failure.
+ */
+export function refuseModelAfterRollback(
+    worktree: { mainRepoRoot: string; worktreePath: string; branchName: string; branchCreatedByLauncher: boolean },
+): (message: string) => never {
+    return (message) => {
+        rollbackLauncherWorktree(worktree.mainRepoRoot, worktree.worktreePath, worktree.branchName, worktree.branchCreatedByLauncher);
+        process.stderr.write(message);
+        process.exit(1);
+    };
+}
+
 export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: string, branchName: string, deleteBranch: boolean): void {
     const removal = spawnSync('git', ['worktree', 'remove', '--force', worktreePath], {
         cwd: mainRepoRoot,
@@ -3730,6 +3752,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         attach,
         worktreePath,
         branchName,
+        branchCreatedByLauncher,
         metadataPersisted,
         modelOverride: model,
         thinkingOverride: thinking,
@@ -3787,7 +3810,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3851,6 +3874,8 @@ type TmuxLaunchArgs = {
     attach: boolean;
     worktreePath: string;
     branchName: string;
+    /** CORE-2760: true when this invocation created the branch, so a refusal may delete it. */
+    branchCreatedByLauncher?: boolean;
     /**
      * The main checkout. CORE-2761: it is NOT where project settings are read
      * from — the seat runs in the worktree, and Claude Code resolves project
@@ -3958,9 +3983,27 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // XTRM-970: the launched seat must be able to say which model it runs, under
     // the one name the reviewer cross-check reads (XTRM-962). Resolved here, from
     // the argv the runtime is about to receive, so both transports below export
-    // the same value; a claude launch that cannot resolve it refuses before any
-    // worktree work is done.
-    const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, { worktreePath, mainRepoRoot: args.repoRoot, env: process.env });
+    // the same value.
+    //
+    // CORE-2760: this runs after the worktree exists, so the refusal takes the
+    // worktree and the branch it created with it. The comment here used to claim
+    // the refusal came "before any worktree work is done", which was false: every
+    // misconfigured launch left a worktree and an xt/<name> branch behind, and the
+    // branch then collided with the next launch of that window. Resolving earlier
+    // is not the fix either — the model is read from the directory the seat runs
+    // in (CORE-2761), so a reused worktree's own settings file is unreadable until
+    // the worktree exists.
+    const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, {
+        worktreePath,
+        mainRepoRoot: args.repoRoot,
+        env: process.env,
+        refuse: refuseModelAfterRollback({
+            mainRepoRoot: args.repoRoot ?? process.cwd(),
+            worktreePath,
+            branchName,
+            branchCreatedByLauncher: args.branchCreatedByLauncher ?? false,
+        }),
+    });
     const launchEnv = stripLauncherModelVar(process.env);
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
