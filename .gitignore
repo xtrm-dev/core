@@ -198,3 +198,6 @@ cli/.gemini/
 
 # Legacy specialists hook links (CORE-2414): never installed in-repo, unwired; do not track
 .claude/hooks/specialists-*.mjs
+
+# TDD Guard runtime data inside the re-included optional packs (must follow the negation above)
+.xtrm/skills/optional/**/.claude/tdd-guard/data/
