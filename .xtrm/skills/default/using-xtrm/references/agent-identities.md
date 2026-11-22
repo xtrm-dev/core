@@ -299,6 +299,22 @@ The PR's marker names the same holder as the reviewing session. Either the
 agent is reviewing its own PR (correct refusal), or the marker was copied from a
 template. Fix the marker (`holder=operator` for an operator-opened PR).
 
+### "a review can only be posted on an OPEN pull request"
+
+The PR is merged or closed, so there is no open pull request to review. The
+message names which (`is MERGED (merge commit <sha>)`, `is CLOSED`, or
+`returned no state` — GitHub reports a merged PR as closed plus `merged: true`,
+and no answer is not "open"). `postReview` refuses rather than posts because
+the review would be permanent: a comment-only review on a merged PR cannot be
+dismissed (the dismissals endpoint answers 422), so it would become the latest
+review at that head and a later reader would take it for a verdict on work that
+was already merged.
+
+Read the review list that is already on the PR instead
+(`gh pr view <n> --json reviews`), and if you meant to review work that is still
+open, name the PR that is open at the head you actually read. Nothing was
+posted, so there is no orphaned evidence to remove.
+
 ### "the flag requests APPROVE, the body's verdict line says COMMENT"
 
 The verdict comes from the body, and the flag must agree. Write the body's single
