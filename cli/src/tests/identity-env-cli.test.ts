@@ -376,8 +376,11 @@ describe('identity doctor without a role map (CORE-2528 remainder)', () => {
     });
 });
 
-describe('merge-check with the guard off needs no App (batch 5, item 5)', () => {
-    it('exits 0 without minting anything', () => {
+// XTRM-957: the guard's off state no longer short-circuits to exit 0. This case
+// used to assert the exit 0 that let an unchecked merge read as a pass; it now
+// asserts the refusal, and that the refusal still needs no App credentials.
+describe('merge-check with the guard unconfigured refuses without an App (XTRM-957)', () => {
+    it('exits non-zero with the refusal, without minting anything', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-noapp-'));
         try {
             // Hermetic (CORE-2528 review, LOW): a developer shell that exports the
@@ -393,8 +396,8 @@ describe('merge-check with the guard off needs no App (batch 5, item 5)', () => 
                 { encoding: 'utf8', env, timeout: 15000, killSignal: 'SIGKILL' },
             );
             const stderr = String(result.stderr ?? '');
-            expect(result.status).toBe(0);
-            expect(String(result.stdout ?? '') + stderr).toMatch(/merge guard is off/);
+            expect(result.status).toBe(1);
+            expect(String(result.stdout ?? '') + stderr).toMatch(/merge guard not configured/);
         } finally {
             fs.rmSync(home, { recursive: true, force: true });
         }
