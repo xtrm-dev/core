@@ -24,13 +24,13 @@
     "scripts/ghgrep.mjs"
   ],
   "scripts": {
-    "prebuild": "node -e \"const f=require('fs'),real=p=>{try{return f.lstatSync(p).isDirectory()}catch{return false}};if(process.cwd().includes('/.xtrm/worktrees/')&&!(real('node_modules')&&real('../node_modules'))){console.error('ERROR: refusing to build — this worktree has no node_modules of its own.\\ntsup would then resolve deps from the main repo and embed worktree-relative paths in cli/dist, so the CI dist check fails.\\nFix: run npm ci at the worktree root AND in cli/, then rebuild.\\nOr build from the main repo: cd <repo-root>/cli && npm run build');process.exit(1)}\"",
+    "prebuild": "node scripts/bundle-hermetic.mjs prebuild && node -e \"const f=require('fs'),real=p=>{try{return f.lstatSync(p).isDirectory()}catch{return false}};if(process.cwd().includes('/.xtrm/worktrees/')&&!(real('node_modules')&&real('../node_modules'))){console.error('ERROR: refusing to build \u2014 this worktree has no node_modules of its own.\\ntsup would then resolve deps from the main repo and embed worktree-relative paths in cli/dist, so the CI dist check fails.\\nFix: run npm ci at the worktree root AND in cli/, then rebuild.\\nOr build from the main repo: cd <repo-root>/cli && npm run build');process.exit(1)}\"",
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "node dist/index.cjs",
-    "postbuild": "node -e \"for (const f of ['dist/index.cjs']) { const fs = require('fs'); const lines = fs.readFileSync(f, 'utf8').split('\\n'); fs.writeFileSync(f, lines.map(l => l.replace(/[ \\t]+$/, '')).join('\\n')); }\""
+    "postbuild": "node -e \"for (const f of ['dist/index.cjs']) { const fs = require('fs'); const lines = fs.readFileSync(f, 'utf8').split('\\n'); fs.writeFileSync(f, lines.map(l => l.replace(/[ \\t]+$/, '')).join('\\n')); }\" && node scripts/bundle-hermetic.mjs bundle dist/index.cjs"
   },
   "dependencies": {
     "boxen": "^8.0.1",
