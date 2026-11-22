@@ -1416,6 +1416,59 @@ describe('CORE-2760: a model refusal leaves no worktree, no branch and no PI_MOD
         expect(r.callLog.some((call) => call.command === 'claude' || call.command === 'pi')).toBe(false);
     }
 
+    it('a pre-existing worktree path is refused and left standing, not removed', async () => {
+        // The `existsSync(worktreePath)` guard before `git worktree add` is what makes the
+        // rollback's `worktree remove --force` safe: it stops the launcher from adopting a
+        // directory it did not create. Nothing pinned that guard, so replacing it with
+        // `if (false)` left every test green while a stale tree became removable by a launch.
+        const h = harnessOpts({ role: 'NONE', unresolvableModel: true });
+        fs.ensureDirSync(h.worktreePath);
+        fs.writeFileSync(path.join(h.worktreePath, 'left-behind.txt'), 'not mine');
+        const chunks = captureStderr();
+        const launched = await runLaunch(h, {
+            name: 'demo',
+            runtime: 'claude',
+            role: undefined,
+            newSession: true,
+            attach: false,
+            skills: [],
+            prompt: 'smoke body',
+            model: undefined,
+            passthrough: undefined,
+            json: false,
+        });
+        const r = { ...h, ...launched };
+        // The refusal is written with console.error before the exit, so it lands in `error`, not
+        // in the stderr spy: assert on the text the operator would see, and the status at its end.
+        expect(r.error).toContain('Worktree path already exists');
+        expect(r.error).toMatch(/exit:1$/);
+        // The pre-existing directory survives with its contents: no remove, no branch deletion,
+        // and no runtime spawn took the seat into a tree this launch did not create.
+        expect(r.calls.worktreeRemoveCalls).toBe(0);
+        expect(r.calls.branchDeleteCalls).toBe(0);
+        expectNothingSpawnedWithAModel(r);
+        expect(fs.pathExistsSync(r.worktreePath)).toBe(true);
+        expect(fs.readFileSync(path.join(r.worktreePath, 'left-behind.txt'), 'utf8')).toBe('not mine');
+    });
+
+    it('the plain runtime path refuses the same way, without a tmux plan', async () => {
+        // Every case above takes the tmux path. The direct spawn carries its own
+        // `refuse: refuseModelAfterRollback(...)`, and unwiring it left every test green because
+        // no test reached spawnSync-in-terminal. `attach: true` with none of
+        // prompt/bead/model/thinking/skills/passthrough/new-session is that exact route.
+        const h = harnessOpts({ runtime: 'claude', role: 'NONE', unresolvableModel: true });
+        const chunks = captureStderr();
+        const r = { ...h, ...(await runLaunch(h, { name: 'demo', runtime: 'claude', attach: true, json: false })) };
+        expect(r.error).toMatch(/^exit:1/);
+        expectRefusalShape(chunks);
+        // The route really was the plain one: no tmux session was planned.
+        expect(r.newSessionArgs).toBeNull();
+        expectNothingSpawnedWithAModel(r);
+        expect(r.calls.worktreeRemoveCalls).toBeGreaterThan(0);
+        expect(r.calls.branchDeleteCalls).toBeGreaterThan(0);
+        expect(fs.pathExistsSync(r.worktreePath)).toBe(false);
+    });
+
     it('bare launch refuses with exit 1 and removes the worktree it had already created', async () => {
         const chunks = captureStderr();
         const r = await claudeLaunch({ role: 'NONE', unresolvableModel: true });
@@ -1456,16 +1509,17 @@ describe('CORE-2760: a model refusal leaves no worktree, no branch and no PI_MOD
         // The home is fresh because the harness seeds a hermetic install per run, and the collision
         // surface this issue is about is the worktree and its branch in the repo, not the home.
         const chunks = captureStderr();
-        const second = await runLaunch(
-            harnessOpts({
-                repoRoot: first.repoRoot,
-                worktreePath: first.worktreePath,
-                branchName: first.branchName,
-                role: 'NONE',
-                unresolvableModel: true,
-            }),
-            { name: 'demo', runtime: 'claude', role: undefined, newSession: true, attach: false, skills: [], prompt: 'smoke body', model: undefined, passthrough: undefined, json: false },
-        );
+        const secondHarness = harnessOpts({
+            repoRoot: first.repoRoot,
+            worktreePath: first.worktreePath,
+            branchName: first.branchName,
+            role: 'NONE',
+            unresolvableModel: true,
+        });
+        const second = {
+            ...secondHarness,
+            ...(await runLaunch(secondHarness, { name: 'demo', runtime: 'claude', role: undefined, newSession: true, attach: false, skills: [], prompt: 'smoke body', model: undefined, passthrough: undefined, json: false })),
+        };
         expect(second.error, "the second launch refuses for the same reason, not for a collision").toMatch(/^exit:1/);
         expect(second.error).not.toMatch(/already exists/i);
         expect(second.error).not.toMatch(/Failed to create worktree/);
