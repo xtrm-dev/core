@@ -96,7 +96,10 @@ export function collectVersionInfo(): VersionInfo {
         dirty: readGitDirty(pkg.root),
         source: detectSource(pkg.root),
         built_at: readBuiltAt(pkg.root),
-        bundle: readBundleFreshness({ cliRoot: resolve(pkg.root, 'cli') }),
+        // `dist/` is this file's own directory in the built layout, so `..` is the cli root
+        // whether the package was installed or run from a checkout. `xt doctor` spells it
+        // the same way; two spellings of one path is how they drift.
+        bundle: readBundleFreshness({ cliRoot: resolve(__dirname, '..') }),
         runtime: {
             node: process.versions.node,
         },

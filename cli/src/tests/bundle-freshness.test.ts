@@ -68,14 +68,29 @@ describe('bundle freshness (CORE-2754)', () => {
         expect(formatBundleFreshness(noBundle)).toContain('unknown');
     });
 
+    it('judges by the newest source, not by the first one the walk returns', () => {
+        // The newest file is LAST in the list, so "take the first file" cannot pass this.
+        // Directory order is the filesystem's to choose, so the order is stated, not hoped for.
+        const freshness = readBundleFreshness({
+            // A bundle exists and no source tree does; the list below is the only input.
+            cliRoot: cliRoot({ skipSource: true, bundleAgeMs: 7_200_000 }),
+            listSource: () => [
+                { path: 'src/commands/pi.ts', mtime: Date.now() - 6_000_000 },
+                { path: 'src/utils/touched.ts', mtime: Date.now() },
+            ],
+        });
+        expect(freshness.state).toBe('stale');
+        expect(freshness.newestSource?.path).toBe('src/utils/touched.ts');
+    });
+
     it('judges by the newest source, not by a directory mtime', () => {
         // An old file that was just touched is the newest source; the check must see it.
         const root = cliRoot({ bundleAgeMs: 0, sourceAgeMs: 3_600_000 });
-        const touched = path.join(root, 'src', 'commands', 'attach.ts');
+        const touched = path.join(root, 'src', 'commands', 'zz-touched.ts');
         fs.writeFileSync(touched, 'export const y = 2;\n');
         const freshness = readBundleFreshness({ cliRoot: root });
         expect(freshness.state).toBe('stale');
-        expect(freshness.newestSource?.path).toBe(path.join('src', 'commands', 'attach.ts'));
+        expect(freshness.newestSource?.path).toBe(path.join('src', 'commands', 'zz-touched.ts'));
     });
 
     it('excludes tests and non-source files from the judgement', () => {

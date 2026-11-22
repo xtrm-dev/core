@@ -7,6 +7,7 @@ import { formatBundleFreshness, readBundleFreshness } from '../core/bundle-fresh
 
 // __dirname is available in CJS output (tsup target: cjs), as in src/commands/version.ts.
 declare const __dirname: string;
+
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
@@ -797,8 +798,12 @@ export function createDoctorCommand(): Command {
 
       console.log(`\n${kleur.bold('xt doctor')}\n`);
       section('Build');
+      // An installed package ships `dist/` and no `src/`, so `unknown` is the normal state
+      // there, not a warning: printing it through `warn` would make every run on a machine
+      // that installed from npm look broken.
       if (bundle.state === 'fresh') ok(formatBundleFreshness(bundle));
-      else warn(formatBundleFreshness(bundle));
+      else if (bundle.state === 'stale') warn(formatBundleFreshness(bundle));
+      else console.log(kleur.dim(`  ${formatBundleFreshness(bundle)}`));
       section('Runtime availability');
       const claudeAvailable = spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
       const piAvailable = spawnSync('pi', ['--version'], { stdio: 'ignore' }).status === 0;

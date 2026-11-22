@@ -73,6 +73,10 @@ describe('xt version', () => {
         expect(output).toMatch(/xtrm-tools/);
         expect(output).toMatch(/node\s/);
         expect(output.split('\n').length).toBeGreaterThan(1);
+        // The bundle line is the whole point of CORE-2754: a reader must be told whether the
+        // binary is the code beside it. Asserting the JSON field alone left the human path
+        // free to drop it, because the type still checks.
+        expect(output).toMatch(/\bbundle:\s+(fresh|STALE|unknown) — /);
     });
 
     it('--check-updates prints 3 rows and mentions the cache file (mocked npm; no network)', async () => {
