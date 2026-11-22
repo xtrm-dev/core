@@ -1074,6 +1074,32 @@ export function attachDispatcherEnv(
     return refreshDispatcherEnvByParticipant(binding.participant, deps.identity ?? {});
 }
 
+/** The three keys that name WHO dispatched a worker; the rest of the launch env is the worker's own. */
+const DISPATCHER_IDENTITY_KEYS = [
+    XTRM_DISPATCHER_NAME_VAR,
+    XTRM_DISPATCHER_ADDRESS_VAR,
+    XTRM_DISPATCHER_PARTICIPANT_VAR,
+] as const;
+
+/**
+ * A launch env whose dispatcher is the one RESTORED from a worktree's binding
+ * (CORE-2775, `xt attach --fresh`): the name, address and participant the launch
+ * resolved from the caller are dropped, and only the restored ones are kept. An
+ * empty restore leaves the dispatcher absent — the caller is never adopted.
+ */
+export function withRestoredDispatcher(
+    env: Record<string, string>,
+    restored: Record<string, string>,
+): Record<string, string> {
+    const out: Record<string, string> = { ...env };
+    for (const key of DISPATCHER_IDENTITY_KEYS) {
+        delete out[key];
+        const value = restored[key];
+        if (value) out[key] = value;
+    }
+    return out;
+}
+
 /** What recording the launch dispatcher produced, for the caller's one warning. */
 export interface DispatcherBindingWrite {
     /** The exact `sb provenance dispatch` argv, for the golden test. */

@@ -64,6 +64,8 @@ class Fake:
             return cp(self.check_rc, err="check says no" if self.check_rc not in (0, 1) else "")
         if a0 == "gh":
             return cp(out=json.dumps(self.prs))
+        if a0 == "xt":
+            return cp(self.tmux_new_rc, out="role-claude-lead-CORE-1:%9\n", err="xt failed" if self.tmux_new_rc else "")
         if a0 == "tmux":
             sub = args[1]
             if sub == "display-message":
@@ -326,10 +328,10 @@ class Wake(Base):
             self.assertEqual(pm_park.main(["wake", "lead-a"]), 0)
         self.assertEqual(self.rec()["state"], "woken")
 
-    def wake_ok(self):
+    def wake_ok(self, name="lead-a"):
         later = NOW + dt.timedelta(hours=3)
         with mock.patch.object(pm_park, "now", lambda: later), mock.patch("builtins.print"):
-            return pm_park.main(["wake", "lead-a"])
+            return pm_park.main(["wake", name])
 
     def test_due_decision_survives_a_gate_shut_retry(self):
         later = NOW + dt.timedelta(hours=3)
@@ -341,7 +343,7 @@ class Wake(Base):
         with mock.patch.object(pm_park, "now", lambda: NOW):  # the at-time looks not reached on the retry
             self.assertEqual(pm_park.main(["wake", "lead-a"]), 0)
         self.assertEqual(self.rec()["state"], "woken")
-        self.assertTrue(self.fake.tmux("load-buffer"))
+        self.assertTrue([c for c in self.fake.calls if c[0][0] == "xt"])
 
     def test_due_check_is_not_rerun_on_a_retry(self):
         self.fake.entries.append(entry(3, "handoff", "lead-b"))
@@ -367,39 +369,98 @@ class Wake(Base):
         self.assertEqual((rec["state"], rec["attempts"]), ("parked", 1))
         self.assertIn("OSError: disk full", rec["last_error"])
 
-    def test_wake_launches_fresh_session_and_nudges(self):
+    def xt_call(self):
+        calls = [c[0] for c in self.fake.calls if c[0][0] == "xt"]
+        self.assertEqual(len(calls), 1)
+        return calls[0]
+
+    def test_wake_launches_fresh_session_through_xt_and_checks_the_nudge(self):
+        self.fake.capture = "[pm_park wake lead-a] You were respawned"
         self.assertEqual(self.wake_ok(), 0)
         rec = self.rec()
         self.assertEqual((rec["state"], rec["wake_pane"], rec["attempts"]), ("woken", "%9", 0))
-        nw = self.fake.tmux("new-window")[0][0]
-        self.assertIn("-d", nw)
-        self.assertEqual(nw[nw.index("-t") + 1], "sess:")
-        self.assertEqual(nw[nw.index("-c") + 1], rec["worktree"])
-        self.assertEqual(nw[-1], "exec claude --dangerously-skip-permissions")
-        self.assertNotIn("--continue", nw[-1])
-        self.assertIn("XTMUX_AGENT_ROLE=lead", nw)
-        self.assertIn("SUBSTRATE_HOLDER=lead-a", nw)
-        self.assertEqual((pathlib.Path(rec["worktree"]) / ".pm-role").read_text().strip(), "lead")
-        self.assertEqual((pathlib.Path(rec["worktree"]) / ".substrate-issue").read_text().strip(), "CORE-1")
-        pasted = self.fake.tmux("load-buffer")[0][1]
+        cmd = self.xt_call()
+        self.assertEqual(cmd[:3], ["xt", "attach", self.wt.name])
+        for flag in ("--fresh", "--new-session", "--no-attach"):
+            self.assertIn(flag, cmd)
+        self.assertEqual(cmd[cmd.index("--bead") + 1], "CORE-1")
+        nudge_file = pm_park.parked_dir() / "lead-a.nudge.md"
+        self.assertEqual(cmd[cmd.index("--prompt") + 1], f"@{nudge_file}")
         for needle in ("[pm_park wake lead-a]", "respawned after a pause", "Parked 2026-11-22T12:00:00Z",
                        "woken 2026-11-22T15:00:00Z", "long idle wait", "scheduled time", "pm_session.py show",
                        "journal seq 2 on CORE-1", "lead-a.digest.md", "route_target.py manager", "back up",
                        "[end pm_park wake lead-a]"):
-            self.assertIn(needle, pasted)
-        self.assertTrue(self.fake.tmux("paste-buffer"))
-        self.assertTrue([c for c in self.fake.tmux("send-keys") if c[0][-1] == "Enter"])
+            self.assertIn(needle, nudge_file.read_text())
+        # no direct runtime launch, no tmux window of our own, and the nudge is not pasted when it already shows
+        self.assertFalse(self.fake.tmux("new-window") or self.fake.tmux("new-session"))
+        self.assertFalse(self.fake.tmux("paste-buffer"))
+        self.assertEqual((pathlib.Path(rec["worktree"]) / ".pm-role").read_text().strip(), "lead")
+        self.assertEqual((pathlib.Path(rec["worktree"]) / ".substrate-issue").read_text().strip(), "CORE-1")
         self.assertIn(["systemctl", "--user", "stop", "pm-park-lead-a.timer"], [c[0] for c in self.fake.calls])
-        self.assertEqual(self.fake.appended[-1][1], "note")
         self.assertIn("wake: lead-a", self.fake.appended[-1][2])
 
-    def test_launch_command_setting_and_model(self):
-        os.environ["PM_PARK_LAUNCH"] = "claude --channels plugin:x"
+    def test_park_records_what_the_relaunch_needs(self):
+        rec = self.rec()
+        self.assertEqual(rec["xt_name"], self.wt.name)
+        self.assertEqual(rec["runtime"], "claude")
+        self.assertEqual(rec["agent_bead"], "CORE-1")
+        self.assertIn("launch_role", rec)
+        self.assertIn("parent_session", rec)
+
+    def test_park_reads_pane_options_and_the_session_record(self):
+        orig = self.fake
+
+        def with_opts(args, input=None, timeout=60):
+            if args[:3] == ["tmux", "show-options", "-p"]:
+                orig.calls.append((list(args), input))
+                return cp(out={"@agent_role": "lead\n", "@agent_bead": "CORE-9\n", "@agent_parent_session": "$4\n"}[args[-1]])
+            return orig(args, input, timeout)
+        (self.wt / ".xtrm").mkdir()
+        (self.wt / ".xtrm" / "session-meta.json").write_text(json.dumps({"runtime": "pi", "launchedAt": "x"}))
+        self.fake.entries += [entry(3, "handoff", "lead-b")]
+        with mock.patch.object(pm_park, "run", with_opts):
+            self.assertEqual(self.park(name="lead-b", at="2026-11-22T14:00:00Z"), 0)
+        rec = self.rec("lead-b")
+        self.assertEqual((rec["launch_role"], rec["agent_bead"], rec["parent_session"], rec["runtime"]),
+                         ("lead", "CORE-9", "$4", "pi"))
+        self.fake.capture = "[pm_park wake lead-b] You were respawned"
+        with mock.patch.object(pm_park, "run", with_opts):
+            self.assertEqual(self.wake_ok(name="lead-b"), 0)
+        cmd = self.xt_call()
+        self.assertEqual(cmd[cmd.index("--role") + 1], "lead")
+        self.assertEqual(cmd[cmd.index("--bead") + 1], "CORE-9")
+        self.assertEqual(cmd[cmd.index("--parent") + 1], "$4")
+
+    def test_model_and_extra_args(self):
+        os.environ["PM_PARK_LAUNCH"] = "--add-dir /tmp/x"
         rec = self.rec()
         rec["model"] = "sonnet"
         pm_park.save(rec)
         self.assertEqual(self.wake_ok(), 0)
-        self.assertEqual(self.fake.tmux("new-window")[0][0][-1], "exec claude --channels plugin:x --model sonnet")
+        cmd = self.xt_call()
+        self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
+        self.assertEqual(cmd[cmd.index("--") + 1:], ["--add-dir", "/tmp/x"])
+
+    def test_pm_settings_are_named_in_the_nudge(self):
+        rec = self.rec()
+        rec["pm_env"] = {"PM_PROJECT": "alpha"}
+        pm_park.save(rec)
+        self.assertEqual(self.wake_ok(), 0)
+        text = (pm_park.parked_dir() / "lead-a.nudge.md").read_text()
+        self.assertIn("PREFIX each pm_* command", text)
+        self.assertIn("PM_PROJECT=alpha python3", text)
+
+    def test_xt_failure_counts_as_an_attempt(self):
+        orig = self.fake
+
+        def xt_fails(args, input=None, timeout=60):
+            if args[0] == "xt":
+                orig.calls.append((list(args), input))
+                return cp(1, err="no worktree")
+            return orig(args, input, timeout)
+        with mock.patch.object(pm_park, "run", xt_fails), mock.patch.object(pm_park, "now", lambda: NOW + dt.timedelta(hours=3)), mock.patch("builtins.print"):
+            self.assertEqual(pm_park.main(["wake", "lead-a"]), 1)
+        self.assertIn("no worktree", self.rec()["last_error"])
 
     def test_digest(self):
         self.fake.entries += [entry(11, "note", "lead-a", "old park"), entry(12, "finding", "worker-1", "found a thing")]
@@ -422,20 +483,6 @@ class Wake(Base):
         self.assertEqual(self.wake_ok(), 0)
         self.assertIn("For the manager: check exited 2", self.fake.appended[-1][2])
         self.assertIn("check error", self.rec()["wake_cause"])
-
-    def test_session_gone_makes_a_new_session(self):
-        orig = self.fake
-
-        def no_session(args, input=None, timeout=60):
-            if args[:2] == ["tmux", "new-window"]:
-                orig.calls.append((list(args), input))
-                return cp(1, err="can't find session: sess")
-            return orig(args, input, timeout)
-        with mock.patch.object(pm_park, "run", no_session):
-            self.assertEqual(self.wake_ok(), 0)
-        ns = self.fake.tmux("new-session")[0][0]
-        self.assertEqual(ns[ns.index("-s") + 1], "sess")
-        self.assertEqual(self.rec()["state"], "woken")
 
     def test_pane_dies_retries_then_fails_and_tells_the_manager(self):
         self.fake.pane_dead = "1"

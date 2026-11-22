@@ -80,6 +80,6 @@ timer, which outlives every session (a cron held by a session dies with it).
   `pm_park.py list` marks a parked record whose unit is missing (`MISSING`); re-park it or wake it by hand (`wake <name> --force`).
 - **Peers write to the journal of a parked session's issue, not to its socket:** a message to a dead socket is lost. `route_target.py --team`
   shows parked sessions on a `parked` line. The woken session reads the handoff and the digest, finds the manager and tells it it is back.
-- **Instance settings** (pm_config): `park_launch` (start command; default `claude --dangerously-skip-permissions`, add `--channels ...` there),
+- **Instance settings** (pm_config): `park_launch` (EXTRA runtime arguments, passed after `--`; default none: the wake starts the session with `xt attach <worktree> --fresh`, so the environment, runtime arguments and pane options are those of a normal xt launch), `park_xt` (the xt binary, default `xt`),
   `park_max_attempts`, `park_retry_s`, `park_nudge_delay_s`, `park_check_timeout_s`, and the gate limits `park_gate_load1`,
   `park_gate_psi_full`, `park_gate_mem_gb` (defaults as above; tune them to the host's core count).

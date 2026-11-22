@@ -5524,7 +5524,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile2 = universalify.fromPromise(_readFile);
-    function readFileSync24(file2, options = {}) {
+    function readFileSync25(file2, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -5556,7 +5556,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile: readFile2,
-      readFileSync: readFileSync24,
+      readFileSync: readFileSync25,
       writeFile: writeFile2,
       writeFileSync: writeFileSync15
     };
@@ -61889,7 +61889,7 @@ var init_handoff = __esm({
 });
 
 // src/index.ts
-var import_node_fs40 = require("fs");
+var import_node_fs41 = require("fs");
 var import_node_path83 = require("path");
 
 // ../node_modules/commander/esm.mjs
@@ -64311,6 +64311,20 @@ function attachDispatcherEnv(ref, deps = {}) {
   const binding = readDispatcherBinding(wanted, deps);
   if (!binding) return {};
   return refreshDispatcherEnvByParticipant(binding.participant, deps.identity ?? {});
+}
+var DISPATCHER_IDENTITY_KEYS = [
+  XTRM_DISPATCHER_NAME_VAR,
+  XTRM_DISPATCHER_ADDRESS_VAR,
+  XTRM_DISPATCHER_PARTICIPANT_VAR
+];
+function withRestoredDispatcher(env3, restored) {
+  const out = { ...env3 };
+  for (const key of DISPATCHER_IDENTITY_KEYS) {
+    delete out[key];
+    const value = restored[key];
+    if (value) out[key] = value;
+  }
+  return out;
 }
 function recordDispatcherBinding(input2) {
   const ref = clean(input2.ref);
@@ -68816,7 +68830,7 @@ async function launchWorktreeSession(opts) {
 `));
     process.exit(1);
   }
-  if (roleName && bead && prompt) {
+  if (roleName && bead && prompt && !opts.existingWorktree) {
     console.error(kleur_default.red("\n  \u2717 --bead and --prompt are mutually exclusive; pick one\n"));
     process.exit(1);
   }
@@ -68850,7 +68864,7 @@ async function launchWorktreeSession(opts) {
     console.error(kleur_default.red("\n  \u2717 Not inside a git repository\n"));
     process.exit(1);
   }
-  if (currentRepoRoot !== mainRepoRoot) {
+  if (currentRepoRoot !== mainRepoRoot && !opts.existingWorktree) {
     console.error(kleur_default.red("\n  \u2717 Refusing to create nested worktree from inside an existing worktree.\n"));
     console.error(kleur_default.dim(`  current worktree: ${currentRepoRoot}`));
     console.error(kleur_default.dim(`  main repo root:  ${mainRepoRoot}`));
@@ -68865,6 +68879,7 @@ async function launchWorktreeSession(opts) {
   let composedTurn1Body = "";
   let explicitSkillPaths = [];
   let claudePackEntries = [];
+  const renderBead = Boolean(bead) && !opts.existingWorktree;
   if (roleName) {
     try {
       resolvedRole = resolveRole2(roleName, mainRepoRoot, runtime, Boolean(model));
@@ -68928,15 +68943,15 @@ async function launchWorktreeSession(opts) {
         const roleCommandNames = new Set(trustedSkillPrefix.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("/")).map((line) => line.slice(1)));
         claudeExplicitLines = composeClaudeExplicitLines(mainRepoRoot, explicitSkillPaths, claudePackEntries, roleCommandNames);
       }
-      const rawBody = bead ? (renderedTask = renderRoleTask({ role: roleName, bead, cwd: mainRepoRoot, runtime })).initialPrompt : prompt ?? "";
+      const rawBody = renderBead && bead ? (renderedTask = renderRoleTask({ role: roleName, bead, cwd: mainRepoRoot, runtime })).initialPrompt : prompt ?? "";
       let untrustedBody = rawBody;
-      if (bead && probe2.ok && trustedSkillPrefix) {
+      if (renderBead && probe2.ok && trustedSkillPrefix) {
         if (!rawBody.startsWith(trustedSkillPrefix)) {
           throw new Error("render-task output does not start with the exact trusted sp skill prefix.");
         }
         untrustedBody = rawBody.slice(trustedSkillPrefix.length);
       }
-      if (bead) {
+      if (renderBead) {
         const rawSlashCheck = checkPositionZeroSlash(untrustedBody, runtime, "");
         if (!rawSlashCheck.ok) throw new Error(rawSlashCheck.error);
       }
@@ -68946,14 +68961,14 @@ async function launchWorktreeSession(opts) {
         composedTurn1Body = explicitPrefix + composedTurn1Body;
         trustedPrefix = explicitPrefix + trustedPrefix;
       }
-      if (trustedPrefix || bead) {
+      if (trustedPrefix || renderBead) {
         const slashCheck = checkPositionZeroSlash(composedTurn1Body, runtime, trustedPrefix);
         if (!slashCheck.ok) throw new Error(slashCheck.error);
       }
       const byteCheck = checkByteCeiling({
         systemPrompt: resolvedRole.systemPrompt,
         body: composedTurn1Body,
-        source: bead ? "bead" : "prompt"
+        source: renderBead ? "bead" : "prompt"
       });
       if (!byteCheck.ok) throw new Error(byteCheck.error);
     } catch (err) {
@@ -68993,7 +69008,8 @@ async function launchWorktreeSession(opts) {
     }
   }
   const cwdBasename = import_node_path22.default.basename(mainRepoRoot);
-  const slug = name ?? randomSlug(4);
+  const existing = opts.existingWorktree;
+  const slug = existing?.slug ?? name ?? randomSlug(4);
   const reuseRequested = Boolean(opts.reuse) && (Boolean(newSession) || !process.env.TMUX);
   if (reuseRequested) {
     const roleSlug = resolvedRole ? slugifyForSession(resolvedRole.name) : null;
@@ -69025,10 +69041,10 @@ async function launchWorktreeSession(opts) {
   }
   if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}
 `);
-  const worktreeName = `${cwdBasename}-xt-${runtime}-${slug}`;
-  const worktreePath = import_node_path22.default.join(mainRepoRoot, ".xtrm", "worktrees", worktreeName);
-  const branchName = `xt/${slug}`;
-  const structuredPathCheck = checkStructuredLaunchPaths({
+  const worktreeName = existing ? import_node_path22.default.basename(existing.path) : `${cwdBasename}-xt-${runtime}-${slug}`;
+  const worktreePath = existing ? existing.path : import_node_path22.default.join(mainRepoRoot, ".xtrm", "worktrees", worktreeName);
+  const branchName = existing ? existing.branch : `xt/${slug}`;
+  const structuredPathCheck = existing ? { ok: true } : checkStructuredLaunchPaths({
     json: structuredOutput,
     worktreePath,
     branchName
@@ -69053,80 +69069,97 @@ async function launchWorktreeSession(opts) {
     console.log(kleur_default.dim(`  branch:   ${branchName}
 `));
   }
-  if ((0, import_node_fs8.existsSync)(worktreePath)) {
-    console.error(kleur_default.red("\n  \u2717 Worktree path already exists. Refusing to reuse stale directory.\n"));
-    console.error(kleur_default.dim(`  path: ${worktreePath}`));
-    console.error(kleur_default.dim("\n  Remediation:"));
-    console.error(kleur_default.dim("    xt worktree doctor"));
-    console.error(kleur_default.dim("    xt worktree clean --orphans --yes\n"));
-    process.exit(1);
-  }
-  const branchExistedBefore = (0, import_node_child_process10.spawnSync)("git", ["rev-parse", "--verify", branchName], {
-    cwd: mainRepoRoot,
-    stdio: "pipe"
-  }).status === 0;
-  const branchCreatedByLauncher = !branchExistedBefore;
-  const base = fetchWorktreeBase(mainRepoRoot, opts.base);
-  if (!base.ok) {
-    console.error(kleur_default.red(`
+  let branchCreatedByLauncher = false;
+  let metadataPersisted;
+  if (existing) {
+    if (!(0, import_node_fs8.existsSync)(worktreePath)) {
+      console.error(kleur_default.red(`
+  \u2717 Worktree ${worktreePath} does not exist; nothing to start a fresh session in.
+`));
+      process.exit(1);
+    }
+    metadataPersisted = readSessionMeta(worktreePath) !== null;
+    if (!structuredOutput) {
+      console.log(kleur_default.green(`
+  \u2713 Existing worktree \u2014 starting a fresh ${runtime} session...
+`));
+    }
+  } else {
+    if ((0, import_node_fs8.existsSync)(worktreePath)) {
+      console.error(kleur_default.red("\n  \u2717 Worktree path already exists. Refusing to reuse stale directory.\n"));
+      console.error(kleur_default.dim(`  path: ${worktreePath}`));
+      console.error(kleur_default.dim("\n  Remediation:"));
+      console.error(kleur_default.dim("    xt worktree doctor"));
+      console.error(kleur_default.dim("    xt worktree clean --orphans --yes\n"));
+      process.exit(1);
+    }
+    const branchExistedBefore = (0, import_node_child_process10.spawnSync)("git", ["rev-parse", "--verify", branchName], {
+      cwd: mainRepoRoot,
+      stdio: "pipe"
+    }).status === 0;
+    branchCreatedByLauncher = !branchExistedBefore;
+    const base = fetchWorktreeBase(mainRepoRoot, opts.base);
+    if (!base.ok) {
+      console.error(kleur_default.red(`
   \u2717 Could not resolve worktree base: ${base.error}
 `));
-    process.exit(1);
-  }
-  const branchExistsNow = (0, import_node_child_process10.spawnSync)("git", ["rev-parse", "--verify", branchName], {
-    cwd: mainRepoRoot,
-    stdio: "pipe"
-  }).status === 0;
-  const gitArgs = branchExistsNow ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath, base.ref];
-  const gitResult = (0, import_node_child_process10.spawnSync)("git", gitArgs, {
-    cwd: mainRepoRoot,
-    stdio: structuredOutput ? "pipe" : "inherit"
-  });
-  if (gitResult.error || gitResult.status !== 0) {
-    if (gitResult.status !== 0 && !gitResult.error) {
-      if (!structuredOutput) console.log(kleur_default.dim("  git worktree add failed, trying bd worktree create"));
+      process.exit(1);
     }
-    if (!branchExistsNow) {
-      const branchAtBase = (0, import_node_child_process10.spawnSync)("git", ["branch", branchName, base.ref], {
-        cwd: mainRepoRoot,
-        stdio: "pipe"
-      });
-      if (branchAtBase.error || branchAtBase.status !== 0) {
-        console.error(kleur_default.red(`
+    const branchExistsNow = (0, import_node_child_process10.spawnSync)("git", ["rev-parse", "--verify", branchName], {
+      cwd: mainRepoRoot,
+      stdio: "pipe"
+    }).status === 0;
+    const gitArgs = branchExistsNow ? ["worktree", "add", worktreePath, branchName] : ["worktree", "add", "-b", branchName, worktreePath, base.ref];
+    const gitResult = (0, import_node_child_process10.spawnSync)("git", gitArgs, {
+      cwd: mainRepoRoot,
+      stdio: structuredOutput ? "pipe" : "inherit"
+    });
+    if (gitResult.error || gitResult.status !== 0) {
+      if (gitResult.status !== 0 && !gitResult.error) {
+        if (!structuredOutput) console.log(kleur_default.dim("  git worktree add failed, trying bd worktree create"));
+      }
+      if (!branchExistsNow) {
+        const branchAtBase = (0, import_node_child_process10.spawnSync)("git", ["branch", branchName, base.ref], {
+          cwd: mainRepoRoot,
+          stdio: "pipe"
+        });
+        if (branchAtBase.error || branchAtBase.status !== 0) {
+          console.error(kleur_default.red(`
   \u2717 Could not start branch ${branchName} at ${base.ref}
+`));
+          process.exit(1);
+        }
+      }
+      const bdResult = (0, import_node_child_process10.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+        cwd: mainRepoRoot,
+        stdio: structuredOutput ? "pipe" : "inherit"
+      });
+      if (bdResult.error || bdResult.status !== 0) {
+        console.error(kleur_default.red(`
+  \u2717 Failed to create worktree at ${worktreePath}
 `));
         process.exit(1);
       }
     }
-    const bdResult = (0, import_node_child_process10.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
-      cwd: mainRepoRoot,
-      stdio: structuredOutput ? "pipe" : "inherit"
-    });
-    if (bdResult.error || bdResult.status !== 0) {
-      console.error(kleur_default.red(`
-  \u2717 Failed to create worktree at ${worktreePath}
-`));
-      process.exit(1);
+    normalizeParentHooksPath(mainRepoRoot);
+    const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
+    if (boundIssue) {
+      const binding = setWorktreeIssue(worktreePath, boundIssue);
+      if (!binding.ok) console.error(kleur_default.yellow(`  \u26A0 xtrm.issue binding not written: ${binding.error}`));
     }
-  }
-  normalizeParentHooksPath(mainRepoRoot);
-  const boundIssue = process.env.SUBSTRATE_ISSUE_REF;
-  if (boundIssue) {
-    const binding = setWorktreeIssue(worktreePath, boundIssue);
-    if (!binding.ok) console.error(kleur_default.yellow(`  \u26A0 xtrm.issue binding not written: ${binding.error}`));
-  }
-  try {
-    (0, import_node_fs8.rmSync)(import_node_path22.default.join(worktreePath, ".beads"), { recursive: true, force: true });
-    markPathSkipWorktree(worktreePath, ".beads");
-  } catch {
-  }
-  const metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
-  if (!structuredOutput) {
-    console.log(kleur_default.green(`
+    try {
+      (0, import_node_fs8.rmSync)(import_node_path22.default.join(worktreePath, ".beads"), { recursive: true, force: true });
+      markPathSkipWorktree(worktreePath, ".beads");
+    } catch {
+    }
+    metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
+    if (!structuredOutput) {
+      console.log(kleur_default.green(`
   \u2713 Worktree ready \u2014 launching ${runtime}...
 `));
-    console.log(kleur_default.dim("  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/"));
-    console.log(kleur_default.dim("        if lint/tests need them, run this repo's normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n"));
+      console.log(kleur_default.dim("  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/"));
+      console.log(kleur_default.dim("        if lint/tests need them, run this repo's normal bootstrap inside the worktree (make bootstrap, just setup, npm ci, uv sync, etc.)\n"));
+    }
   }
   try {
     if (runtime === "claude") {
@@ -69156,7 +69189,7 @@ async function launchWorktreeSession(opts) {
       await runPiLaunchPreflight(worktreePath, false);
     }
   } catch (error62) {
-    rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
+    if (!existing) rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
     throw error62;
   }
   const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, bead });
@@ -69182,13 +69215,14 @@ async function launchWorktreeSession(opts) {
     json: structuredOutput,
     window: Boolean(opts.window),
     hasInitialPrompt,
-    dispatcherDeps: opts.dispatcherDeps
+    dispatcherDeps: opts.dispatcherDeps,
+    restoredDispatcher: existing?.dispatcher
   };
   if (resolvedRole) {
     await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
     return;
   }
-  const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model) || Boolean(thinking) || explicitSkillPaths.length > 0 || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window);
+  const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model) || Boolean(thinking) || explicitSkillPaths.length > 0 || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window) || Boolean(existing);
   if (carriesLaunchState) {
     await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "bare" });
     return;
@@ -69315,8 +69349,8 @@ async function launchTmuxSession(args) {
   const launchEnv = stripLauncherModelVar(process.env);
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) });
-  const dispatcherEnv = dispatcher.env;
-  if (bead) {
+  const dispatcherEnv = args.restoredDispatcher ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher) : dispatcher.env;
+  if (bead && !args.restoredDispatcher) {
     const dispatchStartedMs = Date.now();
     const recorded = recordDispatcherBinding({
       ref: bead,
@@ -72335,6 +72369,11 @@ async function waitForCodexSession(sessionsRoot, cwd, launchedAfterMs) {
 }
 async function launchCodexWorktreeSession(opts) {
   const attach = opts.attach ?? true;
+  const existing = opts.existingWorktree;
+  const cleanupLaunch = existing ? (_mainRoot, _worktreePath, _branchName, sessionName2, buffer2) => {
+    if (buffer2) (0, import_node_child_process16.spawnSync)("tmux", ["delete-buffer", "-b", buffer2], { stdio: "ignore" });
+    (0, import_node_child_process16.spawnSync)("tmux", ["kill-session", "-t", `=${sessionName2}`], { stdio: "ignore" });
+  } : cleanupCreatedLaunch;
   const structured = Boolean(opts.json);
   const optionCheck = checkStructuredLaunchOptions({
     json: structured,
@@ -72355,13 +72394,13 @@ async function launchCodexWorktreeSession(opts) {
   const currentRoot = gitRoot(cwd);
   const mainRoot = mainGitRoot(cwd);
   if (!currentRoot || !mainRoot) fail("Not inside a git repository");
-  if (currentRoot !== mainRoot) fail("Refusing to create a nested worktree from an existing worktree");
-  const slug = opts.name ?? (0, import_node_crypto14.randomBytes)(2).toString("hex");
-  const branchName = `xt/${slug}`;
-  const worktreePath = import_node_path30.default.join(mainRoot, ".xtrm", "worktrees", `${import_node_path30.default.basename(mainRoot)}-xt-codex-${slugify2(slug)}`);
+  if (currentRoot !== mainRoot && !existing) fail("Refusing to create a nested worktree from an existing worktree");
+  const slug = existing?.slug ?? opts.name ?? (0, import_node_crypto14.randomBytes)(2).toString("hex");
+  const branchName = existing ? existing.branch : `xt/${slug}`;
+  const worktreePath = existing ? existing.path : import_node_path30.default.join(mainRoot, ".xtrm", "worktrees", `${import_node_path30.default.basename(mainRoot)}-xt-codex-${slugify2(slug)}`);
   const codexHome = process.env.CODEX_HOME || import_node_path30.default.join(import_node_os18.default.homedir(), ".codex");
   const trustProfile = codexTrustProfile(codexHome, worktreePath);
-  const pathCheck = checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
+  const pathCheck = existing ? { ok: true } : checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
   if (!pathCheck.ok) fail(pathCheck.error);
   const refCheck = (0, import_node_child_process16.spawnSync)("git", ["check-ref-format", "--branch", branchName], { cwd: mainRoot, stdio: "pipe" });
   if (refCheck.status !== 0) fail(`invalid worktree branch '${branchName}'`);
@@ -72369,9 +72408,13 @@ async function launchCodexWorktreeSession(opts) {
     cwd: mainRoot,
     stdio: "pipe"
   });
-  if (existingBranch.status === 0) fail(`Worktree branch already exists: ${branchName}`);
-  if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
-  if ((0, import_node_fs11.existsSync)(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
+  if (existing) {
+    if (!(0, import_node_fs11.existsSync)(worktreePath)) fail(`Worktree ${worktreePath} does not exist; nothing to start a fresh session in`);
+  } else {
+    if (existingBranch.status === 0) fail(`Worktree branch already exists: ${branchName}`);
+    if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
+    if ((0, import_node_fs11.existsSync)(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
+  }
   const identityPreflight = preflightLaunchIdentity({ roleName: opts.role, cwd: mainRoot });
   if (identityPreflight.refused) fail(identityPreflight.refused);
   if (identityPreflight.warning) process.stderr.write(`xt: ${identityPreflight.warning}
@@ -72397,7 +72440,7 @@ async function launchCodexWorktreeSession(opts) {
       developerInstructions = role.systemPrompt;
       selectedModel ??= role.model;
       roleSkillPaths = role.skillPaths;
-      if (opts.bead) {
+      if (opts.bead && !existing) {
         prompt = renderCodexTask(opts.role, opts.bead, mainRoot);
       } else {
         requestedSkills = [...roleSkillPaths, ...requestedSkills];
@@ -72436,64 +72479,66 @@ async function launchCodexWorktreeSession(opts) {
   }
   const buffer = `xtrm-codex-${(0, import_node_crypto14.randomBytes)(16).toString("hex")}`;
   let created = false;
-  const base = fetchWorktreeBase(mainRoot, opts.base);
-  if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
-  const codexGit = (0, import_node_child_process16.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath, base.ref], {
-    cwd: mainRoot,
-    stdio: structured ? "pipe" : "inherit"
-  });
-  if (!codexGit.error && codexGit.status === 0) {
-    created = true;
-  } else {
-    const partialBranch = (0, import_node_child_process16.spawnSync)(
-      "git",
-      ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
-      { cwd: mainRoot, stdio: "pipe" }
-    ).status === 0;
-    if ((0, import_node_fs11.existsSync)(worktreePath) || partialBranch) {
-      cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-      fail(`git worktree creation left partial state at ${worktreePath}`);
-    }
-    const branchAtBase = (0, import_node_child_process16.spawnSync)("git", ["branch", branchName, base.ref], {
+  if (!existing) {
+    const base = fetchWorktreeBase(mainRoot, opts.base);
+    if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
+    const codexGit = (0, import_node_child_process16.spawnSync)("git", ["worktree", "add", "-b", branchName, worktreePath, base.ref], {
       cwd: mainRoot,
       stdio: structured ? "pipe" : "inherit"
     });
-    if (branchAtBase.error || branchAtBase.status !== 0) {
-      cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-      fail(`Could not start branch ${branchName} at ${base.ref}`);
+    if (!codexGit.error && codexGit.status === 0) {
+      created = true;
+    } else {
+      const partialBranch = (0, import_node_child_process16.spawnSync)(
+        "git",
+        ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`],
+        { cwd: mainRoot, stdio: "pipe" }
+      ).status === 0;
+      if ((0, import_node_fs11.existsSync)(worktreePath) || partialBranch) {
+        cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+        fail(`git worktree creation left partial state at ${worktreePath}`);
+      }
+      const branchAtBase = (0, import_node_child_process16.spawnSync)("git", ["branch", branchName, base.ref], {
+        cwd: mainRoot,
+        stdio: structured ? "pipe" : "inherit"
+      });
+      if (branchAtBase.error || branchAtBase.status !== 0) {
+        cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+        fail(`Could not start branch ${branchName} at ${base.ref}`);
+      }
+      const bdFallback = (0, import_node_child_process16.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
+        cwd: mainRoot,
+        stdio: structured ? "pipe" : "inherit"
+      });
+      created = !bdFallback.error && bdFallback.status === 0;
+      if (!created) {
+        cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+      }
     }
-    const bdFallback = (0, import_node_child_process16.spawnSync)("bd", ["worktree", "create", worktreePath, "--branch", branchName], {
-      cwd: mainRoot,
-      stdio: structured ? "pipe" : "inherit"
-    });
-    created = !bdFallback.error && bdFallback.status === 0;
-    if (!created) {
-      cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+    if (!created) fail(`Failed to create worktree at ${worktreePath}`);
+    try {
+      ensureCodexTrustProfile(codexHome, worktreePath);
+    } catch (error62) {
+      cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+      fail(error62 instanceof Error ? error62.message : String(error62));
     }
-  }
-  if (!created) fail(`Failed to create worktree at ${worktreePath}`);
-  try {
-    ensureCodexTrustProfile(codexHome, worktreePath);
-  } catch (error62) {
-    cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
-    fail(error62 instanceof Error ? error62.message : String(error62));
-  }
-  try {
-    (0, import_node_fs11.rmSync)(import_node_path30.default.join(worktreePath, ".beads"), { recursive: true, force: true });
-    const tracked = (0, import_node_child_process16.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
-      cwd: worktreePath,
-      stdio: "pipe",
-      encoding: "utf8"
-    });
-    const paths = (tracked.stdout ?? "").split(/\r?\n/).filter(Boolean);
-    if (paths.length > 0) {
-      (0, import_node_child_process16.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...paths], {
+    try {
+      (0, import_node_fs11.rmSync)(import_node_path30.default.join(worktreePath, ".beads"), { recursive: true, force: true });
+      const tracked = (0, import_node_child_process16.spawnSync)("git", ["-C", worktreePath, "ls-files", "--", ".beads"], {
         cwd: worktreePath,
         stdio: "pipe",
         encoding: "utf8"
       });
+      const paths = (tracked.stdout ?? "").split(/\r?\n/).filter(Boolean);
+      if (paths.length > 0) {
+        (0, import_node_child_process16.spawnSync)("git", ["-C", worktreePath, "update-index", "--skip-worktree", "--", ...paths], {
+          cwd: worktreePath,
+          stdio: "pipe",
+          encoding: "utf8"
+        });
+      }
+    } catch {
     }
-  } catch {
   }
   const launchedAfterMs = Date.now() - 1e3;
   const parentSession = process.env.TMUX ? ((0, import_node_child_process16.spawnSync)("tmux", ["display-message", "-p", "-F", "#{session_id}"], {
@@ -72512,8 +72557,8 @@ async function launchCodexWorktreeSession(opts) {
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
   const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
   const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path30.default.basename(worktreePath) });
-  const dispatcherEnv = dispatcher.env;
-  if (opts.bead) {
+  const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
+  if (opts.bead && !existing) {
     const recorded = recordDispatcherBinding({
       ref: opts.bead,
       resolution: dispatcher.resolution,
@@ -72541,7 +72586,7 @@ async function launchCodexWorktreeSession(opts) {
   };
   const cleanupOnSignal = () => {
     killWindow();
-    cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+    cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
     process.exit(1);
   };
   const removeSignalCleanup = () => {
@@ -72552,7 +72597,7 @@ async function launchCodexWorktreeSession(opts) {
   const cleanupAndFail = (message) => {
     removeSignalCleanup();
     killWindow();
-    cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+    cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
     return fail(message);
   };
   process.once("SIGINT", cleanupOnSignal);
@@ -79355,6 +79400,7 @@ function clearStatuslineClaim2(repoRoot) {
 init_kleur();
 var import_prompts5 = __toESM(require_prompts3(), 1);
 var import_node_child_process24 = require("child_process");
+var import_node_fs21 = require("fs");
 var import_node_path45 = require("path");
 init_theme();
 init_pi_runtime();
@@ -79460,8 +79506,40 @@ function bindingIdFromMeta(meta3) {
   const value = typeof meta3?.bindingId === "string" ? meta3.bindingId.trim() : "";
   return value && SAFE_BINDING_ID.test(value) ? value : null;
 }
+function readFreshPrompt(raw, read = (f) => (0, import_node_fs21.readFileSync)(f, "utf8")) {
+  if (raw === void 0) return void 0;
+  if (!raw.startsWith("@")) return raw;
+  return read(raw.slice(1));
+}
+function buildFreshLaunchOptions(target, opts, deps = {}) {
+  const slug = holderFromWorktreePath(target.path);
+  if (!slug) throw new Error(`the worktree name ${(0, import_node_path45.basename)(target.path)} does not follow <repo>-xt-<runtime>-<slug>; cannot derive its holder`);
+  const issue2 = deps.issue === void 0 ? resolveWorkerIssue(target.path) : deps.issue;
+  const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue2?.ref ?? null, {
+    bindingId: issue2?.bindingId ?? null,
+    workspace: target.path
+  });
+  return {
+    runtime: target.runtime === "pi" ? "pi" : "claude",
+    role: opts.role,
+    bead: opts.bead ?? issue2?.ref,
+    prompt: readFreshPrompt(opts.prompt),
+    model: opts.model,
+    attach: opts.attach,
+    window: Boolean(opts.window),
+    newSession: Boolean(opts.newSession),
+    parent: opts.parent,
+    passthrough: opts.passthrough,
+    existingWorktree: {
+      path: target.path,
+      branch: target.branch.replace("refs/heads/", ""),
+      slug,
+      dispatcher
+    }
+  };
+}
 function createAttachCommand() {
-  return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').action(async (name) => {
+  return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "With --fresh: launch as this specialist role").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").allowExcessArguments(true).action(async (name, opts) => {
     const repoRoot = getRepoRoot(process.cwd());
     const worktrees = listXtWorktrees(repoRoot);
     if (worktrees.length === 0) {
@@ -79506,6 +79584,35 @@ function createAttachCommand() {
     }
     const branch = target.branch.replace("refs/heads/", "");
     const runtime = target.runtime ?? await pickRuntime();
+    if (opts.fresh) {
+      let launch;
+      try {
+        const dashIdx = process.argv.indexOf("--");
+        launch = buildFreshLaunchOptions(target, { ...opts, passthrough: dashIdx >= 0 ? process.argv.slice(dashIdx + 1) : [] });
+      } catch (error62) {
+        console.error(kleur_default.red(`
+  \u2717 ${error62 instanceof Error ? error62.message : String(error62)}
+`));
+        process.exit(1);
+      }
+      launch.runtime = runtime === "pi" ? "pi" : "claude";
+      if (runtime === "codex") {
+        const existing = launch.existingWorktree;
+        await launchCodexWorktreeSession({
+          role: launch.role,
+          bead: launch.bead,
+          prompt: launch.prompt,
+          model: launch.model,
+          attach: launch.attach,
+          window: launch.window,
+          yolo: true,
+          existingWorktree: existing
+        });
+      } else {
+        await launchWorktreeSession(launch);
+      }
+      return;
+    }
     let resumeArgs;
     if (runtime === "codex") {
       const session = readCodexWorktreeSession(target.path);
@@ -80114,14 +80221,14 @@ function createJiraCommand() {
 
 // src/commands/identity.ts
 init_kleur();
-var import_node_fs24 = require("fs");
+var import_node_fs25 = require("fs");
 var import_node_os27 = __toESM(require("os"), 1);
 var import_node_path49 = __toESM(require("path"), 1);
 var import_node_child_process26 = require("child_process");
 
 // src/core/agent-run-id.ts
 var import_node_crypto17 = require("crypto");
-var import_node_fs21 = require("fs");
+var import_node_fs22 = require("fs");
 function clockTicks(pid, read) {
   try {
     const stat3 = read(`/proc/${pid}/stat`);
@@ -80135,7 +80242,7 @@ function resolveAgentRunId(deps = {}) {
   const env3 = deps.env ?? process.env;
   const explicit = (env3.SUBSTRATE_RUN_ID ?? "").trim();
   if (explicit) return explicit;
-  const read = deps.read ?? ((file2) => (0, import_node_fs21.readFileSync)(file2, "utf8"));
+  const read = deps.read ?? ((file2) => (0, import_node_fs22.readFileSync)(file2, "utf8"));
   let boot = "";
   try {
     boot = read("/proc/sys/kernel/random/boot_id").trim();
@@ -80148,7 +80255,7 @@ function resolveAgentRunId(deps = {}) {
 }
 
 // src/core/merge-guard.ts
-var import_node_fs22 = require("fs");
+var import_node_fs23 = require("fs");
 var import_node_os25 = __toESM(require("os"), 1);
 var import_node_path47 = __toESM(require("path"), 1);
 var OVERRIDE_ENV_VAR = "XTRM_MERGE_GUARD_OVERRIDE";
@@ -80271,10 +80378,10 @@ function checkStateDir(dir) {
   let probe2 = dir;
   for (let depth = 0; depth < 40; depth += 1) {
     try {
-      const stat3 = (0, import_node_fs22.statSync)(probe2);
+      const stat3 = (0, import_node_fs23.statSync)(probe2);
       if (!stat3.isDirectory()) return `'${probe2}' exists and is not a directory`;
       try {
-        (0, import_node_fs22.accessSync)(probe2, import_node_fs22.constants.W_OK);
+        (0, import_node_fs23.accessSync)(probe2, import_node_fs23.constants.W_OK);
       } catch {
         return `'${probe2}' is not writable`;
       }
@@ -80292,8 +80399,8 @@ function appendOverrideLog(deps, line) {
     const file2 = overrideLogPath(deps);
     const problem = checkStateDir(import_node_path47.default.dirname(file2));
     if (problem) return { ok: false, error: `state directory '${import_node_path47.default.dirname(file2)}': ${problem}` };
-    (0, import_node_fs22.mkdirSync)(import_node_path47.default.dirname(file2), { recursive: true });
-    (0, import_node_fs22.appendFileSync)(file2, `${JSON.stringify({ at: new Date((deps.now ?? Date.now)()).toISOString(), ...line })}
+    (0, import_node_fs23.mkdirSync)(import_node_path47.default.dirname(file2), { recursive: true });
+    (0, import_node_fs23.appendFileSync)(file2, `${JSON.stringify({ at: new Date((deps.now ?? Date.now)()).toISOString(), ...line })}
 `, { mode: 384 });
     return { ok: true };
   } catch (error62) {
@@ -80620,7 +80727,7 @@ function recordMerge(input2, deps) {
 }
 
 // src/core/reviewer-routing.ts
-var import_node_fs23 = require("fs");
+var import_node_fs24 = require("fs");
 var import_node_os26 = __toESM(require("os"), 1);
 var import_node_path48 = __toESM(require("path"), 1);
 var REVIEWER_ROUTING_FILE = "reviewer-routing.md";
@@ -80645,11 +80752,11 @@ A PR merges only with a review by the reviewer App at its current head.
 function installRoutingReminder(home = import_node_os26.default.homedir()) {
   const file2 = routingReminderPath(home);
   try {
-    (0, import_node_fs23.readFileSync)(file2);
+    (0, import_node_fs24.readFileSync)(file2);
     return { path: file2, written: false };
   } catch {
-    (0, import_node_fs23.mkdirSync)(import_node_path48.default.dirname(file2), { recursive: true });
-    (0, import_node_fs23.writeFileSync)(file2, DEFAULT_REVIEWER_ROUTING);
+    (0, import_node_fs24.mkdirSync)(import_node_path48.default.dirname(file2), { recursive: true });
+    (0, import_node_fs24.writeFileSync)(file2, DEFAULT_REVIEWER_ROUTING);
     return { path: file2, written: true };
   }
 }
@@ -80996,7 +81103,7 @@ function createIdentityCommand() {
     const role = processAgentRole(process.env, map2);
     const report = {
       path: file2,
-      present: (0, import_node_fs24.existsSync)(file2),
+      present: (0, import_node_fs25.existsSync)(file2),
       valid: map2 !== null,
       version: map2?.version ?? null,
       default: map2?.default ?? null,
@@ -81083,7 +81190,7 @@ function createIdentityCommand() {
     }
     let text = "";
     try {
-      text = (0, import_node_fs24.readFileSync)(0, "utf8");
+      text = (0, import_node_fs25.readFileSync)(0, "utf8");
     } catch {
       return;
     }
@@ -81109,7 +81216,7 @@ function createIdentityCommand() {
     let body = opts.body ?? "";
     if (opts.bodyFile) {
       try {
-        body = (0, import_node_fs24.readFileSync)(opts.bodyFile, "utf8");
+        body = (0, import_node_fs25.readFileSync)(opts.bodyFile, "utf8");
       } catch (error62) {
         fail2(`cannot read --body-file: ${error62.message}`);
       }
@@ -81208,7 +81315,7 @@ function createIdentityCommand() {
       emit({ ok: false, refusal: null });
       return;
     }
-    const refusal = markerRunRefusal(argv, (file2) => (0, import_node_fs24.readFileSync)(import_node_path49.default.resolve(opts.cwd, file2), "utf8"));
+    const refusal = markerRunRefusal(argv, (file2) => (0, import_node_fs25.readFileSync)(import_node_path49.default.resolve(opts.cwd, file2), "utf8"));
     emit({ ok: true, refusal });
   });
   identity.command("merge-check").description("Allow or refuse a merge: the reviewer App's latest review must be at the current head").option("--repo <owner/name>", "Repository (with --pr)").option("--pr <number>", "Pull request number (with --repo)").option("--gh-args <json>", "A gh argv as a JSON array; the target is resolved the way gh resolves it").option("--cwd <dir>", "Directory for the cwd-PR fallback", process.cwd()).option("--json", "Emit JSON", false).action(async (opts) => {
@@ -81299,13 +81406,13 @@ function createIdentityCommand() {
     const home = import_node_os27.default.homedir();
     const file2 = roleMapPath(home);
     let roleMapWritten = false;
-    if (!(0, import_node_fs24.existsSync)(file2)) {
-      (0, import_node_fs24.mkdirSync)(import_node_path49.default.dirname(file2), { recursive: true });
-      (0, import_node_fs24.writeFileSync)(file2, `${JSON.stringify(DEFAULT_ROLE_MAP, null, 4)}
+    if (!(0, import_node_fs25.existsSync)(file2)) {
+      (0, import_node_fs25.mkdirSync)(import_node_path49.default.dirname(file2), { recursive: true });
+      (0, import_node_fs25.writeFileSync)(file2, `${JSON.stringify(DEFAULT_ROLE_MAP, null, 4)}
 `);
       roleMapWritten = true;
     }
-    (0, import_node_fs24.mkdirSync)(githubAppPaths(home).identitiesDir, { recursive: true });
+    (0, import_node_fs25.mkdirSync)(githubAppPaths(home).identitiesDir, { recursive: true });
     const routing = installRoutingReminder(home);
     const shim = installGhShim({ home, binDir: opts.binDir });
     const report = {
@@ -82132,7 +82239,7 @@ ${content}`;
 // src/commands/debug.ts
 init_kleur();
 var import_node_child_process29 = require("child_process");
-var import_node_fs25 = require("fs");
+var import_node_fs26 = require("fs");
 var import_node_path50 = require("path");
 var committedLabel = (outcome) => outcome === "error" ? "ACMT-" : "ACMT+";
 var committedColor = (s) => s === "ACMT-" ? kleur_default.red(s) : kleur_default.cyan(s);
@@ -82252,7 +82359,7 @@ function formatLine(event, colorMap) {
 function findDbPath(cwd) {
   let dir = cwd;
   for (let i = 0; i < 10; i++) {
-    if ((0, import_node_fs25.existsSync)((0, import_node_path50.join)(dir, ".beads"))) return (0, import_node_path50.join)(dir, ".xtrm", "debug.db");
+    if ((0, import_node_fs26.existsSync)((0, import_node_path50.join)(dir, ".beads"))) return (0, import_node_path50.join)(dir, ".xtrm", "debug.db");
     const parent = (0, import_node_path50.join)(dir, "..");
     if (parent === dir) break;
     dir = parent;
@@ -82314,7 +82421,7 @@ function createDebugCommand() {
   return new Command("debug").description("Watch xtrm events: tool calls, gate decisions, issue lifecycle").option("-f, --follow", "Follow new events (default)", false).option("--all", "Show full history and exit", false).option("--session <id>", "Filter by session ID (prefix match)").option("--type <domain>", "Filter by domain: tool | gate | bd | session (bd reads legacy Beads event history)").option("--json", "Output raw JSON lines", false).action((opts) => {
     const cwd = process.cwd();
     const dbPath = findDbPath(cwd);
-    if (!dbPath || !(0, import_node_fs25.existsSync)(dbPath)) return;
+    if (!dbPath || !(0, import_node_fs26.existsSync)(dbPath)) return;
     if (opts.all) {
       const events = queryEvents(dbPath, buildWhere(opts, ""), 1e3);
       const colorMap = buildColorMap(events);
@@ -83511,7 +83618,7 @@ init_kleur();
 var import_prompts6 = __toESM(require_prompts3(), 1);
 
 // src/core/claude-route.ts
-var import_node_fs26 = require("fs");
+var import_node_fs27 = require("fs");
 var import_node_child_process32 = require("child_process");
 var import_node_os29 = require("os");
 var import_node_path53 = __toESM(require("path"), 1);
@@ -83545,7 +83652,7 @@ var ClaudeRouteBlockSchema = external_exports.object({
     }
   }
 });
-function resolveClaudeRouteConfigLocation(env3 = process.env, homeDir = env3.HOME?.trim() || (0, import_node_os29.homedir)(), exists = import_node_fs26.existsSync) {
+function resolveClaudeRouteConfigLocation(env3 = process.env, homeDir = env3.HOME?.trim() || (0, import_node_os29.homedir)(), exists = import_node_fs27.existsSync) {
   const xdgConfigHome = env3.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
     const xdgPath = import_node_path53.default.join(xdgConfigHome, CLAUDE_ROUTE_SUBDIR, CLAUDE_ROUTE_CONFIG_FILENAME);
@@ -83566,7 +83673,7 @@ function rawListedNames(raw) {
 function formatIssues(error62) {
   return error62.issues.map((issue2) => issue2.path.length > 0 ? `${issue2.path.join(".")}: ${issue2.message}` : issue2.message).join("; ");
 }
-function readClaudeRouteBlock(location = resolveClaudeRouteConfigLocation(), readFile2 = (candidate) => (0, import_node_fs26.readFileSync)(candidate, "utf-8")) {
+function readClaudeRouteBlock(location = resolveClaudeRouteConfigLocation(), readFile2 = (candidate) => (0, import_node_fs27.readFileSync)(candidate, "utf-8")) {
   const absent = {
     present: false,
     block: null,
@@ -83629,29 +83736,29 @@ function readUserConfigForWrite(location, readFile2) {
   return { ok: true, config: parsed };
 }
 function writeUserConfig(location, config3) {
-  (0, import_node_fs26.mkdirSync)(import_node_path53.default.dirname(location.path), { recursive: true });
+  (0, import_node_fs27.mkdirSync)(import_node_path53.default.dirname(location.path), { recursive: true });
   const payload = `${JSON.stringify(config3, null, 2)}
 `;
   const tmpPath = `${location.path}.tmp.${process.pid}.${Math.floor(performance.now() * 1e3)}`;
   try {
-    (0, import_node_fs26.writeFileSync)(tmpPath, payload, "utf-8");
+    (0, import_node_fs27.writeFileSync)(tmpPath, payload, "utf-8");
   } catch (writeError) {
     try {
-      (0, import_node_fs26.rmSync)(tmpPath, { force: true });
+      (0, import_node_fs27.rmSync)(tmpPath, { force: true });
     } catch {
     }
     throw new Error(`cannot write ${tmpPath}: ${writeError.message}`);
   }
   try {
-    (0, import_node_fs26.renameSync)(tmpPath, location.path);
+    (0, import_node_fs27.renameSync)(tmpPath, location.path);
     return { atomic: true, fallbackError: null };
   } catch (renameError) {
     try {
-      (0, import_node_fs26.rmSync)(tmpPath, { force: true });
+      (0, import_node_fs27.rmSync)(tmpPath, { force: true });
     } catch {
     }
     try {
-      (0, import_node_fs26.writeFileSync)(location.path, payload, "utf-8");
+      (0, import_node_fs27.writeFileSync)(location.path, payload, "utf-8");
     } catch (fallbackError) {
       throw new Error(
         `rename failed (${renameError.message}) and the direct write of ${location.path} failed too (${fallbackError.message}); the file may be truncated \u2014 repair it by hand`
@@ -83663,7 +83770,7 @@ function writeUserConfig(location, config3) {
 function writeClaudeRouteBlock(input2, location = resolveClaudeRouteConfigLocation(), deps = {}) {
   const validation = validateClaudeRouteBlock(input2);
   if (!validation.ok) return { ok: false, error: validation.error };
-  const readFile2 = deps.readFile ?? ((candidate) => (0, import_node_fs26.readFileSync)(candidate, "utf-8"));
+  const readFile2 = deps.readFile ?? ((candidate) => (0, import_node_fs27.readFileSync)(candidate, "utf-8"));
   const existing = readUserConfigForWrite(location, readFile2);
   if (!existing.ok) return existing;
   const config3 = { ...existing.config, [CLAUDE_ROUTE_BLOCK_KEY]: validation.block };
@@ -83671,7 +83778,7 @@ function writeClaudeRouteBlock(input2, location = resolveClaudeRouteConfigLocati
   return { ok: true, result: { path: location.path, source: location.source, block: validation.block, write } };
 }
 function disableClaudeRoute(location = resolveClaudeRouteConfigLocation(), deps = {}) {
-  const readFile2 = deps.readFile ?? ((candidate) => (0, import_node_fs26.readFileSync)(candidate, "utf-8"));
+  const readFile2 = deps.readFile ?? ((candidate) => (0, import_node_fs27.readFileSync)(candidate, "utf-8"));
   const existing = readUserConfigForWrite(location, readFile2);
   if (!existing.ok) return existing;
   const hasBlock = Object.prototype.hasOwnProperty.call(existing.config, CLAUDE_ROUTE_BLOCK_KEY);
@@ -84310,7 +84417,7 @@ async function auditSettings(opts) {
 }
 
 // src/core/claude-channel-status.ts
-var import_node_fs27 = require("fs");
+var import_node_fs28 = require("fs");
 var import_node_os31 = require("os");
 var import_node_path56 = __toESM(require("path"), 1);
 function defaultManagedSettingsPath(platform = process.platform) {
@@ -84344,7 +84451,7 @@ function getClaudeChannelStatus(paths) {
   }
   let raw;
   try {
-    raw = (0, import_node_fs27.readFileSync)(paths.managedSettingsPath, "utf8");
+    raw = (0, import_node_fs28.readFileSync)(paths.managedSettingsPath, "utf8");
   } catch (err) {
     if (err?.code === "ENOENT") {
       return status(
@@ -84402,7 +84509,7 @@ function getClaudeChannelStatus(paths) {
 }
 
 // src/utils/npm-latest.ts
-var import_node_fs28 = require("fs");
+var import_node_fs29 = require("fs");
 var import_node_child_process33 = require("child_process");
 var import_node_path57 = __toESM(require("path"), 1);
 var import_node_os32 = __toESM(require("os"), 1);
@@ -84419,7 +84526,7 @@ function defaultCacheFile() {
 }
 function readCache2(file2) {
   try {
-    const raw = (0, import_node_fs28.readFileSync)(file2, "utf8");
+    const raw = (0, import_node_fs29.readFileSync)(file2, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
     return {};
@@ -84429,8 +84536,8 @@ function readCache2(file2) {
 }
 function writeCache2(file2, data) {
   try {
-    (0, import_node_fs28.mkdirSync)(import_node_path57.default.dirname(file2), { recursive: true });
-    (0, import_node_fs28.writeFileSync)(file2, JSON.stringify(data, null, 2));
+    (0, import_node_fs29.mkdirSync)(import_node_path57.default.dirname(file2), { recursive: true });
+    (0, import_node_fs29.writeFileSync)(file2, JSON.stringify(data, null, 2));
   } catch {
   }
 }
@@ -84455,12 +84562,12 @@ function defaultInstalledResolver(pkg) {
   if (!globalRoot) return null;
   const packageJsonPath = import_node_path57.default.join(globalRoot, pkg, "package.json");
   try {
-    (0, import_node_fs28.statSync)(packageJsonPath);
+    (0, import_node_fs29.statSync)(packageJsonPath);
   } catch {
     return null;
   }
   try {
-    const parsed = JSON.parse((0, import_node_fs28.readFileSync)(packageJsonPath, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs29.readFileSync)(packageJsonPath, "utf8"));
     return typeof parsed.version === "string" ? parsed.version : null;
   } catch {
     return null;
@@ -85831,12 +85938,12 @@ function createUpdateCommand() {
 
 // src/commands/release.ts
 init_kleur();
-var import_node_fs30 = require("fs");
+var import_node_fs31 = require("fs");
 var import_node_child_process37 = require("child_process");
 var import_node_path64 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
-var import_node_fs29 = require("fs");
+var import_node_fs30 = require("fs");
 var import_node_child_process36 = require("child_process");
 var import_node_path63 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
@@ -85848,7 +85955,7 @@ function getCommitDate(ref, cwd) {
   }).trim();
 }
 function listReportFiles(rootDir) {
-  return (0, import_node_fs29.readdirSync)(import_node_path63.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path63.default.join(REPORT_DIR, entry));
+  return (0, import_node_fs30.readdirSync)(import_node_path63.default.join(rootDir, REPORT_DIR)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => import_node_path63.default.join(REPORT_DIR, entry));
 }
 function isDateInRange(date5, since, to) {
   return date5 >= since && date5 <= to;
@@ -85862,7 +85969,7 @@ function listXtReports(options) {
     const date5 = file2.slice(0, 10);
     return { file: relativePath, date: date5, bytes: 0, content: "" };
   }).filter((report) => isDateInRange(report.date, sinceDate, toDate)).map((report) => {
-    const content = (0, import_node_fs29.readFileSync)(import_node_path63.default.join(rootDir, report.file), "utf8");
+    const content = (0, import_node_fs30.readFileSync)(import_node_path63.default.join(rootDir, report.file), "utf8");
     return {
       ...report,
       bytes: Buffer.byteLength(content, "utf8"),
@@ -85924,7 +86031,7 @@ function getLatestTag(cwd) {
   return "HEAD~1";
 }
 function getPackageVersion(cwd) {
-  return JSON.parse((0, import_node_fs30.readFileSync)(import_node_path64.default.join(cwd, "cli", "package.json"), "utf8")).version;
+  return JSON.parse((0, import_node_fs31.readFileSync)(import_node_path64.default.join(cwd, "cli", "package.json"), "utf8")).version;
 }
 function getReleaseTag(cwd) {
   return `v${getPackageVersion(cwd)}`;
@@ -88261,7 +88368,7 @@ function createHooksCommand() {
 }
 
 // src/commands/version.ts
-var import_node_fs31 = require("fs");
+var import_node_fs32 = require("fs");
 var import_node_path74 = require("path");
 var import_node_child_process43 = require("child_process");
 init_kleur();
@@ -88272,7 +88379,7 @@ function readInstallPackageJson() {
   ];
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse((0, import_node_fs31.readFileSync)(candidate, "utf8"));
+      const parsed = JSON.parse((0, import_node_fs32.readFileSync)(candidate, "utf8"));
       if (parsed?.name && parsed?.version) {
         return { name: parsed.name, version: parsed.version, root: (0, import_node_path74.dirname)(candidate) };
       }
@@ -88285,7 +88392,7 @@ function detectSource(installRoot) {
   return installRoot.split(import_node_path74.sep).includes("node_modules") ? "npm" : "local";
 }
 function readGitCommit(installRoot) {
-  if (!(0, import_node_fs31.existsSync)((0, import_node_path74.resolve)(installRoot, ".git"))) return null;
+  if (!(0, import_node_fs32.existsSync)((0, import_node_path74.resolve)(installRoot, ".git"))) return null;
   const result = (0, import_node_child_process43.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: installRoot,
     encoding: "utf8",
@@ -88295,7 +88402,7 @@ function readGitCommit(installRoot) {
   return result.stdout.trim() || null;
 }
 function readGitDirty(installRoot) {
-  if (!(0, import_node_fs31.existsSync)((0, import_node_path74.resolve)(installRoot, ".git"))) return null;
+  if (!(0, import_node_fs32.existsSync)((0, import_node_path74.resolve)(installRoot, ".git"))) return null;
   const result = (0, import_node_child_process43.spawnSync)("git", ["status", "--porcelain"], {
     cwd: installRoot,
     encoding: "utf8",
@@ -88306,7 +88413,7 @@ function readGitDirty(installRoot) {
 }
 function readBuiltAt(installRoot) {
   const distPath = (0, import_node_path74.resolve)(installRoot, "cli", "dist", "index.cjs");
-  if (!(0, import_node_fs31.existsSync)(distPath)) return null;
+  if (!(0, import_node_fs32.existsSync)(distPath)) return null;
   try {
     const stats = require("fs").statSync(distPath);
     return new Date(stats.mtime).toISOString();
@@ -89109,7 +89216,7 @@ init_kleur();
 
 // src/core/agent-host-auth.ts
 var import_node_crypto19 = require("crypto");
-var import_node_fs32 = require("fs");
+var import_node_fs33 = require("fs");
 var import_node_net = __toESM(require("net"), 1);
 var import_node_os36 = __toESM(require("os"), 1);
 var import_node_path76 = __toESM(require("path"), 1);
@@ -91620,12 +91727,12 @@ var DeviceAuthority = class {
   load() {
     let text;
     try {
-      text = (0, import_node_fs32.readFileSync)(this.storePath, "utf8");
+      text = (0, import_node_fs33.readFileSync)(this.storePath, "utf8");
     } catch (error62) {
       if (error62.code === "ENOENT") return [];
       throw error62;
     }
-    if (((0, import_node_fs32.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs32.chmodSync)(this.storePath, 384);
+    if (((0, import_node_fs33.statSync)(this.storePath).mode & 63) !== 0) (0, import_node_fs33.chmodSync)(this.storePath, 384);
     const parsed = JSON.parse(text);
     if (parsed.schema !== STORE_SCHEMA || !Array.isArray(parsed.devices)) {
       throw new Error(`unrecognized device store ${this.storePath}`);
@@ -91635,12 +91742,12 @@ var DeviceAuthority = class {
     );
   }
   save() {
-    (0, import_node_fs32.mkdirSync)(import_node_path76.default.dirname(this.storePath), { recursive: true, mode: 448 });
+    (0, import_node_fs33.mkdirSync)(import_node_path76.default.dirname(this.storePath), { recursive: true, mode: 448 });
     const tmp = `${this.storePath}.${process.pid}.tmp`;
-    (0, import_node_fs32.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
+    (0, import_node_fs33.writeFileSync)(tmp, `${JSON.stringify({ schema: STORE_SCHEMA, devices: this.devices }, null, 2)}
 `, { mode: 384 });
-    (0, import_node_fs32.chmodSync)(tmp, 384);
-    (0, import_node_fs32.renameSync)(tmp, this.storePath);
+    (0, import_node_fs33.chmodSync)(tmp, 384);
+    (0, import_node_fs33.renameSync)(tmp, this.storePath);
   }
 };
 function summary(device) {
@@ -91665,14 +91772,14 @@ function parsePairRequest(text) {
 }
 
 // src/core/agent-host.ts
-var import_node_fs38 = require("fs");
+var import_node_fs39 = require("fs");
 var import_node_http = __toESM(require("http"), 1);
 var import_node_net2 = __toESM(require("net"), 1);
 var import_node_os38 = __toESM(require("os"), 1);
 var import_node_path81 = __toESM(require("path"), 1);
 
 // src/core/agent-host-history.ts
-var import_node_fs33 = require("fs");
+var import_node_fs34 = require("fs");
 var import_node_readline = __toESM(require("readline"), 1);
 var HISTORY_STRING_MAX = 64 * 1024;
 var HISTORY_TYPES = /* @__PURE__ */ new Set(["message", "compaction"]);
@@ -91708,7 +91815,7 @@ function bound(value, cut) {
 async function readPiHistory(file2, sessionId) {
   const entries = [];
   let header = false;
-  const stream = (0, import_node_fs33.createReadStream)(file2, { encoding: "utf8", flags: "r" });
+  const stream = (0, import_node_fs34.createReadStream)(file2, { encoding: "utf8", flags: "r" });
   const lines = import_node_readline.default.createInterface({ input: stream, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
@@ -91765,7 +91872,7 @@ function activeBranch(entries) {
 // src/core/agent-host-launch.ts
 var import_node_crypto20 = require("crypto");
 var import_node_child_process45 = require("child_process");
-var import_node_fs34 = require("fs");
+var import_node_fs35 = require("fs");
 var import_node_path77 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
 var PANE_SESSION_OPTION = "@xtrm_agent_session_id";
@@ -91829,8 +91936,8 @@ function validateLaunchRequest(request) {
   if (!import_node_path77.default.isAbsolute(request.cwd)) throw new LaunchRejection("invalid_cwd", "cwd must be an absolute path");
   let cwd;
   try {
-    cwd = (0, import_node_fs34.realpathSync)(request.cwd);
-    if (!(0, import_node_fs34.statSync)(cwd).isDirectory()) throw new Error("not a directory");
+    cwd = (0, import_node_fs35.realpathSync)(request.cwd);
+    if (!(0, import_node_fs35.statSync)(cwd).isDirectory()) throw new Error("not a directory");
   } catch {
     throw new LaunchRejection("invalid_cwd", `cwd ${request.cwd} is not an existing directory`);
   }
@@ -92003,7 +92110,7 @@ function firstLine2(text) {
 // src/core/agent-host-references.ts
 var import_node_child_process46 = require("child_process");
 var import_node_crypto21 = require("crypto");
-var import_node_fs35 = require("fs");
+var import_node_fs36 = require("fs");
 var import_promises = require("fs/promises");
 var import_node_path78 = __toESM(require("path"), 1);
 var KB = 1024;
@@ -92115,7 +92222,7 @@ async function resolveFile(ref, cwd) {
   if (!isInside5(root, real)) throw new Unresolved("path_outside_cwd");
   let handle;
   try {
-    handle = await (0, import_promises.open)(real, import_node_fs35.constants.O_RDONLY | import_node_fs35.constants.O_NOFOLLOW | import_node_fs35.constants.O_NONBLOCK);
+    handle = await (0, import_promises.open)(real, import_node_fs36.constants.O_RDONLY | import_node_fs36.constants.O_NOFOLLOW | import_node_fs36.constants.O_NONBLOCK);
   } catch {
     throw new Unresolved("file_unreadable");
   }
@@ -92375,7 +92482,7 @@ function bounded(value) {
 }
 
 // src/core/agent-host-origin.ts
-var import_node_fs36 = require("fs");
+var import_node_fs37 = require("fs");
 var import_node_path79 = __toESM(require("path"), 1);
 var COORDINATION_TOOLS = [
   // First-party coordination tools (CORE-2443 M1: pi-intercom and
@@ -92399,7 +92506,7 @@ var UNKNOWN = "unknown";
 var CLAUDE_SUBAGENT_TOOLS = /* @__PURE__ */ new Set(["Agent", "Task"]);
 function readManifest(baseDir) {
   try {
-    const parsed = JSON.parse((0, import_node_fs36.readFileSync)(import_node_path79.default.join(baseDir, "package.json"), "utf8"));
+    const parsed = JSON.parse((0, import_node_fs37.readFileSync)(import_node_path79.default.join(baseDir, "package.json"), "utf8"));
     return {
       ...typeof parsed.name === "string" && parsed.name ? { name: parsed.name } : {},
       ...typeof parsed.version === "string" && parsed.version ? { version: parsed.version } : {}
@@ -93423,7 +93530,7 @@ function boundText(text) {
 
 // src/core/agent-host-session-index.ts
 var import_node_child_process47 = require("child_process");
-var import_node_fs37 = require("fs");
+var import_node_fs38 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os37 = __toESM(require("os"), 1);
 var import_node_path80 = __toESM(require("path"), 1);
@@ -93554,7 +93661,7 @@ var SessionIndex = class {
     this.scheduleCacheWrite();
   }
   watchRoot(root) {
-    if ((0, import_node_fs37.existsSync)(root.dir)) {
+    if ((0, import_node_fs38.existsSync)(root.dir)) {
       this.watchDir(root.dir, (name) => {
         if (name) void this.addProjectDir(root, import_node_path80.default.join(root.dir, name));
       });
@@ -93598,7 +93705,7 @@ var SessionIndex = class {
     for (; ; ) {
       current = import_node_path80.default.dirname(current);
       try {
-        if ((0, import_node_fs37.statSync)(current).isDirectory()) return current;
+        if ((0, import_node_fs38.statSync)(current).isDirectory()) return current;
       } catch {
       }
       if (import_node_path80.default.dirname(current) === current) return current;
@@ -93630,7 +93737,7 @@ var SessionIndex = class {
   watchDir(dir, onEvent) {
     if (this.closed || this.watchers.has(dir)) return;
     try {
-      const watcher = (0, import_node_fs37.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
+      const watcher = (0, import_node_fs38.watch)(dir, { persistent: false }, (_event, name) => onEvent(name ? String(name) : null));
       watcher.on("error", (error62) => {
         this.log(`session index: watcher for ${dir} failed: ${error62.message}`);
         watcher.close();
@@ -94410,7 +94517,7 @@ function agentSessionsByPane(sessions) {
 }
 function readAgentHostInfo(infoPath = defaultInfoPath()) {
   try {
-    return JSON.parse((0, import_node_fs38.readFileSync)(infoPath, "utf8"));
+    return JSON.parse((0, import_node_fs39.readFileSync)(infoPath, "utf8"));
   } catch {
     return null;
   }
@@ -94498,7 +94605,7 @@ async function startAgentHost(options = {}) {
     }
   });
   await listen(socketServer, socketPath);
-  (0, import_node_fs38.chmodSync)(socketPath, 384);
+  (0, import_node_fs39.chmodSync)(socketPath, 384);
   const httpServer = import_node_http.default.createServer((req, res) => {
     handleRequest(req, res).catch((error62) => {
       log(`request failed: ${error62.message}`);
@@ -94895,8 +95002,8 @@ data: ${JSON.stringify(message)}
 }
 async function claimSocketPath(socketPath) {
   const dir = import_node_path81.default.dirname(socketPath);
-  (0, import_node_fs38.mkdirSync)(dir, { recursive: true, mode: 448 });
-  if (!(0, import_node_fs38.existsSync)(socketPath)) return;
+  (0, import_node_fs39.mkdirSync)(dir, { recursive: true, mode: 448 });
+  if (!(0, import_node_fs39.existsSync)(socketPath)) return;
   const alive = await new Promise((resolve6) => {
     const probe2 = import_node_net2.default.connect(socketPath);
     probe2.once("connect", () => {
@@ -94906,14 +95013,14 @@ async function claimSocketPath(socketPath) {
     probe2.once("error", () => resolve6(false));
   });
   if (alive) throw new Error(`an agent host is already listening on ${socketPath}`);
-  (0, import_node_fs38.unlinkSync)(socketPath);
+  (0, import_node_fs39.unlinkSync)(socketPath);
 }
 function writeInfoFile(infoPath, info) {
-  (0, import_node_fs38.mkdirSync)(import_node_path81.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs39.mkdirSync)(import_node_path81.default.dirname(infoPath), { recursive: true, mode: 448 });
   const tmp = `${infoPath}.${process.pid}.tmp`;
-  (0, import_node_fs38.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
+  (0, import_node_fs39.writeFileSync)(tmp, `${JSON.stringify(info, null, 2)}
 `, { mode: 384 });
-  (0, import_node_fs38.renameSync)(tmp, infoPath);
+  (0, import_node_fs39.renameSync)(tmp, infoPath);
 }
 function apiError(code, message) {
   return { schema: "xtrm.agent-host-api.v1", kind: "error", code, message: message.slice(0, 1024) };
@@ -94945,7 +95052,7 @@ function closeServer(server) {
 }
 function safeUnlink(file2) {
   try {
-    (0, import_node_fs38.unlinkSync)(file2);
+    (0, import_node_fs39.unlinkSync)(file2);
   } catch {
   }
 }
@@ -94953,7 +95060,7 @@ function safeUnlink(file2) {
 // src/core/agent-host-ensure.ts
 var import_node_child_process49 = require("child_process");
 var import_node_crypto23 = require("crypto");
-var import_node_fs39 = require("fs");
+var import_node_fs40 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
 var import_node_path82 = __toESM(require("path"), 1);
 var AGENT_HOST_ENSURE_SCHEMA = "xtrm.agent-host-ensure.v1";
@@ -95056,7 +95163,7 @@ async function ensureAgentHost(options = {}) {
   const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const running = await liveHost(infoPath);
   if (running) return { info: running, started: false };
-  (0, import_node_fs39.mkdirSync)(import_node_path82.default.dirname(infoPath), { recursive: true, mode: 448 });
+  (0, import_node_fs40.mkdirSync)(import_node_path82.default.dirname(infoPath), { recursive: true, mode: 448 });
   const release = await acquireLock(`${infoPath}.lock`, deadline);
   try {
     const started = await liveHost(infoPath);
@@ -95071,17 +95178,17 @@ async function ensureAgentHost(options = {}) {
 function openHostLog(logPath, maxBytes = MAX_LOG_BYTES) {
   let size = 0;
   try {
-    size = (0, import_node_fs39.statSync)(logPath).size;
+    size = (0, import_node_fs40.statSync)(logPath).size;
   } catch {
   }
   if (size > maxBytes) {
     try {
-      (0, import_node_fs39.renameSync)(logPath, `${logPath}.1`);
+      (0, import_node_fs40.renameSync)(logPath, `${logPath}.1`);
       size = 0;
     } catch {
     }
   }
-  return { fd: (0, import_node_fs39.openSync)(logPath, "a", 384), start: size };
+  return { fd: (0, import_node_fs40.openSync)(logPath, "a", 384), start: size };
 }
 async function startDetachedHost(infoPath, options, deadline, log) {
   const [command, ...entry] = options.xtCommand ?? [process.execPath, process.argv[1] ?? ""];
@@ -95095,7 +95202,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
       env: options.env ?? hostSpawnEnv(process.env)
     });
   } finally {
-    (0, import_node_fs39.closeSync)(logFd);
+    (0, import_node_fs40.closeSync)(logFd);
   }
   let exit = null;
   let spawnError = null;
@@ -95125,7 +95232,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
 }
 function logTail(logPath, from) {
   try {
-    const text = (0, import_node_fs39.readFileSync)(logPath).subarray(from).toString("utf8").trim();
+    const text = (0, import_node_fs40.readFileSync)(logPath).subarray(from).toString("utf8").trim();
     return text ? `: ${text.slice(-LOG_TAIL_BYTES)}` : "";
   } catch {
     return "";
@@ -95135,7 +95242,7 @@ async function acquireLock(lockPath, deadline) {
   const token = `${process.pid} ${(0, import_node_crypto23.randomUUID)()}`;
   for (; ; ) {
     try {
-      (0, import_node_fs39.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
+      (0, import_node_fs40.writeFileSync)(lockPath, token, { flag: "wx", mode: 384 });
       return () => {
         if (readText(lockPath) === token) safeUnlink2(lockPath);
       };
@@ -95157,20 +95264,20 @@ function breakStaleLock(lockPath) {
     if (pidAlive(holder)) return;
   } else {
     try {
-      if (Date.now() - (0, import_node_fs39.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
+      if (Date.now() - (0, import_node_fs40.statSync)(lockPath).mtimeMs < UNOWNED_LOCK_STALE_MS) return;
     } catch {
       return;
     }
   }
   const aside = `${lockPath}.${process.pid}.${(0, import_node_crypto23.randomUUID)()}.stale`;
   try {
-    (0, import_node_fs39.renameSync)(lockPath, aside);
+    (0, import_node_fs40.renameSync)(lockPath, aside);
   } catch {
     return;
   }
   if (readText(aside) !== content) {
     try {
-      (0, import_node_fs39.linkSync)(aside, lockPath);
+      (0, import_node_fs40.linkSync)(aside, lockPath);
     } catch {
     }
   }
@@ -95178,14 +95285,14 @@ function breakStaleLock(lockPath) {
 }
 function readText(file2) {
   try {
-    return (0, import_node_fs39.readFileSync)(file2, "utf8");
+    return (0, import_node_fs40.readFileSync)(file2, "utf8");
   } catch {
     return null;
   }
 }
 function safeUnlink2(file2) {
   try {
-    (0, import_node_fs39.unlinkSync)(file2);
+    (0, import_node_fs40.unlinkSync)(file2);
   } catch {
   }
 }
@@ -95505,7 +95612,7 @@ async function printBanner(version3) {
 // src/index.ts
 var version2 = "0.0.0";
 try {
-  version2 = JSON.parse((0, import_node_fs40.readFileSync)((0, import_node_path83.resolve)(__dirname, "../package.json"), "utf8")).version;
+  version2 = JSON.parse((0, import_node_fs41.readFileSync)((0, import_node_path83.resolve)(__dirname, "../package.json"), "utf8")).version;
 } catch {
 }
 var program2 = new Command();

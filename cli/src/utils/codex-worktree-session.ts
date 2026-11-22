@@ -39,6 +39,8 @@ import {
     shellQuote,
     withPaneUnsets,
 } from './worktree-session.js';
+import type { ExistingWorktree } from './worktree-session.js';
+import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
 
@@ -63,6 +65,8 @@ export interface CodexWorktreeSessionOptions {
      * of depending on the host's real ancestors. Omitted in production.
      */
     dispatcherDeps?: DispatcherIdentityDeps;
+    /** CORE-2775: start a FRESH Codex session in this existing worktree (`xt attach --fresh`); nothing is created or removed. */
+    existingWorktree?: ExistingWorktree;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -182,6 +186,14 @@ async function waitForCodexSession(sessionsRoot: string, cwd: string, launchedAf
 
 export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptions): Promise<void> {
     const attach = opts.attach ?? true;
+    const existing = opts.existingWorktree;
+    // A fresh session never created its worktree, branch or trust profile, so a failed start removes none of them.
+    const cleanupLaunch = existing
+        ? (_mainRoot: string, _worktreePath: string, _branchName: string, sessionName: string, buffer?: string): void => {
+            if (buffer) spawnSync('tmux', ['delete-buffer', '-b', buffer], { stdio: 'ignore' });
+            spawnSync('tmux', ['kill-session', '-t', `=${sessionName}`], { stdio: 'ignore' });
+        }
+        : cleanupCreatedLaunch;
     const structured = Boolean(opts.json);
     const optionCheck = checkStructuredLaunchOptions({
         json: structured,
@@ -204,14 +216,16 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const currentRoot = gitRoot(cwd);
     const mainRoot = mainGitRoot(cwd);
     if (!currentRoot || !mainRoot) fail('Not inside a git repository');
-    if (currentRoot !== mainRoot) fail('Refusing to create a nested worktree from an existing worktree');
+    if (currentRoot !== mainRoot && !existing) fail('Refusing to create a nested worktree from an existing worktree');
 
-    const slug = opts.name ?? randomBytes(2).toString('hex');
-    const branchName = `xt/${slug}`;
-    const worktreePath = path.join(mainRoot, '.xtrm', 'worktrees', `${path.basename(mainRoot)}-xt-codex-${slugify(slug)}`);
+    const slug = existing?.slug ?? opts.name ?? randomBytes(2).toString('hex');
+    const branchName = existing ? existing.branch : `xt/${slug}`;
+    const worktreePath = existing
+        ? existing.path
+        : path.join(mainRoot, '.xtrm', 'worktrees', `${path.basename(mainRoot)}-xt-codex-${slugify(slug)}`);
     const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
     const trustProfile = codexTrustProfile(codexHome, worktreePath);
-    const pathCheck = checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
+    const pathCheck = existing ? { ok: true as const } : checkStructuredLaunchPaths({ json: structured, worktreePath, branchName });
     if (!pathCheck.ok) fail(pathCheck.error);
     const refCheck = spawnSync('git', ['check-ref-format', '--branch', branchName], { cwd: mainRoot, stdio: 'pipe' });
     if (refCheck.status !== 0) fail(`invalid worktree branch '${branchName}'`);
@@ -219,9 +233,13 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         cwd: mainRoot,
         stdio: 'pipe',
     });
-    if (existingBranch.status === 0) fail(`Worktree branch already exists: ${branchName}`);
-    if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
-    if (existsSync(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
+    if (existing) {
+        if (!existsSync(worktreePath)) fail(`Worktree ${worktreePath} does not exist; nothing to start a fresh session in`);
+    } else {
+        if (existingBranch.status === 0) fail(`Worktree branch already exists: ${branchName}`);
+        if (existingBranch.status !== 1) fail(`Could not verify worktree branch ownership: ${branchName}`);
+        if (existsSync(worktreePath)) fail(`Worktree path already exists: ${worktreePath}`);
+    }
 
     // CORE-2528: decide BEFORE the worktree and branch are created, and before
     // `sp view` runs: an invalid role name, an unmapped supervisor activation or
@@ -250,7 +268,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
             developerInstructions = role.systemPrompt;
             selectedModel ??= role.model;
             roleSkillPaths = role.skillPaths;
-            if (opts.bead) {
+            if (opts.bead && !existing) {
                 prompt = renderCodexTask(opts.role, opts.bead, mainRoot);
             } else {
                 requestedSkills = [...roleSkillPaths, ...requestedSkills];
@@ -304,71 +322,74 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
 
     const buffer = `xtrm-codex-${randomBytes(16).toString('hex')}`;
     let created = false;
-    // CORE-2340: the branch must start at a fresh origin/<default>, never at
-    // the main checkout's local HEAD (on this multi-session host that is
-    // often another session's branch or a stale master). Offline is a hard
-    // error — a wrong base produces wrong PR diffs. Resolved here, after all
-    // prelaunch validation, so rejection paths never touch the network.
-    const base = fetchWorktreeBase(mainRoot, opts.base);
-    if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
-    // Git-first worktree create (CORE-2307): `git worktree add` is the
-    // primary path — codex launches must not require bd. bd is attempted
-    // as a FALLBACK only if git itself failed; observable behavior is
-    // identical. Flag surface untouched in this lane (XTRM-93 owns --bead).
-    const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath, base.ref], {
-        cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
-    });
-    if (!codexGit.error && codexGit.status === 0) {
-        created = true;
-    } else {
-        const partialBranch = spawnSync(
-            'git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`],
-            { cwd: mainRoot, stdio: 'pipe' },
-        ).status === 0;
-        if (existsSync(worktreePath) || partialBranch) {
-            cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-            fail(`git worktree creation left partial state at ${worktreePath}`);
-        }
-        // bd's --branch takes no start point; pre-create the branch at the
-        // resolved base so the fallback reuses it (or fails loudly) instead of
-        // silently branching off the local HEAD (CORE-2340). The branch cannot
-        // pre-exist here (enforced above), so pre-creation is unconditional.
-        const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
+    if (!existing) {
+        // CORE-2340: the branch must start at a fresh origin/<default>, never at
+        // the main checkout's local HEAD (on this multi-session host that is
+        // often another session's branch or a stale master). Offline is a hard
+        // error — a wrong base produces wrong PR diffs. Resolved here, after all
+        // prelaunch validation, so rejection paths never touch the network.
+        const base = fetchWorktreeBase(mainRoot, opts.base);
+        if (!base.ok) fail(`Could not resolve worktree base: ${base.error}`);
+        // Git-first worktree create (CORE-2307): `git worktree add` is the
+        // primary path — codex launches must not require bd. bd is attempted
+        // as a FALLBACK only if git itself failed; observable behavior is
+        // identical. Flag surface untouched in this lane (XTRM-93 owns --bead).
+        const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath, base.ref], {
             cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
         });
-        if (branchAtBase.error || branchAtBase.status !== 0) {
-            cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
-            fail(`Could not start branch ${branchName} at ${base.ref}`);
+        if (!codexGit.error && codexGit.status === 0) {
+            created = true;
+        } else {
+            const partialBranch = spawnSync(
+                'git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`],
+                { cwd: mainRoot, stdio: 'pipe' },
+            ).status === 0;
+            if (existsSync(worktreePath) || partialBranch) {
+                cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+                fail(`git worktree creation left partial state at ${worktreePath}`);
+            }
+            // bd's --branch takes no start point; pre-create the branch at the
+            // resolved base so the fallback reuses it (or fails loudly) instead of
+            // silently branching off the local HEAD (CORE-2340). The branch cannot
+            // pre-exist here (enforced above), so pre-creation is unconditional.
+            const branchAtBase = spawnSync('git', ['branch', branchName, base.ref], {
+                cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
+            });
+            if (branchAtBase.error || branchAtBase.status !== 0) {
+                cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+                fail(`Could not start branch ${branchName} at ${base.ref}`);
+            }
+            const bdFallback = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
+                cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
+            });
+            created = !bdFallback.error && bdFallback.status === 0;
+            if (!created) {
+                cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+            }
         }
-        const bdFallback = spawnSync('bd', ['worktree', 'create', worktreePath, '--branch', branchName], {
-            cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
-        });
-        created = !bdFallback.error && bdFallback.status === 0;
-        if (!created) {
-            cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer);
+        if (!created) fail(`Failed to create worktree at ${worktreePath}`);
+
+        try {
+            ensureCodexTrustProfile(codexHome, worktreePath);
+        } catch (error) {
+            cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+            fail(error instanceof Error ? error.message : String(error));
         }
-    }
-    if (!created) fail(`Failed to create worktree at ${worktreePath}`);
 
-    try {
-        ensureCodexTrustProfile(codexHome, worktreePath);
-    } catch (error) {
-        cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
-        fail(error instanceof Error ? error.message : String(error));
-    }
-
-    try {
-        rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
-        const tracked = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', '.beads'], {
-            cwd: worktreePath, stdio: 'pipe', encoding: 'utf8',
-        });
-        const paths = (tracked.stdout ?? '').split(/\r?\n/).filter(Boolean);
-        if (paths.length > 0) {
-            spawnSync('git', ['-C', worktreePath, 'update-index', '--skip-worktree', '--', ...paths], {
+        try {
+            rmSync(path.join(worktreePath, '.beads'), { recursive: true, force: true });
+            const tracked = spawnSync('git', ['-C', worktreePath, 'ls-files', '--', '.beads'], {
                 cwd: worktreePath, stdio: 'pipe', encoding: 'utf8',
             });
-        }
-    } catch { /* bd resolves through the common git directory */ }
+            const paths = (tracked.stdout ?? '').split(/\r?\n/).filter(Boolean);
+            if (paths.length > 0) {
+                spawnSync('git', ['-C', worktreePath, 'update-index', '--skip-worktree', '--', ...paths], {
+                    cwd: worktreePath, stdio: 'pipe', encoding: 'utf8',
+                });
+            }
+        } catch { /* bd resolves through the common git directory */ }
+
+    }
 
     const launchedAfterMs = Date.now() - 1_000;
     const parentSession = process.env.TMUX
@@ -392,8 +413,8 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // covers the repo owner; otherwise the operator identity, as before.
     const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
     const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
-    const dispatcherEnv = dispatcher.env;
-    if (opts.bead) {
+    const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
+    if (opts.bead && !existing) {
         // CORE-2728: persist who dispatched this Codex worker before it starts, from
         // the same resolution the pane env exports. A failed or old sb is one
         // warning, never a failed launch.
@@ -426,7 +447,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     };
     const cleanupOnSignal = (): void => {
         killWindow();
-        cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+        cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
         process.exit(1);
     };
     const removeSignalCleanup = (): void => {
@@ -437,7 +458,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const cleanupAndFail = (message: string): never => {
         removeSignalCleanup();
         killWindow();
-        cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
+        cleanupLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, trustProfile);
         return fail(message);
     };
     process.once('SIGINT', cleanupOnSignal);
