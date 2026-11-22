@@ -64893,6 +64893,15 @@ async function postReview(input2, deps) {
   }
   const issueRef = candidate;
   if (!issueRef) warnings.push("no Substrate Issue ref in the PR body; the review is not journaled");
+  const state = (pull.data.state ?? "").toUpperCase();
+  const merged = pull.data.merged === true || state === "MERGED";
+  if (merged || state !== "OPEN") {
+    const mergeCommit = sha12(pull.data.merge_commit_sha ?? "");
+    const found = merged ? `is MERGED${mergeCommit ? ` (merge commit ${mergeCommit})` : ""}` : state === "" ? "returned no state" : `is ${state}`;
+    throw new ReviewRefused(
+      `PR #${input2.pr} in ${input2.repo} ${found} \u2014 a review can only be posted on an OPEN pull request. A merged or closed PR keeps the review permanently and it cannot be dismissed, so it would read as a verdict at this head. Nothing was posted.`
+    );
+  }
   const lines = input2.body.split("\n");
   const line1 = (lines[0] ?? "").trim();
   const rest = lines.slice(1).join("\n").trim();
