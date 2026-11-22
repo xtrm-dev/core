@@ -17,7 +17,8 @@ matches(role) lists every match; team() groups every live project session by rol
 Usage: route_target.py ROLE [--json]     print the address (or the full record)
        route_target.py --all             one line per role (manager and board_helper resolved, leads listed)
        route_target.py --team [--json]   every live session of this project by role: manager, leads,
-                                         board helper, workers/other
+                                         board helper, workers/other, and parked sessions (pm_park: write to
+                                         the journal of their ref, not to a socket)
 Exit:  0 resolved, 3 no live match, 4 several matches, 5 agent host unreachable, 2 unknown role.
 """
 from __future__ import annotations
@@ -168,8 +169,19 @@ def find(name: str, live: list[dict] | None = None) -> dict | None:
     return record("named", found[0]) if len(found) == 1 else None
 
 
+def parked() -> list[dict]:
+    """Sessions parked by pm_park (no live socket, a timer will wake them): {name, role, ref, wake}; [] when none."""
+    try:
+        import pm_park
+        return [{"name": r["name"], "role": r["role"], "ref": r["ref"], "wake": pm_park.wake_text(r)}
+                for r in pm_park.records(("parked", "waking"))]
+    except Exception:  # noqa: BLE001 - parking is optional; an unreadable state dir must not break routing
+        return []
+
+
 def team(live: list[dict] | None = None) -> dict:
-    """Every live session of this project grouped by role: {role: [record]}, plus "other" (workers and the rest).
+    """Every live session of this project grouped by role: {role: [record]}, plus "other" (workers and the rest)
+    and "parked" (pm_park sessions: write to the journal of their ref, not to a socket).
     A session matching several patterns is listed under the first role in roles() order."""
     live = _live_in_project(sessions() if live is None else live)
     out: dict[str, list[dict]] = {r: [] for r in ("manager", "lead", "board_helper")}
@@ -178,14 +190,18 @@ def team(live: list[dict] | None = None) -> dict:
         role = session_role(s)
         role = role if role in out else "other"
         out[role].append(record(role, s))
+    out["parked"] = parked()
     return out
 
 
 def print_team(t: dict) -> None:
-    for role in [*[r for r in t if r != "other"], "other"]:
+    for role in [*[r for r in t if r not in ("other", "parked")], "other"]:
         label = "workers/other" if role == "other" else role
         names = ", ".join(r["address"] for r in t[role]) or "-"
         print(f"team    {label:<14} {names}")
+    for p in t.get("parked") or []:
+        print(f"team    {'parked':<14} {p['name']} ({p['role']}): write to the journal of {p['ref']}, not to its "
+              f"socket; wake {p['wake']}")
 
 
 def main(argv: list[str]) -> int:
