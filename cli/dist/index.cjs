@@ -79173,6 +79173,33 @@ function getRepoRoot(cwd) {
   const fallback = git4(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
+function printCleanPlan(plan) {
+  const { removable, skippedLive, unmerged } = plan;
+  if (removable.length > 0) {
+    console.log(kleur_default.bold(`  ${removable.length} merged worktree(s):`));
+    for (const wt of removable) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch})`));
+    }
+  }
+  if (skippedLive.length > 0) {
+    console.log(kleur_default.bold(`
+  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
+    for (const wt of skippedLive) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) in use: pids ${wt.livePids.join(",")}`));
+    }
+    console.log(kleur_default.dim("    A live worktree is removed after its session ends, or with `xt worktree remove`."));
+  }
+  if (unmerged.length > 0) {
+    console.log(kleur_default.bold(`
+  ${unmerged.length} worktree(s) kept, not merged:`));
+    for (const wt of unmerged) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) not merged into the default branch`));
+    }
+  }
+}
+function worktreeListStatus(wt, repoRoot) {
+  return isMergedIntoMain(wt.branch, repoRoot, wt.head) ? "merged" : "open";
+}
 function createWorktreeCommand() {
   const cmd = new Command("worktree").description("Manage xt session worktrees");
   cmd.command("list").description("List all active xt/* worktrees with status").action(async () => {
@@ -79188,8 +79215,7 @@ function createWorktreeCommand() {
     for (const wt of worktrees) {
       const branch = wt.branch.replace("refs/heads/", "");
       const slug = branch.replace("xt/", "");
-      const merged = isMergedIntoMain(wt.branch, repoRoot, wt.head);
-      const status2 = merged ? kleur_default.green("merged") : kleur_default.yellow("open");
+      const status2 = worktreeListStatus(wt, repoRoot) === "merged" ? kleur_default.green("merged") : kleur_default.yellow("open");
       const prunable = wt.prunable ? kleur_default.dim(" [prunable]") : "";
       const runtimeBadge = wt.runtime ? kleur_default.cyan(` [${wt.runtime}]`) : "";
       const nestedBadge = wt.nestedInPath ? kleur_default.red(" [nested]") : "";
@@ -79300,27 +79326,7 @@ function createWorktreeCommand() {
       if (opts.dryRun) return;
     }
     console.log(t.bold("\n  xt worktree clean\n"));
-    if (merged.length > 0) {
-      console.log(kleur_default.bold(`  ${merged.length} merged worktree(s):`));
-      for (const wt of merged) {
-        console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch})`));
-      }
-    }
-    if (skippedLive.length > 0) {
-      console.log(kleur_default.bold(`
-  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
-      for (const wt of skippedLive) {
-        console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) in use: pids ${wt.livePids.join(",")}`));
-      }
-      console.log(kleur_default.dim("    A live worktree is removed after its session ends, or with `xt worktree remove`."));
-    }
-    if (unmerged.length > 0) {
-      console.log(kleur_default.bold(`
-  ${unmerged.length} worktree(s) kept, not merged:`));
-      for (const wt of unmerged) {
-        console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) not merged into the default branch`));
-      }
-    }
+    printCleanPlan({ removable: merged, skippedLive, unmerged });
     if (opts.orphans) {
       console.log(kleur_default.bold(`
   ${orphanDirs.length} orphaned managed director(y/ies):`));

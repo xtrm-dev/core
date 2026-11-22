@@ -1402,6 +1402,52 @@ export function getRepoRoot(cwd: string): string {
     return fallback.ok && fallback.out ? fallback.out : cwd;
 }
 
+/**
+ * Print every class the clean plan computed, with its reason.
+ *
+ * Split out of the action so the printed lines have a falsifier: the plan was
+ * pinned while the only lines a user reads were not, and deleting them left the
+ * suite green. A classification the reader never sees is the same defect as one
+ * the planner never made.
+ */
+export function printCleanPlan(plan: CleanPlan): void {
+    const { removable, skippedLive, unmerged } = plan;
+
+    if (removable.length > 0) {
+        console.log(kleur.bold(`  ${removable.length} merged worktree(s):`));
+        for (const wt of removable) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch})`));
+        }
+    }
+
+    if (skippedLive.length > 0) {
+        console.log(kleur.bold(`\n  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
+        for (const wt of skippedLive) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) in use: pids ${wt.livePids.join(',')}`));
+        }
+        console.log(kleur.dim('    A live worktree is removed after its session ends, or with `xt worktree remove`.'));
+    }
+
+    if (unmerged.length > 0) {
+        console.log(kleur.bold(`\n  ${unmerged.length} worktree(s) kept, not merged:`));
+        for (const wt of unmerged) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) not merged into the default branch`));
+        }
+    }
+}
+
+/**
+ * The status `xt worktree list` prints for one worktree.
+ *
+ * The HEAD is passed for a detached tree: without it the predicate answers off an
+ * empty branch name and `list` says "open" for a tree `clean` calls removable.
+ * Extracted so the call site has a falsifier — dropping `wt.head` here reddens a
+ * test instead of silently reintroducing the disagreement.
+ */
+export function worktreeListStatus(wt: WorktreeInfo, repoRoot: string): 'merged' | 'open' {
+    return isMergedIntoMain(wt.branch, repoRoot, wt.head) ? 'merged' : 'open';
+}
+
 export function createWorktreeCommand(): Command {
     const cmd = new Command('worktree')
         .description('Manage xt session worktrees');
@@ -1423,8 +1469,7 @@ export function createWorktreeCommand(): Command {
                 const slug = branch.replace('xt/', '');
                 // The HEAD is passed for a detached tree: without it the answer is "open" for a
                 // tree whose HEAD is an ancestor of the base, and `clean` calls that removable.
-                const merged = isMergedIntoMain(wt.branch, repoRoot, wt.head);
-                const status = merged ? kleur.green('merged') : kleur.yellow('open');
+                const status = worktreeListStatus(wt, repoRoot) === 'merged' ? kleur.green('merged') : kleur.yellow('open');
                 const prunable = wt.prunable ? kleur.dim(' [prunable]') : '';
                 const runtimeBadge = wt.runtime ? kleur.cyan(` [${wt.runtime}]`) : '';
                 const nestedBadge = wt.nestedInPath ? kleur.red(' [nested]') : '';
@@ -1585,28 +1630,7 @@ export function createWorktreeCommand(): Command {
             }
 
             console.log(t.bold('\n  xt worktree clean\n'));
-
-            if (merged.length > 0) {
-                console.log(kleur.bold(`  ${merged.length} merged worktree(s):`));
-                for (const wt of merged) {
-                    console.log(kleur.dim(`    - ${wt.path} (${wt.branch})`));
-                }
-            }
-
-            if (skippedLive.length > 0) {
-                console.log(kleur.bold(`\n  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
-                for (const wt of skippedLive) {
-                    console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) in use: pids ${wt.livePids.join(',')}`));
-                }
-                console.log(kleur.dim('    A live worktree is removed after its session ends, or with `xt worktree remove`.'));
-            }
-
-            if (unmerged.length > 0) {
-                console.log(kleur.bold(`\n  ${unmerged.length} worktree(s) kept, not merged:`));
-                for (const wt of unmerged) {
-                    console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) not merged into the default branch`));
-                }
-            }
+            printCleanPlan({ removable: merged, skippedLive, unmerged });
 
             if (opts.orphans) {
                 console.log(kleur.bold(`\n  ${orphanDirs.length} orphaned managed director(y/ies):`));

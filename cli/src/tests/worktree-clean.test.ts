@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyReap, branchLineMatches, isMergedIntoMain, planReap, readProcessTableOrRefuse, selectCleanTargets, type WorktreeInfo } from '../commands/worktree.js';
+import { applyReap, branchLineMatches, isMergedIntoMain, planReap, printCleanPlan, readProcessTableOrRefuse, selectCleanTargets, worktreeListStatus, type WorktreeInfo } from '../commands/worktree.js';
 import { readProcessCwds } from '../core/worktree-reap.js';
 
 const created: string[] = [];
@@ -190,5 +190,47 @@ describe('applyReap', () => {
             { candidates: [], summary: { reapable: 0, artifacts_only: 0, reclaimable_bytes: 0, held: 0, skipped: 0 } } as never,
             { procRoot: '/nonexistent-proc-root' },
         )).toThrow(/cannot enumerate process working directories under \/nonexistent-proc-root/);
+    });
+});
+
+describe('printCleanPlan', () => {
+    it('prints every class with its reason, so no classification is dropped silently', () => {
+        const logs: string[] = [];
+        const original = console.log;
+        console.log = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+        try {
+            const target = (path: string, branch: string, livePids: number[] = []) => ({ path, branch, livePids });
+            printCleanPlan({
+                removable: [target('/tmp/w-merged', 'xt/merged')],
+                skippedLive: [target('/tmp/w-live', 'xt/live', [4242])],
+                unmerged: [target('/tmp/w-unmerged', 'xt/unmerged')],
+            });
+        } finally {
+            console.log = original;
+        }
+
+        const text = logs.join('\n');
+        expect(text).toContain('1 merged worktree(s):');
+        expect(text).toContain('1 merged worktree(s) kept, in use right now:');
+        expect(text).toContain('in use: pids 4242');
+        // The line a user reads when their tree was skipped. A plan-only assertion
+        // stayed green while deleting these two console.log calls changed nothing.
+        expect(text).toContain('1 worktree(s) kept, not merged:');
+        expect(text).toContain('/tmp/w-unmerged (xt/unmerged) not merged into the default branch');
+    });
+});
+
+describe('worktreeListStatus', () => {
+    it('answers for a detached tree from its HEAD, the way clean does', () => {
+        const repo = makeRepo();
+        const mainSha = git(['rev-parse', 'HEAD'], repo);
+        git(['checkout', '--quiet', '--detach'], repo);
+
+        // Detached at a merged commit: `clean` calls this removable, so `list` must not
+        // call it open. Dropping the HEAD argument here is the regression this pins.
+        expect(worktreeListStatus(tree({ path: repo, branch: '', head: mainSha }), repo)).toBe('merged');
+        // And the answer stays "open" when the HEAD is anything the predicate cannot
+        // read as a commit: no silent merged-by-default for a tree it cannot identify.
+        expect(worktreeListStatus(tree({ path: repo, branch: '', head: 'not-a-sha' }), repo)).toBe('open');
     });
 });
