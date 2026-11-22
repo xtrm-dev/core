@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { Command } from 'commander';
 import kleur from 'kleur';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, type PackageStatus } from '../utils/npm-latest.js';
+import { formatBundleFreshness, readBundleFreshness, type BundleFreshness } from '../core/bundle-freshness.js';
 
 // __dirname is available in CJS output (tsup target: cjs). Matches
 // the same pattern used at src/index.ts to resolve the shipped
@@ -17,6 +18,8 @@ interface VersionInfo {
     dirty: boolean | null;
     source: 'npm' | 'local';
     built_at: string | null;
+    /** CORE-2754: whether this bundle is the code beside it, and by how much it is not. */
+    bundle: BundleFreshness;
     runtime: {
         node: string;
     };
@@ -93,6 +96,7 @@ export function collectVersionInfo(): VersionInfo {
         dirty: readGitDirty(pkg.root),
         source: detectSource(pkg.root),
         built_at: readBuiltAt(pkg.root),
+        bundle: readBundleFreshness({ cliRoot: resolve(pkg.root, 'cli') }),
         runtime: {
             node: process.versions.node,
         },
@@ -106,6 +110,7 @@ function formatHuman(info: VersionInfo): string {
         `  commit:   ${commitStr}`,
         `  source:   ${info.source}`,
         `  built at: ${info.built_at ?? 'unknown'}`,
+        `  bundle:   ${formatBundleFreshness(info.bundle)}`,
         `  runtime:  node ${info.runtime.node}`,
     ].join('\n');
 }
