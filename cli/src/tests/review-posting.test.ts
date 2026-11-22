@@ -98,7 +98,7 @@ function input(overrides: Partial<PostReviewInput> = {}): PostReviewInput {
 
 function headRoutes(extra: Record<string, { status: number; data: unknown }> = {}) {
     return {
-        'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'xt/some-branch' }, body: pullBody(ISSUE) } },
+        'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: HEAD, ref: 'xt/some-branch' }, body: pullBody(ISSUE) } },
         'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: OTHER }, { sha: HEAD }] },
         'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
         ...extra,
@@ -320,7 +320,7 @@ describe('postReview', () => {
 
     it('refuses a review whose head is no longer the PR head', async () => {
         const github = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: OTHER }, body: pullBody(ISSUE) } },
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: OTHER }, body: pullBody(ISSUE) } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: OTHER }, { sha: HEAD }] },
         });
         await expect(postReview(input(), github.deps)).rejects.toThrow(/head moved: reviewed .*, current/);
@@ -329,7 +329,7 @@ describe('postReview', () => {
 
     it('refuses a head that is not among the PR commits', async () => {
         const github = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: OTHER }, body: pullBody(ISSUE) } },
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: OTHER }, body: pullBody(ISSUE) } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: OTHER }] },
         });
         await expect(postReview(input(), github.deps)).rejects.toThrow(/not among the commits/);
@@ -339,7 +339,7 @@ describe('postReview', () => {
         const github = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
-                data: { head: { sha: HEAD }, body: `<!-- xtrm issue=${ISSUE} holder=core-worker-a run=run123 -->` },
+                data: { state: 'open', head: { sha: HEAD }, body: `<!-- xtrm issue=${ISSUE} holder=core-worker-a run=run123 -->` },
             },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
         });
@@ -351,7 +351,7 @@ describe('postReview', () => {
         const withBranch = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
-                data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: 'no marker' },
+                data: { state: 'open', head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: 'no marker' },
             },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
             'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
@@ -364,7 +364,7 @@ describe('postReview', () => {
         const holderOnly = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
-                data: { head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: '<!-- xtrm holder=core-2528-worker run=abc123 -->' },
+                data: { state: 'open', head: { sha: HEAD, ref: 'xt/worker-CORE-2528-x' }, body: '<!-- xtrm holder=core-2528-worker run=abc123 -->' },
             },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
         });
@@ -373,7 +373,7 @@ describe('postReview', () => {
 
         // No marker, no attribution: refused, never posted with a warning.
         const orphan = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'main' }, body: 'no marker' } },
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: HEAD, ref: 'main' }, body: 'no marker' } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
         });
         await expect(postReview(input(), orphan.deps)).rejects.toThrow(/carries no xtrm marker/);
@@ -401,7 +401,7 @@ describe('postReview', () => {
             id: index + 1, state: 'COMMENTED', user: { login: 'xtrm-reviewer[bot]' },
         }));
         const github = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD, ref: 'xt/b' }, body: pullBody(ISSUE) } },
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: HEAD, ref: 'xt/b' }, body: pullBody(ISSUE) } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
             'GET /repos/xtrm-dev/core/pulls/42/reviews?per_page=100&page=1': { status: 200, data: firstPage },
             'GET /repos/xtrm-dev/core/pulls/42/reviews?per_page=100&page=2': {
@@ -426,7 +426,7 @@ describe('postReview', () => {
         const github = fakeGitHub({
             'GET /repos/xtrm-dev/core/pulls/42': {
                 status: 200,
-                data: { head: { sha: HEAD, ref: 'xt/b' }, body: '<!-- xtrm issue=CORE-2528 run=abc -->' },
+                data: { state: 'open', head: { sha: HEAD, ref: 'xt/b' }, body: '<!-- xtrm issue=CORE-2528 run=abc -->' },
             },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
         });
@@ -436,7 +436,7 @@ describe('postReview', () => {
 
     it('refuses an Issue ref from the PR body that is not a Substrate ref', async () => {
         const github = fakeGitHub({
-            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { head: { sha: HEAD }, body: '<!-- xtrm issue=--force holder=x run=y -->' } },
+            'GET /repos/xtrm-dev/core/pulls/42': { status: 200, data: { state: 'open', head: { sha: HEAD }, body: '<!-- xtrm issue=--force holder=x run=y -->' } },
             'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
         });
         await expect(postReview(input(), github.deps)).rejects.toThrow(/not a Substrate ref/);
@@ -707,5 +707,87 @@ describe('the review receipt against the real sb', () => {
             expect(latest.data?.kind).toBe('result');
             expect(latest.data?.result?.summary).toBe(`merged xtrm-dev/other#9 at ${sha12(HEAD)}`);
         }, 60000);
+    });
+});
+
+// CORE-2753: a review belongs to an OPEN pull request. A merged PR's review cannot be dismissed
+// (PUT …/reviews/<id>/dismissals answers 422 for a COMMENTED review), so a late post writes
+// permanent evidence into the review list and changes what a later reader calls "the latest review
+// at this head". Measured: a comment-only review landed on an already-merged PR 75 minutes after
+// its merge commit.
+describe('CORE-2753: a review is only posted on an open pull request', () => {
+    const MERGE_COMMIT = 'feedfacefeedfacefeedfacefeedfacefeedface';
+
+    it('refuses a merged pull request, names the merge commit, and never posts', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: {
+                    state: 'closed',
+                    merged: true,
+                    merged_at: '2026-11-22T10:23:40Z',
+                    merge_commit_sha: MERGE_COMMIT,
+                    head: { sha: HEAD, ref: 'xt/some-branch' },
+                    body: pullBody(ISSUE),
+                },
+            },
+        }));
+        const failure = postReview(input(), github.deps);
+        await expect(failure).rejects.toThrow(/is MERGED \(merge commit feedfacefeed\)/);
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/can only be posted on an OPEN pull request/);
+        expect(github.calls.some((call) => call.method === 'POST'), 'a merged PR must never receive a review').toBe(false);
+        expect(github.calls.some((call) => call.method === 'PUT'), 'no dismissal work either').toBe(false);
+    });
+
+    it('refuses a closed pull request and says which state it found', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: { state: 'closed', head: { sha: HEAD, ref: 'xt/some-branch' }, body: pullBody(ISSUE) },
+            },
+        }));
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/in xtrm-dev\/core is CLOSED/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('refuses when the response carries no state, because no answer is not "open"', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: { head: { sha: HEAD, ref: 'xt/some-branch' }, body: pullBody(ISSUE) },
+            },
+        }));
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/returned no state/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('keeps the own-PR refusal first, so a seat cannot borrow a merged PR to test posting', async () => {
+        // Both would refuse; the pinned order is own-PR, then state. A merged PR owned by the
+        // reviewer must say own-PR, because that is the rule that does not depend on PR state.
+        const github = fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: {
+                    state: 'closed',
+                    merged: true,
+                    merge_commit_sha: MERGE_COMMIT,
+                    head: { sha: HEAD },
+                    body: `<!-- xtrm issue=${ISSUE} holder=core-worker-a run=run123 -->`,
+                },
+            },
+            'GET /repos/xtrm-dev/core/pulls/42/commits': { status: 200, data: [{ sha: HEAD }] },
+        });
+        await expect(postReview(input(), github.deps)).rejects.toThrow(/own-PR/);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(false);
+    });
+
+    it('still posts on an open pull request', async () => {
+        const github = fakeGitHub(headRoutes({
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: [] },
+            'POST /repos/xtrm-dev/core/pulls/42/reviews': { status: 201, data: { id: 56, state: 'COMMENTED', html_url: 'u' } },
+        }));
+        const receipt = await postReview(input(), github.deps);
+        expect(receipt.id).toBe(56);
+        expect(github.calls.some((call) => call.method === 'POST')).toBe(true);
     });
 });

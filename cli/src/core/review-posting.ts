@@ -308,6 +308,9 @@ type PullResponse = {
     number?: number;
     body?: string | null;
     state?: string;
+    merged?: boolean;
+    merge_commit_sha?: string | null;
+    merged_at?: string | null;
     head?: { sha?: string; ref?: string };
 };
 type CommitResponse = { sha?: string };
@@ -396,6 +399,31 @@ export async function postReview(input: PostReviewInput, deps: ReviewDeps): Prom
     }
     const issueRef = candidate;
     if (!issueRef) warnings.push('no Substrate Issue ref in the PR body; the review is not journaled');
+
+    // CORE-2753: a review belongs to an OPEN pull request. A merged PR's review cannot be dismissed
+    // (PUT …/reviews/<id>/dismissals answers 422 for a COMMENTED review), so posting one writes
+    // permanent evidence into the review list and changes what a later reader sees as "the latest
+    // review at this head". Measured: a comment-only review landed on an already-merged PR 75 minutes
+    // after its merge commit. Decide from the object already fetched — a second call would describe a
+    // different moment than the one this decision is about — and refuse on anything that is not OPEN,
+    // including a response without a state, because "no answer" must not read as "open".
+    const state = (pull.data.state ?? '').toUpperCase();
+    // GitHub reports a merged PR as state CLOSED plus merged: true. The merge is
+    // the fact that makes the review permanent, so it decides the message even
+    // though the state alone would read as merely closed.
+    const merged = pull.data.merged === true || state === 'MERGED';
+    if (merged || state !== 'OPEN') {
+        const mergeCommit = sha12(pull.data.merge_commit_sha ?? '');
+        const found = merged
+            ? `is MERGED${mergeCommit ? ` (merge commit ${mergeCommit})` : ''}`
+            : state === ''
+                ? 'returned no state'
+                : `is ${state}`;
+        throw new ReviewRefused(
+            `PR #${input.pr} in ${input.repo} ${found} — a review can only be posted on an OPEN pull request. ` +
+            'A merged or closed PR keeps the review permanently and it cannot be dismissed, so it would read as a verdict at this head. Nothing was posted.',
+        );
+    }
 
     const lines = input.body.split('\n');
     const line1 = (lines[0] ?? '').trim();
