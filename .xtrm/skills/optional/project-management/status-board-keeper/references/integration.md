@@ -39,7 +39,7 @@ treat the store as read-mostly.
 
 ## 2. Component map
 
-Pack root: `/home/dawid/.xtrm/skills/optional/project-management/`
+Pack root: `~/.xtrm/skills/optional/project-management/`
 
 | Path | Lines | Role |
 |---|---|---|
@@ -71,11 +71,11 @@ Line anchors in `status_board_sync.py`: `mem_gate` 215, `hn_call` 237, `hn_list`
 | unit | `~/.config/systemd/user/status-board-sync.service` (oneshot) |
 | timer | `~/.config/systemd/user/status-board-sync.timer`, every 5 min |
 | env | `PM_PROJECT=mercury`, `SUBSTRATE_HOLDER=MMD-3173-tabellone-sync` |
-| workdir / log | `/home/dawid/.xtrm/product/market-data/tabellone/` · `sync.log` (append) |
+| workdir / log | `~/.xtrm/product/market-data/tabellone/` · `sync.log` (append) |
 | limits | `TimeoutStartSec=600`, `Nice=10` |
 | linger | enabled for `dawid` (survives logout and reboot) |
 
-State directory (`PM_STATUS_BOARD_STATE_DIR` = `/home/dawid/.xtrm/product/market-data/tabellone/`):
+State directory (`PM_STATUS_BOARD_STATE_DIR` = `~/.xtrm/product/market-data/tabellone/`):
 
 | File | Meaning |
 |---|---|
@@ -110,10 +110,10 @@ it be inferred from the working directory.
 |---|---|---|---|
 | `status_board_site` | `PM_STATUS_BOARD_SITE` | `velvet-breeze-fbm8` | yes |
 | `status_board_self_issue` | `PM_STATUS_BOARD_SELF_ISSUE` | `MMD-3173` | yes |
-| `status_board_key_file` | `PM_STATUS_BOARD_KEY_FILE` | `/home/dawid/.herenow/credentials` | no (default `~/.herenow/credentials`) |
-| `status_board_state_dir` | `PM_STATUS_BOARD_STATE_DIR` | `/home/dawid/.xtrm/product/market-data/tabellone` | no (default `<state_dir>/status_board`) |
-| `answers_inbox` | `PM_ANSWERS_INBOX` | `/home/dawid/.cache/MMD-3173/answers-inbox.jsonl` | no |
-| `bot_inbox` | `PM_BOT_INBOX` | `/home/dawid/.xtrm/product/market-data/xtrm-bot-watch/inbox.jsonl` | no |
+| `status_board_key_file` | `PM_STATUS_BOARD_KEY_FILE` | `~/.herenow/credentials` | no (default `~/.herenow/credentials`) |
+| `status_board_state_dir` | `PM_STATUS_BOARD_STATE_DIR` | `~/.xtrm/product/market-data/tabellone` | no (default `<state_dir>/status_board`) |
+| `answers_inbox` | `PM_ANSWERS_INBOX` | `~/.cache/MMD-3173/answers-inbox.jsonl` | no |
+| `bot_inbox` | `PM_BOT_INBOX` | `~/.xtrm/product/market-data/xtrm-bot-watch/inbox.jsonl` | no |
 | `status_board_unit` | `PM_STATUS_BOARD_UNIT` | `status-board-sync.service` | no |
 | `status_board_file_only` | — | `["manager"]` | no |
 | `status_board_answer_seed_at` | — | `2026-10-30T12:30Z` | no |
@@ -322,8 +322,8 @@ An app that wants the board's health should read the same unit, not a copy of th
 ## 11. Minimal reader for another app
 
 ```python
-import json, urllib.request
-KEY  = open('/home/dawid/.herenow/credentials').read().strip()
+import json, os, urllib.request
+KEY  = open(os.path.expanduser('~/.herenow/credentials')).read().strip()
 SITE = 'velvet-breeze-fbm8'
 BASE = f'https://here.now/api/v1/publishes/{SITE}/data/docs'
 
