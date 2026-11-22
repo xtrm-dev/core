@@ -19,7 +19,7 @@ cli/node_modules
 *.db
 
 # TDD Guard runtime data
-.claude/tdd-guard/data/
+**/.claude/tdd-guard/data/
 
 # Pi npm cache (symlink AND directory forms — executors sometimes create as symlink to abs path)
 .pi/npm
