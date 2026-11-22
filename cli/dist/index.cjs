@@ -67266,6 +67266,15 @@ function resolveLauncherModel(runtime, runtimeArgs, env3 = process.env, settings
   }
   return { source: "unresolved" };
 }
+function settingsFileModel(file2) {
+  try {
+    const parsed = JSON.parse((0, import_node_fs8.readFileSync)(file2, "utf8"));
+    const model = typeof parsed.model === "string" ? parsed.model.trim() : "";
+    return model || void 0;
+  } catch {
+    return void 0;
+  }
+}
 function claudeSettingsModel(opts = {}) {
   const env3 = opts.env ?? process.env;
   const home = (env3.HOME ?? "").trim() || import_node_os14.default.homedir();
@@ -67275,14 +67284,18 @@ function claudeSettingsModel(opts = {}) {
     import_node_path22.default.join(configDir, "settings.json")
   ].filter((file2) => Boolean(file2));
   for (const file2 of files) {
-    try {
-      const parsed = JSON.parse((0, import_node_fs8.readFileSync)(file2, "utf8"));
-      const model = typeof parsed.model === "string" ? parsed.model.trim() : "";
-      if (model) return model;
-    } catch {
-    }
+    const model = settingsFileModel(file2);
+    if (model) return model;
   }
   return void 0;
+}
+function strayProjectSettingsModel(opts = { worktreePath: "" }) {
+  const mainRepoRoot = (opts.mainRepoRoot ?? "").trim();
+  if (!mainRepoRoot || !opts.worktreePath.trim()) return void 0;
+  if (settingsFileModel(import_node_path22.default.join(opts.worktreePath, ".claude", "settings.json"))) return void 0;
+  const file2 = import_node_path22.default.join(mainRepoRoot, ".claude", "settings.json");
+  const model = settingsFileModel(file2);
+  return model ? { file: file2, model } : void 0;
 }
 function stripLauncherModelVar(env3) {
   const out = { ...env3 };
@@ -67292,17 +67305,25 @@ function stripLauncherModelVar(env3) {
 function launcherModelEnv(runtime, runtimeArgs, env3, settingsModel, refuse = (message) => {
   process.stderr.write(message);
   process.exit(1);
-}) {
+}, stray) {
   const resolved = resolveLauncherModel(runtime, runtimeArgs, env3, settingsModel);
   if (!resolved.model) {
     if (runtime === "claude") {
+      const strayNote = stray ? "  The main checkout's " + stray.file + ' names "' + stray.model + '", but this seat runs in the worktree\n  and Claude Code reads project settings from the tree it is started in. That file is gitignored,\n  so a fresh worktree never carries it.\n' : "";
       refuse(
-        '\n  \u2717 cannot resolve the model this claude seat would run: no --model argument, no ANTHROPIC_MODEL,\n    and no "model" in .claude/settings.json or ~/.claude/settings.json\n  Pass --model <id>, set ANTHROPIC_MODEL, or declare specialist.execution.model on the role.\n  A seat that starts without a known model posts reviews whose model header nothing can check (XTRM-970).\n'
+        '\n  \u2717 cannot resolve the model this claude seat would run: no --model argument, no ANTHROPIC_MODEL,\n    and no "model" in .claude/settings.json or ~/.claude/settings.json\n' + strayNote + "  Pass --model <id>, set ANTHROPIC_MODEL, copy the settings file into the worktree,\n  or declare specialist.execution.model on the role.\n  A seat that starts without a known model posts reviews whose model header nothing can check (XTRM-970).\n"
       );
     }
     return {};
   }
   return { [LAUNCH_MODEL_VAR]: resolved.model };
+}
+function launcherModelResolution(runtime, runtimeArgs, opts) {
+  const env3 = opts.env ?? process.env;
+  if (runtime !== "claude") return launcherModelEnv(runtime, runtimeArgs, env3);
+  const settingsModel = claudeSettingsModel({ projectDir: opts.worktreePath, env: env3 });
+  const stray = strayProjectSettingsModel({ mainRepoRoot: opts.mainRepoRoot, worktreePath: opts.worktreePath, env: env3 });
+  return launcherModelEnv(runtime, runtimeArgs, env3, settingsModel, opts.refuse, stray);
 }
 var ROLE_GUARDED_PI_FLAGS = [
   "--session-dir",
@@ -69185,7 +69206,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process10.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelEnv(runtime, runtimeArgs, process.env, runtime === "claude" ? claudeSettingsModel({ projectDir: mainRepoRoot }) : void 0), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -69290,7 +69311,7 @@ async function launchTmuxSession(args) {
   };
   const plan = args.mode === "role" ? buildRoleTmuxPlan({ ...planCommon, role: args.role }) : buildBareTmuxPlan({ ...planCommon, sessionSlug });
   const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(" ");
-  const modelEnv = launcherModelEnv(runtime, plan.runtimeArgs, process.env, runtime === "claude" ? claudeSettingsModel({ projectDir: args.repoRoot ?? worktreePath }) : void 0);
+  const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, { worktreePath, mainRepoRoot: args.repoRoot, env: process.env });
   const launchEnv = stripLauncherModelVar(process.env);
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path22.default.basename(worktreePath) });

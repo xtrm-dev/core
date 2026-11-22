@@ -20,6 +20,8 @@ import {
     claudeSettingsModel,
     launchedModel,
     launcherModelEnv,
+    launcherModelResolution,
+    strayProjectSettingsModel,
     resolveLauncherModel,
     stripLauncherModelVar,
     ensureClaudePackSkillLinks,
@@ -1078,6 +1080,177 @@ describe('launcherModelEnv', () => {
         };
         expect(launcherModelEnv('pi', [], {}, undefined, refuse)).toEqual({});
         expect(refused).toEqual([]);
+    });
+});
+
+describe('launcherModelResolution (CORE-2761)', () => {
+    /** A main checkout whose project settings name `model`, and a worktree of it. */
+    function fixture(mainModel: string | null, worktreeModel: string | null, userModel: string | null): {
+        main: string;
+        worktree: string;
+        config: string;
+        cleanup: () => void;
+    } {
+        const main = mkdtempSync(path.join(os.tmpdir(), 'xtrm-2761-main-'));
+        const worktree = path.join(main, '.xtrm', 'wt');
+        const config = mkdtempSync(path.join(os.tmpdir(), 'xtrm-2761-config-'));
+        for (const [dir, model] of [[main, mainModel], [worktree, worktreeModel]] as const) {
+            mkdirSync(dir, { recursive: true });
+            if (model === null) continue;
+            mkdirSync(path.join(dir, '.claude'), { recursive: true });
+            writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ model }));
+        }
+        if (userModel !== null) writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ model: userModel }));
+        return {
+            main,
+            worktree,
+            config,
+            cleanup: () => {
+                rmSync(main, { recursive: true, force: true });
+                rmSync(config, { recursive: true, force: true });
+            },
+        };
+    }
+
+    function refuseRecorder(): { refuse: (message: string) => never; refused: string[] } {
+        const refused: string[] = [];
+        const refuse = (message: string): never => {
+            refused.push(message);
+            throw new Error('refused');
+        };
+        return { refuse, refused };
+    }
+
+    it('exports the worktree\'s own model, not the main checkout\'s', () => {
+        const f = fixture('worktree-model', 'wt-model', null);
+        try {
+            const env = launcherModelResolution('claude', [], {
+                worktreePath: f.worktree,
+                mainRepoRoot: f.main,
+                env: { HOME: f.config, CLAUDE_CONFIG_DIR: f.config },
+            });
+            expect(env).toEqual({ PI_MODEL: 'wt-model' });
+        } finally {
+            f.cleanup();
+        }
+    });
+
+    it('exports the user-level model when the worktree carries no project settings', () => {
+        const f = fixture('mainrepo-model', null, 'user-model');
+        try {
+            const env = launcherModelResolution('claude', [], {
+                worktreePath: f.worktree,
+                mainRepoRoot: f.main,
+                env: { HOME: f.config, CLAUDE_CONFIG_DIR: f.config },
+            });
+            // The child in that directory resolves user settings, so this is the
+            // value that agrees with what it runs. The main checkout's file is a
+            // claim the runtime never reads.
+            expect(env).toEqual({ PI_MODEL: 'user-model' });
+        } finally {
+            f.cleanup();
+        }
+    });
+
+    it('refuses rather than exporting the main checkout\'s model the seat does not run', () => {
+        const f = fixture('mainrepo-model', null, null);
+        const { refuse, refused } = refuseRecorder();
+        try {
+            expect(() => launcherModelResolution('claude', [], {
+                worktreePath: f.worktree,
+                mainRepoRoot: f.main,
+                env: { HOME: f.config, CLAUDE_CONFIG_DIR: f.config },
+                refuse,
+            })).toThrow('refused');
+            expect(refused).toHaveLength(1);
+            // The message names the file the operator is thinking of, and says
+            // why the seat does not read it.
+            expect(refused[0]).toContain(path.join(f.main, '.claude', 'settings.json'));
+            expect(refused[0]).toContain('mainrepo-model');
+            expect(refused[0]).toContain('gitignored');
+            expect(refused[0]).toContain('--model');
+        } finally {
+            f.cleanup();
+        }
+    });
+
+    it('refuses without naming a stray file when the main checkout has none', () => {
+        const f = fixture(null, null, null);
+        const { refuse, refused } = refuseRecorder();
+        try {
+            expect(() => launcherModelResolution('claude', [], {
+                worktreePath: f.worktree,
+                mainRepoRoot: f.main,
+                env: { HOME: f.config, CLAUDE_CONFIG_DIR: f.config },
+                refuse,
+            })).toThrow('refused');
+            expect(refused[0]).not.toContain('The main checkout');
+            expect(refused[0]).toContain('XTRM-970');
+        } finally {
+            f.cleanup();
+        }
+    });
+
+    it('lets an unresolved pi launch through, because its runtime exports the model itself', () => {
+        const f = fixture('mainrepo-model', null, null);
+        try {
+            expect(launcherModelResolution('pi', [], {
+                worktreePath: f.worktree,
+                mainRepoRoot: f.main,
+                env: { HOME: f.config, CLAUDE_CONFIG_DIR: f.config },
+            })).toEqual({});
+        } finally {
+            f.cleanup();
+        }
+    });
+});
+
+describe('strayProjectSettingsModel', () => {
+    it('reports the main checkout\'s model only when the worktree cannot answer for itself', () => {
+        const main = mkdtempSync(path.join(os.tmpdir(), 'xtrm-2761-stray-'));
+        const worktree = path.join(main, '.xtrm', 'wt');
+        try {
+            mkdirSync(path.join(main, '.claude'), { recursive: true });
+            writeFileSync(path.join(main, '.claude', 'settings.json'), JSON.stringify({ model: 'mainrepo-model' }));
+            mkdirSync(worktree, { recursive: true });
+            expect(strayProjectSettingsModel({ mainRepoRoot: main, worktreePath: worktree })).toEqual({
+                file: path.join(main, '.claude', 'settings.json'),
+                model: 'mainrepo-model',
+            });
+            // A worktree with its own project settings is not stray: its file is
+            // the one the child reads.
+            mkdirSync(path.join(worktree, '.claude'), { recursive: true });
+            writeFileSync(path.join(worktree, '.claude', 'settings.json'), JSON.stringify({ model: 'wt-model' }));
+            expect(strayProjectSettingsModel({ mainRepoRoot: main, worktreePath: worktree })).toBeUndefined();
+        } finally {
+            rmSync(main, { recursive: true, force: true });
+        }
+    });
+
+    it('reads no settings root of its own when no main checkout is known', () => {
+        const worktree = mkdtempSync(path.join(os.tmpdir(), 'xtrm-2761-noroot-'));
+        try {
+            expect(strayProjectSettingsModel({ worktreePath: worktree })).toBeUndefined();
+            expect(strayProjectSettingsModel({ mainRepoRoot: worktree, worktreePath: '' })).toBeUndefined();
+        } finally {
+            rmSync(worktree, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('the two spawn paths read one settings root (CORE-2761)', () => {
+    // Measured: `xt claude` exported PI_MODEL=mainrepo-model while the child in
+    // the worktree ran its user-level model, because Claude Code resolves
+    // project settings from the tree it is started in and `.claude/settings.json`
+    // is gitignored, so a fresh worktree never carries it. The fix is one seam;
+    // this pins that there is still only one place that asks for a project dir.
+    it('asks for a project dir in exactly one place, and it is the worktree', () => {
+        const source = readFileSync(path.join(process.cwd(), 'src', 'utils', 'worktree-session.ts'), 'utf8');
+        const asks = source.match(/claudeSettingsModel\(\{[^}]*projectDir/g) ?? [];
+        expect(asks).toHaveLength(1);
+        expect(source).toContain('claudeSettingsModel({ projectDir: opts.worktreePath, env })');
+        expect(source).not.toContain('projectDir: mainRepoRoot');
+        expect(source).not.toContain('projectDir: args.repoRoot');
     });
 });
 

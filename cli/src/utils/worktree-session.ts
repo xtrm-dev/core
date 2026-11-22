@@ -468,12 +468,33 @@ export function resolveLauncherModel(
 }
 
 /**
+ * The `model` a settings file names, or undefined when it names none.
+ *
+ * Unparseable or absent files are not a resolution: the caller's next source,
+ * and finally the refusal, still apply.
+ */
+function settingsFileModel(file: string): string | undefined {
+    try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8')) as { model?: unknown };
+        const model = typeof parsed.model === 'string' ? parsed.model.trim() : '';
+        return model || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
  * The `model` Claude Code would resolve from its own settings when no flag and
  * no `ANTHROPIC_MODEL` is present. Reading it is what keeps this export honest
  * at the common case: `~/.claude/settings.json` naming `opus` IS the model the
  * seat runs, so refusing there would be a false refusal, and guessing nothing
  * would leave the seat unchecked. Project settings win over user settings, the
  * order Claude Code itself applies.
+ *
+ * `projectDir` must be the directory the seat RUNS in, not the main checkout.
+ * Claude Code resolves project settings from the tree it is started in, so a
+ * launch that reads `.claude/settings.json` anywhere else reads a file the
+ * runtime never opens (CORE-2761, measured below).
  */
 export function claudeSettingsModel(opts: { projectDir?: string; env?: NodeJS.ProcessEnv } = {}): string | undefined {
     const env = opts.env ?? process.env;
@@ -487,16 +508,34 @@ export function claudeSettingsModel(opts: { projectDir?: string; env?: NodeJS.Pr
         path.join(configDir, 'settings.json'),
     ].filter((file): file is string => Boolean(file));
     for (const file of files) {
-        try {
-            const parsed = JSON.parse(readFileSync(file, 'utf8')) as { model?: unknown };
-            const model = typeof parsed.model === 'string' ? parsed.model.trim() : '';
-            if (model) return model;
-        } catch {
-            // Absent or unparseable settings are not a resolution; the next
-            // source, and finally the refusal, still apply.
-        }
+        const model = settingsFileModel(file);
+        if (model) return model;
     }
     return undefined;
+}
+
+/**
+ * The `model` the MAIN checkout's project settings name, when the worktree the
+ * seat runs in carries none of its own (CORE-2761).
+ *
+ * This value is never exported. It exists so a refusal can name the file the
+ * operator is thinking of, because that file is usually invisible to the seat:
+ * `.claude/settings.json` is gitignored, so a fresh worktree never materialises
+ * it, and Claude Code reads project settings from the tree it is started in.
+ * Reading the main checkout to RESOLVE (what XTRM-970 did before this) exported
+ * a model the child was not running.
+ */
+export function strayProjectSettingsModel(
+    opts: { mainRepoRoot?: string; worktreePath: string; env?: NodeJS.ProcessEnv } = { worktreePath: '' },
+): { file: string; model: string } | undefined {
+    const mainRepoRoot = (opts.mainRepoRoot ?? '').trim();
+    if (!mainRepoRoot || !opts.worktreePath.trim()) return undefined;
+    // Only a stray when the worktree cannot answer for itself: when it carries
+    // its own project settings, those are the ones the child reads.
+    if (settingsFileModel(path.join(opts.worktreePath, '.claude', 'settings.json'))) return undefined;
+    const file = path.join(mainRepoRoot, '.claude', 'settings.json');
+    const model = settingsFileModel(file);
+    return model ? { file, model } : undefined;
 }
 
 /** Drop any inherited model variable, so a resolved value is the only one a seat sees. */
@@ -530,20 +569,55 @@ export function launcherModelEnv(
         process.stderr.write(message);
         process.exit(1);
     },
+    stray?: { file: string; model: string },
 ): Record<string, string> {
     const resolved = resolveLauncherModel(runtime, runtimeArgs, env, settingsModel);
     if (!resolved.model) {
         if (runtime === 'claude') {
+            const strayNote = stray
+                ? '  The main checkout\'s ' + stray.file + ' names "' + stray.model + '", but this seat runs in the worktree\n'
+                    + '  and Claude Code reads project settings from the tree it is started in. That file is gitignored,\n'
+                    + '  so a fresh worktree never carries it.\n'
+                : '';
             refuse(
                 '\n  ✗ cannot resolve the model this claude seat would run: no --model argument, no ANTHROPIC_MODEL,\n'
                 + '    and no "model" in .claude/settings.json or ~/.claude/settings.json\n'
-                + '  Pass --model <id>, set ANTHROPIC_MODEL, or declare specialist.execution.model on the role.\n'
+                + strayNote
+                + '  Pass --model <id>, set ANTHROPIC_MODEL, copy the settings file into the worktree,\n'
+                + '  or declare specialist.execution.model on the role.\n'
                 + '  A seat that starts without a known model posts reviews whose model header nothing can check (XTRM-970).\n',
             );
         }
         return {};
     }
     return { [LAUNCH_MODEL_VAR]: resolved.model };
+}
+
+/**
+ * The model environment every launcher exports, resolved from the directory the
+ * seat RUNS in (CORE-2761).
+ *
+ * Both spawn paths go through this one function so they cannot drift: the tmux
+ * path used to read `args.repoRoot ?? worktreePath` and the direct spawn read
+ * `mainRepoRoot`, which is the same file only when they agree — and measured,
+ * they did not. Claude Code resolves project settings from the tree it is
+ * started in, so the worktree is the only root whose answer the child reproduces.
+ */
+export function launcherModelResolution(
+    runtime: 'claude' | 'pi',
+    runtimeArgs: readonly string[],
+    opts: {
+        worktreePath: string;
+        mainRepoRoot?: string;
+        env?: NodeJS.ProcessEnv;
+        refuse?: (message: string) => never;
+    },
+): Record<string, string> {
+    const env = opts.env ?? process.env;
+    if (runtime !== 'claude') return launcherModelEnv(runtime, runtimeArgs, env);
+    const settingsModel = claudeSettingsModel({ projectDir: opts.worktreePath, env });
+    const stray = strayProjectSettingsModel({ mainRepoRoot: opts.mainRepoRoot, worktreePath: opts.worktreePath, env });
+    return launcherModelEnv(runtime, runtimeArgs, env, settingsModel, opts.refuse, stray);
 }
 
 // xt-owned flags a passthrough must not clobber. Reject with a clear error if
@@ -3668,7 +3742,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelEnv(runtime, runtimeArgs, process.env, runtime === 'claude' ? claudeSettingsModel({ projectDir: mainRepoRoot }) : undefined), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3733,10 +3807,11 @@ type TmuxLaunchArgs = {
     worktreePath: string;
     branchName: string;
     /**
-     * The main checkout, used to read project settings (`.claude/settings.json`)
-     * before the worktree exists — XTRM-970 refuses a claude launch whose model
-     * cannot be resolved, and refusing on a file that was not yet materialised
-     * would be a false refusal.
+     * The main checkout. CORE-2761: it is NOT where project settings are read
+     * from — the seat runs in the worktree, and Claude Code resolves project
+     * settings from the tree it is started in. It is kept only so a refusal can
+     * name the file the operator is thinking of (`strayProjectSettingsModel`),
+     * because that file is gitignored and a fresh worktree never carries it.
      */
     repoRoot?: string;
     metadataPersisted: boolean;
@@ -3838,7 +3913,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // the argv the runtime is about to receive, so both transports below export
     // the same value; a claude launch that cannot resolve it refuses before any
     // worktree work is done.
-    const modelEnv = launcherModelEnv(runtime, plan.runtimeArgs, process.env, runtime === 'claude' ? claudeSettingsModel({ projectDir: args.repoRoot ?? worktreePath }) : undefined);
+    const modelEnv = launcherModelResolution(runtime, plan.runtimeArgs, { worktreePath, mainRepoRoot: args.repoRoot, env: process.env });
     const launchEnv = stripLauncherModelVar(process.env);
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
