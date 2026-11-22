@@ -139,6 +139,12 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
     fs.writeFileSync(path.join(homeRoot, '.codex', 'profiles', 'xtrm.json'), JSON.stringify({ trust: 'baseline', n: 1 }));
     fs.symlinkSync(path.join(homeRoot, '.codex', 'profiles'), path.join(homeRoot, '.codex', 'profiles-link'), 'dir');
     process.env.HOME = homeRoot;
+    // XTRM-970: a claude seat's model must be resolvable at launch. The hermetic
+    // install declares one where a real install keeps it — CLAUDE_CONFIG_DIR when
+    // the harness sandboxes it, otherwise the sandboxed HOME.
+    const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(process.env.HOME!, '.claude');
+    fs.ensureDirSync(configDir);
+    fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
 
     const packSkillDir = path.join(repoRoot, '.xtrm', 'skills', 'infra', PACK_NAME);
     fs.ensureDirSync(packSkillDir);

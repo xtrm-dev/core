@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClaudeCommand } from '../commands/claude.js';
 import { createPiCommand } from '../commands/pi.js';
@@ -17,6 +17,11 @@ import {
     chooseAttachCommand,
     createRuntimeBufferName,
     effectiveModel,
+    claudeSettingsModel,
+    launchedModel,
+    launcherModelEnv,
+    resolveLauncherModel,
+    stripLauncherModelVar,
     ensureClaudePackSkillLinks,
     claudeExplicitSkillLines,
     guardRolePassthrough,
@@ -960,6 +965,127 @@ describe('effectiveModel', () => {
         [undefined, ['--model', 'qwencloud/qwen3.8-max-preview', '--model', 'opus'], 'opus'],
     ])('resolves (%s, %s)', (model, passthrough, expected) => {
         expect(effectiveModel(model as string | undefined, passthrough as string[])).toBe(expected);
+    });
+});
+
+// XTRM-970: the exported model is read from the argv the runtime receives, so a
+// role default rewritten by buildRoleTmuxPlan and a passthrough override are the
+// same question as a plain flag.
+describe('launchedModel', () => {
+    it.each([
+        [[], undefined],
+        [['--name', 'xt-x'], undefined],
+        [['--model', 'opus'], 'opus'],
+        [['--model=opus'], 'opus'],
+        // Last wins, because the passthrough tail is appended after the native flag.
+        [['--model', 'opus', '--model', 'sonnet'], 'sonnet'],
+        // A turn-1 body can contain anything; nothing after `--` is a flag.
+        [['--model', 'opus', '--', 'fix: --model haiku was ignored'], 'opus'],
+        [['--model', '   '], undefined],
+        // A dangling flag names nothing, so it must not export the next token.
+        [['--model'], undefined],
+    ])('reads %s', (runtimeArgs, expected) => {
+        expect(launchedModel(runtimeArgs as string[])).toBe(expected);
+    });
+});
+
+// One variable, one precedence: the launch first, the runtime's own default only
+// where the runtime has one, and never a guess.
+describe('resolveLauncherModel', () => {
+    it('prefers the argv the runtime receives', () => {
+        expect(resolveLauncherModel('claude', ['--model', 'claude-opus-4-8'], { ANTHROPIC_MODEL: 'sonnet' }))
+            .toEqual({ model: 'claude-opus-4-8', source: '--model' });
+    });
+
+    it('falls back to ANTHROPIC_MODEL for a claude seat that inherits its model', () => {
+        expect(resolveLauncherModel('claude', [], { ANTHROPIC_MODEL: 'claude-sonnet-5-5' }))
+            .toEqual({ model: 'claude-sonnet-5-5', source: 'ANTHROPIC_MODEL' });
+    });
+
+    it('reports unresolved for a claude seat with no model anywhere', () => {
+        expect(resolveLauncherModel('claude', [], {})).toEqual({ source: 'unresolved' });
+    });
+
+    // The asymmetric case, and the reason only claude refuses: the Pi runtime
+    // injects PI_MODEL into every command it runs, so its seat is checked at the
+    // point that posts even when the launcher cannot name the model.
+    it('does not borrow ANTHROPIC_MODEL for a pi seat', () => {
+        expect(resolveLauncherModel('pi', [], { ANTHROPIC_MODEL: 'claude-sonnet-5-5' }))
+            .toEqual({ source: 'unresolved' });
+    });
+
+    // A claude seat whose model comes from its own settings still runs a real
+    // model, so refusing there would be a false refusal (measured on this host:
+    // ~/.claude/settings.json names "opus" and ANTHROPIC_MODEL is unset).
+    it('falls back to the settings model after ANTHROPIC_MODEL', () => {
+        expect(resolveLauncherModel('claude', [], {}, 'opus')).toEqual({ model: 'opus', source: 'settings.json' });
+        expect(resolveLauncherModel('claude', [], { ANTHROPIC_MODEL: 'sonnet' }, 'opus'))
+            .toEqual({ model: 'sonnet', source: 'ANTHROPIC_MODEL' });
+        expect(resolveLauncherModel('claude', ['--model', 'haiku'], { ANTHROPIC_MODEL: 'sonnet' }, 'opus'))
+            .toEqual({ model: 'haiku', source: '--model' });
+    });
+});
+
+describe('claudeSettingsModel', () => {
+    it('reads project settings before user settings', () => {
+        const project = mkdtempSync(path.join(os.tmpdir(), 'xtrm-970-project-'));
+        const config = mkdtempSync(path.join(os.tmpdir(), 'xtrm-970-config-'));
+        try {
+            mkdirSync(path.join(project, '.claude'), { recursive: true });
+            writeFileSync(path.join(project, '.claude', 'settings.json'), JSON.stringify({ model: 'sonnet' }));
+            writeFileSync(path.join(config, 'settings.json'), JSON.stringify({ model: 'opus' }));
+            expect(claudeSettingsModel({ projectDir: project, env: { CLAUDE_CONFIG_DIR: config } })).toBe('sonnet');
+            expect(claudeSettingsModel({ env: { CLAUDE_CONFIG_DIR: config } })).toBe('opus');
+        } finally {
+            rmSync(project, { recursive: true, force: true });
+            rmSync(config, { recursive: true, force: true });
+        }
+    });
+
+    it('reports nothing when no settings file names a model', () => {
+        const empty = mkdtempSync(path.join(os.tmpdir(), 'xtrm-970-empty-'));
+        try {
+            expect(claudeSettingsModel({ projectDir: empty, env: { CLAUDE_CONFIG_DIR: empty } })).toBeUndefined();
+        } finally {
+            rmSync(empty, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('launcherModelEnv', () => {
+    it('exports the resolved model under the shared name', () => {
+        expect(launcherModelEnv('claude', ['--model', 'opus'], {})).toEqual({ PI_MODEL: 'opus' });
+    });
+
+    it('refuses a claude launch it cannot resolve, naming the fix', () => {
+        const refused: string[] = [];
+        const refuse = (message: string): never => {
+            refused.push(message);
+            throw new Error('refused');
+        };
+        // The refusal is the behaviour: a return value would mean the seat started.
+        expect(() => launcherModelEnv('claude', [], {}, undefined, refuse)).toThrow('refused');
+        expect(refused).toHaveLength(1);
+        expect(refused[0]).toContain('ANTHROPIC_MODEL');
+        expect(refused[0]).toContain('XTRM-970');
+    });
+
+    it('lets an unresolved pi launch through, because its runtime exports the variable itself', () => {
+        const refused: string[] = [];
+        const refuse = (message: string): never => {
+            refused.push(message);
+            throw new Error('refused');
+        };
+        expect(launcherModelEnv('pi', [], {}, undefined, refuse)).toEqual({});
+        expect(refused).toEqual([]);
+    });
+});
+
+describe('stripLauncherModelVar', () => {
+    // A seat launched from inside another seat must not inherit the parent's
+    // model: a wrong value passes the cross-check against the wrong answer.
+    it('removes only the model variable', () => {
+        expect(stripLauncherModelVar({ PI_MODEL: 'opus', PATH: '/bin' })).toEqual({ PATH: '/bin' });
     });
 });
 

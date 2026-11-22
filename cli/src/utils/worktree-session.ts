@@ -400,6 +400,152 @@ export function effectiveModel(model: string | undefined, passthrough: readonly 
     return [model, ...passthroughModels(passthrough)].filter((candidate): candidate is string => Boolean(candidate)).at(-1);
 }
 
+/**
+ * The single variable every launcher exports, read by `resolveExpectedModel` to
+ * cross-check a review header (XTRM-962). One name for both runtimes: a second
+ * name is exactly the drift XTRM-970 exists to stop, because a reader that
+ * knows only one of them returns null for the other seat population and the
+ * header goes unchecked.
+ */
+export const LAUNCH_MODEL_VAR = 'PI_MODEL';
+
+/**
+ * The model the runtime will actually select, read back from the argv it is
+ * about to receive rather than from the flags in isolation. That distinction
+ * matters because the value is not always the operator's: `buildRoleTmuxPlan`
+ * may replace a role's model with its Claude-bridge equivalent or drop it and
+ * let claude inherit, and the passthrough tail is appended last so a later
+ * `--model` wins. Parsing the argv stays honest about all three, and stops at
+ * `--` so a turn-1 body containing `--model` cannot be mistaken for a flag.
+ */
+export function launchedModel(runtimeArgs: readonly string[]): string | undefined {
+    const found: string[] = [];
+    for (let i = 0; i < runtimeArgs.length; i += 1) {
+        const arg = runtimeArgs[i];
+        if (arg === '--') break;
+        if (arg === '--model' && runtimeArgs[i + 1] !== undefined) {
+            found.push(runtimeArgs[i + 1]);
+            i += 1;
+        } else if (arg.startsWith('--model=')) {
+            found.push(arg.slice('--model='.length));
+        }
+    }
+    const model = found.map((candidate) => candidate.trim()).filter(Boolean).at(-1);
+    return model || undefined;
+}
+
+/**
+ * Resolve the value a launcher must export, with the source it came from so a
+ * refusal can say what was missing instead of only that something was.
+ *
+ * Precedence follows the launch: an explicit `--model` wins (including a role
+ * default already rewritten or dropped by `buildRoleTmuxPlan`); then, for
+ * claude only, the runtime's own `ANTHROPIC_MODEL` default, which Claude Code
+ * reads when no flag is passed. Nothing else is a candidate — a guess here is
+ * worse than a refusal, because the export exists to catch a seat running
+ * something other than what it claims.
+ *
+ * pi has no refusal path: the Pi runtime injects `PI_MODEL` into every command
+ * it runs (`PI_MODEL = model.id` in its bash tool), so an unresolved pi launch
+ * is still checked at the point that posts. A claude seat has no such
+ * injection, which is why only claude refuses.
+ */
+export function resolveLauncherModel(
+    runtime: 'claude' | 'pi',
+    runtimeArgs: readonly string[],
+    env: NodeJS.ProcessEnv = process.env,
+    settingsModel?: string,
+): { model?: string; source: string } {
+    const declared = launchedModel(runtimeArgs);
+    if (declared) return { model: declared, source: '--model' };
+    if (runtime === 'claude') {
+        const runtimeDefault = (env.ANTHROPIC_MODEL ?? '').trim();
+        if (runtimeDefault) return { model: runtimeDefault, source: 'ANTHROPIC_MODEL' };
+        const fromSettings = (settingsModel ?? '').trim();
+        if (fromSettings) return { model: fromSettings, source: 'settings.json' };
+    }
+    return { source: 'unresolved' };
+}
+
+/**
+ * The `model` Claude Code would resolve from its own settings when no flag and
+ * no `ANTHROPIC_MODEL` is present. Reading it is what keeps this export honest
+ * at the common case: `~/.claude/settings.json` naming `opus` IS the model the
+ * seat runs, so refusing there would be a false refusal, and guessing nothing
+ * would leave the seat unchecked. Project settings win over user settings, the
+ * order Claude Code itself applies.
+ */
+export function claudeSettingsModel(opts: { projectDir?: string; env?: NodeJS.ProcessEnv } = {}): string | undefined {
+    const env = opts.env ?? process.env;
+    // `env.HOME` before `os.homedir()`: the launcher resolves the model for a
+    // child whose HOME it is about to set, and a test harness that sandboxes
+    // HOME must be able to prove what the child would read (XTRM-970).
+    const home = (env.HOME ?? '').trim() || os.homedir();
+    const configDir = (env.CLAUDE_CONFIG_DIR ?? '').trim() || path.join(home, '.claude');
+    const files = [
+        opts.projectDir ? path.join(opts.projectDir, '.claude', 'settings.json') : null,
+        path.join(configDir, 'settings.json'),
+    ].filter((file): file is string => Boolean(file));
+    for (const file of files) {
+        try {
+            const parsed = JSON.parse(readFileSync(file, 'utf8')) as { model?: unknown };
+            const model = typeof parsed.model === 'string' ? parsed.model.trim() : '';
+            if (model) return model;
+        } catch {
+            // Absent or unparseable settings are not a resolution; the next
+            // source, and finally the refusal, still apply.
+        }
+    }
+    return undefined;
+}
+
+/** Drop any inherited model variable, so a resolved value is the only one a seat sees. */
+export function stripLauncherModelVar(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const out = { ...env };
+    delete out[LAUNCH_MODEL_VAR];
+    return out;
+}
+
+/**
+ * The environment a launch must hand its runtime so the seat can say which model
+ * it is running (XTRM-970).
+ *
+ * `inherited` is stripped of any `PI_MODEL` first: a seat launched from inside
+ * another seat would otherwise carry the PARENT's model, which is the one value
+ * that must never reach a review header — a wrong model is worse than none,
+ * because the cross-check would pass against the wrong answer.
+ *
+ * claude refuses rather than starting unchecked: it has no runtime-side variable
+ * of its own, so an empty export means every review it posts bypasses the
+ * XTRM-962 check. pi cannot reach that state — its runtime injects `PI_MODEL`
+ * into every command it runs — so an unresolved pi launch keeps absent-means-
+ * unknown instead of failing a launch that would have been checked anyway.
+ */
+export function launcherModelEnv(
+    runtime: 'claude' | 'pi',
+    runtimeArgs: readonly string[],
+    env: NodeJS.ProcessEnv,
+    settingsModel?: string,
+    refuse: (message: string) => never = (message) => {
+        process.stderr.write(message);
+        process.exit(1);
+    },
+): Record<string, string> {
+    const resolved = resolveLauncherModel(runtime, runtimeArgs, env, settingsModel);
+    if (!resolved.model) {
+        if (runtime === 'claude') {
+            refuse(
+                '\n  ✗ cannot resolve the model this claude seat would run: no --model argument, no ANTHROPIC_MODEL,\n'
+                + '    and no "model" in .claude/settings.json or ~/.claude/settings.json\n'
+                + '  Pass --model <id>, set ANTHROPIC_MODEL, or declare specialist.execution.model on the role.\n'
+                + '  A seat that starts without a known model posts reviews whose model header nothing can check (XTRM-970).\n',
+            );
+        }
+        return {};
+    }
+    return { [LAUNCH_MODEL_VAR]: resolved.model };
+}
+
 // xt-owned flags a passthrough must not clobber. Reject with a clear error if
 // the user tries to pass any of these after `--`. Session naming, prompt, and
 // session-dir are set by the launcher and re-passing them silently would break
@@ -3484,7 +3630,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     };
 
     if (resolvedRole) {
-        await launchTmuxSession({ ...common, mode: 'role', role: resolvedRole, renderedTask, requestedRole: roleName });
+        await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: 'role', role: resolvedRole, renderedTask, requestedRole: roleName });
         return; // launchTmuxSession never returns (calls process.exit)
     }
 
@@ -3492,7 +3638,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         || Boolean(thinking) || explicitSkillPaths.length > 0
         || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window);
     if (carriesLaunchState) {
-        await launchTmuxSession({ ...common, mode: 'bare' });
+        await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: 'bare' });
         return;
     }
 
@@ -3522,7 +3668,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelEnv(runtime, runtimeArgs, process.env, runtime === 'claude' ? claudeSettingsModel({ projectDir: mainRepoRoot }) : undefined), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3586,6 +3732,13 @@ type TmuxLaunchArgs = {
     attach: boolean;
     worktreePath: string;
     branchName: string;
+    /**
+     * The main checkout, used to read project settings (`.claude/settings.json`)
+     * before the worktree exists — XTRM-970 refuses a claude launch whose model
+     * cannot be resolved, and refusing on a file that was not yet materialised
+     * would be a false refusal.
+     */
+    repoRoot?: string;
     metadataPersisted: boolean;
     modelOverride?: string;
     thinkingOverride?: string;
@@ -3680,6 +3833,14 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         : buildBareTmuxPlan({ ...planCommon, sessionSlug });
     const runtimeCmdString = [runtimeExecutable, ...plan.runtimeArgs].map(shellQuote).join(' ');
 
+    // XTRM-970: the launched seat must be able to say which model it runs, under
+    // the one name the reviewer cross-check reads (XTRM-962). Resolved here, from
+    // the argv the runtime is about to receive, so both transports below export
+    // the same value; a claude launch that cannot resolve it refuses before any
+    // worktree work is done.
+    const modelEnv = launcherModelEnv(runtime, plan.runtimeArgs, process.env, runtime === 'claude' ? claudeSettingsModel({ projectDir: args.repoRoot ?? worktreePath }) : undefined);
+    const launchEnv = stripLauncherModelVar(process.env);
+
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     // CORE-2728: the same resolution is persisted on the launch binding, so
@@ -3759,7 +3920,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+                env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -3770,7 +3931,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...stripDispatcherEnv(process.env), ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+            env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -3859,6 +4020,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // environment, not this process's, so exported launch context never
         // reached the launched runtime. See LAUNCH_FORWARDED_ENV.
         ...forwardedLaunchEnv(),
+        // XTRM-970: the model this seat runs, after everything that could carry a
+        // stale one from the server's environment.
+        ...modelEnv,
         // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
         // the pane gets the launcher's PATH with the shim directory first. Without
         // this, a launched review posts as the operator instead of the App.
