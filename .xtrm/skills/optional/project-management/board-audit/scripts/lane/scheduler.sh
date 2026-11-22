@@ -2,7 +2,8 @@
 # Board helper lane loops. One process owns every due-time; each pass appends event lines to
 # events.log, which the session monitor tails. Durations: cycle/comment/report 15 min (a+b), deploy
 # snapshot 15 min, status_board health 30 min (d), Waiting Production audit 60 min and on any deploy move (e),
-# HEAVY nightly queue watch 15 min, operator-channel router 5 min (this lane is the only router/filter).
+# HEAVY nightly queue watch 15 min, operator-channel router and answers reconcile 5 min (this lane is the only
+# router/filter).
 # Settings: board-audit/references/setup-lane.md.
 set -u
 # Sourced by mistake? Refuse before any side effect: `return` exists only inside a sourced file.
@@ -108,6 +109,19 @@ run_backlog() {
   [ $rc -ne 0 ] && log "ROUTE-BACKLOG-ERROR rc=$rc"
 }
 
+# MMD-5389: an answer that never became a pending route was invisible to every alarm. This one compares the
+# answers store against the questions store and pending-routes, so a lost answer is a count, not a silence:
+# rc 0 = every answer routed, 1 = ANSWER-UNROUTED lines, 2 = UNMEASURED. Those exits each print their own
+# ANSWER-RECONCILE line; an exit without one is a crash and must not read as a pass.
+run_reconcile() {
+  local out rc
+  out=$(python3 "$SCRIPTS/reconcile-answers.py" 2>&1); rc=$?
+  printf '%s\n' "$out" | while IFS= read -r l; do [ -n "$l" ] && log "$l"; done
+  if [ $rc -ne 0 ] && ! printf '%s\n' "$out" | grep -q '^ANSWER-RECONCILE '; then
+    log "ANSWER-RECONCILE-ERROR rc=$rc no ANSWER-RECONCILE line (the script did not run: config, import or a traceback)"
+  fi
+}
+
 run_tab() {
   local st hash
   st=$(systemctl --user show "$TAB_UNIT" -p Result -p ActiveState -p SubState -p ExecMainStatus -p LoadState 2>&1 | tr '\n' ' ')
@@ -134,7 +148,7 @@ while :; do
   now=$(date +%s)
   if (( now - heavy >= 900 )); then heavy=$now; save; run_heavy; fi
   now=$(date +%s)
-  if (( now - route >= 300 )); then route=$now; save; run_route; run_routejira; run_backlog; log "ROUTE-PASS heartbeat"; fi
+  if (( now - route >= 300 )); then route=$now; save; run_route; run_routejira; run_backlog; run_reconcile; log "ROUTE-PASS heartbeat"; fi
   now=$(date +%s)
   if (( now - due >= 3600 )); then due=$now; save; run_due; fi
   now=$(date +%s)

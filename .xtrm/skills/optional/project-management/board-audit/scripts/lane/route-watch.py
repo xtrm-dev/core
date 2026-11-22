@@ -48,6 +48,12 @@ DECISION = [
 ]
 # A bare acknowledgement, whatever else it contains, is never a decision.
 ACK = re.compile(r"^\W*(@[\w.-]+\W*)?(ok(ay)?|yes|yep|no|nope|thanks?|thx|ack|done|noted)\W*$", re.I)
+# A bare yes/no/later. It is an acknowledgement on a row already handled and a DECISION when it answers an OPEN
+# question: every Status board answer does, and so does a Jira reply under a comment the bot posted as a question.
+# Reading it as an ack cost the operator's YES to q-publish-w2, q-band4-551 and the w-ISSUE-* answers (MMD-2331
+# seq 3817: 46 of 47 answers stamped delivered=file-only, and these suppressed even in the one channel that read
+# them). "thanks" stays an ack: it answers nothing.
+YES_NO = re.compile(r"^\W*(@[\w.-]+\W*)?(yes|yep|yeah|no|nope|later|ok(ay)?|sure|correct|confirmed)\W*$", re.I)
 
 
 def stamp():
@@ -62,13 +68,38 @@ def mentions_bot(text):
     return bool(re.search(r"@xtrm-bot\b", text or "", re.I))
 
 
-def classify(text, answer=None, author_id=None, author=None):
-    """(decision|info, trigger). An explicit answer field from the Status board counts as a decision only when
-    it is not a bare yes: a 'yes' that answers a question already handled is an ack."""
+def answer_route_required(row):
+    """True when an answers-channel row needs a lane route (MMD-5389, 2026-11-18).
+
+    Two facts decide it, in this order:
+    - how the sync delivered it. `file-only` means the sync sent nothing (the inbox line is the whole delivery:
+      the target is a role in status_board_file_only, and typing into its pane corrupts the operator's input),
+      so a lane route is the only road the answer has -- even if the question is closed by now, because a lost
+      answer is worse than one message too many. No writer emits this for an answer today; the branch is policy
+      for a config that puts a target back on the file-only list;
+    - otherwise, the question's state when the sync read the store. `question_open: false` means the question row was
+      already gone (answered or closed), so a bare "ok" is noise and must not become a route. Absent means a
+      pre-fix inbox row whose question state nobody recorded: an unknown answer is forwarded, because one
+      message that was not needed costs a message and a decision never forwarded costs a day.
+    """
+    if str(row.get("delivered") or "") == "file-only":
+        return True
+    qo = row.get("question_open")
+    return True if qo is None else bool(qo)
+
+
+def classify(text, answer=None, author_id=None, author=None, question=False):
+    """(decision|info, trigger).
+
+    `question` says the row answers an OPEN question — the answers channel always does, and route-jira.py sets it
+    for a reply under a comment the bot posted as a question. An explicit answer field from the Status board is a
+    decision when it is not a bare yes: a 'yes' that answers a question already handled is an ack. With `question`
+    the bare yes/no/later is the answer itself and a decision; 'thanks' is still an ack, because it answers
+    nothing. Everything else keeps the 2026-11-01 rule below."""
     t = (text or "").strip()
     if answer is not None:
         a = str(answer).strip().lower()
-        if a in ("yes", "no", "ok") and not t:
+        if not question and a in ("yes", "no", "ok") and not t:
             return "info", f"ack:{a}"
         return "decision", f"answer:{a}"
     # Coordinator rule, 2026-11-01T12:00Z: EVERY operator comment that tags the bot reaches the coordinator as a
@@ -77,6 +108,8 @@ def classify(text, answer=None, author_id=None, author=None):
     # ok" is a decision about the row it sits on, not a stray acknowledgement.
     if mentions_bot(t) and (author_id in OPERATOR_IDS or (author or "") == OPERATOR_NAME):
         return "decision", "mention-bot"
+    if question and YES_NO.match(t):
+        return "decision", "answer-to-question"
     if ACK.match(t):
         return "info", "ack"
     for name, rx in DECISION:
@@ -212,7 +245,10 @@ def main():
                 text, answer = row.get("comment"), row.get("answer")
                 who, at = row.get("by"), row.get("at")
             author_id = row.get("authorId") if name == "inbox" else None
-            kind, trigger = classify(text, answer, author_id=author_id, author=who)
+            # A bot-inbox row only answers a question when its feeder says so; an answers/* row answers one
+            # whenever the sync could still see the question row (answer_route_required).
+            question = answer_route_required(row) if name == "answers" else bool(row.get("question"))
+            kind, trigger = classify(text, answer, author_id=author_id, author=who, question=question)
             if first:
                 trigger = f"pre-baseline:{trigger}"
             head = f"{(text or '')[:200]}".replace("\n", " ")
@@ -228,11 +264,18 @@ def main():
                           f"(already delivered by another channel)")
                 else:
                     n_dec += 1
-                    append_outbox({"id": rid, "channel": name, "key": key, "cid": cid, "author": who,
-                                   "at": at, "trigger": trigger, "text": (text or "")[:600],
-                                   "seen_at": stamp(), "delivered": False})
+                    rec = {"id": rid, "channel": name, "key": key, "cid": cid, "author": who,
+                           "at": at, "trigger": trigger, "text": (text or "")[:600],
+                           "seen_at": stamp(), "delivered": False}
+                    if name == "answers":
+                        # The asker, so the route can go to it and not only to the manager (MMD-5389).
+                        rec["owner"] = row.get("owner")
+                    append_outbox(rec)
+                    # The asker on the line, with the exact --to the operator needs to route it there.
+                    extra = (" owner=%s --to %s" % (row.get("owner"), row.get("owner"))
+                             if name == "answers" and row.get("owner") else "")
                     print(f"ROUTE-DECISION {stamp()} channel={name} key={key} cid={cid} author={who} at={at} "
-                          f"trigger={trigger} text={head!r}")
+                          f"trigger={trigger}{extra} text={head!r}")
             else:
                 n_info += 1
                 print(f"ROUTE-INFO {stamp()} channel={name} key={key} cid={cid} author={who} trigger={trigger} "

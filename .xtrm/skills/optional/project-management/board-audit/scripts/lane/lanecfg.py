@@ -82,6 +82,16 @@ def operator_names() -> set:
     return {str(n).lower() for n in names} if names else {operator_name().lower()}
 
 
+def file_only() -> set:
+    """Roles or session names whose answers are delivered by the inbox line alone (PM_STATUS_BOARD_FILE_ONLY).
+
+    The lane reads the same key as status_board_sync.py. For such a target the lane's route IS the delivery,
+    because typing into its pane corrupts the input the operator is tailing, so an answer to it is never
+    suppressed as a bare acknowledgement. Read now, never stored: the config can change between passes.
+    """
+    return {str(n) for n in (pm_config.get_data("PM_STATUS_BOARD_FILE_ONLY", []) or [])}
+
+
 def custom_field(role: str) -> str:
     """customfield_<n> id for a role: window_start, window_end, start_date."""
     fields = pm_config.get_data("PM_CUSTOM_FIELDS", required=True)

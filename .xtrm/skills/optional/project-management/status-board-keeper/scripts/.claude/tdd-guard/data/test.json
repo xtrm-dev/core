@@ -1,0 +1,184 @@
+{
+  "testModules": [
+    {
+      "moduleId": "test_status_board_sync.py",
+      "tests": [
+        {
+          "name": "test_a_manual_event_with_the_ref_does_not_stand_in_for_the_window",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_a_manual_event_with_the_ref_does_not_stand_in_for_the_window",
+          "state": "passed"
+        },
+        {
+          "name": "test_clean_run_gives_the_count_line",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_clean_run_gives_the_count_line",
+          "state": "passed"
+        },
+        {
+          "name": "test_issue_touched_by_a_comment_is_not_stale",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_issue_touched_by_a_comment_is_not_stale",
+          "state": "passed"
+        },
+        {
+          "name": "test_keeper_row_covering_the_ref_counts",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_keeper_row_covering_the_ref_counts",
+          "state": "passed"
+        },
+        {
+          "name": "test_missing_doc_fails",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_missing_doc_fails",
+          "state": "passed"
+        },
+        {
+          "name": "test_missing_ref_names_the_ref",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_missing_ref_names_the_ref",
+          "state": "passed"
+        },
+        {
+          "name": "test_past_and_out_of_range_rows_are_not_asserted",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_past_and_out_of_range_rows_are_not_asserted",
+          "state": "passed"
+        },
+        {
+          "name": "test_relabel_does_not_fail",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_relabel_does_not_fail",
+          "state": "passed"
+        },
+        {
+          "name": "test_shared_keeper_row_is_not_judged_by_one_key_slot",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_shared_keeper_row_is_not_judged_by_one_key_slot",
+          "state": "passed"
+        },
+        {
+          "name": "test_slot_rewritten_to_the_same_value_is_not_stale",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_slot_rewritten_to_the_same_value_is_not_stale",
+          "state": "passed"
+        },
+        {
+          "name": "test_stale_doc_fails_when_jira_slot_moved_after_the_doc_write",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_stale_doc_fails_when_jira_slot_moved_after_the_doc_write",
+          "state": "passed"
+        },
+        {
+          "name": "test_stale_publish_shows_in_the_count_line_only",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_stale_publish_shows_in_the_count_line_only",
+          "state": "passed"
+        },
+        {
+          "name": "test_unknown_site_version_shows_unknown_publish",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_unknown_site_version_shows_unknown_publish",
+          "state": "passed"
+        },
+        {
+          "name": "test_unlabelled_key_with_a_forward_slot_is_an_unplaced_row",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_unlabelled_key_with_a_forward_slot_is_an_unplaced_row",
+          "state": "passed"
+        },
+        {
+          "name": "test_unreadable_changelog_is_reported_not_failed",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_unreadable_changelog_is_reported_not_failed",
+          "state": "passed"
+        },
+        {
+          "name": "test_unreadable_expected_set_is_reported_not_failed",
+          "fullName": "test_status_board_sync.py::RunAssertions::test_unreadable_expected_set_is_reported_not_failed",
+          "state": "passed"
+        },
+        {
+          "name": "test_latest_slot_item_over_pages_ignoring_other_fields",
+          "fullName": "test_status_board_sync.py::SlotWrite::test_latest_slot_item_over_pages_ignoring_other_fields",
+          "state": "passed"
+        },
+        {
+          "name": "test_no_slot_item_falls_back_to_created",
+          "fullName": "test_status_board_sync.py::SlotWrite::test_no_slot_item_falls_back_to_created",
+          "state": "passed"
+        },
+        {
+          "name": "test_a_broken_check_is_reported_and_flags_the_run",
+          "fullName": "test_status_board_sync.py::RunAssertionsNeverRaise::test_a_broken_check_is_reported_and_flags_the_run",
+          "state": "passed"
+        },
+        {
+          "name": "test_epic_is_never_a_placeable_window_row",
+          "fullName": "test_status_board_sync.py::ExpectedSet::test_epic_is_never_a_placeable_window_row",
+          "state": "passed"
+        },
+        {
+          "name": "test_profile_without_window_fields_gives_no_expected_set",
+          "fullName": "test_status_board_sync.py::ExpectedSet::test_profile_without_window_fields_gives_no_expected_set",
+          "state": "passed"
+        },
+        {
+          "name": "test_second_search_has_no_label_filter_and_reads_the_slot_field",
+          "fullName": "test_status_board_sync.py::ExpectedSet::test_second_search_has_no_label_filter_and_reads_the_slot_field",
+          "state": "passed"
+        },
+        {
+          "name": "test_clean_run_exits_0_with_the_count_line",
+          "fullName": "test_status_board_sync.py::MainExitPath::test_clean_run_exits_0_with_the_count_line",
+          "state": "passed"
+        },
+        {
+          "name": "test_failed_check_exits_1_with_the_writes_done",
+          "fullName": "test_status_board_sync.py::MainExitPath::test_failed_check_exits_1_with_the_writes_done",
+          "state": "passed"
+        },
+        {
+          "name": "test_an_answer_is_delivered_even_when_its_target_is_file_only",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_an_answer_is_delivered_even_when_its_target_is_file_only",
+          "state": "passed"
+        },
+        {
+          "name": "test_answers_inbox_is_the_lane_path",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_answers_inbox_is_the_lane_path",
+          "state": "passed"
+        },
+        {
+          "name": "test_file_only_by_role_or_name_sends_nothing",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_file_only_by_role_or_name_sends_nothing",
+          "state": "passed"
+        },
+        {
+          "name": "test_gone_owner_falls_back_to_the_manager",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_gone_owner_falls_back_to_the_manager",
+          "state": "passed"
+        },
+        {
+          "name": "test_live_owner_gets_the_answer",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_live_owner_gets_the_answer",
+          "state": "passed"
+        },
+        {
+          "name": "test_no_owner_and_no_manager_is_a_failed_delivery",
+          "fullName": "test_status_board_sync.py::AnswerRouting::test_no_owner_and_no_manager_is_a_failed_delivery",
+          "state": "passed"
+        },
+        {
+          "name": "test_a_live_asker_is_preferred_to_the_manager",
+          "fullName": "test_status_board_sync.py::AnswerAskerRouting::test_a_live_asker_is_preferred_to_the_manager",
+          "state": "passed"
+        },
+        {
+          "name": "test_the_answer_reaches_the_asker_named_on_the_row",
+          "fullName": "test_status_board_sync.py::AnswerAskerRouting::test_the_answer_reaches_the_asker_named_on_the_row",
+          "state": "passed"
+        },
+        {
+          "name": "test_the_inbox_row_records_whether_the_question_is_still_open",
+          "fullName": "test_status_board_sync.py::AnswerAskerRouting::test_the_inbox_row_records_whether_the_question_is_still_open",
+          "state": "passed"
+        },
+        {
+          "name": "test_the_manager_fallback_is_delivered_not_file_only",
+          "fullName": "test_status_board_sync.py::AnswerAskerRouting::test_the_manager_fallback_is_delivered_not_file_only",
+          "state": "passed"
+        },
+        {
+          "name": "test_failed_delivery_is_retried",
+          "fullName": "test_status_board_sync.py::RouteAnswersRetry::test_failed_delivery_is_retried",
+          "state": "passed"
+        }
+      ]
+    }
+  ]
+}

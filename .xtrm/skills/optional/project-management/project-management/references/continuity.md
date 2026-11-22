@@ -30,7 +30,7 @@ Read after every compaction, before a resume or a day-boundary handover.
    - `checkpoint_warn.py` warns at the `checkpoint_thresholds` (default 70% EARLY, 85% FINAL) of the window and asks for ONE structured
      `handoff` entry, the handover itself and no file (SHAs, windows, workers and reap conditions, crons, monitors, questions, PRs, goal prompt,
      open promises, next action), verified against live state, then the self-compaction above.
-   - `promise-check.py` is the Stop hook for the promise rule above (settings: `promise_check_turns`, default 3, 0 = off); the operator wires it
+   - `promise-check.py` is the Stop hook for the promise rule above (settings: `promise_check_turns`, default 15, 0 = off; one reminder per promise); the operator wires it
      next to `operator-questions.py --event stop` in the `Stop` block.
    - `post_compact.py` prints the resume steps after a compaction or a start, then the project's private `post_compact_extra` text file (its
      own fleet rules); with `post_compact_nudge` true it also types `post_compact_nudge_text` into `$TMUX_PANE`.

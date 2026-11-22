@@ -47,15 +47,24 @@ here.now Site $PM_STATUS_BOARD_SITE (data API, key in $PM_STATUS_BOARD_KEY_FILE)
 
 (c) Answer routing: every answers/* row with an 'at' newer than last routed
     is appended to the answers inbox (pm_config.answers_inbox(), the file the
-    lane router reads) and delivered once. The owner is the questions/<owner>
-    doc that holds the row; the target is resolved now from the live sessions
-    (route_target): the live session named <owner> (or ending in -<owner>),
-    else the one live `manager`. No stored address. Owners, roles or names
-    listed in PM_STATUS_BOARD_FILE_ONLY are never typed into: the inbox line
-    IS the delivery, because typing into a Claude pane corrupts the input the
-    operator is tailing (coordinator ruling 2026-10-30). Other targets
-    get `xtmux message-send`, falling back to tmux send-keys ONLY on a pi pane
-    (a Claude pane is never typed into, whatever the fallback).
+    lane router reads) and delivered once. The asker is the question row's
+    'by' field (questions/<doc>.rows[] matched by the answer id); the document
+    name is only the fallback, because the board publishes a row under the doc
+    of the role that keeps it (operator-waiting), which is no session. The
+    target is resolved now from the live sessions (route_target): the live
+    session named <asker> (or ending in -<asker>), else the one live `manager`.
+    No stored address. An ANSWER IS NEVER FILE-ONLY: 46 of 47 answers were once
+    written to the board and delivered to nobody, because the fallback target
+    is the manager and PM_STATUS_BOARD_FILE_ONLY lists 'manager' (MMD-2331 seq
+    3817; the operator's YES to q-publish-w2, q-band4-551 and w-ISSUE-* died
+    there). Every other traffic keeps that rule: typing into a Claude pane
+    corrupts the input the operator is tailing (coordinator ruling 2026-10-30)
+    and the inbox line IS its delivery. Answers get `xtmux message-send`,
+    falling back to tmux send-keys ONLY on a pi pane. Each inbox row carries
+    `question_open` (the question row still existed when this run read the
+    store) and the asker's `owner`, so the lane can route a bare yes/no only
+    while the question is open and address the asker, not just the manager
+    (MMD-5389).
     Message: question id, answer, comment, time. Seed: answers since
     PM_STATUS_BOARD_ANSWER_SEED_AT only (empty: all answers).
 
@@ -917,6 +926,25 @@ def owner_of(qid, live):
     return None
 
 
+def asker_of(qid, live):
+    """The question row's 'by' for this answer id, or None.
+
+    The questions/<doc> name is not the asker: the board keeps rows under the doc of the role that owns them
+    (operator-waiting), so the doc name resolves to no live session and the answer fell back to the manager, which
+    PM_STATUS_BOARD_FILE_ONLY lists and so was never delivered (MMD-2331 seq 3817).
+    """
+    for p in live:
+        if not p.startswith("questions/"):
+            continue
+        doc = live[p][1] or {}
+        for r in (doc.get("rows") or []):
+            if r.get("id") == qid:
+                by = str(r.get("by") or "").strip()
+                if by:
+                    return by
+    return None
+
+
 def is_pi_pane(title):
     t = (title or "").lstrip()
     if t.startswith(PI_GLYPH):
@@ -963,9 +991,12 @@ def file_only(owner, addr, why):
     return False
 
 
-def deliver(owner, text, live=None):
+def deliver(owner, text, live=None, answer=False):
     addr, why = answer_target(owner, live)
-    if file_only(owner, addr, why):
+    # An answer is a delivery, never a file-only record: its fallback target is the manager, and
+    # PM_STATUS_BOARD_FILE_ONLY lists 'manager', so the old check silently wrote every fallback answer to the board
+    # and the operator's YES reached nobody (MMD-2331 seq 3817). Non-answer traffic keeps the rule.
+    if not answer and file_only(owner, addr, why):
         return "file-only"
     if not addr:
         return "FAILED-no-route:" + why[:120]
@@ -1492,18 +1523,24 @@ def route_answers(live, state):
         at = str(doc.get("at") or "")
         if qid in done or at < ANSWER_SEED_AT:
             continue
-        owner = owner_of(qid, live)
-        fresh.append((qid, owner or "unknown", at, doc))
+        # The asker (question row's 'by') before the document name: the doc is the role that keeps the row.
+        asker = asker_of(qid, live)
+        doc_owner = owner_of(qid, live)
+        owner = asker or doc_owner
+        # The question row was still on the board when this run read it. The lane cannot read the store every
+        # five minutes, so it needs this fact to route a bare yes/no only while it matters (MMD-5389): a bare
+        # "ok" to a question that is already closed is noise, a bare "yes" to an open one is the answer.
+        fresh.append((qid, owner or "unknown", at, doc, owner is not None))
     print("answers fresh since %s: %d" % (ANSWER_SEED_AT, len(fresh)))
     n = 0
-    for qid, owner, at, doc in fresh:
+    for qid, owner, at, doc, question_open in fresh:
         text = ("Status board answer %s -> owner %s: answer=%r comment=%r at=%s by=%s" %
                 (qid, owner, doc.get("answer"), (doc.get("comment") or "")[:200],
                  at, doc.get("by")))
         if DRY:
             print("  DRY route %s" % text[:200])
             continue
-        where = deliver(owner, text)
+        where = deliver(owner, text, answer=True)
         if str(where).startswith("FAILED-"):
             # Not routed: leave it out of routed_answer_ids so the next run retries it (an answer marked routed after a
             # failed delivery is lost for good).
@@ -1511,7 +1548,7 @@ def route_answers(live, state):
             continue
         entry = {"qid": qid, "owner": owner, "at": at, "answer": doc.get("answer"),
                  "comment": (doc.get("comment") or "")[:500], "by": doc.get("by"),
-                 "delivered": where, "run": NOW}
+                 "question_open": question_open, "delivered": where, "run": NOW}
         os.makedirs(os.path.dirname(INBOX), exist_ok=True)
         with open(INBOX, "a") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

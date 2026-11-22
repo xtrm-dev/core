@@ -277,6 +277,23 @@ def last_assistant_text(payload: dict) -> str:
     return ""
 
 
+DECISION_SCAN_MAX = 5000
+
+
+def decisions_since(ref: str, seq: int, journal) -> list[dict]:
+    """Decisions back to ``seq`` (the oldest open blocker). A fixed newest-40 window lost answers on a busy issue:
+    blockers are rare, decisions frequent, so an answer aged out while its question stayed in view (MMD-2331, 11-17)."""
+    limit = 40
+    while True:
+        try:
+            got = journal(ref, "decision", limit=limit)
+        except TypeError:  # an injected two-argument journal returns everything it has
+            return journal(ref, "decision")
+        if len(got) < limit or limit >= DECISION_SCAN_MAX or min((d.get("sequence") or 0) for d in got) <= seq:
+            return got
+        limit = min(limit * 4, DECISION_SCAN_MAX)
+
+
 def blocker_questions(refs: list[str], journal=None) -> list[dict]:
     """Open for=operator blockers: {qid, q, rec, ref}. Open = no later decision references its qid or entry id."""
     journal = journal or pm_question.journal_entries
@@ -285,7 +302,7 @@ def blocker_questions(refs: list[str], journal=None) -> list[dict]:
         blockers = journal(ref, "blocker")
         if not blockers:
             continue
-        decisions = journal(ref, "decision")
+        decisions = decisions_since(ref, min((b.get("sequence") or 0) for b in blockers), journal)
         for b in blockers:
             sem = b.get("semantic") or {}
             if not isinstance(sem, dict) or str(sem.get("for", "")).lower() != "operator":

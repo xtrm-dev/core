@@ -1,0 +1,299 @@
+{
+  "testModules": [
+    {
+      "moduleId": "test_hooks.py",
+      "tests": [
+        {
+          "name": "test_role_file_gates_every_hook[manager-True]",
+          "fullName": "test_hooks.py::test_role_file_gates_every_hook[manager-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_role_file_gates_every_hook[lead-True]",
+          "fullName": "test_hooks.py::test_role_file_gates_every_hook[lead-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_role_file_gates_every_hook[board_helper-False]",
+          "fullName": "test_hooks.py::test_role_file_gates_every_hook[board_helper-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_role_file_gates_every_hook[worker-False]",
+          "fullName": "test_hooks.py::test_role_file_gates_every_hook[worker-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_launch_role_gates_without_a_file[manager-True]",
+          "fullName": "test_hooks.py::test_launch_role_gates_without_a_file[manager-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_launch_role_gates_without_a_file[lead-True]",
+          "fullName": "test_hooks.py::test_launch_role_gates_without_a_file[lead-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_launch_role_gates_without_a_file[worker-False]",
+          "fullName": "test_hooks.py::test_launch_role_gates_without_a_file[worker-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_launch_role_gates_without_a_file[board-helper-False]",
+          "fullName": "test_hooks.py::test_launch_role_gates_without_a_file[board-helper-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_common_goal_in_both_modes",
+          "fullName": "test_hooks.py::test_common_goal_in_both_modes",
+          "state": "passed"
+        },
+        {
+          "name": "test_name_patterns_gate[p-xt-claude-thu13-manager-True]",
+          "fullName": "test_hooks.py::test_name_patterns_gate[p-xt-claude-thu13-manager-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_name_patterns_gate[EP-1-api-lead-True]",
+          "fullName": "test_hooks.py::test_name_patterns_gate[EP-1-api-lead-True]",
+          "state": "passed"
+        },
+        {
+          "name": "test_name_patterns_gate[p-xt-pi-board-helper-False]",
+          "fullName": "test_hooks.py::test_name_patterns_gate[p-xt-pi-board-helper-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_name_patterns_gate[EP-1-fix-parser-False]",
+          "fullName": "test_hooks.py::test_name_patterns_gate[EP-1-fix-parser-False]",
+          "state": "passed"
+        },
+        {
+          "name": "test_xtrm_role_is_not_a_role_source",
+          "fullName": "test_hooks.py::test_xtrm_role_is_not_a_role_source",
+          "state": "passed"
+        },
+        {
+          "name": "test_no_project_is_silent",
+          "fullName": "test_hooks.py::test_no_project_is_silent",
+          "state": "passed"
+        },
+        {
+          "name": "test_no_project_subprocess_exits_zero_silently",
+          "fullName": "test_hooks.py::test_no_project_subprocess_exits_zero_silently",
+          "state": "passed"
+        },
+        {
+          "name": "test_ambiguous_project_warns_then_generic_steps",
+          "fullName": "test_hooks.py::test_ambiguous_project_warns_then_generic_steps",
+          "state": "passed"
+        },
+        {
+          "name": "test_multi_project_selects_by_cwd",
+          "fullName": "test_hooks.py::test_multi_project_selects_by_cwd",
+          "state": "passed"
+        },
+        {
+          "name": "test_compact_output_renew_ttl_and_extra",
+          "fullName": "test_hooks.py::test_compact_output_renew_ttl_and_extra",
+          "state": "passed"
+        },
+        {
+          "name": "test_bound_manager_renews_manager_issue",
+          "fullName": "test_hooks.py::test_bound_manager_renews_manager_issue",
+          "state": "passed"
+        },
+        {
+          "name": "test_unbound_manager_uses_manager_issue_then_epic",
+          "fullName": "test_hooks.py::test_unbound_manager_uses_manager_issue_then_epic",
+          "state": "passed"
+        },
+        {
+          "name": "test_unbound_lead_is_told_to_bind_its_epic",
+          "fullName": "test_hooks.py::test_unbound_lead_is_told_to_bind_its_epic",
+          "state": "passed"
+        },
+        {
+          "name": "test_missing_extra_file_is_ignored",
+          "fullName": "test_hooks.py::test_missing_extra_file_is_ignored",
+          "state": "passed"
+        },
+        {
+          "name": "test_default_refread_files_resolve_to_the_pack",
+          "fullName": "test_hooks.py::test_default_refread_files_resolve_to_the_pack",
+          "state": "passed"
+        },
+        {
+          "name": "test_nudge_off_by_default_on_when_set",
+          "fullName": "test_hooks.py::test_nudge_off_by_default_on_when_set",
+          "state": "passed"
+        },
+        {
+          "name": "test_reference_gate_denies_until_all_read_in_full",
+          "fullName": "test_hooks.py::test_reference_gate_denies_until_all_read_in_full",
+          "state": "passed"
+        },
+        {
+          "name": "test_gated_tools_and_commands_from_config",
+          "fullName": "test_hooks.py::test_gated_tools_and_commands_from_config",
+          "state": "passed"
+        },
+        {
+          "name": "test_lazy_arming_without_session_start",
+          "fullName": "test_hooks.py::test_lazy_arming_without_session_start",
+          "state": "passed"
+        },
+        {
+          "name": "test_override_file_opens_the_reference_gate",
+          "fullName": "test_hooks.py::test_override_file_opens_the_reference_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_missing_reference_file_never_gates",
+          "fullName": "test_hooks.py::test_missing_reference_file_never_gates",
+          "state": "passed"
+        },
+        {
+          "name": "test_corrupt_state_fails_open",
+          "fullName": "test_hooks.py::test_corrupt_state_fails_open",
+          "state": "passed"
+        },
+        {
+          "name": "test_pending_guard_denies_once_then_passes",
+          "fullName": "test_hooks.py::test_pending_guard_denies_once_then_passes",
+          "state": "passed"
+        },
+        {
+          "name": "test_pending_guard_max_age_setting",
+          "fullName": "test_hooks.py::test_pending_guard_max_age_setting",
+          "state": "passed"
+        },
+        {
+          "name": "test_untargeted_rows_are_the_managers_targeted_rows_go_to_their_session",
+          "fullName": "test_hooks.py::test_untargeted_rows_are_the_managers_targeted_rows_go_to_their_session",
+          "state": "passed"
+        },
+        {
+          "name": "test_pending_guard_without_lane_dir_passes",
+          "fullName": "test_hooks.py::test_pending_guard_without_lane_dir_passes",
+          "state": "passed"
+        },
+        {
+          "name": "test_pending_guard_lists_open_operator_questions",
+          "fullName": "test_hooks.py::test_pending_guard_lists_open_operator_questions",
+          "state": "passed"
+        },
+        {
+          "name": "test_pending_guard_source_error_fails_open",
+          "fullName": "test_hooks.py::test_pending_guard_source_error_fails_open",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_thresholds_fire_once_and_rearm",
+          "fullName": "test_hooks.py::test_checkpoint_thresholds_fire_once_and_rearm",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_thresholds_from_config",
+          "fullName": "test_hooks.py::test_checkpoint_thresholds_from_config",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_ref_fallback",
+          "fullName": "test_hooks.py::test_checkpoint_ref_fallback",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_skips_workers_and_no_project",
+          "fullName": "test_hooks.py::test_checkpoint_skips_workers_and_no_project",
+          "state": "passed"
+        },
+        {
+          "name": "test_tools_reminder_fires_once_per_threshold_and_rearms",
+          "fullName": "test_hooks.py::test_tools_reminder_fires_once_per_threshold_and_rearms",
+          "state": "passed"
+        },
+        {
+          "name": "test_tools_reminder_off_and_project_extra",
+          "fullName": "test_hooks.py::test_tools_reminder_off_and_project_extra",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_final_demands_the_goal_and_says_it_is_missing",
+          "fullName": "test_hooks.py::test_checkpoint_final_demands_the_goal_and_says_it_is_missing",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_final_reports_a_satisfied_goal_and_its_promises",
+          "fullName": "test_hooks.py::test_checkpoint_final_reports_a_satisfied_goal_and_its_promises",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_final_flags_a_goal_older_than_the_newest_decision",
+          "fullName": "test_hooks.py::test_checkpoint_final_flags_a_goal_older_than_the_newest_decision",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_early_does_not_run_the_goal_check",
+          "fullName": "test_hooks.py::test_checkpoint_early_does_not_run_the_goal_check",
+          "state": "passed"
+        },
+        {
+          "name": "test_checkpoint_goal_check_is_unverified_without_a_store",
+          "fullName": "test_hooks.py::test_checkpoint_goal_check_is_unverified_without_a_store",
+          "state": "passed"
+        },
+        {
+          "name": "test_post_compact_warns_when_the_saved_goal_is_stale",
+          "fullName": "test_hooks.py::test_post_compact_warns_when_the_saved_goal_is_stale",
+          "state": "passed"
+        },
+        {
+          "name": "test_post_compact_reloads_the_newest_goal_without_a_warning",
+          "fullName": "test_hooks.py::test_post_compact_reloads_the_newest_goal_without_a_warning",
+          "state": "passed"
+        },
+        {
+          "name": "test_post_compact_warns_when_no_goal_was_saved",
+          "fullName": "test_hooks.py::test_post_compact_warns_when_no_goal_was_saved",
+          "state": "passed"
+        },
+        {
+          "name": "test_post_compact_fails_open_on_a_broken_store",
+          "fullName": "test_hooks.py::test_post_compact_fails_open_on_a_broken_store",
+          "state": "passed"
+        },
+        {
+          "name": "test_goal_helpers_fail_open",
+          "fullName": "test_hooks.py::test_goal_helpers_fail_open",
+          "state": "passed"
+        },
+        {
+          "name": "test_goal_rows_are_handoffs_with_a_marker_or_a_goal_key",
+          "fullName": "test_hooks.py::test_goal_rows_are_handoffs_with_a_marker_or_a_goal_key",
+          "state": "passed"
+        },
+        {
+          "name": "test_journal_rows_are_read_only_and_ordered",
+          "fullName": "test_hooks.py::test_journal_rows_are_read_only_and_ordered",
+          "state": "passed"
+        },
+        {
+          "name": "test_an_issue_with_no_journal_is_missing_not_unknown",
+          "fullName": "test_hooks.py::test_an_issue_with_no_journal_is_missing_not_unknown",
+          "state": "passed"
+        },
+        {
+          "name": "test_goal_check_reads_only_the_rows_it_needs",
+          "fullName": "test_hooks.py::test_goal_check_reads_only_the_rows_it_needs",
+          "state": "passed"
+        },
+        {
+          "name": "test_goal_reload_prefers_the_newer_of_journal_and_file",
+          "fullName": "test_hooks.py::test_goal_reload_prefers_the_newer_of_journal_and_file",
+          "state": "passed"
+        }
+      ]
+    }
+  ]
+}
