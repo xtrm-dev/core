@@ -14,7 +14,8 @@ record and the Substrate journal of <ref> are the only memory: the timer is a sy
 
 park refuses unless: a handoff entry by NAME is its last entry on REF; --self comes with --manager-told (the lead has
 told the manager); a wake is set. With --check, CMD exit 0 wakes, 1 means not yet (the timer fires again every
---every seconds), any other exit, a timeout or a passed --deadline wakes anyway and says so. All times are UTC.
+--every seconds), any other exit, a timeout or a passed --deadline wakes anyway and says so. The check is stored and
+journaled verbatim: it must not contain credentials. All times are UTC.
 The agent never starts from the timer directly: always inside a tmux window. Settings (pm_config, PM_ prefix):
 park_launch (command that starts the runtime; default `claude --dangerously-skip-permissions` or `pi`),
 park_max_attempts (3), park_retry_s (300), park_nudge_delay_s (20), park_check_timeout_s (120), and the gate limits
@@ -197,7 +198,8 @@ def unit_name(name: str) -> str:
 def timer_cmd(rec: dict) -> list[str]:
     w, unit = rec["wake"], rec["unit"]
     cmd = ["systemd-run", "--user", "--unit", unit, "--collect", "--description", f"pm_park wake {rec['name']}",
-           "--timer-property=AccuracySec=1s"]
+           "--timer-property=AccuracySec=1s",
+           "--property=KillMode=process"]  # a tmux server the wake starts must outlive the wake unit
     for key in PASS_ENV:
         if os.environ.get(key):
             cmd.append(f"--setenv={key}={os.environ[key]}")
@@ -224,6 +226,8 @@ def park(a: argparse.Namespace) -> int:
         raise ParkError("refused: --check needs --deadline <UTC>; a check alone could wait for ever")
     if a.at and a.deadline:
         raise ParkError("refused: --deadline goes with --check only")
+    if not a.self and a.name == os.environ.get("SUBSTRATE_HOLDER"):
+        a.self = True  # the parked session is the caller: omitting --self does not bypass the manager rule
     if a.self and not a.manager_told:
         raise ParkError("refused: --self needs --manager-told: tell the manager (route_target.py manager) you park "
                         "yourself and until when, then add the flag (operator ruling 2026-11-22)")
@@ -267,10 +271,17 @@ def park(a: argparse.Namespace) -> int:
            "reason": a.reason, "self": bool(a.self), "unit": unit_name(a.name), "state": "parked", "attempts": 0,
            "gate_waits": 0, "retry_s": setting_int("PM_PARK_RETRY_S", 300), "wake_time": None, "wake_cause": None,
            "wake_pane": None}
+    try:
+        previous = old.read_bytes()
+    except OSError:
+        previous = None
     save(rec)
     r = run(timer_cmd(rec))
     if r.returncode != 0:
-        record_path(a.name).unlink(missing_ok=True)
+        if previous is None:
+            record_path(a.name).unlink(missing_ok=True)
+        else:
+            old.write_bytes(previous)  # keep the earlier (terminal) record when the new timer cannot be set
         raise ParkError(f"refused: systemd-run failed ({r.returncode}): {(r.stderr or r.stdout).strip()[:300]}")
     rec["park_seq"] = journal_append(a.ref, "note", (
         f"park: {a.name} ({a.role}) parked {fmt(t0)} UTC after handoff seq {handoff_seq}; wake {wake_text(rec)}; "
@@ -457,6 +468,11 @@ def stop_timer(rec: dict) -> None:
     run(["systemctl", "--user", "stop", rec["unit"] + ".timer"])
 
 
+def retry_interval(rec: dict) -> int:
+    """Seconds until the timer fires again: --check mode repeats every `every`, --at mode every `retry_s`."""
+    return int(rec["wake"].get("every") or rec["retry_s"])
+
+
 def wake(a: argparse.Namespace) -> int:
     rec = load(a.name)
     # A user timer starts in $HOME. sb and gh resolve the project from the checkout they run in, and sb outside
@@ -467,16 +483,21 @@ def wake(a: argparse.Namespace) -> int:
         print(f"{a.name}: state {rec['state']}; nothing to do")
         stop_timer(rec)
         return 0
-    due, cause, note = decide(rec, a.force)
-    if not due:
-        print(f"{a.name}: {cause}")
-        return 0
+    if rec.get("due"):  # decided on an earlier firing: a retry never re-runs the check
+        cause, note = rec["due"]["cause"], rec["due"]["note"]
+    else:
+        due, cause, note = decide(rec, a.force)
+        if not due:
+            print(f"{a.name}: {cause}")
+            return 0
+        rec["due"] = {"cause": cause, "note": note}
+        save(rec)
     ok, line = gate()
     if not ok:
         rec["gate_waits"] += 1
         rec["last_gate"] = f"{fmt(now())} {line}"
         save(rec)
-        print(f"{a.name}: launch gate shut ({line}); the timer retries in {rec['retry_s']}s")
+        print(f"{a.name}: launch gate shut ({line}); the timer retries in {retry_interval(rec)}s")
         return 0
     woken = now()
     rec.update(state="waking", wake_time=fmt(woken), wake_cause=cause + (f" ({note})" if note else ""))
@@ -496,9 +517,9 @@ def wake(a: argparse.Namespace) -> int:
         text = nudge_text(rec, woken, cause, note, dpath)
         if not send_nudge(pane, text, f"[pm_park wake {rec['name']}]", f"[end pm_park wake {rec['name']}]"):
             raise ParkError(f"the nudge did not show in pane {pane}")
-    except ParkError as exc:
+    except Exception as exc:  # noqa: BLE001 - any failure of an attempt is counted, never left as 'waking' for ever
         rec["attempts"] += 1
-        rec["last_error"] = f"{fmt(now())} {exc}"
+        rec["last_error"] = f"{fmt(now())} {type(exc).__name__}: {exc}"
         if rec["attempts"] >= setting_int("PM_PARK_MAX_ATTEMPTS", 3):
             rec["state"] = "failed"
             save(rec)
@@ -510,7 +531,7 @@ def wake(a: argparse.Namespace) -> int:
             return 1
         rec["state"] = "parked"
         save(rec)
-        print(f"{a.name}: attempt {rec['attempts']} failed: {exc}; the timer retries in {rec['retry_s']}s")
+        print(f"{a.name}: attempt {rec['attempts']} failed: {exc}; the timer retries in {retry_interval(rec)}s")
         return 1
     rec["state"] = "woken"
     seq = journal_append(rec["ref"], "note", (
@@ -528,16 +549,26 @@ def wake(a: argparse.Namespace) -> int:
 
 # --- list -----------------------------------------------------------------------------------------------------------
 
+def timer_loaded(rec: dict) -> bool:
+    """False when systemd no longer knows the transient timer (they do not survive a reboot)."""
+    r = run(["systemctl", "--user", "show", "-p", "LoadState", "--value", rec["unit"] + ".timer"])
+    return r.returncode != 0 or r.stdout.strip() != "not-found"
+
+
 def list_cmd(a: argparse.Namespace) -> int:
     recs = records()
     if a.json:
+        for r in recs:
+            r["unit_missing"] = r["state"] in LIVE_STATES and not timer_loaded(r)
         print(json.dumps(recs))
         return 0
     if not recs:
         print("no parked sessions")
     for r in recs:
+        gone = r["state"] in LIVE_STATES and not timer_loaded(r)
         print(f"{r['name']:<28} {r['state']:<8} {r['role']:<8} {r['ref']:<12} wake {wake_text(r)}; "
-              f"unit {r['unit']}.timer; parked {r['park_time']}")
+              f"unit {r['unit']}.timer" + (" MISSING (lost, e.g. after a reboot: re-park or wake by hand)" if gone else "")
+              + f"; parked {r['park_time']}")
     return 0
 
 

@@ -76,6 +76,8 @@ timer, which outlives every session (a cron held by a session dies with it).
   the park, answers-inbox rows naming the session, merged PRs), opens a tmux window in the same worktree, starts a FRESH session of the
   same runtime, name and role (not `--continue`), pastes the respawn nudge, then journals `wake`. After 3 failed attempts it journals a
   `blocker` for the manager. Stop a wrong park with `systemctl --user stop pm-park-<name>.timer`.
+  A `--check` command is stored and journaled verbatim: never put a credential in it. Transient timers do not survive a reboot:
+  `pm_park.py list` marks a parked record whose unit is missing (`MISSING`); re-park it or wake it by hand (`wake <name> --force`).
 - **Peers write to the journal of a parked session's issue, not to its socket:** a message to a dead socket is lost. `route_target.py --team`
   shows parked sessions on a `parked` line. The woken session reads the handoff and the digest, finds the manager and tells it it is back.
 - **Instance settings** (pm_config): `park_launch` (start command; default `claude --dangerously-skip-permissions`, add `--channels ...` there),

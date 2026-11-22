@@ -35,6 +35,7 @@ class Fake:
         self.entries = [entry(1, "milestone", "lead-a"), entry(2, "handoff", "lead-a", "handing off")]
         self.appended = []
         self.systemd_rc = 0
+        self.loadstate = "loaded"
         self.check_rc = 0
         self.tmux_new_rc = 0
         self.pane_dead = "0"
@@ -58,7 +59,7 @@ class Fake:
         if a0 == "systemd-run":
             return cp(self.systemd_rc, err="boom" if self.systemd_rc else "")
         if a0 == "systemctl":
-            return cp()
+            return cp(out=self.loadstate) if "show" in args else cp()
         if a0 == "sh":
             return cp(self.check_rc, err="check says no" if self.check_rc not in (0, 1) else "")
         if a0 == "gh":
@@ -153,6 +154,17 @@ class ParkRefusals(Base):
         self.assertEqual(self.park("--at", "2026-11-22T14:00:00Z", "--self", "--manager-told"), 0)
         self.assertTrue(self.rec()["self"])
 
+    def test_holder_naming_the_session_counts_as_self(self):
+        os.environ["SUBSTRATE_HOLDER"] = "lead-a"
+        self.refused("--at", "2026-11-22T14:00:00Z")
+        self.assertEqual(self.park("--at", "2026-11-22T14:00:00Z", "--manager-told"), 0)
+        self.assertTrue(self.rec()["self"])
+
+    def test_other_holder_is_not_self(self):
+        os.environ["SUBSTRATE_HOLDER"] = "manager"
+        self.assertEqual(self.park(), 0)
+        self.assertFalse(self.rec()["self"])
+
     def test_no_wake(self):
         self.refused(at=None)
         self.fake.calls.clear()
@@ -178,6 +190,17 @@ class ParkRefusals(Base):
         self.assertFalse(pm_park.record_path("lead-a").exists())
 
 
+    def test_systemd_failure_restores_the_earlier_record(self):
+        self.assertEqual(self.park(), 0)
+        rec = self.rec()
+        rec["state"] = "woken"
+        pm_park.save(rec)
+        self.fake.systemd_rc = 1
+        with mock.patch("sys.stderr"):
+            self.assertEqual(self.park(), 2)
+        self.assertEqual(self.rec(), rec)
+
+
 class ParkWrites(Base):
     def test_record_timer_and_journal(self):
         os.environ["PATH"] = "/opt/nvm/bin:/usr/bin"
@@ -194,6 +217,7 @@ class ParkWrites(Base):
         self.assertIn("--setenv=PATH=/opt/nvm/bin:/usr/bin", sd)
         self.assertIn("--on-calendar=2026-11-22 14:00:00 UTC", sd)
         self.assertIn("--setenv=SUBSTRATE_HOLDER=pm_park", sd)
+        self.assertIn("--property=KillMode=process", sd)
         self.assertEqual(sd[-4:], [sys.executable, str(pathlib.Path(pm_park.__file__).resolve()), "wake", "lead-a"])
         self.assertEqual(self.fake.appended[0][:2], ("CORE-1", "note"))
         self.assertIn("park: lead-a", self.fake.appended[0][2])
@@ -306,6 +330,42 @@ class Wake(Base):
         later = NOW + dt.timedelta(hours=3)
         with mock.patch.object(pm_park, "now", lambda: later), mock.patch("builtins.print"):
             return pm_park.main(["wake", "lead-a"])
+
+    def test_due_decision_survives_a_gate_shut_retry(self):
+        later = NOW + dt.timedelta(hours=3)
+        self.set_gate("20", "1", 16 * 1048576)
+        with mock.patch.object(pm_park, "now", lambda: later):
+            pm_park.main(["wake", "lead-a"])
+        self.assertTrue(self.rec()["due"])
+        self.set_gate("1", "1", 16 * 1048576)
+        with mock.patch.object(pm_park, "now", lambda: NOW):  # the at-time looks not reached on the retry
+            self.assertEqual(pm_park.main(["wake", "lead-a"]), 0)
+        self.assertEqual(self.rec()["state"], "woken")
+        self.assertTrue(self.fake.tmux("load-buffer"))
+
+    def test_due_check_is_not_rerun_on_a_retry(self):
+        self.fake.entries.append(entry(3, "handoff", "lead-b"))
+        self.assertEqual(self.park("--check", "c", "--deadline", "2026-11-22T20:00:00Z", name="lead-b"), 0)
+        self.set_gate("20", "1", 16 * 1048576)
+        with mock.patch("builtins.print") as pr:
+            pm_park.main(["wake", "lead-b"])
+        self.assertIn("retries in 300s", str(pr.call_args_list))
+        self.fake.check_rc = 1
+        self.fake.calls.clear()
+        self.set_gate("1", "1", 16 * 1048576)
+        self.fake.capture = "[pm_park wake lead-b] You were respawned"
+        with mock.patch("builtins.print"):
+            pm_park.main(["wake", "lead-b"])
+        self.assertFalse([c for c in self.fake.calls if c[0][0] == "sh"])
+        self.assertEqual(self.rec("lead-b")["state"], "woken")
+
+    def test_unexpected_error_is_counted_not_left_waking(self):
+        with mock.patch.object(pm_park, "digest", side_effect=OSError("disk full")):
+            with mock.patch.object(pm_park, "now", lambda: NOW + dt.timedelta(hours=3)), mock.patch("builtins.print"):
+                self.assertEqual(pm_park.main(["wake", "lead-a"]), 1)
+        rec = self.rec()
+        self.assertEqual((rec["state"], rec["attempts"]), ("parked", 1))
+        self.assertIn("OSError: disk full", rec["last_error"])
 
     def test_wake_launches_fresh_session_and_nudges(self):
         self.assertEqual(self.wake_ok(), 0)
@@ -438,6 +498,16 @@ class ListAndRoute(Base):
         parked = [c.args[0] for c in pr.call_args_list if " parked " in c.args[0]]
         self.assertEqual(len(parked), 1)
         self.assertIn("write to the journal of CORE-1, not to its socket", parked[0])
+
+    def test_list_flags_a_missing_unit(self):
+        self.assertEqual(self.park(), 0)
+        self.fake.loadstate = "not-found"
+        with mock.patch("builtins.print") as pr:
+            pm_park.main(["list"])
+        self.assertIn("MISSING", pr.call_args_list[0].args[0])
+        with mock.patch("builtins.print") as pr:
+            pm_park.main(["list", "--json"])
+        self.assertTrue(json.loads(pr.call_args.args[0])[0]["unit_missing"])
 
     def test_no_parked_line_when_none(self):
         with mock.patch("builtins.print") as pr:
