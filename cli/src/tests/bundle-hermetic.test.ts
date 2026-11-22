@@ -1,9 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   absolutePathOffences,
+  escapingSpecifiers,
+  relativeSpecifiers,
   bundleNeedles,
   bundleVerdict,
   mainCheckoutFromCommonDir,
@@ -41,7 +43,7 @@ describe('bundle hermeticity: the artefact', () => {
       homeDir: '/home/someone',
       repoRoot: '/home/someone/dev/core',
     });
-    expect(verdict).toEqual({ ok: true, offences: [] });
+    expect(verdict).toEqual({ ok: true, offences: [], escapes: [] });
   });
 
   it('never treats an empty needle as a match', () => {
@@ -121,5 +123,83 @@ describe('bundle hermeticity: the resolution root', () => {
 
   it('reads the main checkout from the git common dir', () => {
     expect(mainCheckoutFromCommonDir('/repo/main/.git')).toBe('/repo/main');
+  });
+});
+
+// A per-entry symlink to a directory outside the checkout was the shape both
+// halves missed: the directory comparison sees a real node_modules, and the
+// needles name $HOME, the repo and /home/ while the escaping path names none of
+// them. The bundle then ships fifteen `../../../../../../../../tmp/...`
+// specifiers and resolves on no other machine.
+describe('bundle hermeticity: specifiers that leave the checkout', () => {
+  let root = '';
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'xt-bhs-'));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('keeps file-shaped specifiers and discards bare path fragments', () => {
+    const source = [
+      'require("../../../../../../tmp/xt-commander/lib/error.js")',
+      'const p = "../.."; const q = "../../../..";',
+      'require("../node_modules/commander/index.js")',
+    ].join('\n');
+    const specifiers = relativeSpecifiers(source);
+    expect(specifiers).toContain('../../../../../../tmp/xt-commander/lib/error.js');
+    expect(specifiers).toContain('../node_modules/commander/index.js');
+    expect(specifiers).not.toContain('../..');
+    expect(specifiers).not.toContain('../../../..');
+  });
+
+  it('refuses a specifier that resolves outside the repository and accepts one that stays inside', () => {
+    const source = [
+      'require("../../../../../../tmp/xt-commander/lib/error.js")',
+      'require("../node_modules/commander/index.js")',
+    ].join('\n');
+    const escapes = escapingSpecifiers({
+      source,
+      bases: [join(root, 'cli', 'dist'), join(root, 'cli')],
+      repoRoot: root,
+      resolvePath: resolve,
+    });
+    expect(escapes.map((entry) => entry.specifier)).toEqual(['../../../../../../tmp/xt-commander/lib/error.js']);
+  });
+
+  it('refuses a bundle whose only offence is an escaping specifier', () => {
+    const verdict = bundleVerdict({
+      source: 'require("../../../outside/lib/error.js")',
+      homeDir: '/home/someone',
+      repoRoot: join(root, 'wt'),
+      bases: [join(root, 'wt', 'cli', 'dist'), join(root, 'wt', 'cli')],
+      resolvePath: resolve,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.offences).toEqual([]);
+    expect(verdict.escapes).toHaveLength(1);
+  });
+
+  it('catches the per-entry link the resolution-root check cannot see', () => {
+    const repo = join(root, 'wt');
+    const outside = join(root, 'outside-commander');
+    mkdirSync(join(repo, 'cli', 'node_modules'), { recursive: true });
+    mkdirSync(join(repo, 'node_modules'), { recursive: true });
+    mkdirSync(join(outside, 'lib'), { recursive: true });
+    symlinkSync(outside, join(repo, 'node_modules', 'commander'));
+    writeFileSync(join(outside, 'lib', 'error.js'), 'module.exports = {};\n');
+    // The directory half is blind to this by construction: both node_modules are
+    // real directories, so nothing is shared. That is the finding, not a gap in
+    // the test.
+    expect(prebuildVerdict({ cwd: join(repo, 'cli'), gitCommonDir: join(root, 'main', '.git') }).ok).toBe(true);
+    const verdict = bundleVerdict({
+      source: 'require("../../../../../outside-commander/lib/error.js")',
+      homeDir: '/home/someone',
+      repoRoot: repo,
+      bases: [join(repo, 'cli', 'dist'), join(repo, 'cli')],
+      resolvePath: resolve,
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.escapes[0]?.specifier).toBe('../../../../../outside-commander/lib/error.js');
   });
 });
