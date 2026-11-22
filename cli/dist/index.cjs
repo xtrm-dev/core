@@ -80279,6 +80279,16 @@ function appendOverrideLog(deps, line) {
     return { ok: false, error: error62.message };
   }
 }
+var REVIEW_ROLES = /* @__PURE__ */ new Set(["pr-reviewer", "reviewer subagent"]);
+function reviewSeat(review) {
+  const body = review.body ?? "";
+  const marker = /<!--([^>]*)-->/.exec(body);
+  const agent = marker ? /(?:^|\s)agent=(\S+)/.exec(marker[1] ?? "") : null;
+  if (agent?.[1]) return agent[1];
+  const visible = /^Agent\s+(\S+)\s+·\s+run\s+/m.exec(body);
+  if (visible?.[1]) return visible[1].trim();
+  return null;
+}
 async function mergeCheck(input2, deps) {
   const env3 = deps.env ?? process.env;
   const reviewerSlug = deps.reviewerSlug ?? "xtrm-reviewer";
@@ -80335,9 +80345,62 @@ async function mergeCheck(input2, deps) {
     return deny(`the PR names '${rawRef}', which is not a Substrate ref; refusing to read or write a Journal entry for it`, { head: pull.head?.sha }, markerGuidance());
   }
   const mine = reviews.filter((review) => review.user?.login === botLogin && review.state && review.state !== "DISMISSED" && (review.submitted_at ?? "") !== "").sort((a, b) => Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? ""));
-  const latest = mine[mine.length - 1];
+  const mergedAt = Date.parse(pull.merged_at ?? "");
+  const submittedAt = (review) => Date.parse(review.submitted_at ?? "");
+  const isPostMerge = (review) => Number.isFinite(mergedAt) && submittedAt(review) > mergedAt;
+  const late = mine.filter(isPostMerge);
+  const newestLate = late[late.length - 1];
+  if (newestLate && newestLate === mine[mine.length - 1]) {
+    return deny(
+      `the PR merged at ${pull.merged_at} and review ${newestLate.id} (${newestLate.state}) was submitted at ${newestLate.submitted_at}, after the merge; it cannot participate in a merge decision`,
+      {
+        head,
+        issueRef,
+        reviewState: newestLate.state,
+        reviewUrl: newestLate.html_url,
+        reviewHead: newestLate.commit_id
+      }
+    );
+  }
+  const participating = mine.filter((review) => !isPostMerge(review));
+  const latest = participating[participating.length - 1];
   const reviewInfo = latest ? { reviewState: latest.state, reviewUrl: latest.html_url, reviewHead: latest.commit_id } : {};
   if (!latest) return deny("no review by xtrm-reviewer[bot] exists", { head, issueRef, ...reviewInfo });
+  const header = parseHeaderLine(latest.body ?? "");
+  if (!header || !REVIEW_ROLES.has(header.role.toLowerCase())) {
+    return deny(
+      `the latest review by xtrm-reviewer[bot] (${latest.id ?? "unknown id"}) has no "Review by pr-reviewer (<model>) at head <sha12>" line 1, so it is not a review in the reviewer contract`,
+      { head, issueRef, ...reviewInfo }
+    );
+  }
+  const committed = (latest.commit_id ?? "").toLowerCase();
+  if (!committed.startsWith(header.head12)) {
+    return deny(
+      `the review's line 1 names head ${header.head12} and GitHub recorded commit_id ${sha12(committed) || "(none)"}; the payload is authoritative and the two disagree`,
+      { head, issueRef, ...reviewInfo }
+    );
+  }
+  const atHead = participating.filter((review) => (review.commit_id ?? "") === head);
+  const seats = atHead.map((review) => ({ review, seat: reviewSeat(review) }));
+  if (seats.every((entry) => entry.seat)) {
+    const newestBySeat = /* @__PURE__ */ new Map();
+    for (const entry of seats) newestBySeat.set(entry.seat, entry.review);
+    const states = [...newestBySeat.entries()].map(([seat2, review]) => `${seat2} ${review.state}`);
+    if (newestBySeat.size > 1 && new Set([...newestBySeat.values()].map((review) => review.state)).size > 1) {
+      return deny(
+        `two review seats disagree at head ${sha12(head)} (${states.join(", ")}); a coordinator resolves this rather than the guard picking one`,
+        { head, issueRef, ...reviewInfo }
+      );
+    }
+    const seat = reviewSeat(latest);
+    const earlier = seat ? seats.filter((entry) => entry.seat === seat && (entry.review.submitted_at ?? "") < (latest.submitted_at ?? "")) : [];
+    if (seat && (latest.state === "COMMENTED" || latest.state === "COMMENT") && earlier.some((entry) => entry.review.state === "APPROVED")) {
+      return deny(
+        `${seat} approved head ${sha12(head)} and then commented on it later (${latest.id ?? "unknown id"} at ${latest.submitted_at}); a later comment does not withdraw an approval and does not replace it`,
+        { head, issueRef, ...reviewInfo }
+      );
+    }
+  }
   if (latest.commit_id !== head) {
     return deny(
       `the latest review by xtrm-reviewer[bot] is at ${sha12(latest.commit_id ?? "") || "(no commit)"}, not at the current head ${sha12(head)}`,
