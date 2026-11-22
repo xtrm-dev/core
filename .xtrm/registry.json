@@ -880,8 +880,16 @@
           "hash": "c8ef8847a8227be3cdf341964600aaf0af20267dd2fda839192be2ae33d52afb",
           "version": "0.15.3"
         },
+        "project-management/board-audit/scripts/lane/heavy-watch.py": {
+          "hash": "4d50bb0a59ccec8a10da032383a8ce1910bfbc1a79834a363c2d1e64186f3ec3",
+          "version": "0.15.3"
+        },
+        "project-management/board-audit/scripts/lane/lane-watchdog.py": {
+          "hash": "feab8bdd528b703dd1dfb891e25b81bee2561917cb444840bc495342753b5d66",
+          "version": "0.15.3"
+        },
         "project-management/board-audit/scripts/lane/lanecfg.py": {
-          "hash": "0dd5f975d9a9493b570bedd6aebd3cac5861bd7df4927259d5afceb25b5264db",
+          "hash": "df793268139b45c5394ba80131905da57d47215b08535d64c353ee3bb38cbce9",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/mark-routed.py": {
@@ -904,12 +912,16 @@
           "hash": "1c9ab48525709f293a41196066a814fb7a3d2eab7fa36a932a4cddaa51e93cb6",
           "version": "0.15.3"
         },
+        "project-management/board-audit/scripts/lane/reconcile-answers.py": {
+          "hash": "16a86ab1bc6edac2954dc39a3fc015f09ae888d75ff1edd750cecb6c2b38efd7",
+          "version": "0.15.3"
+        },
         "project-management/board-audit/scripts/lane/route-backlog.py": {
           "hash": "c1fb79b0231988a52d5199f24d28c81bc2480467e8409f705ef3fe947ee87a31",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-controls.py": {
-          "hash": "70aa52faf7cfb018288b89f8ad4541d936e24d892cba2ac29edca1140f5fe5e2",
+          "hash": "7ae463110fc6a47dec0e3e3dccf7cd010a51528c06da18a1ee1f5d2161961226",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-forward.py": {
@@ -917,11 +929,11 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-jira.py": {
-          "hash": "73222cb2c1020077925f2b82f11cd6fed64b07f1ad4ecd0efa23f972107724b3",
+          "hash": "56270854566bf5fb7c281b06bff0b7909039713b3708d56902b06533695cb9f6",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/route-watch.py": {
-          "hash": "53be6bdd52bbbe177e6f659ce0d90f353e3fa783a6d58974f2d853614891e4fe",
+          "hash": "d63196f4acc14f90cd960267cf3c1d33fb149d6f3fab431b6f005182ae5740d8",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/sbtext.py": {
@@ -929,7 +941,11 @@
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/scheduler.sh": {
-          "hash": "b968599e6ae171efeeb72e3de3cafdd72d679da3e1e4f4d13052df70730bb964",
+          "hash": "02b167c542cf7e1888e7b7cfaf2970ff2c21c8623e96b4542bea4b1971a471fa",
+          "version": "0.15.3"
+        },
+        "project-management/board-audit/scripts/lane/test-dir2-result.py": {
+          "hash": "f20bf16dfb5afd5081bfbf6110b71f62614692b7b1d973a1ad9d5140f9f329f6",
           "version": "0.15.3"
         },
         "project-management/board-audit/scripts/lane/test-unrowed-done.py": {
@@ -993,7 +1009,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/operator-questions.py": {
-          "hash": "030423c907c5590091843bb3eff141a6eaeec9b762578568be6cd7e33239b7de",
+          "hash": "39d3a791e1d8cfb5edfaee2a1c39da10c9311c6b916f9cd460f983c6be001490",
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/pm_hook_common.py": {
@@ -1005,7 +1021,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/hooks/promise-check.py": {
-          "hash": "2b3e2268780edf341472c14a4052ad9b39ca44b36d4f953901157a766bb8ee24",
+          "hash": "fab90694744bc5f577658e982eb93bf67b07b5fcd81bb5209432801dc1c68eb0",
           "version": "0.15.3"
         },
         "project-management/project-management/references/agentrun.md": {
@@ -1013,7 +1029,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/continuity.md": {
-          "hash": "c1795967fa6566533ba68017c95741cd87affaa2f05987249790bb243ce2e402",
+          "hash": "02c3f017ba0d82f97f634ea45a9e7261cf5094cfe41962d09f490db0b1703a28",
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
@@ -1108,12 +1124,16 @@
           "hash": "35cc1a43a0be451ae9a1403b350a94f3a1b020313cb89764fb9487acc6578fab",
           "version": "0.15.3"
         },
+        "project-management/status-board-keeper/references/integration.md": {
+          "hash": "084ccb59f4fb09c9fdbdc042fffbe85c3e4ce78a07650b49b5441f9e2c5f6878",
+          "version": "0.15.3"
+        },
         "project-management/status-board-keeper/references/setup.md": {
           "hash": "3541379d54117805a18d017c42f117f25a7a9f3f699532328a95f8dc2950d263",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/scripts/status_board_sync.py": {
-          "hash": "fb7657ff9aaaab399620ba29648c974bcfe10a75fd068ce995f84bba3a2d6700",
+          "hash": "a7c7aba926635a26198321bd2ad62d22fcb4d14b904a30d6379ab2e51baf4da9",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/SKILL.md": {

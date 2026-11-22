@@ -12,7 +12,7 @@ bound issue naming its key time. This hook enforces it:
   Stop   one silent turn. Detect the promises in the recent assistant text. When ``promise_check_turns`` turns have
          passed and a promise has no LATER CronCreate in the transcript and no journal entry on the bound issue
          naming its key time, emit ONE reminder (``decision=block`` reason, the only Stop output the model sees)
-         naming every missing promise, its key time, and the two durable forms. Once per promise per N turns.
+         naming every missing promise, its key time, and the two durable forms. Once per promise, never repeated.
          ``stop_hook_active`` true emits nothing (no loop), and ``promise_check_turns`` 0 disables the hook.
 
 Only the manager and the leads are gated (scripts/pm_role.py: role file, else launch role, else name patterns, else
@@ -22,7 +22,7 @@ else .substrate-issue, pm_hook_common.bound_ref), never a hardcoded ref: a lead 
 Both reads are local and read-only: the transcript tail (bounded: the last TRANSCRIPT_WINDOW bytes) and one
 ONE ``mode=ro`` state.db read per Stop (pm_hook_common.promise_records). Every internal error fails open (exit
 0, no output) and is appended to the hook state dir's errors.log. Settings come from pm_config: ``promise_check_turns``
-(PM_PROMISE_CHECK_TURNS, default 3, 0 = off).
+(PM_PROMISE_CHECK_TURNS, default 15, 0 = off).
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ import pm_config  # noqa: E402
 import pm_hook_common as common  # noqa: E402
 
 HOOK = "promise-check"
-DEFAULT_TURNS = 3
+DEFAULT_TURNS = 15  # operator 2026-11-19: every reminder costs a full extra turn; 3 fired on background wakes alone
 MAX_REPORTED = 3
 PROMISE_KEEP = 40                    # only the newest promises are tracked: older ones are kept or lost already
 P_CAP = 200
@@ -316,7 +316,7 @@ def on_stop(payload: dict, now: float) -> dict | None:
     reminded = dict(st.get("reminded") or {})
     due = [p for p in open_now
            if turns - int(seen.get(p["qid"], {}).get("turn", turns)) >= n_turns
-           and turns - int(reminded.get(p["qid"], -10 ** 9)) >= n_turns]
+           and p["qid"] not in reminded]  # once per promise: a repeat re-sends the whole context for one line
     result = None
     if due:
         for p in due:

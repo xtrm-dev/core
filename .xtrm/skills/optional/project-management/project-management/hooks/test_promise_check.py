@@ -62,7 +62,8 @@ def make_db(path, journal=(), issue_id="iss_ep7", prefix="EP", number=7, created
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     cfg = tmp_path / "pm.json"
-    cfg.write_text(json.dumps({"repo_dir": str(tmp_path / "wt"), "epic": "EP-7", "state_dir": str(tmp_path / "state")}))
+    cfg.write_text(json.dumps({"repo_dir": str(tmp_path / "wt"), "epic": "EP-7", "state_dir": str(tmp_path / "state"),
+                               "promise_check_turns": 3}))  # the tests below are written against a 3-turn window
     (tmp_path / "wt").mkdir()
     for k in CLEARED:
         monkeypatch.setenv(k, "_")  # so monkeypatch restores the original (absent) value after a test sets it
@@ -274,15 +275,15 @@ def test_stop_hook_active_emits_nothing(env, monkeypatch):
     assert stop(env, None, path, stop_hook_active=True) is None
 
 
-def test_reminder_repeats_at_most_once_per_n_turns(env, monkeypatch):
+def test_reminder_fires_once_per_promise(env, monkeypatch):
     role_lead(env)
     make_db(env / "state.db")
     monkeypatch.setenv("SUBSTRATE_DB", str(env / "state.db"))
     (env / "wt" / ".substrate-issue").write_text("EP-7\n")
     path = transcript(env, [assistant_text(PROMISE)])
-    outs = [stop(env, None, path) for _ in range(8)]
+    outs = [stop(env, None, path) for _ in range(12)]
     fired = [i for i, o in enumerate(outs) if o]
-    assert fired == [3, 6]                    # turn 4, then 3 turns later
+    assert fired == [3]                       # turn 4 only: a repeat costs a whole extra turn (operator 2026-11-19)
 
 
 def test_workers_and_unknown_projects_are_untouched(env, monkeypatch):
@@ -438,3 +439,17 @@ def test_prompt_event_restarts_the_counter_for_a_lead_but_not_a_worker(env, monk
 def test_main_is_silent_without_stdin(env, monkeypatch):
     monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
     assert pc.main([]) == 0
+
+
+def test_default_window_is_fifteen_turns(env, monkeypatch):
+    role_lead(env)
+    make_db(env / "state.db")
+    monkeypatch.setenv("SUBSTRATE_DB", str(env / "state.db"))
+    cfg = json.loads((env / "pm.json").read_text()); cfg.pop("promise_check_turns")
+    (env / "pm.json").write_text(json.dumps(cfg))
+    monkeypatch.setattr(pm_config, "_RAW", None)
+    monkeypatch.setattr(pm_config, "_CACHE", None)
+    (env / "wt" / ".substrate-issue").write_text("EP-7\n")
+    path = transcript(env, [assistant_text(PROMISE)])
+    outs = [stop(env, None, path) for _ in range(20)]
+    assert [i for i, o in enumerate(outs) if o] == [15]   # 15 turns after the promise, once
