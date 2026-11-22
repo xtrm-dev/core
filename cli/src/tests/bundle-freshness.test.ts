@@ -111,3 +111,53 @@ describe('bundle freshness (CORE-2754)', () => {
         expect(readBundleFreshness({ cliRoot: root }).state).toBe('fresh');
     });
 });
+
+describe('bundle freshness: the order git writes, not the order mtime shows (CORE-2774)', () => {
+    const shaOf = (n: number) => String(n).repeat(40).slice(0, 40);
+
+    /** Two paths stamped by the same commit, which is what a checkout produces. */
+    const sameCommit = () => {
+        const stamp = { sha: shaOf(1), at: 1_700_000_000_000 };
+        return () => stamp;
+    };
+
+    it('calls a 124ms lag fresh when one commit wrote both, and says so rather than rounding', () => {
+        const root = cliRoot({ bundleAgeMs: 124, sourceAgeMs: 0 });
+        const freshness = readBundleFreshness({ cliRoot: root, lastCommit: sameCommit() });
+        expect(freshness.state).toBe('fresh');
+        expect(freshness.detail).toContain('checkout order');
+        expect(freshness.detail).toContain('124ms');
+        expect(freshness.detail).not.toContain('1s');
+    });
+
+    it('calls it stale when the source moved in a later commit, and names both commits', () => {
+        const root = cliRoot({ bundleAgeMs: 7_200_000, sourceAgeMs: 0 });
+        const freshness = readBundleFreshness({
+            cliRoot: root,
+            lastCommit: (relPath) =>
+                relPath === path.join('dist', 'index.cjs')
+                    ? { sha: shaOf(2), at: 1_700_000_000_000 }
+                    : { sha: shaOf(3), at: 1_700_000_600_000 },
+        });
+        expect(freshness.state).toBe('stale');
+        expect(freshness.detail).toContain('2'.repeat(12));
+        expect(freshness.detail).toContain('3'.repeat(12));
+        expect(freshness.detail).toContain('cd cli && npm run build');
+    });
+
+    it('declines to conclude when there is no history and the lag is a checkout window', () => {
+        const root = cliRoot({ bundleAgeMs: 124, sourceAgeMs: 0 });
+        const freshness = readBundleFreshness({ cliRoot: root, lastCommit: () => null });
+        expect(freshness.state).toBe('unknown');
+        expect(freshness.lagMs).toBeGreaterThan(0);
+        expect(formatBundleFreshness(freshness)).toContain('cannot tell');
+        expect(formatBundleFreshness(freshness)).toContain('124ms');
+    });
+
+    it('still reports real staleness without history when the lag is not a write window', () => {
+        const root = cliRoot({ bundleAgeMs: 7_200_000, sourceAgeMs: 0 });
+        const freshness = readBundleFreshness({ cliRoot: root, lastCommit: () => null });
+        expect(freshness.state).toBe('stale');
+        expect(freshness.lagMs).toBeGreaterThan(7_000_000);
+    });
+});

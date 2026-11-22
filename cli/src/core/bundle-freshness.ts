@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -31,6 +32,29 @@ export interface BundleFreshness {
     detail: string;
 }
 
+/**
+ * When the bundle and the newest source came from the same commit, the mtime
+ * order carries no information: a checkout writes `dist/` before it finishes
+ * `src/`, so the bundle is routinely a few hundred milliseconds "older" and a
+ * rebuild at that commit changes nothing. CORE-2774 measured 124 ms, reported
+ * as `1s`, on a tree where the rebuild was byte-identical.
+ */
+export interface CommitStamp {
+    sha: string;
+    at: number;
+}
+
+/** Last commit touching one path, or null when this tree has no history for it. */
+export type CommitLookup = (relPath: string) => CommitStamp | null;
+
+/**
+ * Below this, an mtime difference orders two writes inside one checkout rather
+ * than two edits, so it cannot support a conclusion. It is used ONLY to decline
+ * a claim (state `unknown`), never to manufacture one, and only when git cannot
+ * answer — with history available the commit comparison decides.
+ */
+const CHECKOUT_WRITE_WINDOW_MS = 5_000;
+
 export interface FreshnessInput {
     /** The `cli/` directory: bundle at `dist/index.cjs`, sources under `src/`. */
     cliRoot: string;
@@ -38,6 +62,8 @@ export interface FreshnessInput {
     sourceRelDir?: string;
     /** Injectable for tests; defaults to a recursive walk of `sourceRelDir`. */
     listSource?: (sourceDir: string) => SourceFile[];
+    /** Injectable for tests; defaults to `git log -1` inside `cliRoot`. */
+    lastCommit?: CommitLookup;
 }
 
 const SKIP_DIRS = new Set(['tests', '__tests__', 'test', 'node_modules', '.git', 'dist', 'coverage']);
@@ -81,7 +107,10 @@ function newest(files: SourceFile[]): SourceFile | null {
 }
 
 function humanLag(ms: number): string {
-    if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+    // A sub-second lag is reported in milliseconds: rounding 124 ms up to "1s"
+    // is how a checkout artefact read as a real hour-scale staleness claim.
+    if (ms < 1_000) return `${Math.round(ms)}ms`;
+    if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
     const minutes = Math.round(ms / 60_000);
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
@@ -133,7 +162,8 @@ export function readBundleFreshness(input: FreshnessInput): BundleFreshness {
             detail: `no sources under ${sourceDir} — an installed package carries the bundle only, so freshness cannot be judged here`,
         };
     }
-    if (newestSource.mtime <= builtAt) {
+    const lagMs = newestSource.mtime - builtAt;
+    if (lagMs <= 0) {
         return {
             state: 'fresh',
             bundle: bundlePath,
@@ -143,8 +173,61 @@ export function readBundleFreshness(input: FreshnessInput): BundleFreshness {
             detail: `the bundle is newer than the newest source (${newestSource.path})`,
         };
     }
+    const lookup = input.lastCommit ?? gitLastCommit(input.cliRoot);
+    const bundleCommit = lookup(bundleRelPath);
+    const sourceCommit = lookup(newestSource.path);
 
-    const lagMs = newestSource.mtime - builtAt;
+    if (bundleCommit !== null && sourceCommit !== null) {
+        if (bundleCommit.sha === sourceCommit.sha) {
+            return {
+                state: 'fresh',
+                bundle: bundlePath,
+                builtAt,
+                newestSource,
+                lagMs: null,
+                detail:
+                    `the bundle and ${newestSource.path} were both written by commit ${bundleCommit.sha.slice(0, 12)}, ` +
+                    `so the ${humanLag(Math.max(0, lagMs))} mtime difference is checkout order and not staleness`,
+            };
+        }
+        if (sourceCommit.at > bundleCommit.at) {
+            return {
+                state: 'stale',
+                bundle: bundlePath,
+                builtAt,
+                newestSource,
+                lagMs,
+                detail:
+                    `${newestSource.path} changed in ${sourceCommit.sha.slice(0, 12)}, after the commit that wrote the bundle ` +
+                    `(${bundleCommit.sha.slice(0, 12)}), so the bundle is not the code beside it — ` +
+                    'run `cd cli && npm run build` before trusting a proof that runs `cli/dist/index.cjs`',
+            };
+        }
+        return {
+            state: 'fresh',
+            bundle: bundlePath,
+            builtAt,
+            newestSource,
+            lagMs: null,
+            detail:
+                `the bundle was written by ${bundleCommit.sha.slice(0, 12)}, at or after the commit that last changed ` +
+                `${newestSource.path} (${sourceCommit.sha.slice(0, 12)})`,
+        };
+    }
+
+    if (lagMs >= 0 && lagMs < CHECKOUT_WRITE_WINDOW_MS) {
+        return {
+            state: 'unknown',
+            bundle: bundlePath,
+            builtAt,
+            newestSource,
+            lagMs,
+            detail:
+                `cannot tell: the bundle is ${humanLag(lagMs)} older than ${newestSource.path}, which is the order a ` +
+                'checkout writes them in, and this tree has no history to compare — run `cd cli && npm run build` if in doubt',
+        };
+    }
+
     return {
         state: 'stale',
         bundle: bundlePath,
@@ -154,6 +237,21 @@ export function readBundleFreshness(input: FreshnessInput): BundleFreshness {
         detail:
             `the bundle is ${humanLag(lagMs)} older than ${newestSource.path}, so it is not the code beside it — ` +
             'run `cd cli && npm run build` before trusting a proof that runs `cli/dist/index.cjs`',
+    };
+}
+
+/** `git log -1` for one path, read from the tree the bundle lives in. */
+export function gitLastCommit(cliRoot: string): CommitLookup {
+    return (relPath: string) => {
+        const result = spawnSync('git', ['-C', cliRoot, 'log', '-1', '--format=%H%x20%ct', '--', relPath], {
+            encoding: 'utf8',
+        });
+        if (result.status !== 0 || typeof result.stdout !== 'string') return null;
+        const [sha, seconds] = result.stdout.trim().split(/\s+/);
+        if (!sha || !/^[0-9a-f]{40}$/.test(sha)) return null;
+        const at = Number(seconds);
+        if (!Number.isFinite(at)) return null;
+        return { sha, at: at * 1000 };
     };
 }
 
