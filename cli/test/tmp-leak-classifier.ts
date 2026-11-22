@@ -75,6 +75,18 @@ export function describeForeign(foreign: TmpEntry[], shown = 20): string {
 // to a per-file helper named `tmpdir`, and a literal as the second argument of
 // path.join(os.tmpdir() | tempRoot, …). The trailing dash is the convention that
 // keeps ordinary string literals out.
+//
+// Two deliberate limits, because both are silent by design:
+//   - the caller names the directories, so a prefix used only under a deeper
+//     directory (`test/hooks/`, say) is not collected and its entries would be
+//     reported as foreign (a warning) rather than fatal. Scanning the tree
+//     recursively would trade that for reading every file in the package on
+//     every run, and a warning still names the directory; the guard's fatal set
+//     is only what this run can be shown to have created.
+//   - an unreadable directory is skipped, not thrown: at runtime the directories
+//     come from the package layout, and a hard failure would turn a moved test
+//     directory into a guard crash. That silence is why callers must pass a path
+//     they own — derive it from `import.meta.url`, never from cwd (core#975).
 const MKDTEMP_PREFIX = /(?:(?:mkdtemp|tmpdir)[A-Za-z]*\s*\(\s*|path\.join\([^,]+,\s*)['"]([^'"]+-)['"]/gi;
 
 export function ownPrefixesFromSources(directories: string[]): string[] {

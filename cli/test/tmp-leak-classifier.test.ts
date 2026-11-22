@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   classifyEntries,
@@ -8,6 +10,13 @@ import {
   type Ownership,
   type TmpEntry,
 } from './tmp-leak-classifier';
+
+// Derived from this file, never from cwd: `vitest` runs from `cli/` under
+// `npm test` and from the repository root in some lanes, and a cwd-relative
+// directory fails the second way *silently* — `ownPrefixesFromSources` skips an
+// unreadable directory, so the assertion reads "no prefixes found" instead of
+// "wrong directory" (core#975 review finding).
+const CLI_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // CORE-2758: the guard used to fail a shared-temp run on every entry under a
 // blanket `xtrm-` family. The fixture below is the exact case that reddened
@@ -70,7 +79,7 @@ describe('tmp-leak ownership classifier', () => {
   });
 
   it('derives prefixes from whatever the sources actually call mkdtemp with', () => {
-    const prefixes = ownPrefixesFromSources(['src/tests', 'test']);
+    const prefixes = ownPrefixesFromSources([join(CLI_ROOT, 'src/tests'), join(CLI_ROOT, 'test')]);
     expect(prefixes).toContain('xtrm-noapp-');
     expect(prefixes).toContain('xtrm-cli-home-');
     expect(prefixes).not.toContain('xtrm-payload-');
