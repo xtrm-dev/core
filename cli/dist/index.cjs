@@ -78366,33 +78366,29 @@ function runGitWorktreePrune(repoRoot) {
     message: prune.ok ? "pruned stale git worktree metadata" : prune.err || "git worktree prune failed"
   };
 }
-function isMergedIntoMain(branch, repoRoot, head) {
+function isMergedIntoMain(branch, repoRoot, head, spawn4 = (args) => {
+  const r = (0, import_node_child_process22.spawnSync)("git", args, { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });
+  return { status: r.status, stdout: r.stdout };
+}) {
   const branchShort = branch.replace("refs/heads/", "");
   const baseRef = resolveDefaultBranchRef(repoRoot) ?? "origin/main";
   if (!branchShort) {
     const sha = (head ?? "").trim();
     if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
-    const ancestor = (0, import_node_child_process22.spawnSync)("git", ["merge-base", "--is-ancestor", sha, baseRef], {
-      cwd: repoRoot,
-      stdio: "pipe"
-    });
+    const ancestor = spawn4(["merge-base", "--is-ancestor", sha, baseRef]);
     return ancestor.status === 0;
   }
-  const r = (0, import_node_child_process22.spawnSync)("git", ["branch", "--merged", baseRef, "--list", branchShort], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: "pipe"
-  });
+  const r = spawn4(["branch", "--merged", baseRef, "--list", branchShort]);
   if (r.status !== 0) return false;
-  return branchLineMatches(r.stdout ?? "", branchShort);
+  return branchLineMatches(String(r.stdout ?? ""), branchShort);
 }
 function branchLineMatches(stdout, branchShort) {
   return stdout.split("\n").map((line) => line.replace(/^[*+]\s*/, "").trim()).filter(Boolean).includes(branchShort);
 }
-function isMergedWorktree(wt, repoRoot) {
+function isMergedWorktree(wt, repoRoot, prState = getPrStatus) {
   if (isMergedIntoMain(wt.branch, repoRoot, wt.head)) return true;
   if (!wt.branch) return false;
-  return getPrStatus(wt.branch, repoRoot).state === "MERGED";
+  return prState(wt.branch, repoRoot).state === "MERGED";
 }
 function selectCleanTargets(worktrees, merged, cwds) {
   const removable = [];
@@ -78413,6 +78409,61 @@ function selectCleanTargets(worktrees, merged, cwds) {
     else removable.push(target);
   }
   return { removable, skippedLive, unmerged };
+}
+function selectOrphanTargets(orphans, cwds) {
+  const removable = [];
+  const skippedLive = [];
+  for (const path98 of orphans) {
+    const livePids = livePidsFor(path98, cwds);
+    const target = { path: path98, branch: "", livePids };
+    if (livePids.length > 0) skippedLive.push(target);
+    else removable.push(target);
+  }
+  return { removable, skippedLive, unmerged: [] };
+}
+function scanCleanTargets(input2) {
+  const readTable = input2.readTable ?? readProcessTableOrRefuse;
+  const cwds = readTable();
+  if (cwds === null) return null;
+  const plan = selectCleanTargets(input2.worktrees, input2.merged, cwds);
+  const orphanPlan = selectOrphanTargets(input2.orphans, cwds);
+  return {
+    plan: {
+      removable: plan.removable,
+      skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+      unmerged: plan.unmerged
+    },
+    orphans: orphanPlan.removable
+  };
+}
+function applyCleanRemoval(repoRoot, targets, options = {}) {
+  const readCwds = options.readCwds ?? (() => readProcessCwds("/proc", { strict: true }));
+  const remove = options.remove ?? ((path98) => removeWorktreeEntry(repoRoot, path98));
+  const result = { removed: [], becameLive: [], unreadable: [] };
+  for (const target of targets) {
+    let liveNow;
+    try {
+      liveNow = livePidsFor(target.path, readCwds());
+    } catch (error62) {
+      const message = error62 instanceof Error ? error62.message : String(error62);
+      console.log(kleur_default.yellow(`  \u26A0 Kept ${target.path}: ${message}`));
+      result.unreadable.push(target.path);
+      continue;
+    }
+    if (liveNow.length > 0) {
+      console.log(kleur_default.yellow(`  \u26A0 Kept ${target.path}: became live during the scan (pids ${liveNow.join(",")})`));
+      result.becameLive.push(target.path);
+      continue;
+    }
+    const removal = remove(target.path);
+    if (removal.ok) {
+      result.removed.push(target.path);
+      console.log(t.success(`  \u2713 ${removal.message}`));
+    } else {
+      console.log(kleur_default.yellow(`  \u26A0 ${removal.message}`));
+    }
+  }
+  return result;
 }
 function normalizeBranchName(branch) {
   return branch.replace("refs/heads/", "");
@@ -79309,13 +79360,17 @@ function createWorktreeCommand() {
   cmd.command("clean").description("Remove merged xt worktrees and optionally sweep stale/orphaned worktree state").option("-y, --yes", "Skip confirmation prompt", false).option("--dry-run", "Preview clean targets without removing anything", false).option("--orphans", "Also prune stale git worktree metadata and remove orphan .xtrm/worktrees dirs", false).action(async (opts) => {
     const repoRoot = getRepoRoot(process.cwd());
     const worktrees = listXtWorktrees(repoRoot);
-    const cwds = readProcessTableOrRefuse();
-    if (cwds === null) return;
-    const plan = selectCleanTargets(worktrees, (wt) => isMergedWorktree(wt, repoRoot), cwds);
-    const merged = plan.removable;
-    const skippedLive = plan.skippedLive;
-    const unmerged = plan.unmerged;
-    const orphanDirs = opts.orphans ? listOrphanManagedDirs(repoRoot) : [];
+    const scan = scanCleanTargets({
+      worktrees,
+      orphans: opts.orphans ? listOrphanManagedDirs(repoRoot) : [],
+      merged: (wt) => isMergedWorktree(wt, repoRoot)
+    });
+    if (scan === null) return;
+    const merged = scan.plan.removable;
+    const skippedLive = scan.plan.skippedLive;
+    const unmerged = scan.plan.unmerged;
+    const orphanPlan = { removable: scan.orphans };
+    const orphanDirs = scan.orphans.map((orphan) => orphan.path);
     if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
       if (!opts.orphans) {
         console.log(kleur_default.dim("\n  No merged xt worktrees to clean\n"));
@@ -79349,40 +79404,23 @@ function createWorktreeCommand() {
       console.log(kleur_default.dim("  Cancelled\n"));
       return;
     }
-    let removedCount = 0;
-    for (const wt of merged) {
-      let liveNow;
-      try {
-        liveNow = livePidsFor(wt.path, readProcessCwds("/proc", { strict: true }));
-      } catch (error62) {
-        const message = error62 instanceof Error ? error62.message : String(error62);
-        console.log(kleur_default.yellow(`  \u26A0 Kept ${wt.path}: ${message}`));
-        continue;
-      }
-      if (liveNow.length > 0) {
-        console.log(kleur_default.yellow(`  \u26A0 Kept ${wt.path}: became live during the scan (pids ${liveNow.join(",")})`));
-        continue;
-      }
-      const result = removeWorktreeEntry(repoRoot, wt.path);
-      if (result.ok) {
-        removedCount += 1;
-        console.log(t.success(`  \u2713 ${result.message}`));
-      } else {
-        console.log(kleur_default.yellow(`  \u26A0 ${result.message}`));
-      }
-    }
+    const removal = applyCleanRemoval(repoRoot, merged);
+    let removedCount = removal.removed.length;
     if (opts.orphans) {
-      for (const orphan of orphanDirs) {
-        try {
-          (0, import_node_fs20.rmSync)(orphan, { recursive: true, force: true });
-          removedCount += 1;
-          unregisterPluginsForWorktree(orphan);
-          console.log(t.success(`  \u2713 Removed orphan directory ${orphan}`));
-        } catch (error62) {
-          const message = error62 instanceof Error ? error62.message : String(error62);
-          console.log(kleur_default.yellow(`  \u26A0 Could not remove ${orphan}: ${message}`));
+      const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+        remove: (path98) => {
+          if (!(0, import_node_fs20.existsSync)(path98)) return { ok: true, message: `Removed orphan directory ${path98}` };
+          try {
+            (0, import_node_fs20.rmSync)(path98, { recursive: true, force: true });
+            return { ok: true, message: `Removed orphan directory ${path98}` };
+          } catch (error62) {
+            const message = error62 instanceof Error ? error62.message : String(error62);
+            return { ok: false, message: `Could not remove ${path98}: ${message}` };
+          }
         }
-      }
+      });
+      for (const path98 of orphanRemoval.removed) unregisterPluginsForWorktree(path98);
+      removedCount += orphanRemoval.removed.length;
       const pruneResult = runGitWorktreePrune(repoRoot);
       if (pruneResult.ok) {
         console.log(t.success(`  \u2713 ${pruneResult.message}`));
