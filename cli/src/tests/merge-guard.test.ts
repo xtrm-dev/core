@@ -47,11 +47,30 @@ function pull(head = HEAD, body = `<!-- xtrm issue=${ISSUE} holder=core-2528-wor
     return { status: 200, data: { head: { sha: head, ref: 'xt/some-branch' }, body } };
 }
 
-function review(state: string, options: { head?: string; at?: string; id?: number } = {}) {
+/**
+ * A review as the shim actually posts it (CORE-2755): line 1 names the head it
+ * reviewed, line 2 is the visible attribution, line 3 the marker carrying the
+ * seat. The guard now reads all three, so a fixture without them models a body
+ * that never exists in the wild.
+ */
+function review(
+    state: string,
+    options: { head?: string; at?: string; id?: number; body?: string; seat?: string; run?: string } = {},
+) {
+    const head = options.head ?? HEAD;
+    const seat = options.seat ?? 'reviewer-466';
+    const body = options.body ?? [
+        `Review by pr-reviewer (some-model) at head ${head.slice(0, 12)}`,
+        `Agent xtrm-xt-pi-${seat} · run ${options.run ?? 'run1'} · Issue ${ISSUE}`,
+        `<!-- agent=${seat} run=${options.run ?? 'run1'} issue=${ISSUE} -->`,
+        '',
+        '- Verdict: PASS',
+    ].join('\n');
     return {
         id: options.id ?? 1,
         state,
-        commit_id: options.head ?? HEAD,
+        body,
+        commit_id: head,
         submitted_at: options.at ?? '2026-11-08T10:00:00Z',
         html_url: 'https://github.com/xtrm-dev/core/pull/42#pullrequestreview-1',
         user: { login: BOT },
@@ -755,5 +774,166 @@ describe('checkStateDir (a pathological state dir fails fast)', () => {
 
     it('accepts a normal absolute path under an existing directory', () => {
         expect(checkStateDir(path.join(stateHome, 'xtrm', 'state'))).toBeNull();
+    });
+});
+
+// CORE-2755: the head's verdict must come from a review that could have informed
+// the merge, from a seat the body names, in a body that is a review at all.
+// Every case here fails against the pre-fix guard, which sorted by recency,
+// trusted user.login and never read line 1.
+describe('review ordering, seat and shape (CORE-2755)', () => {
+    const APPROVED_AT = '2026-11-22T09:08:18Z';
+    const MERGED_AT = '2026-11-22T09:08:54Z';
+    const LATE_AT = '2026-11-22T10:23:40Z';
+
+    function world(options: { mergedAt?: string | null; reviews: unknown[]; body?: string }) {
+        return fakeGitHub({
+            'GET /repos/xtrm-dev/core/pulls/42': {
+                status: 200,
+                data: {
+                    head: { sha: HEAD, ref: 'xt/some-branch' },
+                    body: options.body ?? `<!-- xtrm issue=${ISSUE} holder=w run=r -->`,
+                    ...(options.mergedAt === undefined ? {} : { merged_at: options.mergedAt }),
+                },
+            },
+            'GET /repos/xtrm-dev/core/pulls/42/reviews': { status: 200, data: options.reviews },
+        });
+    }
+
+    /** The xtrm-dev/xtrm#480 shape: APPROVED, merged 36 s later, COMMENTed 75 min after that. */
+    const mergedThenCommented = () => world({
+        mergedAt: MERGED_AT,
+        reviews: [
+            review('APPROVED', { at: APPROVED_AT, id: 6011432602 }),
+            review('COMMENTED', { at: LATE_AT, id: 6011697411, seat: 'console-github' }),
+        ],
+    });
+
+    it('a review submitted after the merge cannot become the head\'s verdict', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 }, deps(mergedThenCommented()));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/after the merge/);
+        // Both halves of the claim, because either alone is a different bug: the
+        // timestamp says when, the id says which review was ignored.
+        expect(decision.reason).toContain(MERGED_AT);
+        expect(decision.reason).toContain('6011697411');
+        expect(decision.reason).not.toMatch(/no coordinator decision/);
+    });
+
+    it('an open PR keeps the unmodified ordering (merged_at is null)', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                mergedAt: null,
+                reviews: [
+                    review('COMMENTED', { at: APPROVED_AT, id: 6011432602 }),
+                    review('COMMENTED', { at: LATE_AT, id: 6011697411 }),
+                ],
+            }), { runSb: sbReturning([]).runSb }));
+        // A null merged_at must never make a review look late, must not throw, and
+        // must leave the latest-wins path exactly as it was.
+        expect(decision.reason).not.toMatch(/after the merge/);
+        expect(decision.reason).toMatch(/no coordinator decision/);
+    });
+
+    it('a review in the same second as the merge still participates', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({ mergedAt: APPROVED_AT, reviews: [review('APPROVED', { at: APPROVED_AT })] }),
+                { runSb: sbIssue('verified').runSb }));
+        expect(decision.allow).toBe(true);
+    });
+
+    it('refuses a body whose line 1 is not the reviewer contract', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [review('APPROVED', {
+                    body: `Review by reviewer (some-model) at head ${HEAD.slice(0, 12)}\n<!-- agent=console-github run=r -->`,
+                })],
+            })));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/not a review in the reviewer contract/);
+    });
+
+    it('refuses a header sha that disagrees with the recorded commit_id', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [review('APPROVED', {
+                    body: `Review by pr-reviewer (some-model) at head ${OLD.slice(0, 12)}\n<!-- agent=reviewer-466 run=r -->`,
+                })],
+            })));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toContain(OLD.slice(0, 12));
+        expect(decision.reason).toMatch(/payload is authoritative/);
+    });
+
+    it('treats the model in line 1 as opaque, never as something to verify', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [review('APPROVED', {
+                    body: `Review by pr-reviewer (some-future-model) at head ${HEAD.slice(0, 12)}\n<!-- agent=reviewer-466 run=r -->\n\n- Verdict: PASS`,
+                })],
+            }), {
+                // The environment names a DIFFERENT model on purpose: a guard that
+                // compared line 1 to PI_MODEL would refuse this and pass everything
+                // else, because real history carries strings no environment repeats.
+                env: { SUBSTRATE_HOLDER: 'core-2528-worker', ...GUARD_ON, PI_MODEL: 'claude-sonnet-5-5' },
+                runSb: sbIssue('verified').runSb,
+            }));
+        // The guard has no way to check weights; a shape check that became a model
+        // check would pass every other case here and fail only on real history.
+        expect(decision.allow).toBe(true);
+    });
+
+    it('refuses two seats that disagree at one head, naming both', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [
+                    review('APPROVED', { at: APPROVED_AT, id: 1, seat: 'reviewer-466' }),
+                    review('COMMENTED', { at: LATE_AT, id: 2, seat: 'reviewer-472' }),
+                ],
+            })));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/two review seats disagree/);
+        expect(decision.reason).toContain('reviewer-466');
+        expect(decision.reason).toContain('reviewer-472');
+    });
+
+    it('a resumed seat is one seat, not a conflict (run= is provenance)', async () => {
+        // One agent, two runs, approval then comment. A run-keyed seat reads this as
+        // two seats disagreeing; the correct read is one seat downgrading itself. The
+        // two produce different texts, so the assertion names the discrimination.
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [
+                    review('APPROVED', { at: APPROVED_AT, id: 1, seat: 'reviewer-466', run: '7a425f' }),
+                    review('COMMENTED', { at: LATE_AT, id: 2, seat: 'reviewer-466', run: '393f0d' }),
+                ],
+            }), { runSb: sbReturning([]).runSb }));
+        expect(decision.reason).toMatch(/approved head .* then commented/);
+        expect(decision.reason).not.toMatch(/two review seats disagree/);
+        expect(decision.reason).not.toMatch(/7a425f|393f0d/);
+    });
+
+    it('two runs of one seat approving twice is still one seat and one approval', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [
+                    review('APPROVED', { at: APPROVED_AT, id: 1, seat: 'reviewer-466', run: '7a425f' }),
+                    review('APPROVED', { at: LATE_AT, id: 2, seat: 'reviewer-466', run: '393f0d' }),
+                ],
+            }), { runSb: sbIssue('verified').runSb }));
+        expect(decision.allow).toBe(true);
+    });
+
+    it('one seat downgrading its own approval is a downgrade, not a seat conflict', async () => {
+        const decision = await mergeCheck({ repo: 'xtrm-dev/core', pr: 42 },
+            deps(world({
+                reviews: [
+                    review('APPROVED', { at: APPROVED_AT, id: 1, seat: 'reviewer-466' }),
+                    review('COMMENTED', { at: LATE_AT, id: 2, seat: 'reviewer-466' }),
+                ],
+            })));
+        expect(decision.allow).toBe(false);
+        expect(decision.reason).toMatch(/approved head .* then commented/);
+        expect(decision.reason).not.toMatch(/two review seats disagree/);
     });
 });

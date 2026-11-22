@@ -27,7 +27,7 @@ import path from 'node:path';
 
 import { githubRequest, repoOwner, type FetchLike } from './github-apps.js';
 import { explainAgentRole, type AgentRole, type RoleMap, DEFAULT_ROLE_MAP } from './identity-roles.js';
-import { isSafeIssueRef, parseIssueMarkers, sha12, type ReviewVerdict } from './review-posting.js';
+import { isSafeIssueRef, parseHeaderLine, parseIssueMarkers, sha12, type ReviewVerdict } from './review-posting.js';
 import { describeSbFailure, parseProjectList, pickReceiptProject, resolveSbBinary, withReceiptProject } from './sb-receipt.js';
 
 export const OVERRIDE_ENV_VAR = 'XTRM_MERGE_GUARD_OVERRIDE';
@@ -103,7 +103,12 @@ export interface MergeDecision {
     message: string;
 }
 
-type PullResponse = { body?: string | null; head?: { sha?: string; ref?: string } };
+type PullResponse = {
+    body?: string | null;
+    head?: { sha?: string; ref?: string };
+    /** Present only on a merged PR; null while open (CORE-2755). */
+    merged_at?: string | null;
+};
 type ReviewResponse = {
     id?: number;
     state?: string;
@@ -306,6 +311,34 @@ function appendOverrideLog(deps: MergeGuardDeps, line: Record<string, unknown>):
 }
 
 /**
+ * The signatures line 1 may carry. `pr-reviewer` is the role the shim posts as;
+ * `reviewer subagent` is the Claude mirror's documented signature
+ * (review-posting.ts LINE1). A future signature is refused until it is added
+ * here — fail closed, with the refusal naming what is accepted.
+ */
+const REVIEW_ROLES = new Set(['pr-reviewer', 'reviewer subagent']);
+
+/**
+ * The seat that posted a review, read from the body the shim wrote: the marker
+ * comment's `agent=`, then the visible `Agent … · run …` line (CORE-2755).
+ *
+ * `user.login` cannot answer this: every seat posts through one App, so the
+ * login is identical for all of them and a guard that trusted it would silently
+ * collapse two seats into one. `run=` is deliberately NOT part of the seat: a
+ * resumed seat legitimately posts from a new run, and keying on the pair would
+ * read every resume as a seat conflict.
+ */
+function reviewSeat(review: ReviewResponse): string | null {
+    const body = review.body ?? '';
+    const marker = /<!--([^>]*)-->/.exec(body);
+    const agent = marker ? /(?:^|\s)agent=(\S+)/.exec(marker[1] ?? '') : null;
+    if (agent?.[1]) return agent[1];
+    const visible = /^Agent\s+(\S+)\s+·\s+run\s+/m.exec(body);
+    if (visible?.[1]) return visible[1].trim();
+    return null;
+}
+
+/**
  * Evaluate one merge. Never throws: a transport failure becomes a refusal so a
  * network problem cannot turn into a merge.
  */
@@ -386,12 +419,96 @@ export async function mergeCheck(input: { repo: string; pr: number }, deps: Merg
             && review.state !== 'DISMISSED'
             && (review.submitted_at ?? '') !== '')
         .sort((a, b) => Date.parse(a.submitted_at ?? '') - Date.parse(b.submitted_at ?? ''));
-    const latest = mine[mine.length - 1];
+    // ── A review submitted after the merge cannot participate (CORE-2755). ──
+    // GitHub keeps accepting reviews on a merged PR, and one posted afterwards
+    // cannot have informed the merge. Without this bound the newest row wins by
+    // recency alone: measured on xtrm-dev/xtrm#480, an accidental post-merge
+    // COMMENT became "the review at head 8c1b282714c0" over an APPROVED, merged
+    // head. `merged_at` is null while the PR is open, so an open PR keeps the
+    // unmodified ordering and a null value can never make a review look late.
+    const mergedAt = Date.parse(pull.merged_at ?? '');
+    const submittedAt = (review: ReviewResponse) => Date.parse(review.submitted_at ?? '');
+    const isPostMerge = (review: ReviewResponse) => Number.isFinite(mergedAt) && submittedAt(review) > mergedAt;
+    const late = mine.filter(isPostMerge);
+    const newestLate = late[late.length - 1];
+    if (newestLate && newestLate === mine[mine.length - 1]) {
+        return deny(
+            `the PR merged at ${pull.merged_at} and review ${newestLate.id} (${newestLate.state}) was submitted at ${newestLate.submitted_at}, after the merge; it cannot participate in a merge decision`,
+            {
+                head,
+                issueRef,
+                reviewState: newestLate.state,
+                reviewUrl: newestLate.html_url,
+                reviewHead: newestLate.commit_id,
+            },
+        );
+    }
+    const participating = mine.filter((review) => !isPostMerge(review));
+    const latest = participating[participating.length - 1];
     const reviewInfo = latest
         ? { reviewState: latest.state, reviewUrl: latest.html_url, reviewHead: latest.commit_id }
         : {};
 
     if (!latest) return deny('no review by xtrm-reviewer[bot] exists', { head, issueRef, ...reviewInfo });
+
+    // ── The body must be a review in the reviewer contract (CORE-2755). ─────
+    // Two independent signals, kept separate on purpose: the marker answers
+    // *who* posted it, line 1 answers *whether it is a review at all*. The model
+    // in line 1 is opaque text — the guard cannot check which weights produced a
+    // body, and comparing that string to PI_MODEL here would turn a merge gate
+    // into a post-time model check that refuses legitimate history. Model
+    // verification belongs to review-posting, where the session is alive.
+    const header = parseHeaderLine(latest.body ?? '');
+    if (!header || !REVIEW_ROLES.has(header.role.toLowerCase())) {
+        return deny(
+            `the latest review by xtrm-reviewer[bot] (${latest.id ?? 'unknown id'}) has no "Review by pr-reviewer (<model>) at head <sha12>" line 1, so it is not a review in the reviewer contract`,
+            { head, issueRef, ...reviewInfo },
+        );
+    }
+    // The header's sha is text and `commit_id` is data: a body written by hand or
+    // by a stale bundle can name a head it was not submitted against, and the
+    // post-time refusal (`PR head moved`) protects the moment of writing, not the
+    // moment of reading. The payload always knows.
+    const committed = (latest.commit_id ?? '').toLowerCase();
+    if (!committed.startsWith(header.head12)) {
+        return deny(
+            `the review's line 1 names head ${header.head12} and GitHub recorded commit_id ${sha12(committed) || '(none)'}; the payload is authoritative and the two disagree`,
+            { head, issueRef, ...reviewInfo },
+        );
+    }
+
+    // ── Two seats at one head are not a tie to break (CORE-2755). ───────────
+    // Reported only when every review at this head names a seat: an unattributed
+    // body falls back to latest-wins rather than being guessed at.
+    const atHead = participating.filter((review) => (review.commit_id ?? '') === head);
+    const seats = atHead.map((review) => ({ review, seat: reviewSeat(review) }));
+    if (seats.every((entry) => entry.seat)) {
+        const newestBySeat = new Map<string, ReviewResponse>();
+        for (const entry of seats) newestBySeat.set(entry.seat as string, entry.review);
+        const states = [...newestBySeat.entries()].map(([seat, review]) => `${seat} ${review.state}`);
+        if (newestBySeat.size > 1 && new Set([...newestBySeat.values()].map((review) => review.state)).size > 1) {
+            return deny(
+                `two review seats disagree at head ${sha12(head)} (${states.join(', ')}); a coordinator resolves this rather than the guard picking one`,
+                { head, issueRef, ...reviewInfo },
+            );
+        }
+        // A downgrade is one seat replacing its own APPROVED with a later COMMENT
+        // at the same head — not a seat conflict, and not what an approval means.
+        const seat = reviewSeat(latest);
+        const earlier = seat
+            ? seats.filter((entry) => entry.seat === seat
+                && (entry.review.submitted_at ?? '') < (latest.submitted_at ?? ''))
+            : [];
+        if (seat
+            && (latest.state === 'COMMENTED' || latest.state === 'COMMENT')
+            && earlier.some((entry) => entry.review.state === 'APPROVED')) {
+            return deny(
+                `${seat} approved head ${sha12(head)} and then commented on it later (${latest.id ?? 'unknown id'} at ${latest.submitted_at}); a later comment does not withdraw an approval and does not replace it`,
+                { head, issueRef, ...reviewInfo },
+            );
+        }
+    }
+
     if (latest.commit_id !== head) {
         return deny(
             `the latest review by xtrm-reviewer[bot] is at ${sha12(latest.commit_id ?? '') || '(no commit)'}, not at the current head ${sha12(head)}`,
