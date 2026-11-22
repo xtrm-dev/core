@@ -383,7 +383,8 @@ class Wake(Base):
         self.assertEqual(cmd[:3], ["xt", "attach", self.wt.name])
         for flag in ("--fresh", "--new-session", "--no-attach"):
             self.assertIn(flag, cmd)
-        self.assertEqual(cmd[cmd.index("--bead") + 1], "CORE-1")
+        self.assertNotIn("--bead", cmd)  # the parked pane had no @agent_bead, so the wake gives none
+        self.assertNotIn("--role", cmd)  # nor an @agent_role: a bare launch stays bare
         nudge_file = pm_park.parked_dir() / "lead-a.nudge.md"
         self.assertEqual(cmd[cmd.index("--prompt") + 1], f"@{nudge_file}")
         for needle in ("[pm_park wake lead-a]", "respawned after a pause", "Parked 2026-11-22T12:00:00Z",
@@ -403,8 +404,8 @@ class Wake(Base):
         rec = self.rec()
         self.assertEqual(rec["xt_name"], self.wt.name)
         self.assertEqual(rec["runtime"], "claude")
-        self.assertEqual(rec["agent_bead"], "CORE-1")
-        self.assertIn("launch_role", rec)
+        self.assertIsNone(rec["agent_bead"])
+        self.assertIsNone(rec["launch_role"])
         self.assertIn("parent_session", rec)
 
     def test_park_reads_pane_options_and_the_session_record(self):
@@ -430,6 +431,19 @@ class Wake(Base):
         self.assertEqual(cmd[cmd.index("--role") + 1], "lead")
         self.assertEqual(cmd[cmd.index("--bead") + 1], "CORE-9")
         self.assertEqual(cmd[cmd.index("--parent") + 1], "$4")
+
+    def test_park_refuses_when_the_launch_role_cannot_be_read(self):
+        self.fake.entries += [entry(3, "handoff", "lead-c")]
+        argv = ["park", "lead-c", "--ref", "CORE-1", "--role", "lead", "--worktree", str(self.wt), "--at", "2026-11-22T14:00:00Z"]
+        with mock.patch("builtins.print"), mock.patch("sys.stderr"):
+            self.assertEqual(pm_park.main(argv), 2)  # no pane: the role cannot be read
+            self.assertFalse(pm_park.record_path("lead-c").exists())
+            self.assertEqual(pm_park.main(argv + ["--launch-role", "lead"]), 0)
+        self.assertEqual(self.rec("lead-c")["launch_role"], "lead")
+        self.fake.entries += [entry(4, "handoff", "lead-d")]
+        with mock.patch("builtins.print"):
+            self.assertEqual(pm_park.main(["park", "lead-d"] + argv[2:] + ["--launch-role", "none"]), 0)
+        self.assertIsNone(self.rec("lead-d")["launch_role"])
 
     def test_model_and_extra_args(self):
         os.environ["PM_PARK_LAUNCH"] = "--add-dir /tmp/x"

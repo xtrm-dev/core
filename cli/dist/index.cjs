@@ -79506,6 +79506,19 @@ function bindingIdFromMeta(meta3) {
   const value = typeof meta3?.bindingId === "string" ? meta3.bindingId.trim() : "";
   return value && SAFE_BINDING_ID.test(value) ? value : null;
 }
+function freshOnlyOptions(opts) {
+  const given = [];
+  if (opts.role !== void 0) given.push("--role");
+  if (opts.model !== void 0) given.push("--model");
+  if (opts.prompt !== void 0) given.push("--prompt");
+  if (opts.bead !== void 0) given.push("--bead");
+  if (opts.window) given.push("--window");
+  if (opts.newSession) given.push("--new-session");
+  if (opts.parent !== void 0) given.push("--parent");
+  if (opts.attach === false) given.push("--no-attach");
+  if (opts.yolo !== void 0) given.push(opts.yolo ? "--yolo" : "--no-yolo");
+  return given;
+}
 function readFreshPrompt(raw, read = (f) => (0, import_node_fs21.readFileSync)(f, "utf8")) {
   if (raw === void 0) return void 0;
   if (!raw.startsWith("@")) return raw;
@@ -79539,7 +79552,20 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   };
 }
 function createAttachCommand() {
-  return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "With --fresh: launch as this specialist role").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").allowExcessArguments(true).action(async (name, opts) => {
+  return new Command("attach").description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "With --fresh: launch as this specialist role").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").option("--yolo", "With --fresh on a Codex worktree: disable sandboxing and approval prompts (default)").option("--no-yolo", "With --fresh on a Codex worktree: workspace-write sandbox with on-request approval").allowExcessArguments(true).action(async (name, opts, command) => {
+    const extra = command.args.slice(name === void 0 ? 0 : 1);
+    const freshOnly = freshOnlyOptions(opts);
+    if (!opts.fresh && (freshOnly.length > 0 || extra.length > 0)) {
+      const what = freshOnly.length > 0 ? `${freshOnly.join(", ")} need --fresh` : `unexpected argument${extra.length > 1 ? "s" : ""}: ${extra.join(" ")}`;
+      console.error(kleur_default.red(`
+  \u2717 ${what}
+`));
+      process.exit(1);
+    }
+    if (opts.fresh && !name) {
+      console.error(kleur_default.red("\n  \u2717 --fresh needs the worktree name (no interactive picker for a restart)\n"));
+      process.exit(1);
+    }
     const repoRoot = getRepoRoot(process.cwd());
     const worktrees = listXtWorktrees(repoRoot);
     if (worktrees.length === 0) {
@@ -79583,12 +79609,17 @@ function createAttachCommand() {
       target = sorted.find((wt) => (0, import_node_path45.basename)(wt.path) === picked) ?? target;
     }
     const branch = target.branch.replace("refs/heads/", "");
+    if (opts.fresh && !target.runtime && !process.stdin.isTTY) {
+      console.error(kleur_default.red(`
+  \u2717 cannot tell which runtime ${(0, import_node_path45.basename)(target.path)} was launched with (no session record) and there is no terminal to ask
+`));
+      process.exit(1);
+    }
     const runtime = target.runtime ?? await pickRuntime();
     if (opts.fresh) {
       let launch;
       try {
-        const dashIdx = process.argv.indexOf("--");
-        launch = buildFreshLaunchOptions(target, { ...opts, passthrough: dashIdx >= 0 ? process.argv.slice(dashIdx + 1) : [] });
+        launch = buildFreshLaunchOptions(target, { ...opts, passthrough: extra });
       } catch (error62) {
         console.error(kleur_default.red(`
   \u2717 ${error62 instanceof Error ? error62.message : String(error62)}
@@ -79597,7 +79628,10 @@ function createAttachCommand() {
       }
       launch.runtime = runtime === "pi" ? "pi" : "claude";
       if (runtime === "codex") {
-        const existing = launch.existingWorktree;
+        if (opts.parent) {
+          console.error(kleur_default.red("\n  \u2717 --parent is not supported for a Codex session\n"));
+          process.exit(1);
+        }
         await launchCodexWorktreeSession({
           role: launch.role,
           bead: launch.bead,
@@ -79605,8 +79639,9 @@ function createAttachCommand() {
           model: launch.model,
           attach: launch.attach,
           window: launch.window,
-          yolo: true,
-          existingWorktree: existing
+          yolo: opts.yolo !== false,
+          passthrough: extra,
+          existingWorktree: launch.existingWorktree
         });
       } else {
         await launchWorktreeSession(launch);

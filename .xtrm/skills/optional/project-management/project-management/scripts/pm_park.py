@@ -10,7 +10,7 @@ it is pasted into the pane only when it does not show there. The record is $PM_S
 record and the Substrate journal of <ref> are the only memory: the timer is a systemd unit, so it outlives every session.
 
   pm_park.py park NAME --ref REF --role ROLE (--at UTC | --check CMD --deadline UTC) [--self --manager-told]
-                 [--reason TEXT] [--every SECONDS] [--worktree DIR] [--runtime claude|pi] [--pane ID] [--model M]
+                 [--reason TEXT] [--every SECONDS] [--worktree DIR] [--runtime claude|pi|codex] [--pane ID] [--model M] [--launch-role ROLE|none]
   pm_park.py wake NAME [--force]        run by the timer: check, gate, digest, launch, nudge
   pm_park.py list [--json]              parked sessions: wake spec, unit, state
 
@@ -283,13 +283,24 @@ def park(a: argparse.Namespace) -> int:
     if not pathlib.Path(worktree).is_dir():
         raise ParkError(f"refused: worktree {worktree} is not a directory")
     session = tmux_fact(pane, "#{session_name}") if pane else None
+    # The launch role is what the relaunch needs to give the woken session the same role, system prompt and pane
+    # role. A readable pane without @agent_role is a bare launch (no role); an unreadable pane cannot say.
+    if a.launch_role:
+        launch_role = None if a.launch_role == "none" else a.launch_role
+    elif pane and tmux_fact(pane, "#{pane_id}"):
+        launch_role = pane_option(pane, "@agent_role")
+    else:
+        raise ParkError("refused: the launch role of the session cannot be read (no readable pane); pass "
+                        "--launch-role <the role it was launched with> or --launch-role none for a bare launch")
     worktree = str(pathlib.Path(worktree).resolve())
     # What the relaunch needs, read from the live pane and the worktree now: the pane is gone at wake time.
     rec = {"name": a.name, "role": a.role, "ref": a.ref, "worktree": worktree,
            "xt_name": pathlib.Path(worktree).name,
            # A normal xt launch does not carry these into the pane, so the nudge names them (operator-lead ruling, CORE-2775).
-           "pm_env": {k: os.environ[k] for k in ("PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR") if os.environ.get(k)}, "launch_role": pane_option(pane, "@agent_role"),
-           "agent_bead": pane_option(pane, "@agent_bead") or a.ref,
+           "pm_env": {k: os.environ[k] for k in ("PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR") if os.environ.get(k)}, "launch_role": launch_role,
+           # Only a pane that carried @agent_bead gets --bead on the wake; the Issue a parked pane was
+           # launched for otherwise comes back from the worktree's own record.
+           "agent_bead": pane_option(pane, "@agent_bead"),
            "parent_session": pane_option(pane, "@agent_parent_session"),
            "runtime": recorded_runtime(worktree, a.runtime), "model": a.model, "tmux_target": f"{session}:" if session else None,
            "pane_id": pane, "park_time": fmt(t0), "handoff_seq": handoff_seq, "park_seq": None, "wake": wake,
@@ -434,8 +445,9 @@ def xt_command(rec: dict, nudge_file: pathlib.Path) -> list[str]:
     """The one launch: `xt attach <worktree> --fresh` with the facts recorded at park time. Nothing of the
     environment, the runtime arguments or the pane options is built here."""
     cmd = [str(pm_config.get("PM_PARK_XT") or "xt"), "attach", rec.get("xt_name") or pathlib.Path(rec["worktree"]).name,
-           "--fresh", "--new-session", "--no-attach", "--prompt", f"@{nudge_file}",
-           "--bead", rec.get("agent_bead") or rec["ref"]]
+           "--fresh", "--new-session", "--no-attach", "--prompt", f"@{nudge_file}"]
+    if rec.get("agent_bead"):
+        cmd += ["--bead", rec["agent_bead"]]
     if rec.get("launch_role"):
         cmd += ["--role", rec["launch_role"]]
     if rec.get("model"):
@@ -631,6 +643,8 @@ def main(argv: list[str]) -> int:
                    help="default: the runtime recorded in the worktree's session record, else claude")
     p.add_argument("--pane")
     p.add_argument("--model")
+    p.add_argument("--launch-role", help="the role the session was launched with, or `none` for a bare launch; "
+                   "default: read from the pane's @agent_role")
     p.set_defaults(fn=park)
     w = sub.add_parser("wake")
     w.add_argument("name")

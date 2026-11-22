@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFreshLaunchOptions, readFreshPrompt } from '../commands/attach.js';
+import { buildFreshLaunchOptions, freshOnlyOptions, readFreshPrompt } from '../commands/attach.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import type { WorktreeInfo } from '../commands/worktree.js';
 
@@ -44,5 +44,13 @@ describe('withRestoredDispatcher', () => {
       SUBSTRATE_HOLDER: 'h', XTRM_PARENT_PANE_ID: '%1', XTRM_DISPATCHER_PARTICIPANT: 'lead',
     });
     expect(withRestoredDispatcher(env, {})).toEqual({ SUBSTRATE_HOLDER: 'h', XTRM_PARENT_PANE_ID: '%1' });
+  });
+});
+
+describe('freshOnlyOptions', () => {
+  it('names every fresh-only option that was given, and nothing for a plain attach', () => {
+    expect(freshOnlyOptions({ attach: true })).toEqual([]);
+    expect(freshOnlyOptions({ role: 'r', model: 'm', prompt: 'p', bead: 'b', window: true, newSession: true, parent: '$1', attach: false, yolo: false }))
+      .toEqual(['--role', '--model', '--prompt', '--bead', '--window', '--new-session', '--parent', '--no-attach', '--no-yolo']);
   });
 });

@@ -53,6 +53,7 @@ function install(repoRoot: string, cap: Capture): void {
     if (command === 'sp' && args[0] === 'view') return ok(ROLE_SPEC);
     if (command === 'sp' && args[0] === 'render-skill-prefix' && args[1] === '--help') return ok();
     if (command === 'sp' && args[0] === 'render-skill-prefix') return ok(JSON.stringify({ ok: true, skill_prefix: '' }));
+    if (command === 'sp' && args[0] === 'render-task') return ok(JSON.stringify({ ok: true, initial_prompt: '', prompt_hash: 'h', components: [] }));
     if (command === 'sb') return { status: 1, stdout: '', stderr: 'no sb' };
     if (command === 'tmux') {
       if (args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
@@ -128,14 +129,14 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     await fs.remove(tempRoot);
   });
 
-  async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}): Promise<Capture & { env: Record<string, string>; args: string[] }> {
+  async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}, bead?: string, noPrompt = false): Promise<Capture & { env: Record<string, string>; args: string[] }> {
     const cap: Capture = { newSessionArgs: null, payload: null, paneOptions: {}, gitCalls: [] };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const slug = 'par1';
     const worktree = path.join(repoRoot, '.xtrm', 'worktrees', `repo-xt-${runtime}-${slug}`);
     if (existing) await fs.ensureDir(worktree);
-    const common = { runtime, role: 'testrole', model: 'claude-opus-5', prompt: 'hello', attach: false, newSession: true, parent: '$3' } as const;
+    const common = { runtime, role: 'testrole', model: 'claude-opus-5', ...(noPrompt ? {} : { prompt: 'hello' }), attach: false, newSession: true, parent: '$3', ...(bead ? { bead } : {}) } as const;
     await expect(launchWorktreeSession(existing
       ? { ...common, existingWorktree: { path: worktree, branch: `xt/${slug}`, slug, dispatcher } }
       : { ...common, name: slug })).rejects.toThrow('exit:0');
@@ -164,6 +165,24 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
       expect(fresh.args).toContain('--model');
     });
   }
+
+  it('with a bead: env, runtime args and pane options (XTMUX_AGENT_BEAD, @agent_bead, bead-derived session name) equal a normal --role --bead launch', async () => {
+    // A normal --role --bead launch renders the task as turn 1; --fresh takes the bead as metadata and the
+    // caller's prompt, so the turn-1 body (the last runtime arg) is the one thing allowed to differ.
+    const normal = await launch('claude', false, {}, 'CORE-2775', true);
+    vi.resetModules();
+    mocked.spawnSync.mockReset();
+    const dispatcher = Object.fromEntries(['XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_DISPATCHER_PARTICIPANT']
+      .filter((k) => k in normal.env).map((k) => [k, normal.env[k]]));
+    const fresh = await launch('claude', true, dispatcher, 'CORE-2775');
+    expect(fresh.env.XTMUX_AGENT_BEAD).toBe('CORE-2775');
+    expect(fresh.paneOptions['@agent_bead']).toBe('CORE-2775');
+    expect(fresh.env.XTRM_SESSION_NAME).toMatch(/^role-claude-testrole-core-2775/);
+    expect(fresh.env).toEqual(normal.env);
+    expect(fresh.paneOptions).toEqual(normal.paneOptions);
+    const head = (a: string[]) => a.filter((x) => x !== 'hello' && x !== '--'); // the turn-1 positional and its delimiter
+    expect(head(fresh.args)).toEqual(head(normal.args));
+  });
 
   it('creates, resets and removes nothing: no git worktree add, branch, or rollback', async () => {
     const fresh = await launch('claude', true);
