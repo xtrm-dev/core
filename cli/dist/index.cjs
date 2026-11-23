@@ -30665,9 +30665,9 @@ var require_prompts = __commonJS({
     $2.date = (args) => toPrompt("DatePrompt", args);
     $2.confirm = (args) => toPrompt("ConfirmPrompt", args);
     $2.list = (args) => {
-      const sep4 = args.separator || ",";
+      const sep5 = args.separator || ",";
       return toPrompt("TextPrompt", args, {
-        onSubmit: (str2) => str2.split(sep4).map((s) => s.trim())
+        onSubmit: (str2) => str2.split(sep5).map((s) => s.trim())
       });
     };
     $2.toggle = (args) => toPrompt("TogglePrompt", args);
@@ -32959,9 +32959,9 @@ var require_prompts2 = __commonJS({
     $2.date = (args) => toPrompt("DatePrompt", args);
     $2.confirm = (args) => toPrompt("ConfirmPrompt", args);
     $2.list = (args) => {
-      const sep4 = args.separator || ",";
+      const sep5 = args.separator || ",";
       return toPrompt("TextPrompt", args, {
-        onSubmit: (str2) => str2.split(sep4).map((s) => s.trim())
+        onSubmit: (str2) => str2.split(sep5).map((s) => s.trim())
       });
     };
     $2.toggle = (args) => toPrompt("TogglePrompt", args);
@@ -57306,10 +57306,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep: sep4, value } = collItem;
+        const { start, key, sep: sep5, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep4?.[0],
+          next: key ?? sep5?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -57323,7 +57323,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep4) {
+          if (!keyProps.anchor && !keyProps.tag && !sep5) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map2.comment)
@@ -57347,7 +57347,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map2.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep4 ?? [], {
+        const valueProps = resolveProps.resolveProps(sep5 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -57363,7 +57363,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep4, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep5, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -57454,7 +57454,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep4 = "";
+        let sep5 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -57468,13 +57468,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep4 + cb;
-              sep4 = "";
+                comment += sep5 + cb;
+              sep5 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep4 += source;
+                sep5 += source;
               hasSpace = true;
               break;
             default:
@@ -57517,18 +57517,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep: sep4, value } = collItem;
+        const { start, key, sep: sep5, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep4?.[0],
+          next: key ?? sep5?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep4 && !value) {
+          if (!props.anchor && !props.tag && !sep5 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -57582,8 +57582,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep4 && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep4, null, props, onError);
+        if (!isMap && !sep5 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep5, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -57595,7 +57595,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep4 ?? [], {
+          const valueProps = resolveProps.resolveProps(sep5 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -57606,8 +57606,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep4)
-                for (const st of sep4) {
+              if (sep5)
+                for (const st of sep5) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -57624,7 +57624,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep4, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep5, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -57804,7 +57804,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep4 = "";
+      let sep5 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -57821,24 +57821,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep4 + indent.slice(trimIndent) + content;
-          sep4 = "\n";
+          value += sep5 + indent.slice(trimIndent) + content;
+          sep5 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep4 === " ")
-            sep4 = "\n";
-          else if (!prevMoreIndented && sep4 === "\n")
-            sep4 = "\n\n";
-          value += sep4 + indent.slice(trimIndent) + content;
-          sep4 = "\n";
+          if (sep5 === " ")
+            sep5 = "\n";
+          else if (!prevMoreIndented && sep5 === "\n")
+            sep5 = "\n\n";
+          value += sep5 + indent.slice(trimIndent) + content;
+          sep5 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep4 === "\n")
+          if (sep5 === "\n")
             value += "\n";
           else
-            sep4 = "\n";
+            sep5 = "\n";
         } else {
-          value += sep4 + content;
-          sep4 = " ";
+          value += sep5 + content;
+          sep5 = " ";
           prevMoreIndented = false;
         }
       }
@@ -58021,25 +58021,25 @@ var require_resolve_flow_scalar = __commonJS({
         trimBoth = /^[ \t]+|[ \t]+$/g;
       }
       let res = match[1].replace(trimEnd, "");
-      let sep4 = " ";
+      let sep5 = " ";
       let pos = line.lastIndex;
       while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
-          if (sep4 === "\n")
-            res += sep4;
+          if (sep5 === "\n")
+            res += sep5;
           else
-            sep4 = "\n";
+            sep5 = "\n";
         } else {
-          res += sep4 + lm;
-          sep4 = " ";
+          res += sep5 + lm;
+          sep5 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep4 + (match?.[1] ?? "");
+      return res + sep5 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -58849,14 +58849,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep: sep4, value }) {
+    function stringifyItem({ start, key, sep: sep5, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep4)
-        for (const st of sep4)
+      if (sep5)
+        for (const st of sep5)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -60023,18 +60023,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep4;
+          let sep5;
           if (scalar.end) {
-            sep4 = scalar.end;
-            sep4.push(this.sourceToken);
+            sep5 = scalar.end;
+            sep5.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep4 = [this.sourceToken];
+            sep5 = [this.sourceToken];
           const map2 = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep: sep4 }]
+            items: [{ start, key: scalar, sep: sep5 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map2;
@@ -60187,15 +60187,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep4 = it.sep;
-                  sep4.push(this.sourceToken);
+                  const sep5 = it.sep;
+                  sep5.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep: sep4 }]
+                    items: [{ start: start2, key, sep: sep5 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -60389,13 +60389,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep4 = fc.end.splice(1, fc.end.length);
-            sep4.push(this.sourceToken);
+            const sep5 = fc.end.splice(1, fc.end.length);
+            sep5.push(this.sourceToken);
             const map2 = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep: sep4 }]
+              items: [{ start, key: fc, sep: sep5 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map2;
@@ -61790,7 +61790,7 @@ __export(reconcile_exports, {
 async function reconcile(specPath, state, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process40.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process41.spawnSync)(sp, ["result", state.planner_job_id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) {
     return { ok: false, error: `sp result failed: ${r.stderr || r.stdout}` };
   }
@@ -61830,7 +61830,7 @@ function extractPlannerResult(parsed) {
 async function validateIdsExist(ids, bdBin) {
   const orphans = [];
   for (const id of ids) {
-    const r = (0, import_node_child_process40.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
+    const r = (0, import_node_child_process41.spawnSync)(bdBin, ["show", id, "--json"], { encoding: "utf8" });
     if (r.status !== 0) orphans.push(id);
   }
   return orphans;
@@ -61855,11 +61855,11 @@ async function writeLinksInPlace(specPath, links) {
 function sidecarPathFromSpec(specPath) {
   return import_node_path71.default.join(import_node_path71.default.dirname(specPath), ".apply-state.json");
 }
-var import_node_child_process40, import_fs_extra60, import_node_path71, import_yaml4;
+var import_node_child_process41, import_fs_extra60, import_node_path71, import_yaml4;
 var init_reconcile = __esm({
   "src/spec/reconcile.ts"() {
     "use strict";
-    import_node_child_process40 = require("child_process");
+    import_node_child_process41 = require("child_process");
     import_fs_extra60 = __toESM(require_lib(), 1);
     import_node_path71 = __toESM(require("path"), 1);
     import_yaml4 = __toESM(require_dist3(), 1);
@@ -65211,17 +65211,17 @@ function defaultRunGit() {
   };
 }
 var FULL_SHA = /^[0-9a-f]{40}$/;
-function isShallowRepository(runGit2, cwd) {
-  const result = runGit2(["rev-parse", "--is-shallow-repository"], cwd);
+function isShallowRepository(runGit3, cwd) {
+  const result = runGit3(["rev-parse", "--is-shallow-repository"], cwd);
   return result.status === 0 && result.stdout.trim() === "true";
 }
-function resolveLinkRange(runGit2, cwd) {
-  const headResult = runGit2(["rev-parse", "HEAD"], cwd);
+function resolveLinkRange(runGit3, cwd) {
+  const headResult = runGit3(["rev-parse", "HEAD"], cwd);
   const head = headResult.status === 0 ? headResult.stdout.trim() : "";
   if (!FULL_SHA.test(head)) return null;
-  if (isShallowRepository(runGit2, cwd)) return { head, base: null, shallow: true };
+  if (isShallowRepository(runGit3, cwd)) return { head, base: null, shallow: true };
   for (const upstream of ["origin/HEAD", "origin/main", "@{upstream}"]) {
-    const merged = runGit2(["merge-base", "HEAD", upstream], cwd);
+    const merged = runGit3(["merge-base", "HEAD", upstream], cwd);
     const base = merged.status === 0 ? (merged.stdout.trim().split("\n")[0] ?? "").trim() : "";
     if (FULL_SHA.test(base)) return { head, base, shallow: false };
   }
@@ -80708,9 +80708,9 @@ function markerGuidance(ref) {
   ];
 }
 function defaultRunSb() {
-  const { spawnSync: spawnSync49 } = require("child_process");
+  const { spawnSync: spawnSync50 } = require("child_process");
   return (cmd, args, opts) => {
-    const result = spawnSync49(cmd, args, {
+    const result = spawnSync50(cmd, args, {
       encoding: "utf8",
       input: opts.input ?? void 0,
       cwd: opts.cwd,
@@ -82417,9 +82417,9 @@ function createDocsCommand() {
     const repoRoot = await findProjectRoot();
     let fmFilter;
     if (opts.filter) {
-      const sep4 = opts.filter.indexOf("=");
-      if (sep4 !== -1) {
-        fmFilter = { field: opts.filter.slice(0, sep4), value: opts.filter.slice(sep4 + 1) };
+      const sep5 = opts.filter.indexOf("=");
+      if (sep5 !== -1) {
+        fmFilter = { field: opts.filter.slice(0, sep5), value: opts.filter.slice(sep5 + 1) };
       }
     }
     const scanOpts = { dir: opts.dir ?? "docs", pattern: opts.pattern, filter: fmFilter, recursive: false };
@@ -84467,14 +84467,23 @@ function createClaudeRouteCommand() {
 // src/commands/doctor.ts
 var import_fs_extra50 = __toESM(require_lib(), 1);
 var import_node_path60 = __toESM(require("path"), 1);
-var import_node_child_process35 = require("child_process");
+var import_node_child_process36 = require("child_process");
 init_kleur();
 
 // src/core/bundle-freshness.ts
+var import_node_child_process34 = require("child_process");
 var import_node_fs29 = require("fs");
 var import_node_path55 = require("path");
+var CHECKOUT_WRITE_WINDOW_MS = 5e3;
 var SKIP_DIRS = /* @__PURE__ */ new Set(["tests", "__tests__", "test", "node_modules", ".git", "dist", "coverage"]);
 var SOURCE_EXT = /\.(ts|tsx|mts|cts)$/;
+var TEST_FILE = /\.(test|spec)\.(ts|tsx|mts|cts)$/;
+function isBundledSource(path99) {
+  const segments = path99.split(/[\\/]/);
+  const name = segments[segments.length - 1] ?? "";
+  if (!SOURCE_EXT.test(name) || TEST_FILE.test(name)) return false;
+  return !segments.slice(0, -1).some((dir) => SKIP_DIRS.has(dir));
+}
 function listSourceFiles(root, rel = "") {
   const dir = rel ? (0, import_node_path55.join)(root, rel) : root;
   let entries;
@@ -84498,8 +84507,7 @@ function listSourceFiles(root, rel = "") {
       out.push(...listSourceFiles(root, relPath));
       continue;
     }
-    if (!SOURCE_EXT.test(name)) continue;
-    if (name.endsWith(".test.ts") || name.endsWith(".test.tsx") || name.endsWith(".spec.ts")) continue;
+    if (!isBundledSource(name)) continue;
     out.push({ path: relPath, mtime: stats.mtimeMs });
   }
   return out;
@@ -84510,7 +84518,8 @@ function newest(files) {
   return best;
 }
 function humanLag(ms) {
-  if (ms < 6e4) return `${Math.max(1, Math.round(ms / 1e3))}s`;
+  if (ms < 1e3) return `${Math.round(ms)}ms`;
+  if (ms < 6e4) return `${Math.round(ms / 1e3)}s`;
   const minutes = Math.round(ms / 6e4);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
@@ -84556,7 +84565,30 @@ function readBundleFreshness(input2) {
       detail: `no sources under ${sourceDir} \u2014 an installed package carries the bundle only, so freshness cannot be judged here`
     };
   }
-  if (newestSource.mtime <= builtAt) {
+  const git7 = input2.git ?? realGit(input2.cliRoot);
+  const rebuild = "run `cd cli && npm run build` before trusting a proof that runs `cli/dist/index.cjs`";
+  const edited = (git7.changedPaths(sourceRelDir) ?? []).filter(isBundledSource);
+  if (edited.length > 0) {
+    const first = edited[0];
+    const mtime = fileMtime((0, import_node_path55.resolve)(input2.cliRoot, first));
+    return {
+      state: "stale",
+      bundle: bundlePath,
+      builtAt,
+      newestSource: { path: first, mtime: mtime ?? builtAt },
+      lagMs: mtime === null ? 0 : Math.max(0, mtime - builtAt),
+      detail: `${first} has an uncommitted change${edited.length > 1 ? ` (and ${edited.length - 1} more)` : ""}, so the bundle is not the code beside it \u2014 ${rebuild}`
+    };
+  }
+  const verdict = commitVerdict(git7, bundleRelPath, sourceRelDir, {
+    bundlePath,
+    builtAt,
+    newestSource,
+    rebuild
+  });
+  if (verdict !== null) return verdict;
+  const lagMs = newestSource.mtime - builtAt;
+  if (lagMs <= 0) {
     return {
       state: "fresh",
       bundle: bundlePath,
@@ -84566,14 +84598,122 @@ function readBundleFreshness(input2) {
       detail: `the bundle is newer than the newest source (${newestSource.path})`
     };
   }
-  const lagMs = newestSource.mtime - builtAt;
+  if (lagMs < CHECKOUT_WRITE_WINDOW_MS) {
+    return {
+      state: "unknown",
+      bundle: bundlePath,
+      builtAt,
+      newestSource,
+      lagMs,
+      detail: `cannot tell: the bundle is ${humanLag(lagMs)} older than ${newestSource.path}, which is the order a checkout writes them in, and git cannot answer here (no history, or a shallow clone) \u2014 run \`cd cli && npm run build\` if in doubt`
+    };
+  }
   return {
     state: "stale",
     bundle: bundlePath,
     builtAt,
     newestSource,
     lagMs,
-    detail: `the bundle is ${humanLag(lagMs)} older than ${newestSource.path}, so it is not the code beside it \u2014 run \`cd cli && npm run build\` before trusting a proof that runs \`cli/dist/index.cjs\``
+    detail: `the bundle is ${humanLag(lagMs)} older than ${newestSource.path}, so it is not the code beside it \u2014 ${rebuild}`
+  };
+}
+function fileMtime(abs) {
+  try {
+    return (0, import_node_fs29.statSync)(abs).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+function bundledSourcePathspecs(sourceRelDir) {
+  const dir = sourceRelDir.split(import_node_path55.sep).join("/");
+  return [
+    ...["ts", "tsx", "mts", "cts"].map((ext) => `:(glob)${dir}/**/*.${ext}`),
+    ...[...SKIP_DIRS].map((skip) => `:(exclude,glob)${dir}/**/${skip}/**`),
+    ...["ts", "tsx", "mts", "cts"].flatMap((ext) => [
+      `:(exclude,glob)${dir}/**/*.test.${ext}`,
+      `:(exclude,glob)${dir}/**/*.spec.${ext}`
+    ])
+  ];
+}
+function commitVerdict(git7, bundleRelPath, sourceRelDir, ctx) {
+  if (git7.isShallow() !== false) return null;
+  const bundleChanges = git7.changedPaths(bundleRelPath);
+  if (bundleChanges === null || bundleChanges.length > 0) return null;
+  const bundleCommit = git7.lastCommit([bundleRelPath]);
+  const sourceCommit = git7.lastCommit(bundledSourcePathspecs(sourceRelDir));
+  if (bundleCommit === null || sourceCommit === null) return null;
+  const base = { bundle: ctx.bundlePath, builtAt: ctx.builtAt, newestSource: ctx.newestSource };
+  if (bundleCommit.sha === sourceCommit.sha) {
+    return {
+      state: "fresh",
+      ...base,
+      lagMs: null,
+      detail: `the bundle and ${sourceRelDir} were last written by the same commit ${bundleCommit.sha.slice(0, 12)}, so an mtime difference is checkout order and not staleness`
+    };
+  }
+  const sourceBeforeBundle = git7.isAncestor(sourceCommit.sha, bundleCommit.sha);
+  if (sourceBeforeBundle === null) return null;
+  if (sourceBeforeBundle) {
+    return {
+      state: "fresh",
+      ...base,
+      lagMs: null,
+      detail: `the bundle was written by ${bundleCommit.sha.slice(0, 12)}, which contains the commit that last changed ${sourceRelDir} (${sourceCommit.sha.slice(0, 12)})`
+    };
+  }
+  return {
+    state: "stale",
+    ...base,
+    lagMs: Math.max(0, sourceCommit.at - bundleCommit.at),
+    detail: `${sourceRelDir} changed in ${sourceCommit.sha.slice(0, 12)}, which the commit that wrote the bundle (${bundleCommit.sha.slice(0, 12)}) does not contain, so the bundle is not the code beside it \u2014 ${ctx.rebuild}`
+  };
+}
+function runGit2(cliRoot, args) {
+  const env3 = { ...process.env };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_PREFIX", "GIT_COMMON_DIR"]) delete env3[key];
+  const result = (0, import_node_child_process34.spawnSync)("git", ["-C", cliRoot, ...args], { encoding: "utf8", env: env3 });
+  return { status: result.status, stdout: typeof result.stdout === "string" ? result.stdout : "" };
+}
+function realGit(cliRoot) {
+  return {
+    isShallow() {
+      const r = runGit2(cliRoot, ["rev-parse", "--is-shallow-repository"]);
+      if (r.status !== 0) return null;
+      const answer = r.stdout.trim();
+      return answer === "true" ? true : answer === "false" ? false : null;
+    },
+    changedPaths(pathspec) {
+      const prefix = runGit2(cliRoot, ["rev-parse", "--show-prefix"]);
+      if (prefix.status !== 0) return null;
+      const r = runGit2(cliRoot, ["status", "--porcelain", "-z", "--untracked-files=all", "--", pathspec]);
+      if (r.status !== 0) return null;
+      const root = prefix.stdout.trim();
+      const entries = r.stdout.split("\0").filter((entry) => entry.length > 0);
+      const out = [];
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const path99 = entry.slice(3);
+        out.push(root && path99.startsWith(root) ? path99.slice(root.length) : path99);
+        if (/^[RC]/.test(entry) || /^.[RC]/.test(entry)) {
+          const origin = entries[++i];
+          if (origin !== void 0) out.push(root && origin.startsWith(root) ? origin.slice(root.length) : origin);
+        }
+      }
+      return out;
+    },
+    lastCommit(pathspecs) {
+      const r = runGit2(cliRoot, ["log", "-1", "--format=%H%x20%ct", "--", ...pathspecs]);
+      if (r.status !== 0) return null;
+      const [sha, seconds] = r.stdout.trim().split(/\s+/);
+      if (!sha || !/^[0-9a-f]{40}$/.test(sha)) return null;
+      const at = Number(seconds);
+      return Number.isFinite(at) ? { sha, at: at * 1e3 } : null;
+    },
+    isAncestor(ancestor, descendant) {
+      const r = runGit2(cliRoot, ["merge-base", "--is-ancestor", ancestor, descendant]);
+      if (r.status === 0) return true;
+      return r.status === 1 ? false : null;
+    }
   };
 }
 function formatBundleFreshness(freshness) {
@@ -85046,7 +85186,7 @@ function getClaudeChannelStatus(paths) {
 
 // src/utils/npm-latest.ts
 var import_node_fs31 = require("fs");
-var import_node_child_process34 = require("child_process");
+var import_node_child_process35 = require("child_process");
 var import_node_path59 = __toESM(require("path"), 1);
 var import_node_os33 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
@@ -85078,7 +85218,7 @@ function writeCache2(file2, data) {
   }
 }
 function defaultNpmView(pkg) {
-  const result = (0, import_node_child_process34.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
+  const result = (0, import_node_child_process35.spawnSync)("npm", ["view", pkg, "version", "--registry", NPMJS_REGISTRY], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -85088,7 +85228,7 @@ function defaultNpmView(pkg) {
   return v.length > 0 ? v : null;
 }
 function defaultInstalledResolver(pkg) {
-  const rootResult = (0, import_node_child_process34.spawnSync)("npm", ["root", "-g"], {
+  const rootResult = (0, import_node_child_process35.spawnSync)("npm", ["root", "-g"], {
     encoding: "utf8",
     stdio: "pipe",
     timeout: NPM_VIEW_TIMEOUT_MS
@@ -85193,7 +85333,7 @@ ${kleur_default.bold(`\u2500\u2500 ${label} ${line}`)}`);
 function runSelfCheck(cwd) {
   const cliEntry = process.argv[1];
   if (!cliEntry) return null;
-  const result = (0, import_node_child_process35.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
+  const result = (0, import_node_child_process36.spawnSync)(process.execPath, [cliEntry, "claude-sync", "--check", "--json", "--cwd", cwd], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -85749,9 +85889,9 @@ ${kleur_default.bold("xt doctor")}
     else if (bundle.state === "stale") warn(formatBundleFreshness(bundle));
     else console.log(kleur_default.dim(`  ${formatBundleFreshness(bundle)}`));
     section2("Runtime availability");
-    const claudeAvailable = (0, import_node_child_process35.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
-    const piAvailable = (0, import_node_child_process35.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
-    const pnpmAvailable = (0, import_node_child_process35.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
+    const claudeAvailable = (0, import_node_child_process36.spawnSync)("claude", ["--version"], { stdio: "ignore" }).status === 0;
+    const piAvailable = (0, import_node_child_process36.spawnSync)("pi", ["--version"], { stdio: "ignore" }).status === 0;
+    const pnpmAvailable = (0, import_node_child_process36.spawnSync)("pnpm", ["--version"], { stdio: "ignore" }).status === 0;
     claudeAvailable ? ok("claude CLI available") : warn(CLAUDE_CLI_MISSING_MESSAGE);
     if (satisfiesNodeFloor()) {
       ok(`Node ${process.versions.node} meets the Claude Code bridge floor (>= ${PI_CLAUDE_BRIDGE_MIN_NODE_MAJOR})`);
@@ -85841,7 +85981,7 @@ function createBootstrapCommand() {
 
 // src/commands/update.ts
 init_kleur();
-var import_node_child_process36 = require("child_process");
+var import_node_child_process37 = require("child_process");
 var import_node_path64 = __toESM(require("path"), 1);
 var import_fs_extra55 = __toESM(require_lib(), 1);
 init_pi_runtime();
@@ -86371,7 +86511,7 @@ function commitAllReposPatch(repoRoot) {
   return { ok: true, message: `committed ${hash2.stdout.trim()}` };
 }
 function spawnGit(repoRoot, args) {
-  return (0, import_node_child_process36.spawnSync)("git", args, {
+  return (0, import_node_child_process37.spawnSync)("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: "pipe",
@@ -86481,17 +86621,17 @@ function createUpdateCommand() {
 // src/commands/release.ts
 init_kleur();
 var import_node_fs33 = require("fs");
-var import_node_child_process38 = require("child_process");
+var import_node_child_process39 = require("child_process");
 var import_node_path66 = __toESM(require("path"), 1);
 
 // src/core/xt-reports.ts
 var import_node_fs32 = require("fs");
-var import_node_child_process37 = require("child_process");
+var import_node_child_process38 = require("child_process");
 var import_node_path65 = __toESM(require("path"), 1);
 var DEFAULT_CAP_BYTES = 5e4;
 var REPORT_DIR = ".xtrm/reports";
 function getCommitDate(ref, cwd) {
-  return (0, import_node_child_process37.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
+  return (0, import_node_child_process38.execFileSync)("git", ["log", "-1", "--format=%cs", ref], {
     cwd,
     encoding: "utf8"
   }).trim();
@@ -86560,7 +86700,7 @@ var RELEASE_SCOPE_PATTERNS = [
   /^dist(?:\/|$)/
 ];
 function run4(cmd, args, cwd) {
-  const result = (0, import_node_child_process38.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
+  const result = (0, import_node_child_process39.spawnSync)(cmd, args, { cwd, encoding: "utf8", stdio: "pipe" });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -87414,7 +87554,7 @@ function renderHuman2(report) {
 init_kleur();
 var import_fs_extra61 = __toESM(require_lib(), 1);
 var import_node_path72 = __toESM(require("path"), 1);
-var import_node_child_process41 = require("child_process");
+var import_node_child_process42 = require("child_process");
 var import_yaml5 = __toESM(require_dist3(), 1);
 
 // src/spec/xml.ts
@@ -87485,10 +87625,10 @@ function toChangeContractNode({ spec, effectiveScrutiny }) {
 }
 
 // src/spec/dispatch.ts
-var import_node_child_process39 = require("child_process");
+var import_node_child_process40 = require("child_process");
 function dispatchPlanner(plannerBeadId, opts = {}) {
   const sp = opts.spBinary ?? process.env.XT_SPEC_SP_BINARY ?? "sp";
-  const r = (0, import_node_child_process39.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
+  const r = (0, import_node_child_process40.spawnSync)(sp, ["run", "planner", "--bead", plannerBeadId, "--background", "--json"], {
     encoding: "utf8"
   });
   if (r.status !== 0) {
@@ -87669,7 +87809,7 @@ function createSpecApplyCommand() {
 }
 function bdCreatePlannerBead(args) {
   const bd2 = process.env.XT_SPEC_BD_BINARY ?? "bd";
-  const r = (0, import_node_child_process41.spawnSync)(
+  const r = (0, import_node_child_process42.spawnSync)(
     bd2,
     ["create", "--type", "task", "--priority", "1", "--title", args.title, "--description", args.description, "--json"],
     { encoding: "utf8" }
@@ -87692,7 +87832,7 @@ var import_node_path73 = __toESM(require("path"), 1);
 var import_yaml6 = __toESM(require_dist3(), 1);
 
 // src/spec/drift.ts
-var import_node_child_process42 = require("child_process");
+var import_node_child_process43 = require("child_process");
 async function computeStatus(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const epic = spec.links.epic ?? null;
@@ -87742,7 +87882,7 @@ async function computeStatus(spec, opts = {}) {
   };
 }
 function bdShow(bd2, id) {
-  const r = (0, import_node_child_process42.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process43.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout);
@@ -87751,7 +87891,7 @@ function bdShow(bd2, id) {
   }
 }
 function bdChildrenDiff(bd2, epic, knownChildren) {
-  const r = (0, import_node_child_process42.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process43.spawnSync)(bd2, ["children", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -87762,7 +87902,7 @@ function bdChildrenDiff(bd2, epic, knownChildren) {
   }
 }
 function bdCycles(bd2, epic) {
-  const r = (0, import_node_child_process42.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process43.spawnSync)(bd2, ["dep", "cycles", "--scope", epic, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return [];
   try {
     const parsed = JSON.parse(r.stdout);
@@ -87829,7 +87969,7 @@ var import_node_path74 = __toESM(require("path"), 1);
 var import_yaml7 = __toESM(require_dist3(), 1);
 
 // src/spec/archive-gate.ts
-var import_node_child_process43 = require("child_process");
+var import_node_child_process44 = require("child_process");
 async function checkArchiveGate(spec, opts = {}) {
   const bd2 = opts.bdBinary ?? process.env.XT_SPEC_BD_BINARY ?? "bd";
   const failures = [];
@@ -87874,7 +88014,7 @@ async function checkArchiveGate(spec, opts = {}) {
   return { ok: failures.length === 0, failures };
 }
 function bdStatus(bd2, id) {
-  const r = (0, import_node_child_process43.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
+  const r = (0, import_node_child_process44.spawnSync)(bd2, ["show", id, "--json"], { encoding: "utf8" });
   if (r.status !== 0) return null;
   try {
     return JSON.parse(r.stdout).status ?? null;
@@ -87883,7 +88023,7 @@ function bdStatus(bd2, id) {
   }
 }
 function bdKv(bd2, key) {
-  const r = (0, import_node_child_process43.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
+  const r = (0, import_node_child_process44.spawnSync)(bd2, ["kv", "get", key], { encoding: "utf8" });
   if (r.status !== 0) return null;
   const value = r.stdout.trim();
   return value.length > 0 ? value : null;
@@ -88912,7 +89052,7 @@ function createHooksCommand() {
 // src/commands/version.ts
 var import_node_fs34 = require("fs");
 var import_node_path76 = require("path");
-var import_node_child_process44 = require("child_process");
+var import_node_child_process45 = require("child_process");
 init_kleur();
 function readInstallPackageJson() {
   const candidates = [
@@ -88935,7 +89075,7 @@ function detectSource(installRoot) {
 }
 function readGitCommit(installRoot) {
   if (!(0, import_node_fs34.existsSync)((0, import_node_path76.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process44.spawnSync)("git", ["rev-parse", "HEAD"], {
+  const result = (0, import_node_child_process45.spawnSync)("git", ["rev-parse", "HEAD"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -88945,7 +89085,7 @@ function readGitCommit(installRoot) {
 }
 function readGitDirty(installRoot) {
   if (!(0, import_node_fs34.existsSync)((0, import_node_path76.resolve)(installRoot, ".git"))) return null;
-  const result = (0, import_node_child_process44.spawnSync)("git", ["status", "--porcelain"], {
+  const result = (0, import_node_child_process45.spawnSync)("git", ["status", "--porcelain"], {
     cwd: installRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
@@ -89028,11 +89168,11 @@ function createVersionCommand() {
 init_kleur();
 
 // src/core/topology-projection.ts
-var import_node_child_process45 = require("child_process");
+var import_node_child_process46 = require("child_process");
 var import_node_os36 = require("os");
 var import_node_path77 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
-var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process45.execFile);
+var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process46.execFile);
 var SEP2 = "	";
 var PANE_FIELDS = [
   "pane_id",
@@ -92418,7 +92558,7 @@ function activeBranch(entries) {
 
 // src/core/agent-host-launch.ts
 var import_node_crypto20 = require("crypto");
-var import_node_child_process46 = require("child_process");
+var import_node_child_process47 = require("child_process");
 var import_node_fs37 = require("fs");
 var import_node_path79 = __toESM(require("path"), 1);
 var LAUNCH_ENV = "XTRM_AGENT_LAUNCH";
@@ -92447,7 +92587,7 @@ var LaunchRejection = class extends Error {
   code;
 };
 var runProcess = (file2, args, options) => new Promise((resolve7) => {
-  (0, import_node_child_process46.execFile)(
+  (0, import_node_child_process47.execFile)(
     file2,
     [...args],
     { cwd: options.cwd, env: options.env, timeout: options.timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8" },
@@ -92655,7 +92795,7 @@ function firstLine2(text) {
 }
 
 // src/core/agent-host-references.ts
-var import_node_child_process47 = require("child_process");
+var import_node_child_process48 = require("child_process");
 var import_node_crypto21 = require("crypto");
 var import_node_fs38 = require("fs");
 var import_promises = require("fs/promises");
@@ -92886,7 +93026,7 @@ ${statText}
 }
 function git5(cwd, args) {
   return new Promise((resolve7, reject) => {
-    (0, import_node_child_process47.execFile)(
+    (0, import_node_child_process48.execFile)(
       "git",
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
       {
@@ -93081,9 +93221,9 @@ function stripPrefix(value, prefix) {
 function classifyClaudeTool(toolName) {
   if (toolName.startsWith("mcp__")) {
     const rest = toolName.slice(5);
-    const sep4 = rest.indexOf("__");
-    const server = sep4 > 0 ? rest.slice(0, sep4) : "";
-    const tool = sep4 > 0 ? rest.slice(sep4 + 2) : "";
+    const sep5 = rest.indexOf("__");
+    const server = sep5 > 0 ? rest.slice(0, sep5) : "";
+    const tool = sep5 > 0 ? rest.slice(sep5 + 2) : "";
     if (server && tool) {
       if (isCoordinationMcpTool(server, [tool])) return { class: "coordination", server };
       return { class: "mcp", server };
@@ -94076,7 +94216,7 @@ function boundText(text) {
 }
 
 // src/core/agent-host-session-index.ts
-var import_node_child_process48 = require("child_process");
+var import_node_child_process49 = require("child_process");
 var import_node_fs40 = require("fs");
 var import_promises2 = require("fs/promises");
 var import_node_os38 = __toESM(require("os"), 1);
@@ -94558,7 +94698,7 @@ function remoteUrl(configOut) {
 }
 function git6(cwd, args) {
   return new Promise((resolve7, reject) => {
-    (0, import_node_child_process48.execFile)(
+    (0, import_node_child_process49.execFile)(
       "git",
       ["-C", cwd, ...args],
       // SIGKILL: execFile's timeout only signals; a child ignoring SIGTERM kept the callback pending.
@@ -94727,7 +94867,7 @@ function bounded2(value, max) {
 }
 
 // src/core/topology-feed.ts
-var import_node_child_process49 = require("child_process");
+var import_node_child_process50 = require("child_process");
 var import_node_crypto22 = require("crypto");
 var import_node_readline2 = require("readline");
 var TOPOLOGY_UPDATE_MAX_BYTES = 64 * 1024;
@@ -94980,7 +95120,7 @@ var TopologyFeed = class {
     if (!target) return;
     const env3 = { ...process.env };
     delete env3.TMUX;
-    const child = (0, import_node_child_process49.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
+    const child = (0, import_node_child_process50.spawn)("tmux", [...this.tmuxArgs, ...TMUX_CONTROL.attach, target], {
       stdio: ["pipe", "pipe", "ignore"],
       env: env3
     });
@@ -95605,7 +95745,7 @@ function safeUnlink(file2) {
 }
 
 // src/core/agent-host-ensure.ts
-var import_node_child_process50 = require("child_process");
+var import_node_child_process51 = require("child_process");
 var import_node_crypto23 = require("crypto");
 var import_node_fs42 = require("fs");
 var import_node_http2 = __toESM(require("http"), 1);
@@ -95743,7 +95883,7 @@ async function startDetachedHost(infoPath, options, deadline, log) {
   const { fd: logFd, start: logStart } = openHostLog(logPath);
   let child;
   try {
-    child = (0, import_node_child_process50.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
+    child = (0, import_node_child_process51.spawn)(command, [...entry, "host", "start", ...options.hostArgs ?? []], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: options.env ?? hostSpawnEnv(process.env)
