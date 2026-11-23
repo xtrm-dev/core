@@ -78618,10 +78618,11 @@ function scanCleanTargets(input2) {
   return {
     plan: {
       removable: plan.removable,
-      skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+      skippedLive: plan.skippedLive,
       unmerged: plan.unmerged
     },
-    orphans: orphanPlan.removable
+    orphans: orphanPlan.removable,
+    orphansSkippedLive: orphanPlan.skippedLive
   };
 }
 function applyCleanRemoval(repoRoot, targets, options = {}) {
@@ -79412,7 +79413,7 @@ function getRepoRoot(cwd) {
   const fallback = git4(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
-function printCleanPlan(plan) {
+function printCleanPlan(plan, orphansSkippedLive = []) {
   const { removable, skippedLive, unmerged } = plan;
   if (removable.length > 0) {
     console.log(kleur_default.bold(`  ${removable.length} merged worktree(s):`));
@@ -79434,6 +79435,32 @@ function printCleanPlan(plan) {
     for (const wt of unmerged) {
       console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) not merged into the default branch`));
     }
+  }
+  if (orphansSkippedLive.length > 0) {
+    console.log(kleur_default.bold(`
+  ${orphansSkippedLive.length} orphaned director(y/ies) kept, in use right now:`));
+    for (const orphan of orphansSkippedLive) {
+      console.log(kleur_default.dim(`    - ${orphan.path} in use: pids ${orphan.livePids.join(",")}`));
+    }
+    console.log(kleur_default.dim("    A directory in use is removed after the process inside it ends."));
+  }
+}
+function cleanScanIsEmpty(scan) {
+  return scan.plan.removable.length === 0 && scan.plan.skippedLive.length === 0 && scan.plan.unmerged.length === 0 && scan.orphans.length === 0 && scan.orphansSkippedLive.length === 0;
+}
+function renderCleanPlan(scan, opts) {
+  console.log(t.bold("\n  xt worktree clean\n"));
+  printCleanPlan(
+    { removable: scan.plan.removable, skippedLive: scan.plan.skippedLive, unmerged: scan.plan.unmerged },
+    scan.orphansSkippedLive
+  );
+  if (opts.orphans) {
+    console.log(kleur_default.bold(`
+  ${scan.orphans.length} orphaned managed director(y/ies):`));
+    for (const orphan of scan.orphans) {
+      console.log(kleur_default.dim(`    - ${orphan.path}`));
+    }
+    console.log(kleur_default.dim("    - git worktree prune --expire now"));
   }
 }
 function worktreeListStatus(wt, repoRoot) {
@@ -79559,7 +79586,7 @@ function createWorktreeCommand() {
     const unmerged = scan.plan.unmerged;
     const orphanPlan = { removable: scan.orphans };
     const orphanDirs = scan.orphans.map((orphan) => orphan.path);
-    if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
+    if (cleanScanIsEmpty(scan)) {
       if (!opts.orphans) {
         console.log(kleur_default.dim("\n  No merged xt worktrees to clean\n"));
         return;
@@ -79568,16 +79595,7 @@ function createWorktreeCommand() {
       console.log(kleur_default.dim("  (git worktree prune would still run in apply mode)\n"));
       if (opts.dryRun) return;
     }
-    console.log(t.bold("\n  xt worktree clean\n"));
-    printCleanPlan({ removable: merged, skippedLive, unmerged });
-    if (opts.orphans) {
-      console.log(kleur_default.bold(`
-  ${orphanDirs.length} orphaned managed director(y/ies):`));
-      for (const orphan of orphanDirs) {
-        console.log(kleur_default.dim(`    - ${orphan}`));
-      }
-      console.log(kleur_default.dim("    - git worktree prune --expire now"));
-    }
+    renderCleanPlan(scan, { orphans: opts.orphans });
     if (opts.dryRun) {
       console.log(kleur_default.yellow("\n  \u2139 Dry run \u2014 no changes applied\n"));
       return;
