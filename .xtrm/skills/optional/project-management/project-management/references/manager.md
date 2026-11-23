@@ -26,6 +26,9 @@ current; when the goal document changes, revise the project epic's SUCCESS and o
   - Every Monitor, timer or goal check-in that wakes you costs a full read of your context. Arm a watch only where no lead, board helper or
     specialist already watches; prefer a watcher specialist that messages you only on a finding.
 
+## Park and wake placement
+The manager orders parks for memory relief: stop idle specialists first, then park waiting leads. Use `pm_park.py park` and let its wake path run `xt attach <worktree> --fresh`; use `pm_park.py list` to verify records and `route_target.py --team` to see the parked line. One Jira comment covers each park batch through the board helper. The parked `session:window` target is reused when live; when it is gone, the role/default in `~/.xtrm/config/launch.json` selects placement. Prefer `--workers` for worker panes and `--pane <session:window|%pane>` for manager/helper panes; do not prescribe manual pane joins or layout commands.
+
 ## 1. Daily rhythm (UTC)
 
 | When | Action | Evidence |

@@ -7,6 +7,9 @@ Mechanics only: launch syntax, liveness, reaping, specialists, limits. Who launc
 
 `xt claude` and `xt pi` accept `--pane <target>`, `--workers`, `--window-name <name>`, `--session <name>`, and `--layout <layout>`. `--pane` splits an existing window; `--workers` fills a `workers*` window up to `workersMaxPanes` (default 4) and rolls over to the next window. Placement defaults are configured in the user-owned `~/.xtrm/config/launch.json` (override with `XTRM_LAUNCH_CONFIG`), for example `{ "version": 1, "placement": { "worker": "workers" } }`. Explicit placement flags override defaults. An absent file preserves existing behavior.
 
+## Fresh attach and placement
+Use `xt attach <slug> --fresh --no-attach` to start a new runtime in an existing worktree; use plain `xt attach <slug>` for the normal continuation path. Pass `--workers`, `--pane <session:window|%pane>`, `--session <name>`, or `--layout <layout>` when the fresh session needs an explicit destination. The user-owned `~/.xtrm/config/launch.json` (or `XTRM_LAUNCH_CONFIG`) supplies role defaults, and explicit flags win.
+
 ## Rule
 
 All agents of a project live in one tmux session, the manager's: the manager window holds the manager and its helpers as panes, each lead has its

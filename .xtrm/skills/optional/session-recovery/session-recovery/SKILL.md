@@ -19,6 +19,9 @@ was open in which worktree, on which branch, doing what" dies too — unless the
 durable snapshot exists (xtmux XTMUX-491 machinery, cron-refreshed every
 minute to `${XDG_STATE_HOME:-~/.local/state}/xtmux/sessions/`).
 
+## Parked worktree placement
+For a parked worktree, prefer `xt attach <slug> --fresh --workers` or `--pane <session:window|%pane>` so the new runtime preserves placement. If the recorded target no longer exists, omit the target and let `~/.xtrm/config/launch.json` role/default placement choose; do not manually join panes or apply layouts.
+
 ## Phase 0 — pre-loss sanity (use whenever touching sessions)
 
 Confirm the writer is armed, so recovery later is one command:

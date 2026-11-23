@@ -223,7 +223,7 @@ Several projects in one config: every launch, timer and cron sets `PM_PROJECT=<n
 | Where did we decide X? | `python3 <pack>/journal-search/scripts/jsearch.py "<words>"` |
 | What is the lane doing? | `tail -n 40 $PM_LANE_DIR/events.log` |
 | Is the status board sync healthy? | `journalctl --user -u status-board-sync` (look for `ASSERT-FAIL`) |
-| How does a service work? | its service-knowledge skill; `service-knowledge index query "<text>"` |
+| How does a service work? | First call `knowledge_evidence_for_files`, then `knowledge_search`; use `knowledge_status` when stale and `knowledge_drift` after recent changes. CLI fallback: `service-knowledge index query "<text>"`. |
 | How does a `sb` verb work? | `sb help <group>` |
 | Which tools should I be using? | `pm_session.py tools` |
 | What wakes this session, and how much does it message others? | `python3 <pack>/project-management/scripts/pm_wakes.py --session <name>` |

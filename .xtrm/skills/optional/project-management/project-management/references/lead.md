@@ -91,6 +91,11 @@ Merge-ready means: head SHA pasted from `gh`, checks green on that head, an `xtr
 - Close or confirm the close of each worker's issue (rule 54) in the same cycle; then reap an `xt` worker (`kill-pane` by id) or keep a specialist
   for its role's next issue. List live agents in every handoff.
 
+## Park and wake placement
+When `pm_park.py` wakes a parked lead, it starts `xt attach <worktree> --fresh` in the recorded `session:window` when that window still exists. If the window is gone, omit the explicit target and let `~/.xtrm/config/launch.json` role/default placement choose the destination. Use `--workers` for a worker pane, `--window` for a lead window, or `--pane <session:window|%pane>` for a manager/helper pane; do not manually join panes or apply layouts.
+
+A lead parks itself when its next wake is a known time or event more than about two hours away: tell the manager, write the handoff, then run `pm_park.py park <name> --ref <ref> --role lead (--at <UTC> | --check '<cmd>' --deadline <UTC>) --self --manager-told`. See continuity.md “Park and wake”.
+
 ## 8. Launching a lead
 
 The manager launches it from the main checkout, in its own tmux session:

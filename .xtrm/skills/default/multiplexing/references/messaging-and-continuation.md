@@ -1,5 +1,8 @@
 # Messaging and continuation
 
+A message to a parked session goes to its issue journal with `sb journal append <ref>`, never to its socket. `route_target.py --team` shows parked sessions separately. For placement, wake with `xt attach <worktree> --fresh` in the recorded `session:window`, or use `--workers`/`--pane <session/window|%pane>`; if the target is gone, omit it and let `~/.xtrm/config/launch.json` role/default placement choose.
+
+
 ## Message classes
 
 Use three intent classes regardless of transport:

@@ -14,7 +14,7 @@
 ## Session start (targeted — no bulk context dump)
 
 1. Read repo identity + non-negotiables at the top of the root agent guide first.
-2. Service/docs/project context: check `service-knowledge status` / `index stats` (rebuild when stale/absent), then `service-knowledge index query "<3-5 task terms>" --bundle`; read only the cited evidence. Skip repos without a service registry.
+2. Service/docs/project context: first call the service-knowledge tools `knowledge_evidence_for_files` before reading service source and `knowledge_search` before grep; use `knowledge_status` when stale and `knowledge_drift` for recently changed code. The `service-knowledge` CLI (`status`, `index query ... --bundle`) is the fallback when MCP tools are absent. Skip repos without a service registry.
 3. Executable work: discover the ready Issue revision, validate readiness, then claim it (`sb issue claim`) before edits. Resume continuing work via `sb issue resume` — never reconstruct state from chat alone.
 4. Catch up: Journal handoff/checkpoint refs, latest `xt report` handoffs, recent merged/closed PRs.
 5. If the runtime supports local task planning, use it for non-trivial work, synchronized with the active Issue claim.
