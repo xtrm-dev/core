@@ -20,6 +20,7 @@ import {
     stripDispatcherEnv,
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
+import { addPlacementOptions } from '../utils/launch-placement-options.js';
 import type { WorktreeInfo } from './worktree.js';
 
 /** Last-activity timestamp, for recency ordering. */
@@ -269,7 +270,7 @@ export function buildFreshLaunchOptions(
 }
 
 export function createAttachCommand(): Command {
-    return new Command('attach')
+    return addPlacementOptions(new Command('attach'))
         .description('Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session')
         .argument('[name]', 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")')
         .option('--fresh', 'Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding')
@@ -278,11 +279,7 @@ export function createAttachCommand(): Command {
         .option('--prompt <text|@file>', 'With --fresh: the initial user prompt, or @<file> to read it from a file')
         .option('--bead <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
         .option('--window', 'With --fresh, open a detached window in the current session; prints <session>:<pane_id>')
-        .option('--window-name <name>', 'With --fresh, name the detached tmux window')
-        .option('--pane <target>', 'With --fresh, split into an existing tmux window')
-        .option('--workers', 'With --fresh, place in a workers* window')
-        .option('--session <name>', 'With --fresh, select the tmux placement session')
-        .option('--layout <name>', 'With --fresh, select the tmux layout')
+
         .option('--new-session', 'With --fresh: force a new session')
         .option('--no-attach', 'With --fresh: create the session detached and print session:pane')
         .option('--parent <target>', 'With --fresh: @agent_parent_session of the pane (session name or id)')
