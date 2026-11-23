@@ -17,8 +17,10 @@ updated_at: 2026-11-23
 # Test Suites
 
 This repository does not have one test runner. Four suites run under three different
-runners, and CI runs all four. No single root script runs them in CI's order; the
-reason is at the end of this document.
+runners. CI runs three of them: it builds `packages/contracts` but never runs
+`npm run test:contracts`, so the 175 contracts tests are not run by CI (CORE-2785
+tracks the gap). No single root script runs the suites in CI's order; the reason is
+at the end of this document.
 
 Run every command from the repository root unless the working directory is named.
 
@@ -29,7 +31,7 @@ Run every command from the repository root unless the working directory is named
 | CLI | `npm test --workspace cli` | `cli/src/**/*.test.ts`, `cli/test/**/*.test.ts` |
 | Pi extensions | `bun test packages/pi-extensions` | `packages/pi-extensions/**/*.test.ts` (colocated and under `tests/`) |
 | Repository scripts | `npm run test:scripts` | `scripts/__tests__/*.test.mjs` |
-| Contracts | `npm run test:contracts` | `packages/contracts` (via `npm test --workspace @xtrm/contracts`) |
+| Contracts | `npm run test:contracts` | `packages/contracts` (via `npm test --workspace @xtrm/contracts`); **not run by CI** |
 
 CI also runs one command that is not a test suite:
 `node .xtrm/skills/default/engineering-quality/scripts/ocr-preflight.mjs selftest`
@@ -55,15 +57,17 @@ describe("XTRM-961 visibility probe", () => {
 });
 EOF
 
-$ bun test packages/pi-extensions | grep -c visibility
-1                                    # the runner that owns the tree sees it
-
 $ bun test packages/pi-extensions | tail -2
 Ran 1113 tests across 65 files       # 1112 / 64 without the file
 
 $ npx vitest run | grep -c visibility
 0                                    # the root command does not
 ```
+
+The bun proof is the count line, not a `grep`. On bun 1.3.5 in a non-TTY, `bun test`
+does not print the names of passing tests, so `grep -c visibility` prints `0` even
+when the runner ran the probe. The probe is visible as one more test and one more
+file: 1113 tests across 65 files with it, 1112 across 64 without it.
 
 Delete the probe afterwards. If a test must live somewhere none of the four suites
 covers, the fix is a glob in the owning runner's config or a move — not a new root
@@ -140,13 +144,15 @@ Treat the counts as a size, not a target. They move with every merge.
 3. `node .xtrm/skills/default/engineering-quality/scripts/ocr-preflight.mjs selftest`
 4. `bun test packages/pi-extensions`
 
-`npm run test:contracts` and `npm run build:contracts` run earlier in the workflow.
+`npm run build:contracts` runs earlier in the workflow. `npm run test:contracts` runs
+nowhere in `ci.yml`: CI builds `packages/contracts` and does not test it. Run it
+locally when a change touches that package (CORE-2785 tracks adding it to CI).
 `XTRM_TMP_STRICT: "1"` is set for the step because the temp-dir guard fails the job on
 a survivor on any platform that sets `TMPDIR`.
 
 ## No single root script
 
-There is deliberately no `npm test` that runs all four suites in CI's order.
+There is deliberately no `npm test` that runs the suites in CI's order.
 
 Each suite has its own runner (`vitest`, `bun test`, `node --test`), its own
 configuration, and its own environment requirements, and the Pi extensions suite is
@@ -156,7 +162,8 @@ definition of the test surface that can diverge from `ci.yml` silently — the s
 defect this document exists to describe. The workflow file is the single definition;
 this page names it and the commands it runs.
 
-Contributors who want everything should run the four commands in the order above.
+Contributors who want everything should run the three CI commands in the order above,
+then `npm run test:contracts`, which CI does not run.
 Contributors iterating on one package should run that package's command only.
 
 ## Related
