@@ -283,13 +283,38 @@ export interface PostReviewInput {
  * XTRM-962: the model a review body is allowed to name, derived rather than
  * remembered. `--model` and `$XTRM_REVIEW_MODEL` are documented as cross-checks
  * and win when set; otherwise the session's own `$PI_MODEL` — which the runtime
- * re-exports for every shell command — is the expectation. Returning null means
- * "nothing to compare against, so do not check", never "any model is fine".
+ * re-exports for every shell command — is the expectation.
+ *
+ * `null` means "this caller exposed no model", which `postReview` treats as
+ * "nothing to compare against". The reviewer command does not accept that
+ * answer: see `expectedModelForReview`, which every posting path goes through.
+ * `env` is a parameter rather than a default read of `process.env` so a caller
+ * can be pinned to the environment it was given.
  */
 export function resolveExpectedModel(opts: { model?: string } = {}, env: NodeJS.ProcessEnv = process.env): string | null {
     const explicit = String(opts.model ?? env.XTRM_REVIEW_MODEL ?? '').trim();
     if (explicit) return explicit;
     return (env.PI_MODEL ?? '').trim() || null;
+}
+
+/**
+ * XTRM-962 finding 1 (review 6015797868): fail closed on the reviewer path.
+ *
+ * `resolveExpectedModel` may answer null for a shell that runs no agent, and that
+ * is why `postReview` treats null as "nothing to compare against". But
+ * `xt identity review-post` is the only posting path — the `gh` shim forwards to
+ * it unconditionally (`cli/src/core/gh-shim.ts`, the `review` verb) — and it
+ * refuses every role except `reviewer` before it gets this far. A null here
+ * therefore means exactly one thing: a reviewer session that exposes no model.
+ * That is the state in which the #472 header posted unverified, so it is the
+ * state this function refuses rather than the one it tolerates.
+ */
+export const NO_SESSION_MODEL_REFUSAL = 'no session model to compare line 1 against: this reviewer session exposes neither $PI_MODEL nor $XTRM_REVIEW_MODEL, so a header naming any model would post unverified. Export $PI_MODEL (the launcher does), pass --model <model>, or stop here';
+
+export function expectedModelForReview(opts: { model?: string }, env: NodeJS.ProcessEnv): string {
+    const model = resolveExpectedModel(opts, env);
+    if (!model) throw new ReviewRefused(NO_SESSION_MODEL_REFUSAL);
+    return model;
 }
 
 export interface PostedReview {

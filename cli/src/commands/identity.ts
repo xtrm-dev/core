@@ -51,7 +51,7 @@ import {
     postReview,
     reviewReceiptArgs,
     sha12,
-    resolveExpectedModel,
+    expectedModelForReview,
     ReviewRefused,
     type ReviewVerdict,
 } from '../core/review-posting.js';
@@ -496,6 +496,17 @@ export function createIdentityCommand(): Command {
                 ? eventForOutcome(opts.verdict)
                 : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
             if (opts.verdict && !flagVerdict) fail(`--verdict ${opts.verdict} is not PASS, PARTIAL or FAIL`);
+            // XTRM-962 finding 1: the model cross-check fails closed here, before
+            // any token is minted, because this command is only reachable as the
+            // reviewer role (the check above) and the gh shim forwards every
+            // `gh pr review` to it. Placing it ahead of the token also makes the
+            // refusal observable without a GitHub App.
+            let expectedModel: string;
+            try {
+                expectedModel = expectedModelForReview(opts, process.env);
+            } catch (error) {
+                fail((error as Error).message);
+            }
             let token: string;
             try {
                 token = (await reviewerTokenFor(opts.repo, map)).token;
@@ -513,7 +524,7 @@ export function createIdentityCommand(): Command {
                     activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? '').trim() || null,
                     expectedHead: (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? '').trim() || null,
                     expectedVerdict: flagVerdict,
-                    expectedModel: resolveExpectedModel(opts),
+                    expectedModel,
                 }, { token, slug: appSlugForRole('reviewer', map), apiBase: DEFAULT_API_BASE });
                 let journaled: { ok: boolean; error?: string } | null = null;
                 if (posted.issueRef) journaled = runSb(reviewReceiptArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole('reviewer', map)));

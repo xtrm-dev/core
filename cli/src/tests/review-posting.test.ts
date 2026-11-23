@@ -29,6 +29,8 @@ import {
     type PostedReview,
     type PostReviewInput,
     resolveExpectedModel,
+    expectedModelForReview,
+    NO_SESSION_MODEL_REFUSAL,
 } from '../core/review-posting.js';
 
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01';
@@ -326,6 +328,31 @@ describe('postReview', () => {
         // No runtime model (an ordinary shell calling the shim): no guess.
         expect(resolveExpectedModel({}, {} as NodeJS.ProcessEnv)).toBe(null);
         expect(resolveExpectedModel({}, { PI_MODEL: '   ' } as NodeJS.ProcessEnv)).toBe(null);
+    });
+
+    it('derives the reviewer expectation from the environment it is handed, not from the process', () => {
+        // XTRM-962 finding 2 (review 6015797868): a helper that reads
+        // `process.env` behind an optional parameter is pinned by a caller that
+        // happens to agree with it. This test disagrees on purpose.
+        const saved = process.env.PI_MODEL;
+        process.env.PI_MODEL = 'process-wide-model';
+        try {
+            expect(expectedModelForReview({}, { PI_MODEL: 'from-the-argument' } as NodeJS.ProcessEnv))
+                .toBe('from-the-argument');
+            expect(expectedModelForReview({ model: 'flag' }, { PI_MODEL: 'from-the-argument' } as NodeJS.ProcessEnv))
+                .toBe('flag');
+        } finally {
+            if (saved === undefined) delete process.env.PI_MODEL;
+            else process.env.PI_MODEL = saved;
+        }
+    });
+
+    it('refuses to hand back a model nothing attests', () => {
+        // XTRM-962 finding 1: `null` is a legitimate answer for a shell, and it is
+        // the one answer the reviewer path may not act on.
+        expect(() => expectedModelForReview({}, {} as NodeJS.ProcessEnv)).toThrow(NO_SESSION_MODEL_REFUSAL);
+        expect(() => expectedModelForReview({}, { PI_MODEL: '  ' } as NodeJS.ProcessEnv)).toThrow(/Export \$PI_MODEL/);
+        expect(() => expectedModelForReview({}, { XTRM_REVIEW_MODEL: 'reviewer-x' } as NodeJS.ProcessEnv)).not.toThrow();
     });
 
     it('refuses a body whose header names a model the session is not running', async () => {
