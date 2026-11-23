@@ -6,7 +6,9 @@ other row types are skipped because new metadata rows appear every release.
 The transcript layout is internal and undocumented: the drift guards turn a
 silent mis-detection into 'unknown'.
 """
-import json, os, re
+import json
+import os
+import re
 
 TAIL = 262144          # first read: the last 256 KB
 TAIL_MAX = 4194304     # widen to 4 MB when one long turn holds no user row

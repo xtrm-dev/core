@@ -181,7 +181,7 @@ def main() -> None:
 
     if STRICT:
         print(f"{RED}[skill-hook] SKILL_HOOK_STRICT=1: blocking push until skills are updated.{NC}")
-        print(f"[skill-hook] Bypass: git push --no-verify")
+        print("[skill-hook] Bypass: git push --no-verify")
         print()
         sys.exit(1)
     else:

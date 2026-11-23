@@ -1,7 +1,11 @@
 """A stand-in worker: reads stdin, sleeps FAKE_DELAY, prints one JSON result.
 FAKE_STDIN_DUMP: write the stdin payload there. FAKE_PATH: name this path in the result. FAKE_NUDGE_LEN: pad the nudge.
 FAKE_PIDFILE: write a pid file. FAKE_GRANDCHILD: spawn a `sleep` child and write its pid to that file."""
-import json, os, subprocess, sys, time
+import json
+import os
+import subprocess
+import sys
+import time
 payload = sys.stdin.read()
 if os.environ.get("FAKE_STDIN_DUMP"):
     open(os.environ["FAKE_STDIN_DUMP"], "w").write(payload)

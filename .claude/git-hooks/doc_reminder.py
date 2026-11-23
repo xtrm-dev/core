@@ -52,12 +52,12 @@ def main() -> None:
         print()
         print(f"{YELLOW}[doc-hook] ⚠  Source changes staged without SSOT updates.{NC}")
         print(f"{BLUE}[doc-hook]    If this commit changes behavior or architecture, run /documenting first.{NC}")
-        print(f"[doc-hook]    Changed source paths:")
+        print("[doc-hook]    Changed source paths:")
         for f in source_changed[:6]:
             print(f"[doc-hook]      - {f}")
         if len(source_changed) > 6:
             print(f"[doc-hook]      ... and {len(source_changed) - 6} more")
-        print(f"[doc-hook]    Commit proceeds — this is a reminder, not a block.")
+        print("[doc-hook]    Commit proceeds — this is a reminder, not a block.")
         print()
 
     sys.exit(0)

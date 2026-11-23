@@ -95,7 +95,6 @@ def get_pack_path(project_root: str | None = None) -> Path | None:
         env_root = os.environ.get("CLAUDE_PROJECT_DIR")
         project_root = env_root or get_project_root()
 
-    root = Path(project_root)
     packs_root = _packs_root(project_root)
     env_pack = os.environ.get("XTRM_PACK")
 

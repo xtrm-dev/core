@@ -93,7 +93,7 @@ def check_ruff(file_path: str, project_root: str, autofix: bool = False) -> tupl
                     log_success('Ruff auto-fixed all issues!')
                     autofixes.append('Ruff auto-fixed linting issues')
                 else:
-                    errors.append(f'Ruff found issues that could not be auto-fixed')
+                    errors.append('Ruff found issues that could not be auto-fixed')
                     errors.extend(result.stdout.strip().split('\n'))
             else:
                 errors.append(f'Ruff found linting issues in {os.path.basename(file_path)}')
@@ -254,7 +254,7 @@ def extract_file_path(input_data: dict) -> str | None:
 def main():
     """Main entry point"""
     print('')
-    print(f'📦 Python Quality Check - Starting...')
+    print('📦 Python Quality Check - Starting...')
     print('─────────────────────────────────────')
     
     # Parse input
