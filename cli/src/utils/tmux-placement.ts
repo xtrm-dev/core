@@ -109,7 +109,7 @@ function workersTarget(session: string | undefined, maxPanes: number, deps: Plac
     const listing = tmuxCall(['list-windows', '-t', session, '-F', '#{window_id}\t#{window_name}\t#{window_panes}'], deps);
     const windows = listing.split(/\r?\n/).map(line => line.split('\t')).filter(row => row.length >= 3);
     for (const [id, name, count] of windows) {
-        if (name.startsWith('workers') && Number(count) < maxPanes) return { target: id, name };
+        if (/^workers(?:-\d+)?$/.test(name) && Number(count) < maxPanes) return { target: id, name };
     }
     const numbered = windows.reduce((highest, [, name]) => {
         const match = /^workers-(\d+)$/.exec(name);

@@ -30,7 +30,7 @@ import {
     resolveTmuxSessionId,
     XTRM_SESSION_ID_VAR,
 } from '../core/session-identity.js';
-import { resolvePlacement, validateLayout, type PlacementKind } from './tmux-placement.js';
+import { resolvePlacement, validateLayout, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
 
 /**
  * Hard ceiling for the turn-1 shell command length. tmux new-session refuses
@@ -249,6 +249,7 @@ export interface WorktreeSessionOptions {
      * dispatcher comes from the worktree's own launch binding, not from the caller.
      */
     existingWorktree?: ExistingWorktree;
+    placement?: ResolvedPlacement;
 }
 
 /** An xt worktree a fresh session is started in (CORE-2775). */
@@ -3495,7 +3496,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
     // Validate placement configuration before creating or mutating a worktree.
     validateLayout(opts.layout);
-    resolvePlacement({
+    const resolvedPlacement = resolvePlacement({
         role: roleName,
         pane: opts.pane,
         workers: opts.workers,
@@ -3802,6 +3803,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         hasInitialPrompt,
         dispatcherDeps: opts.dispatcherDeps,
         restoredDispatcher: existing?.dispatcher,
+        placement: resolvedPlacement,
     };
 
     if (resolvedRole) {
@@ -3945,6 +3947,7 @@ type TmuxLaunchArgs = {
     dispatcherDeps?: DispatcherIdentityDeps;
     /** CORE-2775: the dispatcher restored from the worktree's binding (fresh session); absent for a first launch. */
     restoredDispatcher?: Record<string, string>;
+    placement?: ResolvedPlacement;
 } & (
     | {
         mode: 'role';
@@ -3965,7 +3968,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
 
     const insideTmux = Boolean(process.env.TMUX);
     validateLayout(layout);
-    const placement = resolvePlacement({ role: args.mode === 'role' ? args.requestedRole ?? args.role.name : undefined, pane, workers, window, windowName, session, layout, newSession, insideTmux });
+    const placement = args.placement ?? resolvePlacement({ role: args.mode === 'role' ? args.requestedRole ?? args.role.name : undefined, pane, workers, window, windowName, session, layout, newSession, insideTmux });
     const placementKind: PlacementKind = placement.kind;
     const placementWindow = placementKind === 'window' || placementKind === 'workers';
     const placementTargeted = placementKind === 'pane' || placementKind === 'workers';
@@ -4219,9 +4222,11 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const identitySession = placement.kind === 'pane' && placement.target
         ? (placement.target.includes(':') ? placement.target.split(':', 1)[0] : undefined)
         : placement.session;
-    const targetSessionIdentity = identitySession
-        ? resolveTmuxSessionIdentity(identitySession)
-        : null;
+    const targetSessionIdentity = placement.kind === 'pane' && placement.target
+        ? resolveTmuxSessionIdentity(placement.target)
+        : identitySession
+            ? resolveTmuxSessionIdentity(identitySession)
+            : null;
     const windowIdentity = (effectiveWindow || placement.kind === 'pane')
         ? targetSessionIdentity ?? resolveCurrentTmuxSessionIdentity()
         : null;
@@ -4285,7 +4290,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         process.exit(1);
     };
     // Same transport either way; only the tmux verb and target differ.
-    const targetSession = placement.session ?? currentTmuxSessionId() ?? plan.sessionName;
+    const targetSession = placement.session || currentTmuxSessionId() || plan.sessionName;
     const createArgs = placementKind === 'pane'
         ? ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', placement.target ?? targetSession, '-c', worktreePath]
         : placementKind === 'workers' && placement.existingWindow

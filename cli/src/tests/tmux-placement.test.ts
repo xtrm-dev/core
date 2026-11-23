@@ -69,12 +69,37 @@ describe('tmux placement', () => {
         expect(result.kind).toBe('session');
     });
 
+    it('rolls over to workers-2 and workers-3 at the cap', () => {
+        const deps = { exists: () => false, tmux: () => ({ status: 0, stdout: '@1\tworkers\t4\n@2\tother\t1' }) };
+        expect(resolvePlacement({ workers: true, session: 'project', insideTmux: true }, deps)).toMatchObject({ windowName: 'workers-2' });
+        const deps3 = { exists: () => false, tmux: () => ({ status: 0, stdout: '@1\tworkers\t4\n@2\tworkers-2\t4' }) };
+        expect(resolvePlacement({ workers: true, session: 'project', insideTmux: true }, deps3)).toMatchObject({ windowName: 'workers-3' });
+    });
+
+    it('resolves current placement without reading the host config', () => {
+        expect(resolvePlacement({ insideTmux: true }, { exists: () => false })).toMatchObject({ kind: 'current' });
+    });
+
+    it('rejects bad config naming the file', () => {
+        expect(() => resolvePlacement({ insideTmux: true }, { exists: () => true, readFile: () => '{bad', home: '/tmp/test-home' })).toThrow(/invalid launch config/);
+    });
+
+    it('honors workersMaxPanes', () => {
+        const result = resolvePlacement({ workers: true, session: 'project', insideTmux: true }, {
+            exists: () => true,
+            readFile: () => JSON.stringify({ version: 1, workersMaxPanes: 2, placement: {} }),
+            tmux: () => ({ status: 0, stdout: '@1\tworkers\t2' }),
+        });
+        expect(result.windowName).toBe('workers-2');
+    });
+
     it('preserves outside-tmux defaults unless an explicit session exists', () => {
-        expect(resolvePlacement({ window: true, insideTmux: false })).toMatchObject({ kind: 'session' });
+        expect(resolvePlacement({ window: true, insideTmux: false }, { exists: () => false })).toMatchObject({ kind: 'session' });
         expect(resolvePlacement({ role: 'lead', insideTmux: false }, {
             exists: () => true,
             readFile: () => JSON.stringify({ version: 1, placement: { lead: 'window' } }),
         })).toMatchObject({ kind: 'session' });
+        expect(resolvePlacement({ role: 'lead', insideTmux: false }, { exists: () => false })).toMatchObject({ kind: 'session' });
         expect(resolvePlacement({ role: 'lead', insideTmux: false }, {
             exists: () => true,
             readFile: () => JSON.stringify({ version: 1, session: 'project', placement: { lead: 'window' } }),

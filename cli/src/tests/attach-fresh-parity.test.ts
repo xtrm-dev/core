@@ -60,7 +60,7 @@ function install(repoRoot: string, cap: Capture): void {
       if (args[0] === 'new-session') { cap.newSessionArgs = [...args]; return ok(); }
       if (args[0] === 'display-message') {
         if (joined.includes('#{pane_id}')) return ok('%9\n');
-        if (joined.includes('#{session_id}')) return ok('$3\n');
+        if (joined.includes('#{session_id}')) return ok('$3\tcur-sess\n');
         return ok('cur-sess\n');
       }
       if (args[0] === 'list-panes') return ok('%17\n');
@@ -129,14 +129,14 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     await fs.remove(tempRoot);
   });
 
-  async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}, bead?: string, noPrompt = false): Promise<Capture & { env: Record<string, string>; args: string[] }> {
+  async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}, bead?: string, noPrompt = false, placement?: { pane?: string; workers?: boolean }): Promise<Capture & { env: Record<string, string>; args: string[] }> {
     const cap: Capture = { newSessionArgs: null, payload: null, paneOptions: {}, gitCalls: [] };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const slug = 'par1';
     const worktree = path.join(repoRoot, '.xtrm', 'worktrees', `repo-xt-${runtime}-${slug}`);
     if (existing) await fs.ensureDir(worktree);
-    const common = { runtime, role: 'testrole', model: 'claude-opus-5', ...(noPrompt ? {} : { prompt: 'hello' }), attach: false, newSession: true, parent: '$3', ...(bead ? { bead } : {}) } as const;
+    const common = { runtime, role: 'testrole', model: 'claude-opus-5', ...(noPrompt ? {} : { prompt: 'hello' }), attach: false, newSession: true, parent: '$3', ...(bead ? { bead } : {}), ...(placement ?? {}) } as const;
     await expect(launchWorktreeSession(existing
       ? { ...common, existingWorktree: { path: worktree, branch: `xt/${slug}`, slug, dispatcher } }
       : { ...common, name: slug })).rejects.toThrow('exit:0');
@@ -165,6 +165,23 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
       expect(fresh.args).toContain('--model');
     });
   }
+
+  it('preserves env and pane metadata for pane and workers placement', async () => {
+    const normal = await launch('claude', false);
+    vi.resetModules(); mocked.spawnSync.mockReset();
+    const dispatcher = Object.fromEntries(['XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_DISPATCHER_PARTICIPANT'].filter((k) => k in normal.env).map((k) => [k, normal.env[k]]));
+    const pane = await launch('claude', true, dispatcher, undefined, false, { pane: '$3:workers' });
+    const withoutTmuxIds = (env: Record<string, string>) => Object.fromEntries(Object.entries(env).filter(([key]) => !['XTRM_SESSION_ID', 'XTRM_SESSION_NAME'].includes(key)));
+    expect(withoutTmuxIds(pane.env)).toEqual(withoutTmuxIds(normal.env));
+    expect(pane.paneOptions).toEqual(normal.paneOptions);
+    vi.resetModules(); mocked.spawnSync.mockReset();
+    const paneId = await launch('claude', true, dispatcher, undefined, false, { pane: '%9' });
+    expect(withoutTmuxIds(paneId.env)).toEqual(withoutTmuxIds(normal.env));
+    expect(paneId.paneOptions).toEqual(normal.paneOptions);
+    const workers = await launch('claude', true, dispatcher, undefined, false, { workers: true });
+    expect(withoutTmuxIds(workers.env)).toEqual(withoutTmuxIds(normal.env));
+    expect(workers.paneOptions).toEqual(normal.paneOptions);
+  });
 
   it('with a bead: env, runtime args and pane options (XTMUX_AGENT_BEAD, @agent_bead, bead-derived session name) equal a normal --role --bead launch', async () => {
     // A normal --role --bead launch renders the task as turn 1; --fresh takes the bead as metadata and the
