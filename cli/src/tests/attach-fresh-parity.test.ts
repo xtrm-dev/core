@@ -26,6 +26,7 @@ const ROLE_SPEC = JSON.stringify({
 
 interface Capture {
   newSessionArgs: string[] | null;
+  placementArgs: string[][];
   payload: { runtimeArgs?: string[] } | null;
   paneOptions: Record<string, string>;
   gitCalls: string[];
@@ -58,12 +59,15 @@ function install(repoRoot: string, cap: Capture): void {
     if (command === 'tmux') {
       if (args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
       if (args[0] === 'new-session') { cap.newSessionArgs = [...args]; return ok(); }
+      if (args[0] === 'split-window' || args[0] === 'new-window') { cap.placementArgs.push([...args]); cap.newSessionArgs = [...args]; return ok('%77\n'); }
       if (args[0] === 'display-message') {
         if (joined.includes('#{pane_id}')) return ok('%9\n');
-        if (joined.includes('#{session_id}')) return ok('$3\tcur-sess\n');
+        if (joined.includes('#{session_id}')) return ok(args.includes('other-sess:workers') || args.includes('%9') ? '$9\tother-sess\n' : '$3\n');
+        if (args.some((arg) => arg.includes('#{window_id}'))) return ok('@1\n');
         return ok('cur-sess\n');
       }
       if (args[0] === 'list-panes') return ok('%17\n');
+      if (args[0] === 'list-windows') return ok('@1\tworkers\t1\n');
       if (args[0] === 'set-option') { cap.paneOptions[args[4]] = args[5]; return ok(); }
       if (args[0] === 'load-buffer') {
         const input = (mo as { input?: string }).input;
@@ -130,7 +134,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
   });
 
   async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}, bead?: string, noPrompt = false, placement?: { pane?: string; workers?: boolean }): Promise<Capture & { env: Record<string, string>; args: string[] }> {
-    const cap: Capture = { newSessionArgs: null, payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const slug = 'par1';
@@ -167,20 +171,32 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
   }
 
   it('preserves env and pane metadata for pane and workers placement', async () => {
+    const previousTmux = process.env.TMUX;
+    process.env.TMUX = '/tmp/tmux,123,1';
     const normal = await launch('claude', false);
     vi.resetModules(); mocked.spawnSync.mockReset();
     const dispatcher = Object.fromEntries(['XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_DISPATCHER_PARTICIPANT'].filter((k) => k in normal.env).map((k) => [k, normal.env[k]]));
-    const pane = await launch('claude', true, dispatcher, undefined, false, { pane: '$3:workers' });
-    const withoutTmuxIds = (env: Record<string, string>) => Object.fromEntries(Object.entries(env).filter(([key]) => !['XTRM_SESSION_ID', 'XTRM_SESSION_NAME'].includes(key)));
-    expect(withoutTmuxIds(pane.env)).toEqual(withoutTmuxIds(normal.env));
+    const pane = await launch('claude', true, dispatcher, undefined, false, { pane: 'other-sess:workers' });
+    expect(pane.placementArgs.some((args) => args[0] === 'split-window' && args.includes('other-sess:workers'))).toBe(true);
+    expect(pane.env.XTRM_SESSION_ID).toBe('$9');
+    expect(pane.env.XTRM_SESSION_NAME).toBe('other-sess');
+    expect(pane.env).toEqual(expect.objectContaining({ ...normal.env, XTRM_SESSION_ID: '$9', XTRM_SESSION_NAME: 'other-sess' }));
+    expect(pane.args).toEqual(normal.args);
     expect(pane.paneOptions).toEqual(normal.paneOptions);
     vi.resetModules(); mocked.spawnSync.mockReset();
     const paneId = await launch('claude', true, dispatcher, undefined, false, { pane: '%9' });
-    expect(withoutTmuxIds(paneId.env)).toEqual(withoutTmuxIds(normal.env));
+    expect(paneId.placementArgs.some((args) => args[0] === 'split-window' && args.includes('%9'))).toBe(true);
+    expect(paneId.env.XTRM_SESSION_ID).toBe('$9');
+    expect(paneId.env.XTRM_SESSION_NAME).toBe('other-sess');
+    expect(paneId.args).toEqual(normal.args);
     expect(paneId.paneOptions).toEqual(normal.paneOptions);
     const workers = await launch('claude', true, dispatcher, undefined, false, { workers: true });
-    expect(withoutTmuxIds(workers.env)).toEqual(withoutTmuxIds(normal.env));
+    expect(workers.placementArgs.some((args) => args[0] === 'split-window' || args[0] === 'new-window')).toBe(true);
+    expect(workers.env.XTRM_SESSION_ID).toBe('$3');
+    expect(workers.env.XTRM_SESSION_NAME).toBe('cur-sess');
+    expect(workers.args).toEqual(normal.args);
     expect(workers.paneOptions).toEqual(normal.paneOptions);
+    if (previousTmux === undefined) delete process.env.TMUX; else process.env.TMUX = previousTmux;
   });
 
   it('with a bead: env, runtime args and pane options (XTMUX_AGENT_BEAD, @agent_bead, bead-derived session name) equal a normal --role --bead launch', async () => {
@@ -209,7 +225,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
 
   it('exports the dispatcher restored from the binding, not the caller\'s', async () => {
     process.env.XTRM_DISPATCHER_NAME = 'caller-session';
-    const cap: Capture = { newSessionArgs: null, payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const worktree = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-claude-par1');
@@ -228,7 +244,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
   });
 
   it('refuses a worktree that does not exist', async () => {
-    const cap: Capture = { newSessionArgs: null, payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(launchWorktreeSession({
