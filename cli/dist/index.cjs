@@ -64838,6 +64838,17 @@ var ISSUE_REF_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/;
 function isSafeIssueRef(ref) {
   return ISSUE_REF_PATTERN.test((ref ?? "").trim());
 }
+function resolveExpectedModel(opts = {}, env3 = process.env) {
+  const explicit = String(opts.model ?? env3.XTRM_REVIEW_MODEL ?? "").trim();
+  if (explicit) return explicit;
+  return (env3.PI_MODEL ?? "").trim() || null;
+}
+var NO_SESSION_MODEL_REFUSAL = "no session model to compare line 1 against: this reviewer session exposes neither $PI_MODEL nor $XTRM_REVIEW_MODEL, so a header naming any model would post unverified. Export $PI_MODEL (the launcher does), pass --model <model>, or stop here";
+function expectedModelForReview(opts, env3) {
+  const model = resolveExpectedModel(opts, env3);
+  if (!model) throw new ReviewRefused(NO_SESSION_MODEL_REFUSAL);
+  return model;
+}
 var ReviewRefused = class extends Error {
   constructor(message) {
     super(message);
@@ -81610,7 +81621,7 @@ function createIdentityCommand() {
 `);
     }
   });
-  identity.command("review-post").description("Post one formal review: head, model and verdict come from the body (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository (the shim passes it; cwd is only a fallback)").requiredOption("--pr <number>", "Pull request number").option("-b, --body <text>", "The review body: line 1 header, findings, one verdict line").option("--body-file <file>", "Read the review body from a file").option("--head <sha>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_HEAD)").option("--verdict <outcome>", "Cross-check only: must agree with the body's verdict line").option("--approve", "Cross-check: must agree with a PASS body", false).option("--request-changes", "Cross-check: must agree with a FAIL body", false).option("--comment", "Cross-check: must agree with a PARTIAL body", false).option("--model <model>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL)").option("--json", "Emit JSON", false).action(async (opts) => {
+  identity.command("review-post").description("Post one formal review: head, model and verdict come from the body (called by the gh shim)").requiredOption("--repo <owner/name>", "Repository (the shim passes it; cwd is only a fallback)").requiredOption("--pr <number>", "Pull request number").option("-b, --body <text>", "The review body: line 1 header, findings, one verdict line").option("--body-file <file>", "Read the review body from a file").option("--head <sha>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_HEAD)").option("--verdict <outcome>", "Cross-check only: must agree with the body's verdict line").option("--approve", "Cross-check: must agree with a PASS body", false).option("--request-changes", "Cross-check: must agree with a FAIL body", false).option("--comment", "Cross-check: must agree with a PARTIAL body", false).option("--model <model>", "Cross-check only: must agree with line 1 (default: $XTRM_REVIEW_MODEL, else the session's $PI_MODEL)").option("--json", "Emit JSON", false).action(async (opts) => {
     const holder = (process.env[SUBSTRATE_HOLDER_VAR] ?? "").trim();
     if (!holder) fail2("no agent identity: SUBSTRATE_HOLDER is unset, so a review cannot be attributed");
     const { role, map: map2 } = effectiveRole();
@@ -81631,6 +81642,12 @@ function createIdentityCommand() {
     }
     const flagVerdict = opts.verdict ? eventForOutcome(opts.verdict) : eventForFlags({ approve: opts.approve, requestChanges: opts.requestChanges, comment: opts.comment });
     if (opts.verdict && !flagVerdict) fail2(`--verdict ${opts.verdict} is not PASS, PARTIAL or FAIL`);
+    let expectedModel;
+    try {
+      expectedModel = expectedModelForReview(opts, process.env);
+    } catch (error62) {
+      fail2(error62.message);
+    }
     let token;
     try {
       token = (await reviewerTokenFor(opts.repo, map2)).token;
@@ -81648,7 +81665,7 @@ function createIdentityCommand() {
         activationId: (process.env.SUBSTRATE_ACTIVATION_ID ?? "").trim() || null,
         expectedHead: (opts.head ?? process.env.XTRM_REVIEW_HEAD ?? "").trim() || null,
         expectedVerdict: flagVerdict,
-        expectedModel: (opts.model ?? process.env.XTRM_REVIEW_MODEL ?? "").trim() || null
+        expectedModel
       }, { token, slug: appSlugForRole("reviewer", map2), apiBase: DEFAULT_API_BASE });
       let journaled = null;
       if (posted.issueRef) journaled = runSb(reviewReceiptArgs(posted, { repo: opts.repo, pr, body, holder, runId: resolveAgentRunId() }, posted.issueRef, appSlugForRole("reviewer", map2)));
