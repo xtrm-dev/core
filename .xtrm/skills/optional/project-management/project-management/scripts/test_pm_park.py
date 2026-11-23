@@ -69,6 +69,8 @@ class Fake:
         if a0 == "tmux":
             sub = args[1]
             if sub == "display-message":
+                if "window_id" in args[-1]:
+                    return cp(out="@1")
                 return cp(out="sess" if "session_name" in args[-1] else self.pane_dead)
             if sub in ("new-window", "new-session"):
                 return cp(self.tmux_new_rc, out="%9\n", err="can't find session" if self.tmux_new_rc else "")
@@ -211,7 +213,7 @@ class ParkWrites(Base):
         rec = self.rec()
         self.assertEqual((rec["name"], rec["role"], rec["ref"], rec["state"]), ("lead-a", "lead", "CORE-1", "parked"))
         self.assertEqual((rec["pane_id"], rec["tmux_target"], rec["handoff_seq"], rec["park_seq"]),
-                         ("%3", "sess:", 2, 11))
+                         ("%3", "sess:@1", 2, 11))
         self.assertEqual(rec["park_time"], "2026-11-22T12:00:00Z")
         self.assertEqual(rec["unit"], "pm-park-lead-a")
         sd = [c[0] for c in self.fake.calls if c[0][0] == "systemd-run"][0]
@@ -381,8 +383,9 @@ class Wake(Base):
         self.assertEqual((rec["state"], rec["wake_pane"], rec["attempts"]), ("woken", "%9", 0))
         cmd = self.xt_call()
         self.assertEqual(cmd[:3], ["xt", "attach", self.wt.name])
-        for flag in ("--fresh", "--new-session", "--no-attach"):
+        for flag in ("--fresh", "--no-attach", "--pane", "sess:@1"):
             self.assertIn(flag, cmd)
+        self.assertNotIn("--new-session", cmd)
         self.assertNotIn("--bead", cmd)  # the parked pane had no @agent_bead, so the wake gives none
         self.assertNotIn("--role", cmd)  # nor an @agent_role: a bare launch stays bare
         nudge_file = pm_park.parked_dir() / "lead-a.nudge.md"

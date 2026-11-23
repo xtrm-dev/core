@@ -50,7 +50,7 @@ describe('withRestoredDispatcher', () => {
 describe('freshOnlyOptions', () => {
   it('names every fresh-only option that was given, and nothing for a plain attach', () => {
     expect(freshOnlyOptions({ attach: true })).toEqual([]);
-    expect(freshOnlyOptions({ role: 'r', model: 'm', prompt: 'p', bead: 'b', window: true, newSession: true, parent: '$1', attach: false, yolo: false }))
-      .toEqual(['--role', '--model', '--prompt', '--bead', '--window', '--new-session', '--parent', '--no-attach', '--no-yolo']);
+    expect(freshOnlyOptions({ role: 'r', model: 'm', prompt: 'p', bead: 'b', window: true, newSession: true, pane: 's:w', workers: true, windowName: 'workers', session: 's', layout: 'tiled', parent: '$1', attach: false, yolo: false }))
+      .toEqual(['--role', '--model', '--prompt', '--bead', '--window', '--new-session', '--pane', '--workers', '--window-name', '--session', '--layout', '--parent', '--no-attach', '--no-yolo']);
   });
 });

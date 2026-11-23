@@ -57,6 +57,11 @@ export function createClaudeCommand(): Command {
         .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one')
         .option('--subordinate', 'Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch')
         .option('--window', 'Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>')
+        .option('--window-name <name>', 'Name the detached tmux window (with --window)')
+        .option('--pane <target>', 'Split into an existing tmux window (session:window, window name, or pane id)')
+        .option('--workers', 'Place in the first workers* window with capacity, or create the next workers window')
+        .option('--session <name>', 'Tmux session used as the placement target')
+        .option('--layout <name>', 'Tmux layout for --pane/--workers (default: tiled)')
         .option('--base <ref>', 'Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)')
         .allowExcessArguments(true)
         .allowUnknownOption(true)
@@ -66,6 +71,11 @@ Passthrough:
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
   --append-system-prompt, --skill) are rejected; batch-mode flags (--print,
   --list-models, --export, --mode) are dropped with a warning.
+
+Placement defaults may be configured in ~/.xtrm/config/launch.json (or the path
+in XTRM_LAUNCH_CONFIG), for example:
+  { "version": 1, "workersMaxPanes": 4, "placement": { "worker": "workers" } }
+Explicit --pane, --workers, --window, --new-session and --session options win.
 
 Examples:
   $ xt claude demo --no-attach --prompt 'inspect the failing build' --model claude-opus-4-8
@@ -95,6 +105,11 @@ Examples:
             subordinate?: boolean;
             base?: string;
             window?: boolean;
+            windowName?: string;
+            pane?: string;
+            workers?: boolean;
+            session?: string;
+            layout?: string;
         }) => {
             // claude has no --thinking flag; if the operator was explicit,
             // warn and continue (specialist.execution.thinking_level from
@@ -124,6 +139,11 @@ Examples:
                 subordinate: Boolean(opts.subordinate),
                 base: opts.base,
                 window: opts.window,
+                windowName: opts.windowName,
+                pane: opts.pane,
+                workers: opts.workers,
+                session: opts.session,
+                layout: opts.layout,
                 passthrough,
             });
         });

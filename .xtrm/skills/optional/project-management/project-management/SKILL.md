@@ -135,7 +135,7 @@ The same judgment over many items is an AgentRun workflow (`references/agentrun.
 - Every worker gets its own attested issue before launch; the contract is its brief.
 - **Roster.** One tmux session per project, the manager's: the manager window holds the manager and its helpers (board helper, timers) as
   panes; each lead has its own window; `xt` workers go in tiled `workers` windows (at most 4 panes each); specialists have no pane.
-- Launch `xt pi <name> --window` from the MAIN checkout, then `tmux join-pane -d -s <pane> -t <target>` and `tmux select-layout tiled`.
+- Launch `xt pi <name> --workers` from the MAIN checkout to place the worker directly in a tiled `workers*` window. Use `--window` for a lead window, `--pane <target>` for a manager/helper pane, and `--session <name>` to select the project session. Placement defaults can be set in `~/.xtrm/config/launch.json`; explicit flags override defaults.
 - **Reaping.** When its issue closes with a result: confirm the `result` entry, then `tmux kill-pane -t <pane-id>` (never `kill-window`, it can
   close the manager), or keep a specialist for its role's next issue and stop it when none is queued.
 - Every handoff lists each live pane's reap condition and the open windows (`references/launching.md`, "Reaping").
