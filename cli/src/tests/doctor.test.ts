@@ -128,6 +128,14 @@ function buildReport(overrides: Partial<Awaited<ReturnType<typeof getXtManagedPi
 }
 
 describe('xt doctor command', () => {
+  it('prints the bundle state, so a stale binary is visible before anyone trusts it (CORE-2754)', async () => {
+    getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
+
+    const textLogs = await runDoctorCli([]);
+    // `fresh` / `STALE` / `unknown` all start a line; deleting the Build section leaves none.
+    expect(textLogs.join('\n')).toMatch(/^\s*(fresh|STALE|unknown) — /m);
+  });
+
   it('names the Claude Code consequence when the claude CLI is missing, without failing doctor (CORE-2591)', async () => {
     getXtManagedPiPackageDoctorReportMock.mockResolvedValue(buildReport());
     const exitCodeBefore = process.exitCode;

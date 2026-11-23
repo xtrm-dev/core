@@ -3,6 +3,11 @@ import fs from 'fs-extra';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kleur from 'kleur';
+import { formatBundleFreshness, readBundleFreshness } from '../core/bundle-freshness.js';
+
+// __dirname is available in CJS output (tsup target: cjs), as in src/commands/version.ts.
+declare const __dirname: string;
+
 import Table from 'cli-table3';
 import { checkDrift, type DriftReport } from '../core/drift.js';
 import { checkRuntimeSkillsViews, type RuntimeViewCheckResult } from '../core/skills-runtime-views.js';
@@ -90,6 +95,7 @@ interface LegacyMigrationSection {
 }
 
 interface DoctorJson {
+  bundle: ReturnType<typeof readBundleFreshness>;
   catB: CatBJson;
   piPackages: XtManagedPiPackageDoctorReport;
   updates: {
@@ -762,7 +768,9 @@ export function createDoctorCommand(): Command {
       const legacyMigrationRequired = legacyMigration.status !== 'clean';
       const claudeChannels = buildClaudeChannelsSection();
       const claudeRoute = buildClaudeRouteSection(piPackages);
+      const bundle = readBundleFreshness({ cliRoot: path.resolve(__dirname, '..') });
       const doctorJson: DoctorJson = {
+        bundle,
         catB,
         piPackages,
         updates: {
@@ -789,6 +797,13 @@ export function createDoctorCommand(): Command {
       }
 
       console.log(`\n${kleur.bold('xt doctor')}\n`);
+      section('Build');
+      // An installed package ships `dist/` and no `src/`, so `unknown` is the normal state
+      // there, not a warning: printing it through `warn` would make every run on a machine
+      // that installed from npm look broken.
+      if (bundle.state === 'fresh') ok(formatBundleFreshness(bundle));
+      else if (bundle.state === 'stale') warn(formatBundleFreshness(bundle));
+      else console.log(kleur.dim(`  ${formatBundleFreshness(bundle)}`));
       section('Runtime availability');
       const claudeAvailable = spawnSync('claude', ['--version'], { stdio: 'ignore' }).status === 0;
       const piAvailable = spawnSync('pi', ['--version'], { stdio: 'ignore' }).status === 0;
