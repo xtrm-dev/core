@@ -283,6 +283,8 @@ def park(a: argparse.Namespace) -> int:
     if not pathlib.Path(worktree).is_dir():
         raise ParkError(f"refused: worktree {worktree} is not a directory")
     session = tmux_fact(pane, "#{session_name}") if pane else None
+    window = tmux_fact(pane, "#{window_name}") if pane else None
+    placement = f"{session}:{window}" if session and window else None
     # The launch role is what the relaunch needs to give the woken session the same role, system prompt and pane
     # role. A readable pane without @agent_role is a bare launch (no role); an unreadable pane cannot say.
     if a.launch_role:
@@ -302,7 +304,7 @@ def park(a: argparse.Namespace) -> int:
            # launched for otherwise comes back from the worktree's own record.
            "agent_bead": pane_option(pane, "@agent_bead"),
            "parent_session": pane_option(pane, "@agent_parent_session"),
-           "runtime": recorded_runtime(worktree, a.runtime), "model": a.model, "tmux_target": f"{session}:" if session else None,
+           "runtime": recorded_runtime(worktree, a.runtime), "model": a.model, "tmux_target": placement,
            "pane_id": pane, "park_time": fmt(t0), "handoff_seq": handoff_seq, "park_seq": None, "wake": wake,
            "reason": a.reason, "self": bool(a.self), "unit": unit_name(a.name), "state": "parked", "attempts": 0,
            "gate_waits": 0, "retry_s": setting_int("PM_PARK_RETRY_S", 300), "wake_time": None, "wake_cause": None,
@@ -445,10 +447,15 @@ def xt_command(rec: dict, nudge_file: pathlib.Path) -> list[str]:
     """The one launch: `xt attach <worktree> --fresh` with the facts recorded at park time. Nothing of the
     environment, the runtime arguments or the pane options is built here."""
     cmd = [str(pm_config.get("PM_PARK_XT") or "xt"), "attach", rec.get("xt_name") or pathlib.Path(rec["worktree"]).name,
-           "--fresh", "--new-session", "--no-attach", "--prompt", f"@{nudge_file}"]
+           "--fresh", "--no-attach", "--prompt", f"@{nudge_file}"]
+    target = rec.get("tmux_target")
+    target_live = bool(target and run(["tmux", "display-message", "-p", "-t", target, "#{window_id}"]).returncode == 0)
+    if target_live:
+        cmd += ["--pane", target]
     if rec.get("agent_bead"):
         cmd += ["--bead", rec["agent_bead"]]
     if rec.get("launch_role"):
+        # The role selects its default placement when the parked window is gone.
         cmd += ["--role", rec["launch_role"]]
     if rec.get("model"):
         cmd += ["--model", rec["model"]]

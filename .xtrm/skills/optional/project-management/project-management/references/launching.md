@@ -3,6 +3,10 @@
 Mechanics only: launch syntax, liveness, reaping, specialists, limits. Who launches what and when: SKILL.md "Who does what", `references/manager.md`
 §0, `references/lead.md` §7.
 
+## Tmux placement
+
+`xt claude` and `xt pi` accept `--pane <target>`, `--workers`, `--window-name <name>`, `--session <name>`, and `--layout <layout>`. `--pane` splits an existing window; `--workers` fills a `workers*` window up to `workersMaxPanes` (default 4) and rolls over to the next window. Placement defaults are configured in the user-owned `~/.xtrm/config/launch.json` (override with `XTRM_LAUNCH_CONFIG`), for example `{ "version": 1, "placement": { "worker": "workers" } }`. Explicit placement flags override defaults. An absent file preserves existing behavior.
+
 ## Rule
 
 All agents of a project live in one tmux session, the manager's: the manager window holds the manager and its helpers as panes, each lead has its
@@ -106,7 +110,7 @@ consult the advisor.
    Effort defaults to medium: pass high for builders (Opus for maths and data meaning). Pi or Sonnet builder: choose per task (SKILL.md rule 40); a
    pi builder needs a tight contract and a first-diff check. Refuse or queue when a cap or
    gate fails; a new builder launch waits for the operator's word when the operator has ruled so. A start-up line "could not read <ref>" is harmless.
-4. **Place an `xt` pane:** `tmux join-pane -d -s <pane> -t <session>:workers`, `tmux select-layout tiled`; at most 4 panes per `workers` window.
+4. **Place an `xt` pane:** use `--workers` for a tiled `workers*` window (at most 4 panes by default), `--window` for a lead window, or `--pane <target>` for a manager/helper pane. Use `--session <name>` to select the project session; set role defaults in `~/.xtrm/config/launch.json`. Explicit placement flags override defaults.
 5. **Supervise by exception:** `specialist_status` for a specialist, the pane monitor for an `xt` worker; verify claims against the live tree. A
    different scope means a new issue. When the issue closes: reap an `xt` pane by id, or keep the specialist for its role's next issue.
 

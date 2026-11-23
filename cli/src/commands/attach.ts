@@ -187,6 +187,11 @@ export interface FreshAttachOptions {
     attach?: boolean;
     window?: boolean;
     newSession?: boolean;
+    pane?: string;
+    workers?: boolean;
+    windowName?: string;
+    session?: string;
+    layout?: string;
     parent?: string;
     /** Argv after `--`, forwarded verbatim to the runtime (guarded by the launcher). */
     passthrough?: string[];
@@ -201,6 +206,11 @@ export function freshOnlyOptions(opts: FreshAttachOptions & { yolo?: boolean }):
     if (opts.bead !== undefined) given.push('--bead');
     if (opts.window) given.push('--window');
     if (opts.newSession) given.push('--new-session');
+    if (opts.pane !== undefined) given.push('--pane');
+    if (opts.workers) given.push('--workers');
+    if (opts.windowName !== undefined) given.push('--window-name');
+    if (opts.session !== undefined) given.push('--session');
+    if (opts.layout !== undefined) given.push('--layout');
     if (opts.parent !== undefined) given.push('--parent');
     if (opts.attach === false) given.push('--no-attach');
     if (opts.yolo !== undefined) given.push(opts.yolo ? '--yolo' : '--no-yolo');
@@ -242,6 +252,11 @@ export function buildFreshLaunchOptions(
         attach: opts.attach,
         window: Boolean(opts.window),
         newSession: Boolean(opts.newSession),
+        pane: opts.pane,
+        workers: Boolean(opts.workers),
+        windowName: opts.windowName,
+        session: opts.session,
+        layout: opts.layout,
         parent: opts.parent,
         passthrough: opts.passthrough,
         existingWorktree: {
@@ -263,6 +278,11 @@ export function createAttachCommand(): Command {
         .option('--prompt <text|@file>', 'With --fresh: the initial user prompt, or @<file> to read it from a file')
         .option('--bead <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
         .option('--window', 'With --fresh, open a detached window in the current session; prints <session>:<pane_id>')
+        .option('--window-name <name>', 'With --fresh, name the detached tmux window')
+        .option('--pane <target>', 'With --fresh, split into an existing tmux window')
+        .option('--workers', 'With --fresh, place in a workers* window')
+        .option('--session <name>', 'With --fresh, select the tmux placement session')
+        .option('--layout <name>', 'With --fresh, select the tmux layout')
         .option('--new-session', 'With --fresh: force a new session')
         .option('--no-attach', 'With --fresh: create the session detached and print session:pane')
         .option('--parent <target>', 'With --fresh: @agent_parent_session of the pane (session name or id)')
