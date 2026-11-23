@@ -66,6 +66,17 @@ reviewer falling back to the operator login defeats the App.
 | explicit `reviewer` with the App configured but not installed for the owner | refused before any worktree |
 | no role map on the host | no identity at all, "identities not configured" |
 
+**Posting a formal review requires the `reviewer` role.** A `worker` seat (`xt pi`, plain
+`xt claude`, `xt codex`) that finishes a review cannot publish it, and the refusal is:
+
+    xt identity: the worker role may not post formal reviews; use the reviewer subagent or xt claude --role pr-reviewer
+
+A verdict produced by a worker therefore travels through a reviewer seat: the worker writes
+the findings where they survive (journal, PR comment, the Issue), and a reviewer-role seat
+posts them as the formal review with the header and verdict line. This is a gate, not a
+missing variable — a worker that edits its own `XTRM_ROLE` to post is acting as a reviewer it
+is not, and the posted review would be attributed to a role no guard agreed to.
+
 `xt identity role --json` prints `{role, source, holder}` from the role map. The
 launcher resolves the same map in-process through `resolveAgentRole`; the `gh` shim
 calls `xt identity role --json`. Both use the one rule. A supervised Specialist gets the
@@ -146,6 +157,11 @@ existing role map and rewrites an existing xtrm shim in place; only a `gh`
 file that is not the xtrm shim stops it.
 
 ## Review publication: one formal review at the head
+
+Only a `reviewer` seat can post the review below. A worker seat is refused with `the worker
+role may not post formal reviews; use the reviewer subagent or xt claude --role pr-reviewer`
+— see the role table above for what that gate means and how a worker's verdict reaches a
+reviewer seat.
 
 A pull request is reviewed by one **formal review**, never a conversation comment:
 a comment carries no commit and no review state, so nothing can check which head was
@@ -298,6 +314,13 @@ than no review.
 The PR's marker names the same holder as the reviewing session. Either the
 agent is reviewing its own PR (correct refusal), or the marker was copied from a
 template. Fix the marker (`holder=operator` for an operator-opened PR).
+
+### "the worker role may not post formal reviews; use the reviewer subagent or xt claude --role pr-reviewer"
+
+Correct refusal: this session resolved to `worker`, and only the `reviewer` role may post
+a formal review. Do not mint a token or edit `XTRM_ROLE` to get past it — hand the findings
+to a reviewer seat, which posts them at the head. See the role table at
+"Roles and how a name resolves".
 
 ### "the flag requests APPROVE, the body's verdict line says COMMENT"
 
