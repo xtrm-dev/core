@@ -38,6 +38,8 @@ CARDS = {
         "never ask for status, never acknowledge (rule 40)",
         f"route_target.py: address peers by role -> python3 {PACK}/project-management/scripts/route_target.py --team",
         "pm_question.py: a question for the operator -> pm_question.py add --ref <ref> --q <text> --rec <text>",
+        "pm_park.py: memory relief -> stop idle specialists first, then park waiting leads; pm_park.py list shows what is parked "
+        "and its wake (rule 57)",
         SPECIALISTS,
     ],
     "lead": [
@@ -46,6 +48,8 @@ CARDS = {
         SPECIALISTS + "; keep one pr-reviewer specialist alive for the PRs of your workstream that need review (rule 44)",
         "merge: your master-only PRs after the rule-44 review, gh pr merge --match-head-commit <sha> with the memory gate (rule 49)",
         "route_target.py --team: another lead's session name for a cross-workstream question",
+        "pm_park.py park: next step over ~2 h away -> tell the manager, hand off, then pm_park.py park <name> --ref <ref> "
+        "--role lead (--at <UTC> | --check '<cmd>' --deadline <UTC>) --self --manager-told (rule 57)",
     ],
     "worker": [
         "your contract: sb issue show <ref>; journal each milestone; close with a result (rule 54)",

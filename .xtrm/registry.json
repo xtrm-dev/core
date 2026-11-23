@@ -1105,7 +1105,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_tools.py": {
-          "hash": "0c1c41e38a2fcbd3f4da9e432f08d86b68a3903b125c394e752eebdd1538e0d8",
+          "hash": "cd229c6afbaaf4e1c05b7678cde3167b5fa8ff20bf5f354312fcb879f6a0f708",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_wakes.py": {
@@ -1125,7 +1125,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/SKILL.md": {
-          "hash": "1dbc5f15e8fcd0fe9ce0396ba216affccba6333effe3d3c619a45166ffa037e2",
+          "hash": "44ac6c6c48a95fcd8bb7e4bd71c20ccd28e7dbc57610a6b7df99ca7d24d78e8e",
           "version": "0.15.3"
         },
         "project-management/status-board-keeper/references/integration.md": {
