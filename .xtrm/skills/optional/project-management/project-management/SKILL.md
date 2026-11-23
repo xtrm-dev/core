@@ -227,11 +227,9 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
     reap (a 2-row pane read as GONE, 2026-10-28).
 32. **A worker refused by its Edit hook never works around it through the shell:** its lead (or the manager) launches a short session in the
     protected repo, the hook being the only guard against cross-repository writes (a sibling repository, 2026-10-28).
-33. **Service operating knowledge lives in service-knowledge** (operator, 2026-11-07, D39; skill and CLI for every role, 2026-11-14): read a
-    service through its skill and `service-knowledge index query` before its source; what a service is, its tables, readers, checks and traps go
-    into the pack through its update flow, never into this skill and never into `DEPLOY.md` (which keeps standing deploy rules only).
-    `service-knowledge-sync` is REQUIRED for every promotion to stable (operator, 2026-10-29): dispatch it from the stable SHA after promote-merge; the
-    promotion is done only when its result is journaled (interim until the GitHub app exists).
+33. **Service knowledge first** (D39; 2026-11-23): `knowledge_evidence_for_files` before reading service source, `knowledge_search` before grep,
+    `knowledge_status` if stale, `knowledge_drift` after changes (CLI `service-knowledge index query` as fallback); service facts go into the pack's
+    update flow, never this skill or `DEPLOY.md`; each stable promotion needs a journaled `service-knowledge-sync` from the stable SHA.
 34. **A window's PASS/STOP criteria come from a traced artefact** (PR-head output plus a live read-only count), never a message; store its path in the
     window.
    - 2026-10-29: a message-stated "64 or 61" went into a window and accepted a STOP case; the traced output showed only 61.
@@ -408,6 +406,8 @@ windows, operator talk, cleanup, handoff, merge lists) are `references/manager.m
 56. **One common goal, known to every session** (operator, 2026-11-14; goal awareness and an explicit charter raise team results in the
     multi-agent studies). The goal document, the project epic and the Jira epic (`references/setup.md`, "Common goal") are printed by
     `pm_session.py`; every contract names the goal section it serves. The manager keeps them current; work against the goal is a question.
+57. **Park instead of idling** (operator, 2026-11-22; continuity.md): a lead whose next step is over ~2 h away tells the manager, hands off and runs
+    `pm_park.py park ... --self --manager-told`; the manager parks for memory relief; message a parked one only via `sb journal append <ref>`.
 
 ## The rule: two systems, bound files
 
