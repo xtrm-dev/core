@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [ main, master ]
+  # No `branches` filter on `pull_request`: the filter selects the PR's BASE branch, so
+  # `branches: [main, master]` silently ran no test job on a stacked PR based on any other
+  # branch, and its `mergeStateStatus` then read CLEAN with the suite never having run
+  # (CORE-2783 — #983 at c115532c had three check runs; #972 at d11a1b95, based on main, had
+  # twelve). The `push` filter is untouched: a push to a feature branch still runs nothing.
+  # Cost: a stacked PR now runs the full suite too, which is one extra matrix job per head.
   pull_request:
-    branches: [ main, master ]
 
 permissions:
   contents: read
