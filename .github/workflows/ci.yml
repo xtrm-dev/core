@@ -60,12 +60,17 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest ruff
+        pip install pytest ruff==0.17.6
 
     - name: Run Linting
       run: |
         npx eslint . --ignore-pattern "**/node_modules/**" || echo "Eslint not configured yet"
-        ruff check . || echo "Ruff not configured yet"
+        # Pinned: `pip install ruff` above would otherwise change the enforced rule set under us on a
+        # ruff release. The scope is on the command, not in a config file, so a reader sees it here.
+        # `.xtrm/skills/**` is vendored from another repo and regenerated wholesale, so linting it
+        # reports on a tree nobody edits. E4/E7/E9/F is what the tree passes today; widening it is a
+        # separate job (1370 errors under ruff's full default set).
+        ruff check . --select E4,E7,E9,F --extend-exclude .xtrm/skills
 
     - name: Check skills ownership and managed skill contracts
       run: |
