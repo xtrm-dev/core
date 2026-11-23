@@ -42,6 +42,11 @@ model must not type — the visible `Agent <name> · run <id> · Issue <REF>` li
 hidden `<!-- agent=… -->` marker — from the process identity. The pr-reviewer definition carries the exact body
 lint; run it before posting.
 
+`(<model>)` is the value the tool exported, not a name the reviewer picks: `echo "$PI_MODEL"`
+and copy it verbatim. The shim compares line 1 against `--model`, then `$XTRM_REVIEW_MODEL`,
+then `$PI_MODEL`, and refuses a disagreement naming both strings. It also refuses a body
+whose model nothing can attest — a reviewer seat that would have to guess writes no review.
+
 Verify the post through the REST reviews API:
 `gh api repos/<owner>/<repo>/pulls/<n>/reviews` must show `xtrm-reviewer[bot]` and the
 reviewed `commit_id` (`gh pr view --json reviews` prints the login without the `[bot]`

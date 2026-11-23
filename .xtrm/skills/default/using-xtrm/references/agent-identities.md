@@ -185,6 +185,14 @@ opened. The shim adds the attribution the model must not type — the visible
 `Agent <name> · run <id> · Issue <REF>` line and the hidden `<!-- agent=… -->` marker —
 from the process identity. Line 1 is the one part of the attribution the model writes.
 
+Write `<model>` as the **value the tool exported**, not as a name the model picks:
+`echo "$PI_MODEL"` and copy it verbatim. `xt identity review-post` compares line 1 against
+`--model`, then `$XTRM_REVIEW_MODEL`, then `$PI_MODEL`, and refuses a disagreement naming
+both strings (`--model says sonnet-5.5, line 1 says sonnet; line 1 is authoritative`). It
+also refuses to post at all when none of the three is set, because a header nothing can
+attest is the state in which a review names a model no session ran — so a reviewer seat
+that would otherwise guess writes nothing and says why.
+
 Verify the post by reading it back from the REST reviews API:
 
 ```bash
