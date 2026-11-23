@@ -199,6 +199,7 @@ Keep only the commands an agent needs without another manual. Use `--help` for f
 - `npm run compile-policies` — after policy changes.
 - `npm run build` — after CLI source changes; `cli/dist` is tracked.
 - `npm test --workspace cli` — CLI test suite; prefer targeted tests during iteration.
+- `bun test packages/pi-extensions` — Pi extensions suite. It is a separate runner and a separate suite: a green `npm test --workspace cli` says nothing about it. `npm run test:scripts` and `npm run test:contracts` cover `scripts/__tests__/*.test.mjs` and `packages/contracts`. See `docs/test-suites.md` for the command-to-package map and why no single root script runs them.
 - `npm run check:registry-pack-parity` and `npm run check:payload-hygiene` — package/registry hygiene.
 
 ## Claude Code notes
