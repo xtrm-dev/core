@@ -148,13 +148,20 @@ export function parseDurationDays(input: string | number | undefined, fallback: 
  * covers our own processes. That is the population that owns worktrees; a worktree
  * held by another user's process also fails the mtime and git conditions in practice.
  */
-export function readProcessCwds(procRoot = '/proc'): Map<string, number[]> {
+export function readProcessCwds(procRoot = '/proc', options: { strict?: boolean } = {}): Map<string, number[]> {
     const cwds = new Map<string, number[]>();
 
     let entries: string[];
     try {
         entries = readdirSync(procRoot);
-    } catch {
+    } catch (error) {
+        // A caller whose decision is "is anything alive in this directory" cannot
+        // tell an empty map from an unreadable one, so it must be able to refuse
+        // instead of assuming nothing is in use.
+        if (options.strict) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`cannot enumerate process working directories under ${procRoot}: ${message}`);
+        }
         return cwds;
     }
 

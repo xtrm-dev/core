@@ -77482,12 +77482,16 @@ function parseDurationDays(input2, fallback) {
       return value;
   }
 }
-function readProcessCwds(procRoot = "/proc") {
+function readProcessCwds(procRoot = "/proc", options = {}) {
   const cwds = /* @__PURE__ */ new Map();
   let entries;
   try {
     entries = (0, import_node_fs18.readdirSync)(procRoot);
-  } catch {
+  } catch (error62) {
+    if (options.strict) {
+      const message = error62 instanceof Error ? error62.message : String(error62);
+      throw new Error(`cannot enumerate process working directories under ${procRoot}: ${message}`);
+    }
     return cwds;
   }
   for (const entry of entries) {
@@ -78362,15 +78366,104 @@ function runGitWorktreePrune(repoRoot) {
     message: prune.ok ? "pruned stale git worktree metadata" : prune.err || "git worktree prune failed"
   };
 }
-function isMergedIntoMain(branch, repoRoot) {
+function isMergedIntoMain(branch, repoRoot, head, spawn4 = (args) => {
+  const r = (0, import_node_child_process22.spawnSync)("git", args, { cwd: repoRoot, encoding: "utf8", stdio: "pipe" });
+  return { status: r.status, stdout: r.stdout };
+}) {
   const branchShort = branch.replace("refs/heads/", "");
   const baseRef = resolveDefaultBranchRef(repoRoot) ?? "origin/main";
-  const r = (0, import_node_child_process22.spawnSync)("git", ["branch", "--merged", baseRef, "--list", branchShort], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    stdio: "pipe"
-  });
-  return (r.stdout ?? "").includes(branchShort);
+  if (!branchShort) {
+    const sha = (head ?? "").trim();
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
+    const ancestor = spawn4(["merge-base", "--is-ancestor", sha, baseRef]);
+    return ancestor.status === 0;
+  }
+  const r = spawn4(["branch", "--merged", baseRef, "--list", branchShort]);
+  if (r.status !== 0) return false;
+  return branchLineMatches(String(r.stdout ?? ""), branchShort);
+}
+function branchLineMatches(stdout, branchShort) {
+  return stdout.split("\n").map((line) => line.replace(/^[*+]\s*/, "").trim()).filter(Boolean).includes(branchShort);
+}
+function isMergedWorktree(wt, repoRoot, prState = getPrStatus) {
+  if (isMergedIntoMain(wt.branch, repoRoot, wt.head)) return true;
+  if (!wt.branch) return false;
+  return prState(wt.branch, repoRoot).state === "MERGED";
+}
+function selectCleanTargets(worktrees, merged, cwds) {
+  const removable = [];
+  const skippedLive = [];
+  const unmerged = [];
+  for (const wt of worktrees) {
+    if (!merged(wt)) {
+      unmerged.push({ path: wt.path, branch: wt.branch.replace("refs/heads/", ""), livePids: [] });
+      continue;
+    }
+    const livePids = livePidsFor(wt.path, cwds);
+    const target = {
+      path: wt.path,
+      branch: wt.branch.replace("refs/heads/", ""),
+      livePids
+    };
+    if (livePids.length > 0) skippedLive.push(target);
+    else removable.push(target);
+  }
+  return { removable, skippedLive, unmerged };
+}
+function selectOrphanTargets(orphans, cwds) {
+  const removable = [];
+  const skippedLive = [];
+  for (const path98 of orphans) {
+    const livePids = livePidsFor(path98, cwds);
+    const target = { path: path98, branch: "", livePids };
+    if (livePids.length > 0) skippedLive.push(target);
+    else removable.push(target);
+  }
+  return { removable, skippedLive, unmerged: [] };
+}
+function scanCleanTargets(input2) {
+  const readTable = input2.readTable ?? readProcessTableOrRefuse;
+  const cwds = readTable();
+  if (cwds === null) return null;
+  const plan = selectCleanTargets(input2.worktrees, input2.merged, cwds);
+  const orphanPlan = selectOrphanTargets(input2.orphans, cwds);
+  return {
+    plan: {
+      removable: plan.removable,
+      skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+      unmerged: plan.unmerged
+    },
+    orphans: orphanPlan.removable
+  };
+}
+function applyCleanRemoval(repoRoot, targets, options = {}) {
+  const readCwds = options.readCwds ?? (() => readProcessCwds("/proc", { strict: true }));
+  const remove = options.remove ?? ((path98) => removeWorktreeEntry(repoRoot, path98));
+  const result = { removed: [], becameLive: [], unreadable: [] };
+  for (const target of targets) {
+    let liveNow;
+    try {
+      liveNow = livePidsFor(target.path, readCwds());
+    } catch (error62) {
+      const message = error62 instanceof Error ? error62.message : String(error62);
+      console.log(kleur_default.yellow(`  \u26A0 Kept ${target.path}: ${message}`));
+      result.unreadable.push(target.path);
+      continue;
+    }
+    if (liveNow.length > 0) {
+      console.log(kleur_default.yellow(`  \u26A0 Kept ${target.path}: became live during the scan (pids ${liveNow.join(",")})`));
+      result.becameLive.push(target.path);
+      continue;
+    }
+    const removal = remove(target.path);
+    if (removal.ok) {
+      result.removed.push(target.path);
+      console.log(t.success(`  \u2713 ${removal.message}`));
+    } else {
+      console.log(kleur_default.yellow(`  \u26A0 ${removal.message}`));
+    }
+  }
+  return result;
 }
 function normalizeBranchName(branch) {
   return branch.replace("refs/heads/", "");
@@ -78875,8 +78968,23 @@ function discoverRepos(roots) {
   }
   return [...new Set(repos)].sort();
 }
+function refuseWithoutProcessTable(error62) {
+  const message = error62 instanceof Error ? error62.message : String(error62);
+  console.log(kleur_default.red(`
+  \u2716 ${message}`));
+  console.log(kleur_default.dim("  Nothing was removed: without the process table this command cannot tell a live worktree from an idle one.\n"));
+  process.exitCode = 1;
+}
+function readProcessTableOrRefuse(procRoot = "/proc") {
+  try {
+    return readProcessCwds(procRoot, { strict: true });
+  } catch (error62) {
+    refuseWithoutProcessTable(error62);
+    return null;
+  }
+}
 function planReap(opts) {
-  const cwds = readProcessCwds();
+  const cwds = opts.cwds;
   const checkedAtMs = opts.now ?? Date.now();
   const candidates = [];
   const seen = /* @__PURE__ */ new Set();
@@ -78910,10 +79018,10 @@ function planReap(opts) {
     summary: summarize(candidates)
   };
 }
-function applyReap(plan) {
+function applyReap(plan, options = {}) {
   const outcomes = [];
   const removed = [];
-  const cwdsNow = readProcessCwds();
+  const cwdsNow = readProcessCwds(options.procRoot ?? "/proc", { strict: true });
   for (const candidate of plan.candidates) {
     const livePids = livePidsFor(candidate.path, cwdsNow);
     if (livePids.length > 0 && (candidate.reapable || candidate.artifactsReclaimable)) {
@@ -79116,6 +79224,33 @@ function getRepoRoot(cwd) {
   const fallback = git4(["rev-parse", "--show-toplevel"], cwd);
   return fallback.ok && fallback.out ? fallback.out : cwd;
 }
+function printCleanPlan(plan) {
+  const { removable, skippedLive, unmerged } = plan;
+  if (removable.length > 0) {
+    console.log(kleur_default.bold(`  ${removable.length} merged worktree(s):`));
+    for (const wt of removable) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch})`));
+    }
+  }
+  if (skippedLive.length > 0) {
+    console.log(kleur_default.bold(`
+  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
+    for (const wt of skippedLive) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) in use: pids ${wt.livePids.join(",")}`));
+    }
+    console.log(kleur_default.dim("    A live worktree is removed after its session ends, or with `xt worktree remove`."));
+  }
+  if (unmerged.length > 0) {
+    console.log(kleur_default.bold(`
+  ${unmerged.length} worktree(s) kept, not merged:`));
+    for (const wt of unmerged) {
+      console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch || "detached"}) not merged into the default branch`));
+    }
+  }
+}
+function worktreeListStatus(wt, repoRoot) {
+  return isMergedIntoMain(wt.branch, repoRoot, wt.head) ? "merged" : "open";
+}
 function createWorktreeCommand() {
   const cmd = new Command("worktree").description("Manage xt session worktrees");
   cmd.command("list").description("List all active xt/* worktrees with status").action(async () => {
@@ -79131,8 +79266,7 @@ function createWorktreeCommand() {
     for (const wt of worktrees) {
       const branch = wt.branch.replace("refs/heads/", "");
       const slug = branch.replace("xt/", "");
-      const merged = isMergedIntoMain(wt.branch, repoRoot);
-      const status2 = merged ? kleur_default.green("merged") : kleur_default.yellow("open");
+      const status2 = worktreeListStatus(wt, repoRoot) === "merged" ? kleur_default.green("merged") : kleur_default.yellow("open");
       const prunable = wt.prunable ? kleur_default.dim(" [prunable]") : "";
       const runtimeBadge = wt.runtime ? kleur_default.cyan(` [${wt.runtime}]`) : "";
       const nestedBadge = wt.nestedInPath ? kleur_default.red(" [nested]") : "";
@@ -79226,26 +79360,28 @@ function createWorktreeCommand() {
   cmd.command("clean").description("Remove merged xt worktrees and optionally sweep stale/orphaned worktree state").option("-y, --yes", "Skip confirmation prompt", false).option("--dry-run", "Preview clean targets without removing anything", false).option("--orphans", "Also prune stale git worktree metadata and remove orphan .xtrm/worktrees dirs", false).action(async (opts) => {
     const repoRoot = getRepoRoot(process.cwd());
     const worktrees = listXtWorktrees(repoRoot);
-    const merged = worktrees.filter(
-      (wt) => isMergedIntoMain(wt.branch, repoRoot) || getPrStatus(wt.branch, repoRoot).state === "MERGED"
-    );
-    const orphanDirs = opts.orphans ? listOrphanManagedDirs(repoRoot) : [];
-    if (merged.length === 0 && orphanDirs.length === 0 && !opts.orphans) {
-      console.log(kleur_default.dim("\n  No merged xt worktrees to clean\n"));
-      return;
-    }
-    if (merged.length === 0 && orphanDirs.length === 0 && opts.orphans) {
+    const scan = scanCleanTargets({
+      worktrees,
+      orphans: opts.orphans ? listOrphanManagedDirs(repoRoot) : [],
+      merged: (wt) => isMergedWorktree(wt, repoRoot)
+    });
+    if (scan === null) return;
+    const merged = scan.plan.removable;
+    const skippedLive = scan.plan.skippedLive;
+    const unmerged = scan.plan.unmerged;
+    const orphanPlan = { removable: scan.orphans };
+    const orphanDirs = scan.orphans.map((orphan) => orphan.path);
+    if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
+      if (!opts.orphans) {
+        console.log(kleur_default.dim("\n  No merged xt worktrees to clean\n"));
+        return;
+      }
       console.log(kleur_default.dim("\n  No merged worktrees or orphaned directories found\n"));
       console.log(kleur_default.dim("  (git worktree prune would still run in apply mode)\n"));
       if (opts.dryRun) return;
     }
     console.log(t.bold("\n  xt worktree clean\n"));
-    if (merged.length > 0) {
-      console.log(kleur_default.bold(`  ${merged.length} merged worktree(s):`));
-      for (const wt of merged) {
-        console.log(kleur_default.dim(`    - ${wt.path} (${wt.branch.replace("refs/heads/", "")})`));
-      }
-    }
+    printCleanPlan({ removable: merged, skippedLive, unmerged });
     if (opts.orphans) {
       console.log(kleur_default.bold(`
   ${orphanDirs.length} orphaned managed director(y/ies):`));
@@ -79268,28 +79404,23 @@ function createWorktreeCommand() {
       console.log(kleur_default.dim("  Cancelled\n"));
       return;
     }
-    let removedCount = 0;
-    for (const wt of merged) {
-      const result = removeWorktreeEntry(repoRoot, wt.path);
-      if (result.ok) {
-        removedCount += 1;
-        console.log(t.success(`  \u2713 ${result.message}`));
-      } else {
-        console.log(kleur_default.yellow(`  \u26A0 ${result.message}`));
-      }
-    }
+    const removal = applyCleanRemoval(repoRoot, merged);
+    let removedCount = removal.removed.length;
     if (opts.orphans) {
-      for (const orphan of orphanDirs) {
-        try {
-          (0, import_node_fs20.rmSync)(orphan, { recursive: true, force: true });
-          removedCount += 1;
-          unregisterPluginsForWorktree(orphan);
-          console.log(t.success(`  \u2713 Removed orphan directory ${orphan}`));
-        } catch (error62) {
-          const message = error62 instanceof Error ? error62.message : String(error62);
-          console.log(kleur_default.yellow(`  \u26A0 Could not remove ${orphan}: ${message}`));
+      const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+        remove: (path98) => {
+          if (!(0, import_node_fs20.existsSync)(path98)) return { ok: true, message: `Removed orphan directory ${path98}` };
+          try {
+            (0, import_node_fs20.rmSync)(path98, { recursive: true, force: true });
+            return { ok: true, message: `Removed orphan directory ${path98}` };
+          } catch (error62) {
+            const message = error62 instanceof Error ? error62.message : String(error62);
+            return { ok: false, message: `Could not remove ${path98}: ${message}` };
+          }
         }
-      }
+      });
+      for (const path98 of orphanRemoval.removed) unregisterPluginsForWorktree(path98);
+      removedCount += orphanRemoval.removed.length;
       const pruneResult = runGitWorktreePrune(repoRoot);
       if (pruneResult.ok) {
         console.log(t.success(`  \u2713 ${pruneResult.message}`));
@@ -79308,12 +79439,21 @@ function createWorktreeCommand() {
   cmd.command("reap").description("Reclaim abandoned worktrees and regenerable artifacts under a validated safety predicate").option("--artifacts-older-than <age>", "Reclaim node_modules/.venv/.gitnexus past this idle age", "7d").option("--worktrees-older-than <age>", "Remove whole worktrees past this idle age", "14d").option("--all-repos", "Sweep every git repo under --roots, not just the current one", false).option("--roots <dirs>", "Comma-separated parents to discover repos in with --all-repos", (0, import_node_path44.join)((0, import_node_os23.homedir)(), "dev")).option("--apply", "Reclaim (default is dry-run)", false).option("-y, --yes", "Skip confirmation with --apply", false).option("--dry-run", "Explicit dry run (default)", false).option("--json", "Print machine-readable reap plan", false).action(async (opts) => {
     const currentPath = process.cwd();
     const repos = opts.allRepos ? discoverRepos(opts.roots.split(",").map((root) => root.trim()).filter(Boolean)) : [getRepoRoot(currentPath)];
-    let plan = planReap({
-      repos,
-      currentPath,
-      artifactThresholdDays: parseDurationDays(opts.artifactsOlderThan, 7),
-      worktreeThresholdDays: parseDurationDays(opts.worktreesOlderThan, 14)
-    });
+    const cwds = readProcessTableOrRefuse();
+    if (cwds === null) return;
+    let plan;
+    try {
+      plan = planReap({
+        repos,
+        currentPath,
+        artifactThresholdDays: parseDurationDays(opts.artifactsOlderThan, 7),
+        worktreeThresholdDays: parseDurationDays(opts.worktreesOlderThan, 14),
+        cwds
+      });
+    } catch (error62) {
+      refuseWithoutProcessTable(error62);
+      return;
+    }
     let outcomes = null;
     const hasWork = plan.summary.reapable > 0 || plan.summary.artifacts_only > 0;
     if (opts.apply && !opts.dryRun && hasWork) {
@@ -79323,7 +79463,13 @@ function createWorktreeCommand() {
         initial: false
       });
       if (proceed) {
-        const applied = applyReap(plan);
+        let applied;
+        try {
+          applied = applyReap(plan);
+        } catch (error62) {
+          refuseWithoutProcessTable(error62);
+          return;
+        }
         plan = applied.plan;
         outcomes = applied.outcomes;
       }

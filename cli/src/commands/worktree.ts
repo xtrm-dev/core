@@ -319,16 +319,247 @@ function runGitWorktreePrune(repoRoot: string): { ok: boolean; message: string }
     };
 }
 
+/** Runs one git command; injectable so a git failure is a case a test can reach. */
+export type GitProbe = (args: string[]) => { status: number | null; stdout?: unknown };
+
 /** Check if a branch has been merged into the default branch */
-function isMergedIntoMain(branch: string, repoRoot: string): boolean {
+export function isMergedIntoMain(
+    branch: string,
+    repoRoot: string,
+    head?: string,
+    spawn: GitProbe = (args) => {
+        const r = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' });
+        return { status: r.status, stdout: r.stdout };
+    },
+): boolean {
     const branchShort = branch.replace('refs/heads/', '');
     // CORE-2340: resolve the default branch dynamically instead of assuming
     // origin/main (same resolution order as worktree branch creation).
     const baseRef = resolveDefaultBranchRef(repoRoot) ?? 'origin/main';
-    const r = spawnSync('git', ['branch', '--merged', baseRef, '--list', branchShort], {
-        cwd: repoRoot, encoding: 'utf8', stdio: 'pipe',
-    });
-    return (r.stdout ?? '').includes(branchShort);
+
+    if (!branchShort) {
+        // A detached worktree has no branch for `--merged` to answer about, and
+        // the empty name must never count as merged: `''.includes('')` is true,
+        // which classified twelve detached checkouts as removal targets whatever
+        // their HEAD held. Ask the commit instead, and refuse when there is none.
+        const sha = (head ?? '').trim();
+        if (!/^[0-9a-f]{7,40}$/i.test(sha)) return false;
+        const ancestor = spawn(['merge-base', '--is-ancestor', sha, baseRef]);
+        return ancestor.status === 0;
+    }
+
+    const r = spawn(['branch', '--merged', baseRef, '--list', branchShort]);
+    // A git failure is not an answer. Saying "not merged" keeps the tree, which is
+    // the safe direction; saying "merged" would hand it to a deletion loop.
+    if (r.status !== 0) return false;
+    return branchLineMatches(String(r.stdout ?? ''), branchShort);
+}
+
+/**
+ * Whether `stdout` of `git branch --list` names exactly this branch.
+ *
+ * A substring test was the shape of the empty-name defect one branch over: the
+ * answer must be about the branch asked, so the comparison is per line and exact
+ * rather than `stdout.includes(name)`. Today `--list` happens to be exact, which is
+ * why this is a seam rather than a live regression — the predicate must not depend
+ * on git's pattern matching continuing to behave that way.
+ */
+export function branchLineMatches(stdout: string, branchShort: string): boolean {
+    return stdout
+        .split('\n')
+        .map(line => line.replace(/^[*+]\s*/, '').trim())
+        .filter(Boolean)
+        .includes(branchShort);
+}
+
+/**
+ * A worktree whose content is already on the base branch, by branch, HEAD, or merged PR.
+ *
+ * The PR lookup is injectable because the branchless case is a refusal, and a refusal
+ * with no falsifier is a comment: `getPrStatus('')` would otherwise be reached by any
+ * future edit that moved the guard below it.
+ */
+export function isMergedWorktree(
+    wt: WorktreeInfo,
+    repoRoot: string,
+    prState: (branch: string, repoRoot: string) => { state: string } = getPrStatus as (branch: string, repoRoot: string) => { state: string },
+): boolean {
+    if (isMergedIntoMain(wt.branch, repoRoot, wt.head)) return true;
+    // A detached worktree has no branch for the PR lookup to ask about, and asking
+    // about "" would answer about nothing while looking like an answer.
+    if (!wt.branch) return false;
+    return prState(wt.branch, repoRoot).state === 'MERGED';
+}
+
+export interface CleanTarget {
+    path: string;
+    branch: string;
+    livePids: number[];
+}
+
+export interface CleanPlan {
+    removable: CleanTarget[];
+    skippedLive: CleanTarget[];
+    /** Kept because they are not merged. Printed with that reason, never silently dropped. */
+    unmerged: CleanTarget[];
+}
+
+/**
+ * Split merged worktrees into removable and skipped-while-live.
+ *
+ * `clean` used to take the merge predicate alone, so every merged worktree was a
+ * target even when the session that owns it was still running in it — the exact
+ * moment `clean` is documented to be used. The liveness predicate existed for
+ * `reap` and was simply not consulted here; both decisions now come from one call
+ * so `--dry-run` and `--yes` cannot disagree about which trees they mean.
+ */
+export function selectCleanTargets(
+    worktrees: WorktreeInfo[],
+    merged: (wt: WorktreeInfo) => boolean,
+    cwds: Map<string, number[]>,
+): CleanPlan {
+    const removable: CleanTarget[] = [];
+    const skippedLive: CleanTarget[] = [];
+    const unmerged: CleanTarget[] = [];
+
+    for (const wt of worktrees) {
+        if (!merged(wt)) {
+            // Printed rather than dropped: "not a target" and "not examined" look the same in
+            // a list that only shows what will be removed, and a detached tree whose HEAD is
+            // unmerged is exactly the case a reader needs to see named.
+            unmerged.push({ path: wt.path, branch: wt.branch.replace('refs/heads/', ''), livePids: [] });
+            continue;
+        }
+        const livePids = livePidsFor(wt.path, cwds);
+        const target: CleanTarget = {
+            path: wt.path,
+            branch: wt.branch.replace('refs/heads/', ''),
+            livePids,
+        };
+        if (livePids.length > 0) skippedLive.push(target);
+        else removable.push(target);
+    }
+
+    return { removable, skippedLive, unmerged };
+}
+
+/**
+ * Classify orphan managed directories by the same liveness predicate.
+ *
+ * The sweep used to delete every directory `git worktree list` did not name, which
+ * is not the same set as "nobody is working in it": a directory whose git metadata
+ * was pruned while a session still runs there looks exactly like a dead one. The
+ * process table answers that question, so it is asked here as it is for worktrees.
+ */
+export function selectOrphanTargets(orphans: string[], cwds: Map<string, number[]>): CleanPlan {
+    const removable: CleanTarget[] = [];
+    const skippedLive: CleanTarget[] = [];
+
+    for (const path of orphans) {
+        const livePids = livePidsFor(path, cwds);
+        const target: CleanTarget = { path, branch: "", livePids };
+        if (livePids.length > 0) skippedLive.push(target);
+        else removable.push(target);
+    }
+
+    return { removable, skippedLive, unmerged: [] };
+}
+
+export interface CleanScanInput {
+    worktrees: WorktreeInfo[];
+    orphans: string[];
+    merged: (wt: WorktreeInfo) => boolean;
+    readTable?: () => Map<string, number[]> | null;
+}
+
+export interface CleanScan {
+    plan: CleanPlan;
+    orphans: CleanTarget[];
+}
+
+/**
+ * One scan for both worktrees and orphan directories, refused as a whole.
+ *
+ * The scan is a unit because the refusal is: a caller that could read the table for
+ * the worktrees and substitute an empty map for the orphans would delete work in the
+ * window it exists to protect. `null` means the table could not be read and nothing
+ * may be classified — the predicate is never consulted, so the answer cannot look
+ * like "no targets".
+ */
+export function scanCleanTargets(input: CleanScanInput): CleanScan | null {
+    const readTable = input.readTable ?? readProcessTableOrRefuse;
+    const cwds = readTable();
+    if (cwds === null) return null;
+
+    const plan = selectCleanTargets(input.worktrees, input.merged, cwds);
+    const orphanPlan = selectOrphanTargets(input.orphans, cwds);
+
+    return {
+        plan: {
+            removable: plan.removable,
+            skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+            unmerged: plan.unmerged,
+        },
+        orphans: orphanPlan.removable,
+    };
+}
+
+export interface CleanRemovalResult {
+    removed: string[];
+    /** In use when the table was re-read: the only condition that can flip between scan and delete. */
+    becameLive: string[];
+    /** The table could not be read, so removal was refused rather than guessed. */
+    unreadable: string[];
+}
+
+export interface CleanRemovalOptions {
+    readCwds?: () => Map<string, number[]>;
+    remove?: (path: string) => { ok: boolean; message: string };
+}
+
+/**
+ * Remove targets, re-reading liveness immediately before each removal.
+ *
+ * Extracted so the re-read is testable: while the loop lived inside the `clean`
+ * action, deleting the re-read, swallowing its throw, or deleting the liveness
+ * branch each left the whole suite green. `readCwds` and `remove` are injectable for
+ * the same reason a seam exists anywhere — a decision that cannot be made to fail is
+ * not a decision.
+ */
+export function applyCleanRemoval(
+    repoRoot: string,
+    targets: CleanTarget[],
+    options: CleanRemovalOptions = {},
+): CleanRemovalResult {
+    const readCwds = options.readCwds ?? (() => readProcessCwds('/proc', { strict: true }));
+    const remove = options.remove ?? ((path: string) => removeWorktreeEntry(repoRoot, path));
+    const result: CleanRemovalResult = { removed: [], becameLive: [], unreadable: [] };
+
+    for (const target of targets) {
+        let liveNow: number[];
+        try {
+            liveNow = livePidsFor(target.path, readCwds());
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.log(kleur.yellow(`  ⚠ Kept ${target.path}: ${message}`));
+            result.unreadable.push(target.path);
+            continue;
+        }
+        if (liveNow.length > 0) {
+            console.log(kleur.yellow(`  ⚠ Kept ${target.path}: became live during the scan (pids ${liveNow.join(',')})`));
+            result.becameLive.push(target.path);
+            continue;
+        }
+        const removal = remove(target.path);
+        if (removal.ok) {
+            result.removed.push(target.path);
+            console.log(t.success(`  ✓ ${removal.message}`));
+        } else {
+            console.log(kleur.yellow(`  ⚠ ${removal.message}`));
+        }
+    }
+
+    return result;
 }
 
 function normalizeBranchName(branch: string): string {
@@ -933,16 +1164,45 @@ function discoverRepos(roots: string[]): string[] {
     return [...new Set(repos)].sort();
 }
 
+/**
+ * One wording for both destructive actions. `clean` and `reap` delete worktrees, so both
+ * must refuse when the process table cannot be read; printing two different sentences for
+ * the same condition is how a reader concludes one of them is advisory.
+ */
+export function refuseWithoutProcessTable(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(kleur.red(`\n  ✖ ${message}`));
+    console.log(kleur.dim('  Nothing was removed: without the process table this command cannot tell a live worktree from an idle one.\n'));
+    process.exitCode = 1;
+}
+
+/**
+ * The one way to obtain the process table for a destructive action. It prints the shared
+ * refusal and returns null when the table cannot be read, so a caller cannot forget the
+ * check: `planReap` requires the map as an input, which means both `clean` and `reap` have
+ * to come through here to get one.
+ */
+export function readProcessTableOrRefuse(procRoot = '/proc'): Map<string, number[]> | null {
+    try {
+        return readProcessCwds(procRoot, { strict: true });
+    } catch (error) {
+        refuseWithoutProcessTable(error);
+        return null;
+    }
+}
+
 export interface ReapOptions {
     repos: string[];
     currentPath: string;
     artifactThresholdDays: number;
     worktreeThresholdDays: number;
     now?: number;
+    /** Read through `readProcessTableOrRefuse`; required so no caller can plan blind. */
+    cwds: Map<string, number[]>;
 }
 
 export function planReap(opts: ReapOptions): ReapPlan {
-    const cwds = readProcessCwds();
+    const cwds = opts.cwds;
     const checkedAtMs = opts.now ?? Date.now();
     const candidates: ReapCandidate[] = [];
 
@@ -999,7 +1259,7 @@ export interface ReapOutcome {
  * worktrees second. Root-owned trees are reported and escalated, never absorbed into
  * the reclaim total.
  */
-export function applyReap(plan: ReapPlan): { plan: ReapPlan; outcomes: ReapOutcome[] } {
+export function applyReap(plan: ReapPlan, options: { procRoot?: string } = {}): { plan: ReapPlan; outcomes: ReapOutcome[] } {
     const outcomes: ReapOutcome[] = [];
     const removed: string[] = [];
 
@@ -1008,7 +1268,16 @@ export function applyReap(plan: ReapPlan): { plan: ReapPlan; outcomes: ReapOutco
     // attached to an idle worktree mid-scan would have it removed underneath them. This is
     // the one condition that can flip inside that window — idle age, cleanliness and push
     // state cannot become unsafe in a minute, but "in use right now" can.
-    const cwdsNow = readProcessCwds();
+    //
+    // The re-read narrows the window; it does not close it. A process that attaches between
+    // this read and the `git worktree remove` call still loses its worktree. Closing it would
+    // mean holding the directory open or re-checking after removal, and neither is available
+    // to a shell command.
+    //
+    // It is STRICT: an unreadable table here would answer "no pids" for every candidate, and
+    // the loop below would then remove worktrees that are in use — the defect this command
+    // refuses for at planning time, arriving one step later.
+    const cwdsNow = readProcessCwds(options.procRoot ?? '/proc', { strict: true });
 
     for (const candidate of plan.candidates) {
         const livePids = livePidsFor(candidate.path, cwdsNow);
@@ -1272,6 +1541,52 @@ export function getRepoRoot(cwd: string): string {
     return fallback.ok && fallback.out ? fallback.out : cwd;
 }
 
+/**
+ * Print every class the clean plan computed, with its reason.
+ *
+ * Split out of the action so the printed lines have a falsifier: the plan was
+ * pinned while the only lines a user reads were not, and deleting them left the
+ * suite green. A classification the reader never sees is the same defect as one
+ * the planner never made.
+ */
+export function printCleanPlan(plan: CleanPlan): void {
+    const { removable, skippedLive, unmerged } = plan;
+
+    if (removable.length > 0) {
+        console.log(kleur.bold(`  ${removable.length} merged worktree(s):`));
+        for (const wt of removable) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch})`));
+        }
+    }
+
+    if (skippedLive.length > 0) {
+        console.log(kleur.bold(`\n  ${skippedLive.length} merged worktree(s) kept, in use right now:`));
+        for (const wt of skippedLive) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) in use: pids ${wt.livePids.join(',')}`));
+        }
+        console.log(kleur.dim('    A live worktree is removed after its session ends, or with `xt worktree remove`.'));
+    }
+
+    if (unmerged.length > 0) {
+        console.log(kleur.bold(`\n  ${unmerged.length} worktree(s) kept, not merged:`));
+        for (const wt of unmerged) {
+            console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) not merged into the default branch`));
+        }
+    }
+}
+
+/**
+ * The status `xt worktree list` prints for one worktree.
+ *
+ * The HEAD is passed for a detached tree: without it the predicate answers off an
+ * empty branch name and `list` says "open" for a tree `clean` calls removable.
+ * Extracted so the call site has a falsifier — dropping `wt.head` here reddens a
+ * test instead of silently reintroducing the disagreement.
+ */
+export function worktreeListStatus(wt: WorktreeInfo, repoRoot: string): 'merged' | 'open' {
+    return isMergedIntoMain(wt.branch, repoRoot, wt.head) ? 'merged' : 'open';
+}
+
 export function createWorktreeCommand(): Command {
     const cmd = new Command('worktree')
         .description('Manage xt session worktrees');
@@ -1291,8 +1606,9 @@ export function createWorktreeCommand(): Command {
             for (const wt of worktrees) {
                 const branch = wt.branch.replace('refs/heads/', '');
                 const slug = branch.replace('xt/', '');
-                const merged = isMergedIntoMain(wt.branch, repoRoot);
-                const status = merged ? kleur.green('merged') : kleur.yellow('open');
+                // The HEAD is passed for a detached tree: without it the answer is "open" for a
+                // tree whose HEAD is an ancestor of the base, and `clean` calls that removable.
+                const status = worktreeListStatus(wt, repoRoot) === 'merged' ? kleur.green('merged') : kleur.yellow('open');
                 const prunable = wt.prunable ? kleur.dim(' [prunable]') : '';
                 const runtimeBadge = wt.runtime ? kleur.cyan(` [${wt.runtime}]`) : '';
                 const nestedBadge = wt.nestedInPath ? kleur.red(' [nested]') : '';
@@ -1429,31 +1745,36 @@ export function createWorktreeCommand(): Command {
         .action(async (opts: { yes: boolean; dryRun: boolean; orphans: boolean }) => {
             const repoRoot = getRepoRoot(process.cwd());
             const worktrees = listXtWorktrees(repoRoot);
-            const merged = worktrees.filter(wt =>
-                isMergedIntoMain(wt.branch, repoRoot) ||
-                getPrStatus(wt.branch, repoRoot).state === 'MERGED'
-            );
-            const orphanDirs = opts.orphans ? listOrphanManagedDirs(repoRoot) : [];
 
-            if (merged.length === 0 && orphanDirs.length === 0 && !opts.orphans) {
-                console.log(kleur.dim('\n  No merged xt worktrees to clean\n'));
-                return;
-            }
+            // A worktree whose session is still running is not a cleanup target, and
+            // the process table is the only thing that knows. `scanCleanTargets` refuses
+            // as a whole when it cannot be read: an empty map and an unreadable one look
+            // alike, and the difference is somebody's uncommitted work.
+            const scan = scanCleanTargets({
+                worktrees,
+                orphans: opts.orphans ? listOrphanManagedDirs(repoRoot) : [],
+                merged: wt => isMergedWorktree(wt, repoRoot),
+            });
+            if (scan === null) return;
 
-            if (merged.length === 0 && orphanDirs.length === 0 && opts.orphans) {
+            const merged = scan.plan.removable;
+            const skippedLive = scan.plan.skippedLive;
+            const unmerged = scan.plan.unmerged;
+            const orphanPlan = { removable: scan.orphans };
+            const orphanDirs = scan.orphans.map(orphan => orphan.path);
+
+            if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
+                if (!opts.orphans) {
+                    console.log(kleur.dim('\n  No merged xt worktrees to clean\n'));
+                    return;
+                }
                 console.log(kleur.dim('\n  No merged worktrees or orphaned directories found\n'));
                 console.log(kleur.dim('  (git worktree prune would still run in apply mode)\n'));
                 if (opts.dryRun) return;
             }
 
             console.log(t.bold('\n  xt worktree clean\n'));
-
-            if (merged.length > 0) {
-                console.log(kleur.bold(`  ${merged.length} merged worktree(s):`));
-                for (const wt of merged) {
-                    console.log(kleur.dim(`    - ${wt.path} (${wt.branch.replace('refs/heads/', '')})`));
-                }
-            }
+            printCleanPlan({ removable: merged, skippedLive, unmerged });
 
             if (opts.orphans) {
                 console.log(kleur.bold(`\n  ${orphanDirs.length} orphaned managed director(y/ies):`));
@@ -1480,30 +1801,24 @@ export function createWorktreeCommand(): Command {
                 return;
             }
 
-            let removedCount = 0;
-
-            for (const wt of merged) {
-                const result = removeWorktreeEntry(repoRoot, wt.path);
-                if (result.ok) {
-                    removedCount += 1;
-                    console.log(t.success(`  ✓ ${result.message}`));
-                } else {
-                    console.log(kleur.yellow(`  ⚠ ${result.message}`));
-                }
-            }
+            const removal = applyCleanRemoval(repoRoot, merged);
+            let removedCount = removal.removed.length;
 
             if (opts.orphans) {
-                for (const orphan of orphanDirs) {
-                    try {
-                        rmSync(orphan, { recursive: true, force: true });
-                        removedCount += 1;
-                        unregisterPluginsForWorktree(orphan);
-                        console.log(t.success(`  ✓ Removed orphan directory ${orphan}`));
-                    } catch (error) {
-                        const message = error instanceof Error ? error.message : String(error);
-                        console.log(kleur.yellow(`  ⚠ Could not remove ${orphan}: ${message}`));
-                    }
-                }
+                const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+                    remove: (path) => {
+                        if (!existsSync(path)) return { ok: true, message: `Removed orphan directory ${path}` };
+                        try {
+                            rmSync(path, { recursive: true, force: true });
+                            return { ok: true, message: `Removed orphan directory ${path}` };
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error);
+                            return { ok: false, message: `Could not remove ${path}: ${message}` };
+                        }
+                    },
+                });
+                for (const path of orphanRemoval.removed) unregisterPluginsForWorktree(path);
+                removedCount += orphanRemoval.removed.length;
 
                 const pruneResult = runGitWorktreePrune(repoRoot);
                 if (pruneResult.ok) {
@@ -1546,12 +1861,22 @@ export function createWorktreeCommand(): Command {
                 ? discoverRepos(opts.roots.split(',').map(root => root.trim()).filter(Boolean))
                 : [getRepoRoot(currentPath)];
 
-            let plan = planReap({
-                repos,
-                currentPath,
-                artifactThresholdDays: parseDurationDays(opts.artifactsOlderThan, 7),
-                worktreeThresholdDays: parseDurationDays(opts.worktreesOlderThan, 14),
-            });
+            const cwds = readProcessTableOrRefuse();
+            if (cwds === null) return;
+
+            let plan: ReapPlan;
+            try {
+                plan = planReap({
+                    repos,
+                    currentPath,
+                    artifactThresholdDays: parseDurationDays(opts.artifactsOlderThan, 7),
+                    worktreeThresholdDays: parseDurationDays(opts.worktreesOlderThan, 14),
+                    cwds,
+                });
+            } catch (error) {
+                refuseWithoutProcessTable(error);
+                return;
+            }
 
             let outcomes: ReapOutcome[] | null = null;
             const hasWork = plan.summary.reapable > 0 || plan.summary.artifacts_only > 0;
@@ -1564,7 +1889,13 @@ export function createWorktreeCommand(): Command {
                 });
 
                 if (proceed) {
-                    const applied = applyReap(plan);
+                    let applied: { plan: ReapPlan; outcomes: ReapOutcome[] };
+                    try {
+                        applied = applyReap(plan);
+                    } catch (error) {
+                        refuseWithoutProcessTable(error);
+                        return;
+                    }
                     plan = applied.plan;
                     outcomes = applied.outcomes;
                 }
