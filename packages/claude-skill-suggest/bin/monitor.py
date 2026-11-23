@@ -11,7 +11,14 @@ stdout is a channel into the model: this process prints the nudge line and
 nothing else. Diagnostics go to the decision log. Fail-open: any error means
 no nudge.
 """
-import fcntl, json, os, shutil, signal, subprocess, sys, time
+import fcntl
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import turnstate as ts  # noqa: E402
@@ -129,7 +136,8 @@ class Monitor:
             payload = json.dumps({"sid": self.sid, "epoch": epoch, "cwd": cwd, "prompt": prompt[:PROMPT_MAX], **ctx})
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
             try:
-                proc.stdin.write(payload.encode()); proc.stdin.close()
+                proc.stdin.write(payload.encode())
+                proc.stdin.close()
             except Exception:
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)

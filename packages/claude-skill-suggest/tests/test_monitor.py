@@ -1,4 +1,13 @@
-import json, os, shutil, subprocess, sys, tempfile, threading, time, unittest, uuid
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -59,7 +68,7 @@ class Env(unittest.TestCase):
 
     def rows(self):
         p = os.path.join(self.d, "log", "log.jsonl")
-        return [json.loads(l) for l in open(p)] if os.path.exists(p) else []
+        return [json.loads(line) for line in open(p)] if os.path.exists(p) else []
 
     def reasons(self):
         return [r.get("reason") for r in self.rows()]
@@ -83,14 +92,16 @@ class TestTurnState(unittest.TestCase):
         self.assertEqual(self.snap(user(PROMPT), user("[Request interrupted by user]", isMeta=False))["state"], "idle")
 
     def test_drift_is_unknown(self):
-        bad = asst("end_turn"); del bad["message"]["stop_reason"]
+        bad = asst("end_turn")
+        del bad["message"]["stop_reason"]
         self.assertEqual(self.snap(user(PROMPT), bad)["state"], "unknown")
         self.assertEqual(self.snap(asst("end_turn"))["state"], "unknown")  # assistant rows, no user row anywhere
 
     def test_bad_json_is_unknown(self):
         d = tempfile.mkdtemp()
         try:
-            p = os.path.join(d, "t.jsonl"); open(p, "w").write("not json\n{also not\n")
+            p = os.path.join(d, "t.jsonl")
+            open(p, "w").write("not json\n{also not\n")
             s = ts.snapshot(p, os.path.getsize(p))
             self.assertEqual(s["state"], "unknown")
         finally:
@@ -103,8 +114,11 @@ class TestTurnState(unittest.TestCase):
         self.assertEqual(self.snap(a, asst("tool_use"), tr, meta)["epoch"], "A")
 
     def test_eligibility(self):
-        ok = lambda row: ts.eligible_prompt(row)[0] is not None
-        why = lambda row: ts.eligible_prompt(row)[1]
+        def ok(row):
+            return ts.eligible_prompt(row)[0] is not None
+
+        def why(row):
+            return ts.eligible_prompt(row)[1]
         self.assertTrue(ok(user(PROMPT)))
         self.assertEqual(why(user("continue")), "control_nudge")
         self.assertEqual(why(user("Coordinator 8qox: please check the thing now")), "peer_relay")
@@ -137,7 +151,8 @@ class TestDelivery(Env):
         self.pump(m, lambda: m.job is not None, 2)
         self.append(asst("end_turn"), END)                      # the turn ends while the worker computes
         self.assertTrue(self.pump(m, lambda: m.job is None and "turn_ended" in self.reasons(), 4))
-        time.sleep(0.2); m.tick()
+        time.sleep(0.2)
+        m.tick()
         self.assertEqual(self.out, [])                           # nothing was written, nothing woke the session
 
     def test_new_prompt_cancels_the_old_worker(self):
@@ -170,7 +185,8 @@ class TestDelivery(Env):
     @staticmethod
     def long_turn_rows():
         """The live shape: a big row after the prompt, then a small tool result. The tail holds a user row but not the prompt."""
-        fat = asst("tool_use"); fat["message"]["content"] = [{"type": "text", "text": "y" * 300000}]
+        fat = asst("tool_use")
+        fat["message"]["content"] = [{"type": "text", "text": "y" * 300000}]
         small_tr = {"type": "user", "uuid": "TR", "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}}
         return [fat, asst("tool_use"), small_tr, asst("tool_use")]
 
@@ -205,7 +221,8 @@ class TestDelivery(Env):
         m = self.monitor()
         self.append(user(PROMPT, uid="E1"), asst("end_turn"), END)   # already idle when the prompt is noticed
         self.pump(m, lambda: "turn_ended" in self.reasons(), 3)
-        time.sleep(0.5); m.tick()
+        time.sleep(0.5)
+        m.tick()
         self.assertEqual(self.out, [])
 
     def test_unknown_state_does_not_deliver(self):
@@ -213,7 +230,8 @@ class TestDelivery(Env):
         m = self.monitor()
         self.append(user(PROMPT, uid="E1"))
         self.pump(m, lambda: m.job is not None, 2)
-        bad = asst("end_turn"); del bad["message"]["stop_reason"]   # transcript layout drifts mid-turn
+        bad = asst("end_turn")
+        del bad["message"]["stop_reason"]   # transcript layout drifts mid-turn
         self.append(bad)
         self.pump(m, lambda: m.job is None, 4)
         self.assertEqual(self.out, [])
@@ -233,7 +251,9 @@ class TestDelivery(Env):
         self.append(user(PROMPT, uid="E1"))
         self.pump(m, lambda: "worker_failed" in self.reasons(), 3)
         self.assertEqual(self.out, [])
-        os.environ.pop("FAKE_FAIL"); os.environ["FAKE_DELAY"] = "10"; mon.HARD_KILL_S = 0.4
+        os.environ.pop("FAKE_FAIL")
+        os.environ["FAKE_DELAY"] = "10"
+        mon.HARD_KILL_S = 0.4
         self.append(asst("tool_use"), user("a different request about deploying the staging service", uid="E2"))
         self.pump(m, lambda: "worker_timeout" in self.reasons(), 4)
         self.assertEqual(self.out, [])
@@ -243,7 +263,8 @@ class TestDelivery(Env):
         m = self.monitor()
         self.append(user(PROMPT, uid="E1", origin={"kind": "task-notification"}, promptSource="system"))
         for _ in range(10):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertIsNone(m.job)
         self.assertEqual(self.out, [])
 
@@ -251,20 +272,26 @@ class TestDelivery(Env):
         self.append(user(PROMPT, uid="OLD"))
         m = self.monitor()                                       # primed on a transcript that already holds a prompt
         for _ in range(10):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertIsNone(m.job)
         self.assertEqual(self.out, [])
 
     def test_production_construction_over_a_running_history_does_not_nudge(self):
         # main() builds Monitor(sid) with no path; a resumed session whose last turn was cut off classifies as running
-        home = os.path.join(self.d, "home"); proj = os.path.join(home, ".claude", "projects", "p"); os.makedirs(proj)
+        home = os.path.join(self.d, "home")
+        proj = os.path.join(home, ".claude", "projects", "p")
+        os.makedirs(proj)
         t = os.path.join(proj, "resumed1.jsonl")
-        self.append(user(PROMPT, uid="OLD"), path=t); self.append(tool_row("Read", file_path="/x"), path=t)
-        old = os.environ.get("HOME"); os.environ["HOME"] = home
+        self.append(user(PROMPT, uid="OLD"), path=t)
+        self.append(tool_row("Read", file_path="/x"), path=t)
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = home
         try:
             m = mon.Monitor("resumed1", emit=self.out.append)
             for _ in range(10):
-                m.tick(); time.sleep(0.02)
+                m.tick()
+                time.sleep(0.02)
             self.assertIsNone(m.job)
             self.assertEqual(self.out, [])
         finally:
@@ -274,7 +301,8 @@ class TestDelivery(Env):
         m = self.monitor()
         open(self.t, "a").write("garbage\n")
         for _ in range(5):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertEqual(self.out, [])
 
 
@@ -292,8 +320,10 @@ class TestContextAndActOn(Env):
             m = self.monitor()
             self.append(user("first request about the staging config please", uid="E0"), tool_row("Read", file_path="/repo/a.py"), tool_row("Bash", command="ls"), tool_row("Edit", file_path="/repo/b.py"), asst("end_turn"), END)
             for _ in range(5):
-                m.tick(); time.sleep(0.02)
-            m.cancel("reset"); m.seen_epoch = "E0"
+                m.tick()
+                time.sleep(0.02)
+            m.cancel("reset")
+            m.seen_epoch = "E0"
             self.append(user(PROMPT, uid="E1"))
             self.pump(m, lambda: os.path.exists(os.environ["FAKE_STDIN_DUMP"]) and os.path.getsize(os.environ["FAKE_STDIN_DUMP"]) > 0, 4)
             got = json.load(open(os.environ["FAKE_STDIN_DUMP"]))
@@ -316,7 +346,8 @@ class TestContextAndActOn(Env):
         m = self.delivered_with_path()
         self.append(tool_row("Read", file_path="/abs/other.md"))      # a different file: not acted on
         for _ in range(5):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertEqual([r for r in self.rows() if r.get("seam") == "read_after_suggest"], [])
         self.append(tool_row("Read", file_path="/abs/doc.md"))
         self.assertTrue(self.pump(m, lambda: any(r.get("seam") == "read_after_suggest" for r in self.rows()), 4))
@@ -324,7 +355,8 @@ class TestContextAndActOn(Env):
         self.assertEqual([(r["outcome"], r["pick"], r["path"]) for r in rows], [("read", "eng/debug", "/abs/doc.md")])
         self.append(tool_row("Read", file_path="/abs/doc.md"))
         for _ in range(5):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertEqual(len([r for r in self.rows() if r.get("seam") == "read_after_suggest"]), 1)
 
     def test_a_read_that_predates_the_nudge_does_not_count(self):
@@ -335,7 +367,8 @@ class TestContextAndActOn(Env):
         self.assertTrue(self.pump(m, lambda: self.out, 5))
         self.append(asst("tool_use"))                                  # any later transcript change triggers a watch step
         for _ in range(5):
-            m.tick(); time.sleep(0.02)
+            m.tick()
+            time.sleep(0.02)
         self.assertEqual([r for r in self.rows() if r.get("seam") == "read_after_suggest"], [])
 
     def test_window_expires_after_three_turn_ends(self):
@@ -344,10 +377,12 @@ class TestContextAndActOn(Env):
             self.append(asst("end_turn"), END)
             self.pump(m, lambda: True, 0.1)
             for _ in range(3):
-                m.tick(); time.sleep(0.02)
+                m.tick()
+                time.sleep(0.02)
             self.append(user("another long enough request number %d" % i, uid="N%d" % i))
             for _ in range(3):
-                m.tick(); time.sleep(0.02)
+                m.tick()
+                time.sleep(0.02)
         self.assertTrue(self.pump(m, lambda: any(r.get("outcome") == "expired" for r in self.rows()), 4))
         m.cancel("test_end")
 
@@ -357,7 +392,8 @@ class TestHostCap(Env):
         os.environ["FAKE_DELAY"] = "1.0"
         monitors = []
         for i in range(10):
-            p = os.path.join(self.d, "t%d.jsonl" % i); open(p, "w").close()
+            p = os.path.join(self.d, "t%d.jsonl" % i)
+            open(p, "w").close()
             monitors.append((p, self.monitor(path=p, sid="s%d" % i)))
         for p, _ in monitors:
             self.append(user(PROMPT, uid="E"), path=p)
@@ -379,7 +415,8 @@ class TestHostCap(Env):
 
 class TestResources(Env):
     def test_slot_is_released_when_a_job_finishes_normally(self):
-        os.environ["SKILL_SUGGEST_SLOTS"] = "1"; mon.SLOTS = 1
+        os.environ["SKILL_SUGGEST_SLOTS"] = "1"
+        mon.SLOTS = 1
         m = self.monitor()
         for i in range(3):  # with one slot, a leak would drop every prompt after the first
             self.append(asst("tool_use"), user("a separate request number %d about the pipeline" % i, uid="P%d" % i)) if i else self.append(user(PROMPT, uid="P0"))
@@ -407,8 +444,11 @@ class TestResources(Env):
             os.kill(gc, 0)                       # a plain kill of the worker would orphan its child
 
     def test_first_prompt_is_served_when_the_transcript_appears_late(self):
-        home = os.path.join(self.d, "home"); proj = os.path.join(home, ".claude", "projects", "p"); os.makedirs(proj)
-        old = os.environ.get("HOME"); os.environ["HOME"] = home
+        home = os.path.join(self.d, "home")
+        proj = os.path.join(home, ".claude", "projects", "p")
+        os.makedirs(proj)
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = home
         try:
             m = mon.Monitor("late1", path=None, emit=self.out.append)
             m.tick()                                         # no transcript yet
@@ -421,8 +461,11 @@ class TestResources(Env):
 
 class TestProcess(Env):
     def test_real_monitor_process_prints_only_the_nudge(self):
-        home = os.path.join(self.d, "home"); proj = os.path.join(home, ".claude", "projects", "p"); os.makedirs(proj)
-        t = os.path.join(proj, "sid1.jsonl"); open(t, "w").close()
+        home = os.path.join(self.d, "home")
+        proj = os.path.join(home, ".claude", "projects", "p")
+        os.makedirs(proj)
+        t = os.path.join(proj, "sid1.jsonl")
+        open(t, "w").close()
         env = dict(os.environ, HOME=home, CLAUDE_CODE_SESSION_ID="sid1")
         p = subprocess.Popen([sys.executable, os.path.join(ROOT, "bin", "monitor.py")], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         threading.Timer(25, p.kill).start()   # a failure must fail, not hang on readline
