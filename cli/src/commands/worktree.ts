@@ -475,6 +475,12 @@ export interface CleanScanInput {
 export interface CleanScan {
     plan: CleanPlan;
     orphans: CleanTarget[];
+    /**
+     * Orphan directories kept because a process is running inside them. Kept apart
+     * from `plan.skippedLive`: an orphan is not a merged worktree and has no branch,
+     * so printing it under that heading tells the reader something untrue.
+     */
+    orphansSkippedLive: CleanTarget[];
 }
 
 /**
@@ -497,10 +503,11 @@ export function scanCleanTargets(input: CleanScanInput): CleanScan | null {
     return {
         plan: {
             removable: plan.removable,
-            skippedLive: [...plan.skippedLive, ...orphanPlan.skippedLive],
+            skippedLive: plan.skippedLive,
             unmerged: plan.unmerged,
         },
         orphans: orphanPlan.removable,
+        orphansSkippedLive: orphanPlan.skippedLive,
     };
 }
 
@@ -1549,7 +1556,7 @@ export function getRepoRoot(cwd: string): string {
  * suite green. A classification the reader never sees is the same defect as one
  * the planner never made.
  */
-export function printCleanPlan(plan: CleanPlan): void {
+export function printCleanPlan(plan: CleanPlan, orphansSkippedLive: CleanTarget[] = []): void {
     const { removable, skippedLive, unmerged } = plan;
 
     if (removable.length > 0) {
@@ -1572,6 +1579,49 @@ export function printCleanPlan(plan: CleanPlan): void {
         for (const wt of unmerged) {
             console.log(kleur.dim(`    - ${wt.path} (${wt.branch || 'detached'}) not merged into the default branch`));
         }
+    }
+
+    if (orphansSkippedLive.length > 0) {
+        console.log(kleur.bold(`\n  ${orphansSkippedLive.length} orphaned director(y/ies) kept, in use right now:`));
+        for (const orphan of orphansSkippedLive) {
+            console.log(kleur.dim(`    - ${orphan.path} in use: pids ${orphan.livePids.join(',')}`));
+        }
+        console.log(kleur.dim('    A directory in use is removed after the process inside it ends.'));
+    }
+}
+
+/**
+ * True when the scan found nothing at all, kept or removable. A scan whose only
+ * finding is a live orphan is NOT empty: it found something, and saying so is the
+ * whole point of keeping it. Extracted so the guard can be tested; inside the
+ * action it was reachable only by running the command.
+ */
+export function cleanScanIsEmpty(scan: CleanScan): boolean {
+    return scan.plan.removable.length === 0
+        && scan.plan.skippedLive.length === 0
+        && scan.plan.unmerged.length === 0
+        && scan.orphans.length === 0
+        && scan.orphansSkippedLive.length === 0;
+}
+
+/**
+ * Everything `clean` prints about the plan: the banner, the worktree classes and
+ * the orphan class. The orphan list is passed to `printCleanPlan` HERE rather than
+ * at the call site, so the two classes cannot be separated again by a caller.
+ */
+export function renderCleanPlan(scan: CleanScan, opts: { orphans: boolean }): void {
+    console.log(t.bold('\n  xt worktree clean\n'));
+    printCleanPlan(
+        { removable: scan.plan.removable, skippedLive: scan.plan.skippedLive, unmerged: scan.plan.unmerged },
+        scan.orphansSkippedLive,
+    );
+
+    if (opts.orphans) {
+        console.log(kleur.bold(`\n  ${scan.orphans.length} orphaned managed director(y/ies):`));
+        for (const orphan of scan.orphans) {
+            console.log(kleur.dim(`    - ${orphan.path}`));
+        }
+        console.log(kleur.dim('    - git worktree prune --expire now'));
     }
 }
 
@@ -1763,7 +1813,7 @@ export function createWorktreeCommand(): Command {
             const orphanPlan = { removable: scan.orphans };
             const orphanDirs = scan.orphans.map(orphan => orphan.path);
 
-            if (merged.length === 0 && skippedLive.length === 0 && unmerged.length === 0 && orphanDirs.length === 0) {
+            if (cleanScanIsEmpty(scan)) {
                 if (!opts.orphans) {
                     console.log(kleur.dim('\n  No merged xt worktrees to clean\n'));
                     return;
@@ -1773,16 +1823,7 @@ export function createWorktreeCommand(): Command {
                 if (opts.dryRun) return;
             }
 
-            console.log(t.bold('\n  xt worktree clean\n'));
-            printCleanPlan({ removable: merged, skippedLive, unmerged });
-
-            if (opts.orphans) {
-                console.log(kleur.bold(`\n  ${orphanDirs.length} orphaned managed director(y/ies):`));
-                for (const orphan of orphanDirs) {
-                    console.log(kleur.dim(`    - ${orphan}`));
-                }
-                console.log(kleur.dim('    - git worktree prune --expire now'));
-            }
+            renderCleanPlan(scan, { orphans: opts.orphans });
 
             if (opts.dryRun) {
                 console.log(kleur.yellow('\n  ℹ Dry run — no changes applied\n'));

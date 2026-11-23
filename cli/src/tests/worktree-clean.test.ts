@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyCleanRemoval, applyReap, branchLineMatches, isMergedWorktree, scanCleanTargets, selectOrphanTargets, isMergedIntoMain, planReap, printCleanPlan, readProcessTableOrRefuse, selectCleanTargets, worktreeListStatus, type WorktreeInfo } from '../commands/worktree.js';
+import { applyCleanRemoval, applyReap, branchLineMatches, cleanScanIsEmpty, isMergedWorktree, renderCleanPlan, scanCleanTargets, selectOrphanTargets, isMergedIntoMain, planReap, printCleanPlan, readProcessTableOrRefuse, selectCleanTargets, worktreeListStatus, type CleanScan, type WorktreeInfo } from '../commands/worktree.js';
 import { readProcessCwds } from '../core/worktree-reap.js';
 
 const created: string[] = [];
@@ -218,6 +218,103 @@ describe('printCleanPlan', () => {
         expect(text).toContain('1 worktree(s) kept, not merged:');
         expect(text).toContain('/tmp/w-unmerged (xt/unmerged) not merged into the default branch');
     });
+
+    it('prints a live orphan under its own heading, never as a kept merged worktree', () => {
+        const logs: string[] = [];
+        const original = console.log;
+        console.log = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+        try {
+            const target = (p: string, branch: string, livePids: number[] = []) => ({ path: p, branch, livePids });
+            printCleanPlan(
+                { removable: [], skippedLive: [], unmerged: [] },
+                [target('/tmp/managed/orphan-live', '', [9191])],
+            );
+        } finally {
+            console.log = original;
+        }
+
+        const text = logs.join('\n');
+        // The orphan is not a merged worktree and has no branch: printing it under
+        // that heading told the reader something untrue about what was kept.
+        expect(text).toContain('1 orphaned director(y/ies) kept, in use right now:');
+        expect(text).toContain('/tmp/managed/orphan-live in use: pids 9191');
+        expect(text).not.toContain('merged worktree(s) kept');
+        expect(text).not.toContain('detached');
+    });
+});
+
+describe('renderCleanPlan: the orphan class reaches the printer', () => {
+    const scanWith = (fields: Partial<CleanScan>): CleanScan => ({
+        plan: { removable: [], skippedLive: [], unmerged: [] },
+        orphans: [],
+        orphansSkippedLive: [],
+        ...fields,
+    });
+
+    const capture = (fn: () => void): string => {
+        const logs: string[] = [];
+        const original = console.log;
+        console.log = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+        try { fn(); } finally { console.log = original; }
+        return logs.join('\n');
+    };
+
+    it('prints the live orphan it was given, through the printer that names the class', () => {
+        // The call site passed `scan.orphansSkippedLive` to printCleanPlan; dropping it
+        // left every suite green because nothing asserted the rendered line.
+        const text = capture(() => renderCleanPlan(
+            scanWith({ orphansSkippedLive: [{ path: '/tmp/managed/orphan-live', branch: '', livePids: [9191] }] }),
+            { orphans: false },
+        ));
+        expect(text).toContain('1 orphaned director(y/ies) kept, in use right now:');
+        expect(text).toContain('/tmp/managed/orphan-live in use: pids 9191');
+    });
+
+    it('prints nothing about orphans when it was given none', () => {
+        const text = capture(() => renderCleanPlan(scanWith({}), { orphans: false }));
+        expect(text).not.toContain('orphaned director(y/ies) kept');
+        expect(text).not.toContain('0 orphaned managed director(y/ies)');
+    });
+});
+
+describe('cleanScanIsEmpty: a kept orphan is not an empty scan', () => {
+    const scanWith = (fields: Partial<CleanScan>): CleanScan => ({
+        plan: { removable: [], skippedLive: [], unmerged: [] },
+        orphans: [],
+        orphansSkippedLive: [],
+        ...fields,
+    });
+
+    it('is empty only when every class is empty', () => {
+        expect(cleanScanIsEmpty(scanWith({}))).toBe(true);
+        expect(cleanScanIsEmpty(scanWith({ plan: { removable: [{ path: '/tmp/w', branch: 'xt/1', livePids: [] }], skippedLive: [], unmerged: [] } }))).toBe(false);
+    });
+
+    it('is NOT empty when the only finding is a live orphan', () => {
+        // "No merged worktrees to clean" was printed for a scan whose one finding was
+        // a directory kept because a process runs in it — the report contradicted the work.
+        expect(cleanScanIsEmpty(scanWith({ orphansSkippedLive: [{ path: '/tmp/managed/orphan-live', branch: '', livePids: [1] }] }))).toBe(false);
+        expect(cleanScanIsEmpty(scanWith({ orphans: [{ path: '/tmp/managed/orphan-idle', branch: '', livePids: [] }] }))).toBe(false);
+    });
+});
+
+describe('scanCleanTargets: orphans are classified as orphans', () => {
+    it('keeps a live orphan off the merged-worktree list', () => {
+        const scan = scanCleanTargets({
+            worktrees: [],
+            orphans: ['/tmp/managed/orphan-live', '/tmp/managed/orphan-idle'],
+            merged: () => false,
+            readTable: () => new Map([['/tmp/managed/orphan-live', [9191]]]),
+        });
+
+        expect(scan).not.toBeNull();
+        const live = scan?.orphansSkippedLive ?? [];
+        expect(live.map(o => o.path)).toEqual(['/tmp/managed/orphan-live']);
+        expect(live[0]?.livePids).toEqual([9191]);
+        // The worktree list stays empty: one live class cannot masquerade as another.
+        expect(scan?.plan.skippedLive).toEqual([]);
+        expect((scan?.orphans ?? []).map(o => o.path)).toEqual(['/tmp/managed/orphan-idle']);
+    });
 });
 
 describe('worktreeListStatus', () => {
@@ -273,7 +370,7 @@ describe('scanCleanTargets', () => {
         expect(asked).toBe(0);
     });
 
-    it('puts a live orphan in the skipped class the printer shows, so it is not removed silently', () => {
+    it('keeps a live orphan visible, in the class that names it an orphan', () => {
         const scan = scanCleanTargets({
             worktrees: [],
             orphans: ['/tmp/managed/orphan-live'],
@@ -281,8 +378,12 @@ describe('scanCleanTargets', () => {
             readTable: () => new Map([[path.join('/tmp/managed/orphan-live'), [77]]]),
         });
 
+        // Kept, not removed silently: that part was right. It first landed in
+        // `plan.skippedLive`, which the printer heads "merged worktree(s) kept" —
+        // a true removal decision described with an untrue noun.
         expect(scan?.orphans).toEqual([]);
-        expect(scan?.plan.skippedLive.map(t => t.path)).toEqual(['/tmp/managed/orphan-live']);
+        expect(scan?.orphansSkippedLive.map(t => t.path)).toEqual(['/tmp/managed/orphan-live']);
+        expect(scan?.plan.skippedLive).toEqual([]);
     });
 });
 
@@ -337,7 +438,10 @@ describe('applyCleanRemoval', () => {
 describe('isMergedIntoMain: a git failure is not an answer', () => {
     it('keeps the tree when the merged-branch listing fails, rather than calling it merged', () => {
         const repo = makeRepo();
-        const merged = isMergedIntoMain('xt/1', repo, undefined, () => ({ status: 128, stdout: null }));
+        // The listing NAMES the branch and still failed, so the status is the only
+        // thing standing between this tree and its removal. A stub with no stdout
+        // answers false with or without the guard, and the guard would be unobservable.
+        const merged = isMergedIntoMain('xt/1', repo, undefined, () => ({ status: 128, stdout: '  xt/1\n' }));
         expect(merged).toBe(false);
     });
 
