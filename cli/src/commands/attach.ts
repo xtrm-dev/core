@@ -283,6 +283,11 @@ export function createAttachCommand(): Command {
         .option('--new-session', 'With --fresh: force a new session')
         .option('--no-attach', 'With --fresh: create the session detached and print session:pane')
         .option('--parent <target>', 'With --fresh: @agent_parent_session of the pane (session name or id)')
+        .addHelpText('after', `
+Fresh sessions resume an existing worktree without creating a branch. Use --fresh when
+that worktree is known and you need a new runtime; use --continue for the runtime's
+normal continuation path. Example: xt attach worker-name --fresh --workers --no-attach
+`)
         .option('--yolo', 'With --fresh on a Codex worktree: disable sandboxing and approval prompts (default)')
         .option('--no-yolo', 'With --fresh on a Codex worktree: workspace-write sandbox with on-request approval')
         .allowExcessArguments(true)

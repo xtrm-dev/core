@@ -1,5 +1,8 @@
 # Continuity — checklists and mechanics
 
+Parked sessions wake with `xt attach <worktree> --fresh` in the recorded `session:window`; use `--workers` or `--pane <session/window|%pane>` for explicit placement. If the target is gone, omit it and let `~/.xtrm/config/launch.json` role/default placement choose. Do not manually join panes or apply layouts.
+
+
 Companion to the `Continuity` section in `SKILL.md` (doctrine lives there; this file
 holds checklists and exact mechanics). Command syntax drifts; `sb --help` /
 `sb help <group> <verb>` is authoritative over anything quoted here.

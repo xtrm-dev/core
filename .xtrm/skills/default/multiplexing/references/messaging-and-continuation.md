@@ -1,5 +1,8 @@
 # Messaging and continuation
 
+For a parked session, wake with `xt attach <worktree> --fresh` in the recorded `session:window`, or use `--workers`/`--pane <session/window|%pane>`. If the target is gone, omit it and let `~/.xtrm/config/launch.json` role/default placement choose. Do not manually join panes or apply layouts.
+
+
 ## Message classes
 
 Use three intent classes regardless of transport:

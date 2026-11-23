@@ -23,8 +23,8 @@ COMMON = [
     "journal-search: before you ask a peer what was decided, reported or handed off -> read its flags with --help, never "
     f"assume them ({PACK}/journal-search/scripts/jsearch.py --help; the official journal-search command replaces this script "
     "and keeps the rule), then search; a hit is a pointer: open it with sb journal show, re-check it live",
-    "service-knowledge (skill + CLI): before you read a service's source -> /service-knowledge or /scope, then "
-    "service-knowledge index query \"<text>\"; after a change to a service, its update flow (service-knowledge drift)",
+    "service-knowledge (tools first): before source reading call knowledge_evidence_for_files, before grep call knowledge_search; "
+    "when stale call knowledge_status, after recent changes call knowledge_drift; CLI fallback: service-knowledge index query \"<text>\"; after a service change use service-knowledge drift",
     "sb help <group>: before a sb verb you have not used this session",
 ]
 SPECIALISTS = (

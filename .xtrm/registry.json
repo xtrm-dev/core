@@ -222,7 +222,7 @@
           "version": "0.15.3"
         },
         "multiplexing/references/messaging-and-continuation.md": {
-          "hash": "516d39ce6a9c00abf780e0c56b19bdff9bfd5aa0e0cbc9c99c6eac1a09a7c541",
+          "hash": "68df2bb69ed0bdf80500351d9907253a954a4d1675ba4d6e76bade370aaf6156",
           "version": "0.15.3"
         },
         "multiplexing/references/messy-run-recovery.md": {
@@ -266,7 +266,7 @@
           "version": "0.15.3"
         },
         "multiplexing/SKILL.md": {
-          "hash": "09fde6278103798d1e616ef2295b6a709b66471fe5414326033b568c588ce9fb",
+          "hash": "63911c53f665e611c88019fbd19f2184379430e876157c9f2a4fd69863ac32f1",
           "version": "0.15.3"
         },
         "open-code-review/references/delegate.md": {
@@ -666,7 +666,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/references/continuity.md": {
-          "hash": "5fd6c04f502e13590ff1d40106873da8ecd0ff9e48a0d6c7f52421a00dcce677",
+          "hash": "d7fdb51530b64a401811d3cea8ba8f15fc09e6b9729a257489ae47ca249797cf",
           "version": "0.15.3"
         },
         "using-xtrm/references/surfaces.md": {
@@ -674,7 +674,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/SKILL.md": {
-          "hash": "1679ce046828c563aaf99941b23a0632442e2897a290397238f5e75ac0093a6e",
+          "hash": "b7310d5d40b84bb66d937bc5b3029cc4356a8a1039417d7a746ae07c9c5bc979",
           "version": "0.15.3"
         }
       }
@@ -1037,7 +1037,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/instructions.md": {
-          "hash": "5dd28c3329b4db5d6846ecd77a5e5cea58adb983812c125b9884f0cb5187a88f",
+          "hash": "090d3e7077f1ab6dc3dda0812aeffd643327bdd44c42652d032c037fe2a22942",
           "version": "0.15.3"
         },
         "project-management/project-management/references/jira.md": {
@@ -1045,15 +1045,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "cd5150e57f0828bda29cfac7bd17543e5286b474e2074ade7ba88483ba21996f",
+          "hash": "005e7e331e18d4c052816563cdfa94d36a3cd4a56854fd60099e70901bba81ee",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "050d06c1f161cf63d30e44c1103cb6ecf4d3350a6a11e1357a935605394a6163",
+          "hash": "e226126234da434439bf68108f5b6b5311fe9818c80188c3e020128ac6cc87cf",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "c77c71d548ddbff27eb1d9a14638dd7036736d4cfea459b18d0020837b4c367b",
+          "hash": "7917da8163960cc01b0f4c404ad7d5c635977c5eb1452f336df059ff1dff6929",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
@@ -1105,7 +1105,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_tools.py": {
-          "hash": "59ea4bb0b93e3a4c746b0982a6e9b0739ca35320b319beebfbcb7739064756c3",
+          "hash": "0c1c41e38a2fcbd3f4da9e432f08d86b68a3903b125c394e752eebdd1538e0d8",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_wakes.py": {
@@ -1253,7 +1253,7 @@
           "version": "0.15.3"
         },
         "session-recovery/session-recovery/SKILL.md": {
-          "hash": "378f4bdb8fa78239694f101bbfeb9e0f30fac9185646c4327b72c721fedd0dcb",
+          "hash": "8067e420adf6f77bd0ea761c82f5a6606b041523687f9c45375556c309e36a0e",
           "version": "0.15.3"
         },
         "sre-ops/PACK.json": {
@@ -1289,7 +1289,7 @@
           "version": "0.15.3"
         },
         "sre-ops/sre-ops/SKILL.md": {
-          "hash": "30ca7537a4abf29a543dd5ae1090f446c4f4bd1563b52325acfce28c545405c4",
+          "hash": "7afe90ccfb1311a2e6bb6807b09245a44ace993705f4d20f271e329f9ab41326",
           "version": "0.15.3"
         },
         "xt-optional/docker-expert/SKILL.md": {
@@ -1624,15 +1624,15 @@
           "version": "0.15.3"
         },
         "instructions/agent-contract.md": {
-          "hash": "44f0c1ee9101d8bef64649e7c4241818f3ba085861e139a844fb4c78c75b3647",
+          "hash": "4554444a588e6685548efe1933ef3c3a69641124f9af9ae3f0c1b09ffa40df40",
           "version": "0.15.3"
         },
         "instructions/agents-top.md": {
-          "hash": "7f89312b2c908fb8470e16b96f33441d649e3fc7ba83cfc66adb8fa85b732e9e",
+          "hash": "231d69203d2a6f0ffd8a653ba345362e3d4771d59c80c6d70a32ba4680382f79",
           "version": "0.15.3"
         },
         "instructions/claude-top.md": {
-          "hash": "c60985e44eddfb80ecf1c71f288913588d33e8e293feb8850e956e12fe42418a",
+          "hash": "395018a1724cee83b9a6f77f611907f06470da4a97e35529eb30d96c8ca2740c",
           "version": "0.15.3"
         },
         "instructions/global-system-prompt.md": {

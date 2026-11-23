@@ -118,7 +118,10 @@ direct health signals, use them together rather than treating one green query as
 
 Operational knowledge is owned by XTRM `service-knowledge`, not duplicated into this
 skill. When a repository has service knowledge, use its current service skill/runbook for
-service-specific diagnostics and remediation.
+service-specific diagnostics and remediation. Before reading service source, call
+`knowledge_evidence_for_files`; before grep, call `knowledge_search`; use
+`knowledge_status` when stale and `knowledge_drift` after recent changes. If the tools are
+unavailable, use the CLI fallback below.
 
 Check freshness when the incident depends on service-specific assumptions:
 

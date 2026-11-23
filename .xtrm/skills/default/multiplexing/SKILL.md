@@ -123,7 +123,7 @@ reply rules: `references/reply-discipline.md`.
 
 ## Wakeup and continuation
 
-A worker that asks a question and then loses its wakeup path is effectively dead.
+A worker that asks a question and then loses its wakeup path is effectively dead. See `references/messaging-and-continuation.md` for parked-session placement and wake rules.
 Whenever progress depends on a future event:
 
 1. identify the event/condition;
