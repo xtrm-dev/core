@@ -222,7 +222,7 @@
           "version": "0.15.3"
         },
         "multiplexing/references/messaging-and-continuation.md": {
-          "hash": "68df2bb69ed0bdf80500351d9907253a954a4d1675ba4d6e76bade370aaf6156",
+          "hash": "5692ca9783ac49b7f71e9bf5cb3f02be8b373432a2896dbb96ae1a2ed2b11095",
           "version": "0.15.3"
         },
         "multiplexing/references/messy-run-recovery.md": {
@@ -666,7 +666,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/references/continuity.md": {
-          "hash": "d7fdb51530b64a401811d3cea8ba8f15fc09e6b9729a257489ae47ca249797cf",
+          "hash": "43c45e052fb83acd0d43ee4dccc438cf0485e0368008fb4daaddb7ce0d55b54a",
           "version": "0.15.3"
         },
         "using-xtrm/references/surfaces.md": {
@@ -1049,11 +1049,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "e226126234da434439bf68108f5b6b5311fe9818c80188c3e020128ac6cc87cf",
+          "hash": "53f757ebbe86dfa5d394568469a0ded861fe00d20941b4edae6c34029a5a73a6",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
-          "hash": "7917da8163960cc01b0f4c404ad7d5c635977c5eb1452f336df059ff1dff6929",
+          "hash": "f8e7278672c53d74bcfc882e05dcdd7c3a863c89d70e91dd17166fa4549dcc8c",
           "version": "0.15.3"
         },
         "project-management/project-management/references/project-start.md": {
