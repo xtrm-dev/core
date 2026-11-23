@@ -3493,6 +3493,20 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
     const cwdBasename = path.basename(mainRepoRoot);
 
+    // Validate placement configuration before creating or mutating a worktree.
+    validateLayout(opts.layout);
+    resolvePlacement({
+        role: roleName,
+        pane: opts.pane,
+        workers: opts.workers,
+        window: opts.window,
+        windowName: opts.windowName,
+        session: opts.session,
+        layout: opts.layout,
+        newSession,
+        insideTmux: Boolean(process.env.TMUX),
+    });
+
     // Resolve slug — shared by both branch and worktree path so they're linked
     const existing = opts.existingWorktree;
     const slug = existing?.slug ?? name ?? randomSlug(4);
@@ -4202,10 +4216,13 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // (plus the role payload, which is handed over after creation too).
     // A --window worker lives in the caller's session, so it carries that
     // session's observed identity instead of a launcher-computed name.
-    const targetSessionIdentity = effectiveWindow && placement.session
-        ? resolveTmuxSessionIdentity(placement.session)
+    const identitySession = placement.kind === 'pane' && placement.target
+        ? (placement.target.includes(':') ? placement.target.split(':', 1)[0] : undefined)
+        : placement.session;
+    const targetSessionIdentity = identitySession
+        ? resolveTmuxSessionIdentity(identitySession)
         : null;
-    const windowIdentity = effectiveWindow
+    const windowIdentity = (effectiveWindow || placement.kind === 'pane')
         ? targetSessionIdentity ?? resolveCurrentTmuxSessionIdentity()
         : null;
     const newSessionIdentityEnv = windowIdentity
@@ -4268,7 +4285,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         process.exit(1);
     };
     // Same transport either way; only the tmux verb and target differ.
-    const targetSession = placement.session ?? currentTmuxSessionId();
+    const targetSession = placement.session ?? currentTmuxSessionId() ?? plan.sessionName;
     const createArgs = placementKind === 'pane'
         ? ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', placement.target ?? targetSession, '-c', worktreePath]
         : placementKind === 'workers' && placement.existingWindow
@@ -4435,7 +4452,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             });
             process.stdout.write(`${JSON.stringify(outcome)}\n`);
         } else {
-            process.stdout.write(`${placement.session ?? plan.sessionName}:${paneId}\n`);
+            process.stdout.write(`${placement.kind === 'session' ? plan.sessionName : placement.session ?? plan.sessionName}:${paneId}\n`);
         }
         process.exit(0);
     }

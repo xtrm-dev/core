@@ -283,7 +283,7 @@ def park(a: argparse.Namespace) -> int:
     if not pathlib.Path(worktree).is_dir():
         raise ParkError(f"refused: worktree {worktree} is not a directory")
     session = tmux_fact(pane, "#{session_name}") if pane else None
-    window = tmux_fact(pane, "#{window_name}") if pane else None
+    window = tmux_fact(pane, "#{window_id}") if pane else None
     placement = f"{session}:{window}" if session and window else None
     # The launch role is what the relaunch needs to give the woken session the same role, system prompt and pane
     # role. A readable pane without @agent_role is a bare launch (no role); an unreadable pane cannot say.

@@ -115,7 +115,8 @@ function workersTarget(session: string | undefined, maxPanes: number, deps: Plac
         const match = /^workers-(\d+)$/.exec(name);
         return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
-    return { target: `${session}:`, name: numbered === 0 ? 'workers' : `workers-${numbered + 1}` };
+    const hasWorkersWindow = windows.some(([, name]) => /^workers(?:-\d+)?$/.test(name));
+    return { target: `${session}:`, name: hasWorkersWindow ? `workers-${Math.max(numbered, 1) + 1}` : 'workers' };
 }
 
 export function resolvePlacement(options: PlacementOptions, deps: PlacementDeps = {}): ResolvedPlacement {

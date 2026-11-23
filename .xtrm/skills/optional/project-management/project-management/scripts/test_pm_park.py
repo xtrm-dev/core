@@ -70,7 +70,7 @@ class Fake:
             sub = args[1]
             if sub == "display-message":
                 if "window_id" in args[-1]:
-                    return cp(out="@1")
+                    return cp(out="0")
                 return cp(out="sess" if "session_name" in args[-1] else self.pane_dead)
             if sub in ("new-window", "new-session"):
                 return cp(self.tmux_new_rc, out="%9\n", err="can't find session" if self.tmux_new_rc else "")
