@@ -265,11 +265,106 @@ describe("xtprompt", () => {
     } as any);
 
     expect(registeredCommands).toEqual([
-      { name: "xtprompt", description: "xtprompt: rewrite current editor prompt" },
+      { name: "xtprompt", description: "xtprompt: rewrite the editor draft, or the text after the command" },
     ]);
     expect(registeredShortcuts).toEqual([
       { key: "alt+m", description: "Rewrite current editor draft (xtprompt)" },
     ]);
+  });
+
+  test("normalises a quoted command draft", () => {
+    expect(xtprompt.normaliseCommandDraft('"make the tests deterministic"')).toBe("make the tests deterministic");
+    expect(xtprompt.normaliseCommandDraft("'make the tests deterministic'")).toBe("make the tests deterministic");
+    expect(xtprompt.normaliseCommandDraft("  make the tests deterministic  ")).toBe("make the tests deterministic");
+    expect(xtprompt.normaliseCommandDraft('"half quote')).toBe('"half quote');
+    expect(xtprompt.normaliseCommandDraft('"')).toBe('"');
+    expect(xtprompt.normaliseCommandDraft("")).toBe("");
+  });
+
+  test("command argument is the draft when the editor is already cleared", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => ({
+      content: [{ type: "text", text: "<xtprompt>rewritten prompt</xtprompt>" }],
+    });
+
+    let editorText = "";
+    const notices: Array<{ message: string; level: string }> = [];
+    const getEditorText = mock(() => editorText);
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!(
+      '"Rename /xtprompt command to accept arguments in packages/pi-extensions/extensions/xtprompt/index.ts"',
+      {
+        hasUI: true,
+        mode: "tui",
+        model: { maxTokens: 1024 },
+        ui: {
+          notify(message: string, level: string) {
+            notices.push({ message, level });
+          },
+          getEditorText,
+          setEditorText: (value: string) => {
+            editorText = value;
+          },
+          custom: async (
+            render: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown,
+          ) =>
+            await new Promise<string | null>((resolve) => {
+              render({}, {}, {}, resolve);
+            }),
+        },
+        modelRegistry: {
+          streamSimple: registryStreamSimple,
+          getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
+        },
+        sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+      },
+    );
+
+    expect(getEditorText).toHaveBeenCalledTimes(0);
+    const [, request] = streamCalls[0] as [unknown, { messages: Array<{ content: string }> }];
+    expect(request.messages[0].content).toBe(
+      "Rename /xtprompt command to accept arguments in packages/pi-extensions/extensions/xtprompt/index.ts",
+    );
+    expect(editorText).toBe("rewritten prompt");
+    expect(notices).toContainEqual({ message: "xtprompt: enhanced (refactor).", level: "info" });
+  });
+
+  test("empty argument and empty editor reports the actionable draft hint", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => {
+      throw new Error("streamSimple should not run");
+    };
+
+    const notices: Array<{ message: string; level: string }> = [];
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!("   ", {
+      hasUI: true,
+      mode: "tui",
+      model: { maxTokens: 1024 },
+      ui: {
+        notify(message: string, level: string) {
+          notices.push({ message, level });
+        },
+        getEditorText: () => "",
+        setEditorText: () => {},
+        custom: async () => {
+          throw new Error("loader should stay unused without a draft");
+        },
+      },
+      modelRegistry: {
+        streamSimple: registryStreamSimple,
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "k" }),
+      },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+    });
+
+    expect(notices).toContainEqual({
+      message: 'xtprompt: no draft — type it after the command (/xtprompt "…") or in the editor.',
+      level: "info",
+    });
+    expect(streamCalls).toHaveLength(0);
   });
 
   test("cancelled clarification leaves editor unchanged and skips model call", async () => {
@@ -505,7 +600,9 @@ describe("xtprompt", () => {
       registerShortcut() {},
     } as any);
 
-    expect(commands.get("xtprompt")).toEqual({ description: "xtprompt: rewrite current editor prompt" });
+    expect(commands.get("xtprompt")).toEqual({
+      description: "xtprompt: rewrite the editor draft, or the text after the command",
+    });
     expect(send).toHaveBeenCalledTimes(0);
     expect(streamCalls).toHaveLength(0);
   });
