@@ -140,7 +140,7 @@ function createState(): PromptState {
 export default function registerXtprompt(pi: ExtensionAPI): void {
   const state = createState();
 
-  const enhance = async (ctx: ExtensionContext): Promise<void> => {
+  const enhance = async (ctx: ExtensionContext, draftArgument?: string): Promise<void> => {
     if (!state.enabled) {
       ctx.ui.notify(`${EXTENSION} is disabled. Run /${COMMAND} on`, "info");
       return;
@@ -150,9 +150,15 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
       return;
     }
 
-    const originalDraft = ctx.ui.getEditorText();
+    // The /command form carries its draft in `args`: Pi clears the editor before
+    // the handler runs, so the editor is empty there. The shortcut has no args
+    // and reads the editor. Prefer the argument when it exists.
+    const originalDraft = draftArgument ?? ctx.ui.getEditorText();
     if (!originalDraft.trim()) {
-      ctx.ui.notify(`${EXTENSION}: editor is empty.`, "info");
+      ctx.ui.notify(
+        `${EXTENSION}: no draft — type it after the command (/${COMMAND} "…") or in the editor.`,
+        "info",
+      );
       return;
     }
 
@@ -216,9 +222,10 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand(COMMAND, {
-    description: `${EXTENSION}: rewrite current editor prompt`,
+    description: `${EXTENSION}: rewrite the editor draft, or the text after the command`,
     handler: async (args, ctx) => {
-      const arg = (args ?? "").trim().toLowerCase();
+      const rawArgument = (args ?? "").trim();
+      const arg = rawArgument.toLowerCase();
       if (arg === "on") {
         state.enabled = true;
         ctx.ui.notify(`${EXTENSION} enabled.`, "info");
@@ -236,9 +243,22 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
         );
         return;
       }
-      await enhance(ctx);
+      const draftArgument = normaliseCommandDraft(rawArgument);
+      await enhance(ctx, draftArgument === "" ? undefined : draftArgument);
     },
   });
+}
+
+export function normaliseCommandDraft(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.length < 2) return trimmed;
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' || first === "'") && first === last) {
+    const inner = trimmed.slice(1, -1).trim();
+    return inner;
+  }
+  return trimmed;
 }
 
 async function clarifyDraftIfNeeded(
