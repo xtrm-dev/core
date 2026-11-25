@@ -161,6 +161,19 @@ Restored by this change: 20 (`P1, P2, P4-P7, T1`, `E1-E10`, `A1-A3`). The four
 remaining are `P3` and `E14` (deliberate) and `S1`, `S2` (need post-spawn work);
 each is under §8.
 
+### 4.7 Other launcher state (outside the counted inventory)
+
+These four pieces of state belong to the launch but are not table rows, because
+neither side is a `xt attach` concern and nothing is lost when the pane dies.
+
+| Item | Set by launch | State after `xt attach` | Why it needs no restore |
+| --- | --- | --- | --- |
+| Runtime conversation to resume | Claude: `--continue` (`attach.ts` resume path) reads the newest transcript under `~/.claude/projects/<cwd-slug>/`; pi: `-c` reads the newest session under `~/.pi/agent/sessions/--<cwd-slug>--/`; codex: `threadId` in the Codex record, replayed by `buildCodexResumeArgs` | RESTORED by the runtime itself | The transcripts live outside the pane and outside the worktree; the resume flag is exactly what re-attaches them. |
+| Substrate issue claim | never the launcher — the runtime agent claims its own issue from its skill | reclaimed by the resumed agent | Ownership is the agent's, recorded in Substrate, not in the pane. |
+| Git hooks path | `normalizeWorktreeHooksPath` (`worktree-session.ts:2833` region) writes an absolute `core.hooksPath` for the worktree | n/a (persists on disk) | Stored in the worktree's git config, not in the pane. |
+| xtmux registration (`@agent_state`, `@agent_instance_id`, `agent.state` events) | the runtime's own agent-state hook, not the launcher; the launcher only seeds `@agent_state=idle` (`worktree-session.ts:2435`) | RESTORED by the hook as soon as the runtime starts | The hook owns these values and rewrites them on every attach; a launcher-side restore would race it. Consumers: `topology-feed.ts:54`, `topology-projection.ts:77-85`. |
+| Role file / prompt file | none — the role identity is inline (`--append-system-prompt`, the `@agent_*` options). The `@agent_prompt_file` option was dropped in xtrm-8zsi1 (`worktree-session.ts:2418` comment) | n/a | There is no role file to read; the recorded role name is re-resolved through `sp view`, which is the durable source (§3). |
+
 ## 5. Records written before this fix
 
 A record without a `launch` block cannot answer the role, the task or the parent
