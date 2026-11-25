@@ -2780,6 +2780,9 @@ export function refuseModelAfterRollback(
 }
 
 export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: string, branchName: string, deleteBranch: boolean): void {
+    // Resolved before the directory goes: after removal realpath cannot answer, and
+    // the ledger is keyed by the canonical path (CORE-2792 review, item 4).
+    const ledgerPath = canonicalWorktreePath(worktreePath);
     const removal = spawnSync('git', ['worktree', 'remove', '--force', worktreePath], {
         cwd: mainRepoRoot,
         stdio: 'pipe',
@@ -2791,6 +2794,7 @@ export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: str
         ));
         return;
     }
+    removeLaunchLedger(os.homedir(), ledgerPath);
     if (!deleteBranch) return;
     const branchRemoval = spawnSync('git', ['branch', '-D', branchName], {
         cwd: mainRepoRoot,
@@ -2935,7 +2939,7 @@ export interface SessionMeta {
 // re-exported here because every launcher and attach already import this module.
 export { compactLaunchMeta, cleanLaunchValue, readSessionLaunch, type SessionLaunchMeta } from '../core/session-launch.js';
 import type { SessionLaunchMeta } from '../core/session-launch.js';
-import { compactLaunchMeta, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
+import { canonicalWorktreePath, compactLaunchMeta, removeLaunchLedger, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
 function sessionMetaPath(worktreePath: string): string {
@@ -3892,7 +3896,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripLauncherModelVar(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -4100,7 +4104,13 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             branchCreatedByLauncher: args.branchCreatedByLauncher ?? false,
         }),
     });
-    const launchEnv = stripLauncherModelVar(process.env);
+    // CORE-2792 review (item 2): in current-pane mode the runtime inherits this
+    // object, so `process.env` is the spawn base. `xt attach` hands the launcher a
+    // stripped identityEnv (no attacher XTRM_ROLE, GIT_CONFIG_*, pane, dispatcher or
+    // supervisor keys); deriving the base from it means the attacher's identity
+    // cannot reach the worker even when the worker's role has no App of its own,
+    // which is the case identityEnv alone did not cover.
+    const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.

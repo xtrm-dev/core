@@ -21,7 +21,7 @@ import {
     stripDispatcherEnv,
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
-import { resolveLaunchIdentity } from '../core/launch-identity.js';
+import { isValidRoleName, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { readLaunchLedger } from '../core/session-launch.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import { addPlacementOptions } from '../utils/launch-placement-options.js';
@@ -116,11 +116,12 @@ export function buildAttachEnv(
 
 /**
  * Environment keys that describe ONE launch — the pane options, the session a
- * runtime runs in, the role identity and the git transport derived from it. The
- * launcher exports them; the attacher's inherited copies must not survive into a
- * resumed worker (CORE-2792, same rule as stripDispatcherEnv).
+ * runtime runs in, the role identity, the git transport derived from it, and the
+ * supervisor markers of the session attach was typed in. The launcher exports them;
+ * the attacher's inherited copies must not survive into a resumed worker (CORE-2792,
+ * same rule as stripDispatcherEnv).
  */
-const RESTORED_ENV_KEYS = /^(?:XTMUX_AGENT_[A-Z0-9_]+|XTRM_SESSION_ID|XTRM_SESSION_NAME|XTRM_ROLE|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$/;
+const RESTORED_ENV_KEYS = /^(?:XTMUX_AGENT_[A-Z0-9_]+|XTRM_SESSION_ID|XTRM_SESSION_NAME|XTRM_ROLE|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|SPECIALISTS_JOB_ID|XTRM_SUPERVISOR_LAUNCH)$/;
 
 export function stripRestoredEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const out: NodeJS.ProcessEnv = {};
@@ -141,19 +142,18 @@ export function stripRestoredEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * exactly the leak the resume path closes. Dispatcher and pane keys go too, as on
  * the resume path.
  *
- * The supervisor markers go for the same reason: they describe the attacher's
- * session, not the one being started, and they would make the launcher refuse a
- * role that its own durable record or the operator's flag asked for. A plain
- * `xt claude|pi` launcher keeps them and keeps refusing.
+ * The supervisor markers go for the same reason, and the decision is deliberate
+ * (CORE-2792 review, item 3): `SPECIALISTS_JOB_ID` and `XTRM_SUPERVISOR_LAUNCH`
+ * describe the session attach was typed in, and the started session is not that
+ * job's specialist. Keeping them would make the launcher's supervisor refusal
+ * (`launch-identity.ts:161`) veto a role the durable record or `--role` asked for.
+ * The role authority here is the record, not an inherited marker. A plain
+ * `xt claude|pi` launcher keeps the markers and keeps refusing.
  */
-const SUPERVISOR_MARKERS = ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH'];
-
 export function attachLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    const stripped: NodeJS.ProcessEnv = {};
-    for (const [key, value] of Object.entries(stripRestoredEnv(stripDispatcherEnv(env)))) {
-        if (!SUPERVISOR_MARKERS.includes(key)) stripped[key] = value;
-    }
-    return stripped;
+    // stripRestoredEnv already drops the supervisor markers, so both attach paths
+    // (the resumed spawn env and the --fresh identity environment) agree on them.
+    return stripRestoredEnv(stripDispatcherEnv(env));
 }
 
 /**
@@ -187,8 +187,13 @@ export const RESTORED_PANE_KEYS = [
  * fills the gaps, which is what makes a ledger written before a field existed
  * still usable.
  *
- * When only the worktree record exists, it answers, and the caller's note says
- * so. When only the ledger exists, it answers.
+ * With NO valid ledger — missing, damaged, naming another worktree, or deleted by
+ * the worker (same uid) — the record still answers for everything except IDENTITY:
+ * `role` and `requestedRole` are dropped too, because a record the worker can write
+ * is exactly the file a plain direct `xt claude` never gets, and writing
+ * `launch.role` into one would otherwise be enough to adopt another identity. The
+ * caller reports the ignored role and the operator restores one with `--role`.
+ * Losing the role on a pre-fix worktree is the safe loss (CORE-2792 review, item 1).
  */
 export function trustedLaunchMeta(
     recordLaunch: SessionLaunchMeta | null,
@@ -196,19 +201,23 @@ export function trustedLaunchMeta(
 ): { launch: SessionLaunchMeta | null; conflictRole: string | null; ignoredRecordRole: string | null } {
     if (!ledgerLaunch && !recordLaunch)
         return { launch: null, conflictRole: null, ignoredRecordRole: null };
-    if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null, ignoredRecordRole: null };
     if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null, ignoredRecordRole: null };
     const recordRole = recordLaunch.role ?? null;
-    const ledgerRole = ledgerLaunch.role ?? null;
-    // Identity comes from the ledger only. Strip both role fields from the record
-    // before merging, so a record that names a role the ledger does not know is
-    // an ignored claim rather than a restored one.
+    const ledgerRole = ledgerLaunch?.role ?? null;
+    // Identity comes from the ledger only, and a record with no ledger behind it
+    // has no identity at all. Strip both role fields from the record before
+    // merging, so a record that names a role the ledger does not know is an
+    // ignored claim rather than a restored one.
     const { role: _recordRole, requestedRole: _recordRequestedRole, ...recordRest } = recordLaunch;
-    const merged: SessionLaunchMeta = { ...recordRest, ...ledgerLaunch };
+    const merged: SessionLaunchMeta = { ...recordRest, ...(ledgerLaunch ?? {}) };
     delete merged.role;
     delete merged.requestedRole;
     if (ledgerRole) merged.role = ledgerRole;
-    if (ledgerLaunch.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
+    if (ledgerLaunch?.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
+    // The task is derived from the role at launch (`role:<name>`), so a task that
+    // still names the ignored role would restore the identity the role restore
+    // just refused.
+    if (recordRole && ledgerRole !== recordRole && merged.task === `role:${recordRole}`) delete merged.task;
     const conflictRole = recordRole && ledgerRole && recordRole !== ledgerRole ? recordRole : null;
     const ignoredRecordRole = recordRole && !ledgerRole ? recordRole : null;
     return { launch: merged, conflictRole, ignoredRecordRole };
@@ -398,7 +407,6 @@ export interface FreshAttachOptions {
 /** The fresh-only options a caller gave; without --fresh they would be silently ignored. */
 export function freshOnlyOptions(opts: FreshAttachOptions & { yolo?: boolean }): string[] {
     const given: string[] = [];
-    if (opts.role !== undefined) given.push('--role');
     if (opts.model !== undefined) given.push('--model');
     if (opts.prompt !== undefined) given.push('--prompt');
     if (opts.bead !== undefined) given.push('--bead');
@@ -495,7 +503,7 @@ export function createAttachCommand(): Command {
         .description('Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session')
         .argument('[name]', 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")')
         .option('--fresh', 'Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding')
-        .option('--role <name>', 'With --fresh: launch as this specialist role')
+        .option('--role <name>', 'Resume as this specialist role, or with --fresh launch as it (default: the role the launch ledger records; a role only the worktree record names is never restored)')
         .option('--model <name>', 'With --fresh: forward --model <name> to the runtime')
         .option('--prompt <text|@file>', 'With --fresh: the initial user prompt, or @<file> to read it from a file')
         .option('--bead <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
@@ -627,17 +635,29 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                 console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
             }
             if (trusted.ignoredRecordRole) {
-                console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
+                console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none or disagrees; ignoring the record's role (pass --role ${trusted.ignoredRecordRole} to restore it)`));
             }
+            // Review item 1: a role the durable ledger does not name is never
+            // restored from the worker's own file. The operator can still ask for
+            // it explicitly, and that flag is validated like a launch's --role.
+            const requestedRole = (opts.role ?? '').trim();
+            if (requestedRole && !isValidRoleName(requestedRole)) {
+                console.error(kleur.red(`\n  ✗ --role '${requestedRole}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)\n`));
+                process.exit(1);
+            }
+            const effectiveRole = requestedRole || launch?.role || null;
+            const launchForRestore: SessionLaunchMeta | null = effectiveRole && effectiveRole !== launch?.role
+                ? { ...(launch ?? {}), role: effectiveRole, task: launch?.task?.startsWith('role:') || !launch?.task ? `role:${effectiveRole}` : launch.task }
+                : launch;
             // A role launch carried its identity as an inline system prompt and,
             // for pi, an isolated skill pool. Both are derivable from the role
             // name the record kept. A failed resolution warns and never blocks the
             // resume: the conversation still continues, without the role prompt.
             let resumedRole: ResolvedRole | null = null;
             let resumedSkillPaths: string[] = [];
-            if (launch?.role && runtime !== 'codex') {
+            if (effectiveRole && runtime !== 'codex') {
                 try {
-                    resumedRole = resolveRole(launch.role, repoRoot, runtime === 'pi' ? 'pi' : 'claude');
+                    resumedRole = resolveRole(effectiveRole, repoRoot, runtime === 'pi' ? 'pi' : 'claude');
                     // The launcher resolves the role's declared paths through the
                     // same skill resolver before it emits --skill (worktree-session
                     // buildRoleTmuxPlan); a bare name must resolve identically here.
@@ -648,7 +668,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                     resumedRole = null;
                     resumedSkillPaths = [];
                     const message = error instanceof Error ? error.message : String(error);
-                    console.error(kleur.dim(`  warning: could not resolve role '${launch.role}' (${message}); resuming without its system prompt`));
+                    console.error(kleur.dim(`  warning: could not resolve role '${effectiveRole}' (${message}); resuming without its system prompt`));
                 }
             }
             const restoredName = launch?.displayName;
@@ -732,7 +752,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             // still answers, onto the pane this command runs in, before the
             // runtime starts — the runtime's own hook then owns @agent_state.
             const restoredOptions = restoredAttachPaneOptions({
-                launch,
+                launch: launchForRestore,
                 worktreePath: target.path,
                 branch,
                 bead: issue?.ref ?? record?.bead ?? null,
@@ -757,7 +777,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                     spawnSync('tmux', ['select-pane', '-t', paneId, '-T', restoredName], { stdio: 'pipe' });
                 }
                 console.log(kleur.dim(`  restored: ${restoredOptions.map(option => `${option.key}=${option.value}`).join(' ')}`));
-            } else if (!launch) {
+            } else if (!launchForRestore) {
                 console.log(kleur.dim('  restored: nothing (no launch record; outside tmux)'));
             }
 

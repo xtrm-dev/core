@@ -85,13 +85,22 @@ describe('CORE-2792 attach restores the launch identity', () => {
     });
 
     it('takes role, model and thinking from the launch record for --fresh', async () => {
-        await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
-            runtime: 'pi', launchedAt: '2026-11-25T13:56:00.302Z', bead: 'CORE-2792', launch: LAUNCH,
-        }));
-        const target: WorktreeInfo = { path: worktree, branch: 'refs/heads/xt/demo', head: 'abc123', prunable: false };
-        const options = buildFreshLaunchOptions(target, {}, { issue: null, dispatcher: {} });
-        expect(options.role).toBe('worker');
-        expect(options.model).toBe('pi-model-x');
-        expect(options.thinking).toBe('low');
+        // CORE-2792 review item 1: the role must be backed by the out-of-worktree
+        // ledger the launcher writes; a record alone names no identity. The env is
+        // set so the ledger lands in this test's HOME.
+        const previousHome = process.env.HOME;
+        process.env.HOME = path.join(tempRoot, 'home');
+        try {
+            const { writeSessionLaunch } = await import('../utils/worktree-session.js');
+            await fs.ensureDir(path.join(worktree, '.xtrm'));
+            expect(writeSessionLaunch(worktree, 'pi', LAUNCH as never)).toBe(true);
+            const target: WorktreeInfo = { path: worktree, branch: 'refs/heads/xt/demo', head: 'abc123', prunable: false };
+            const options = buildFreshLaunchOptions(target, {}, { issue: null, dispatcher: {} });
+            expect(options.role).toBe('worker');
+            expect(options.model).toBe('pi-model-x');
+            expect(options.thinking).toBe('low');
+        } finally {
+            process.env.HOME = previousHome;
+        }
     });
 });

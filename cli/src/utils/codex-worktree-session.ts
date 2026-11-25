@@ -40,7 +40,7 @@ import {
     shellQuote,
     withPaneUnsets,
 } from './worktree-session.js';
-import { writeLaunchLedger } from '../core/session-launch.js';
+import { canonicalWorktreePath, removeLaunchLedger, writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
@@ -168,7 +168,11 @@ function cleanupCreatedLaunch(
 ): void {
     if (buffer) spawnSync('tmux', ['delete-buffer', '-b', buffer], { stdio: 'ignore' });
     spawnSync('tmux', ['kill-session', '-t', `=${sessionName}`], { stdio: 'ignore' });
-    spawnSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: mainRoot, stdio: 'pipe' });
+    // Resolved before the directory goes (CORE-2792 review, item 4): the ledger is
+    // keyed by the canonical path, which realpath cannot answer for a removed dir.
+    const ledgerPath = canonicalWorktreePath(worktreePath);
+    const removal = spawnSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: mainRoot, stdio: 'pipe' });
+    if (removal.status === 0 || !existsSync(worktreePath)) removeLaunchLedger(os.homedir(), ledgerPath);
     spawnSync('git', ['branch', '-D', branchName], { cwd: mainRoot, stdio: 'pipe' });
     if (profile) removeCodexTrustProfile(profile, worktreePath);
 }

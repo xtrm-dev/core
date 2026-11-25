@@ -51238,7 +51238,7 @@ var require_main = __commonJS({
     "use strict";
     var fs68 = require("fs");
     var path100 = require("path");
-    var os38 = require("os");
+    var os39 = require("os");
     var crypto10 = require("crypto");
     var packageJson = require_package();
     var version3 = packageJson.version;
@@ -51361,7 +51361,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path100.join(os38.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path100.join(os39.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -52043,7 +52043,7 @@ var require_has_flag = __commonJS({
 var require_supports_colors = __commonJS({
   "../node_modules/@colors/colors/lib/system/supports-colors.js"(exports2, module2) {
     "use strict";
-    var os38 = require("os");
+    var os39 = require("os");
     var hasFlag2 = require_has_flag();
     var env3 = process.env;
     var forceColor = void 0;
@@ -52081,7 +52081,7 @@ var require_supports_colors = __commonJS({
       }
       var min = forceColor ? 1 : 0;
       if (process.platform === "win32") {
-        var osRelease = os38.release().split(".");
+        var osRelease = os39.release().split(".");
         if (Number(process.versions.node.split(".")[0]) >= 8 && Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
           return Number(osRelease[2]) >= 14931 ? 3 : 2;
         }
@@ -68822,6 +68822,7 @@ function refuseModelAfterRollback(worktree) {
   };
 }
 function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, deleteBranch) {
+  const ledgerPath = canonicalWorktreePath(worktreePath);
   const removal = (0, import_node_child_process11.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], {
     cwd: mainRepoRoot,
     stdio: "pipe"
@@ -68833,6 +68834,7 @@ function rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, delete
     ));
     return;
   }
+  removeLaunchLedger(import_node_os15.default.homedir(), ledgerPath);
   if (!deleteBranch) return;
   const branchRemoval = (0, import_node_child_process11.spawnSync)("git", ["branch", "-D", branchName], {
     cwd: mainRepoRoot,
@@ -69515,7 +69517,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process11.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripLauncherModelVar(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -69642,7 +69644,7 @@ async function launchTmuxSession(args) {
       branchCreatedByLauncher: args.branchCreatedByLauncher ?? false
     })
   });
-  const launchEnv = stripLauncherModelVar(process.env);
+  const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
   const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) });
   const dispatcherEnv = args.restoredDispatcher ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher) : dispatcher.env;
@@ -72690,7 +72692,9 @@ function renderCodexTask(role, bead, cwd) {
 function cleanupCreatedLaunch(mainRoot, worktreePath, branchName, sessionName, buffer, profile) {
   if (buffer) (0, import_node_child_process17.spawnSync)("tmux", ["delete-buffer", "-b", buffer], { stdio: "ignore" });
   (0, import_node_child_process17.spawnSync)("tmux", ["kill-session", "-t", `=${sessionName}`], { stdio: "ignore" });
-  (0, import_node_child_process17.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], { cwd: mainRoot, stdio: "pipe" });
+  const ledgerPath = canonicalWorktreePath(worktreePath);
+  const removal = (0, import_node_child_process17.spawnSync)("git", ["worktree", "remove", "--force", worktreePath], { cwd: mainRoot, stdio: "pipe" });
+  if (removal.status === 0 || !(0, import_node_fs13.existsSync)(worktreePath)) removeLaunchLedger(import_node_os19.default.homedir(), ledgerPath);
   (0, import_node_child_process17.spawnSync)("git", ["branch", "-D", branchName], { cwd: mainRoot, stdio: "pipe" });
   if (profile) removeCodexTrustProfile(profile, worktreePath);
 }
@@ -77796,6 +77800,7 @@ function createCleanCommand() {
 init_kleur();
 var import_node_child_process22 = require("child_process");
 var import_node_fs21 = require("fs");
+var import_node_os24 = __toESM(require("os"), 1);
 var import_node_path45 = require("path");
 init_theme();
 
@@ -78180,6 +78185,7 @@ function clearStatuslineClaim(repoRoot) {
 }
 function cleanupWorktreePath(worktreePath, repoRoot) {
   const warnings = [];
+  const ledgerPath = canonicalWorktreePath(worktreePath);
   const removeResult = (0, import_node_child_process22.spawnSync)(
     "git",
     ["worktree", "remove", worktreePath, "--force"],
@@ -78197,6 +78203,7 @@ function cleanupWorktreePath(worktreePath, repoRoot) {
   if (pruneResult.status !== 0 && (pruneResult.stderr ?? "").trim()) {
     warnings.push((pruneResult.stderr ?? "").trim());
   }
+  if (!(0, import_node_fs21.existsSync)(worktreePath)) removeLaunchLedger(import_node_os24.default.homedir(), ledgerPath);
   const isMissing = !(0, import_node_fs21.existsSync)(worktreePath);
   if (isMissing) {
     return {
@@ -78211,8 +78218,10 @@ function cleanupWorktreePath(worktreePath, repoRoot) {
     const message = error62 instanceof Error ? error62.message : String(error62);
     warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
   }
+  const removed = !(0, import_node_fs21.existsSync)(worktreePath);
+  if (removed) removeLaunchLedger(import_node_os24.default.homedir(), ledgerPath);
   return {
-    removed: !(0, import_node_fs21.existsSync)(worktreePath),
+    removed,
     alreadyMissing: false,
     warnings
   };
@@ -78587,7 +78596,7 @@ function createEndCommand() {
 init_kleur();
 var import_node_child_process23 = require("child_process");
 var import_node_fs22 = require("fs");
-var import_node_os24 = require("os");
+var import_node_os25 = require("os");
 var import_node_path46 = require("path");
 init_theme();
 function git4(args, cwd) {
@@ -79468,7 +79477,7 @@ function resolveXtBinary() {
   return `${process.execPath} ${process.argv[1] ?? "xt"}`;
 }
 function installReapTimer(opts) {
-  const unitDir = (0, import_node_path46.join)((0, import_node_os24.homedir)(), ".config", "systemd", "user");
+  const unitDir = (0, import_node_path46.join)((0, import_node_os25.homedir)(), ".config", "systemd", "user");
   const exec3 = `${resolveXtBinary()} worktree reap --all-repos --roots ${opts.roots} --artifacts-older-than ${opts.artifactsOlderThan} --worktrees-older-than ${opts.worktreesOlderThan} --apply --yes`;
   const units = [
     {
@@ -79562,13 +79571,14 @@ function printReapHuman(plan, outcomes) {
   console.log(kleur_default.yellow("\n  Dry run \u2014 nothing removed. Re-run with --apply --yes to reclaim.\n"));
 }
 function removeWorktreeEntry(repoRoot, worktreePath) {
+  const ledgerPath = canonicalWorktreePath(worktreePath);
   const remove = git4(["worktree", "remove", worktreePath, "--force"], repoRoot);
   if (!remove.ok) {
     return { ok: false, message: remove.err || `could not remove ${worktreePath}` };
   }
   unregisterPluginsForWorktree(worktreePath);
   clearStatuslineClaim2(repoRoot);
-  removeLaunchLedger((0, import_node_os24.homedir)(), worktreePath);
+  removeLaunchLedger((0, import_node_os25.homedir)(), ledgerPath);
   return { ok: true, message: `Removed ${worktreePath}` };
 }
 function getRepoRoot(cwd) {
@@ -79809,7 +79819,7 @@ function createWorktreeCommand() {
   \u2713 Cleanup complete (${removedCount} item(s) removed)
 `));
   });
-  cmd.command("reap").description("Reclaim abandoned worktrees and regenerable artifacts under a validated safety predicate").option("--artifacts-older-than <age>", "Reclaim node_modules/.venv/.gitnexus past this idle age", "7d").option("--worktrees-older-than <age>", "Remove whole worktrees past this idle age", "14d").option("--all-repos", "Sweep every git repo under --roots, not just the current one", false).option("--roots <dirs>", "Comma-separated parents to discover repos in with --all-repos", (0, import_node_path46.join)((0, import_node_os24.homedir)(), "dev")).option("--apply", "Reclaim (default is dry-run)", false).option("-y, --yes", "Skip confirmation with --apply", false).option("--dry-run", "Explicit dry run (default)", false).option("--json", "Print machine-readable reap plan", false).action(async (opts) => {
+  cmd.command("reap").description("Reclaim abandoned worktrees and regenerable artifacts under a validated safety predicate").option("--artifacts-older-than <age>", "Reclaim node_modules/.venv/.gitnexus past this idle age", "7d").option("--worktrees-older-than <age>", "Remove whole worktrees past this idle age", "14d").option("--all-repos", "Sweep every git repo under --roots, not just the current one", false).option("--roots <dirs>", "Comma-separated parents to discover repos in with --all-repos", (0, import_node_path46.join)((0, import_node_os25.homedir)(), "dev")).option("--apply", "Reclaim (default is dry-run)", false).option("-y, --yes", "Skip confirmation with --apply", false).option("--dry-run", "Explicit dry run (default)", false).option("--json", "Print machine-readable reap plan", false).action(async (opts) => {
     const currentPath = process.cwd();
     const repos = opts.allRepos ? discoverRepos(opts.roots.split(",").map((root) => root.trim()).filter(Boolean)) : [getRepoRoot(currentPath)];
     const cwds = readProcessTableOrRefuse();
@@ -79853,7 +79863,7 @@ function createWorktreeCommand() {
     }
     printReapHuman(plan, outcomes);
   });
-  cmd.command("install-timer").description("Install the systemd user timer that runs xt worktree reap out of band").option("--artifacts-older-than <age>", "Artifact reclaim threshold for the timer", "7d").option("--worktrees-older-than <age>", "Worktree reclaim threshold for the timer", "14d").option("--roots <dirs>", "Comma-separated repo parents to sweep", (0, import_node_path46.join)((0, import_node_os24.homedir)(), "dev")).option("--dry-run", "Print the unit files without writing them", false).action((opts) => {
+  cmd.command("install-timer").description("Install the systemd user timer that runs xt worktree reap out of band").option("--artifacts-older-than <age>", "Artifact reclaim threshold for the timer", "7d").option("--worktrees-older-than <age>", "Worktree reclaim threshold for the timer", "14d").option("--roots <dirs>", "Comma-separated repo parents to sweep", (0, import_node_path46.join)((0, import_node_os25.homedir)(), "dev")).option("--dry-run", "Print the unit files without writing them", false).action((opts) => {
     const result = installReapTimer(opts);
     if (opts.dryRun) {
       console.log(t.bold("\n  xt worktree reap timer (dry run)\n"));
@@ -79920,7 +79930,7 @@ init_kleur();
 var import_prompts5 = __toESM(require_prompts3(), 1);
 var import_node_child_process25 = require("child_process");
 var import_node_fs23 = require("fs");
-var import_node_os25 = require("os");
+var import_node_os26 = require("os");
 var import_node_path47 = require("path");
 init_theme();
 init_pi_runtime();
@@ -80002,7 +80012,7 @@ function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktr
   const restored = { ...runtimeEnv, ...agentEnv, ...sessionEnv, ...roleEnv };
   return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored };
 }
-var RESTORED_ENV_KEYS = /^(?:XTMUX_AGENT_[A-Z0-9_]+|XTRM_SESSION_ID|XTRM_SESSION_NAME|XTRM_ROLE|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$/;
+var RESTORED_ENV_KEYS = /^(?:XTMUX_AGENT_[A-Z0-9_]+|XTRM_SESSION_ID|XTRM_SESSION_NAME|XTRM_ROLE|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|SPECIALISTS_JOB_ID|XTRM_SUPERVISOR_LAUNCH)$/;
 function stripRestoredEnv(env3) {
   const out = {};
   for (const [key, value] of Object.entries(env3)) {
@@ -80010,13 +80020,8 @@ function stripRestoredEnv(env3) {
   }
   return out;
 }
-var SUPERVISOR_MARKERS2 = ["SPECIALISTS_JOB_ID", "XTRM_SUPERVISOR_LAUNCH"];
 function attachLaunchEnv(env3) {
-  const stripped = {};
-  for (const [key, value] of Object.entries(stripRestoredEnv(stripDispatcherEnv(env3)))) {
-    if (!SUPERVISOR_MARKERS2.includes(key)) stripped[key] = value;
-  }
-  return stripped;
+  return stripRestoredEnv(stripDispatcherEnv(env3));
 }
 var RESTORED_PANE_KEYS = [
   "@agent_parent_session",
@@ -80029,16 +80034,16 @@ var RESTORED_PANE_KEYS = [
 function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
   if (!ledgerLaunch && !recordLaunch)
     return { launch: null, conflictRole: null, ignoredRecordRole: null };
-  if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null, ignoredRecordRole: null };
   if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null, ignoredRecordRole: null };
   const recordRole = recordLaunch.role ?? null;
-  const ledgerRole = ledgerLaunch.role ?? null;
+  const ledgerRole = ledgerLaunch?.role ?? null;
   const { role: _recordRole, requestedRole: _recordRequestedRole, ...recordRest } = recordLaunch;
-  const merged = { ...recordRest, ...ledgerLaunch };
+  const merged = { ...recordRest, ...ledgerLaunch ?? {} };
   delete merged.role;
   delete merged.requestedRole;
   if (ledgerRole) merged.role = ledgerRole;
-  if (ledgerLaunch.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
+  if (ledgerLaunch?.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
+  if (recordRole && ledgerRole !== recordRole && merged.task === `role:${recordRole}`) delete merged.task;
   const conflictRole = recordRole && ledgerRole && recordRole !== ledgerRole ? recordRole : null;
   const ignoredRecordRole = recordRole && !ledgerRole ? recordRole : null;
   return { launch: merged, conflictRole, ignoredRecordRole };
@@ -80113,7 +80118,6 @@ function bindingIdFromMeta(meta3) {
 }
 function freshOnlyOptions(opts) {
   const given = [];
-  if (opts.role !== void 0) given.push("--role");
   if (opts.model !== void 0) given.push("--model");
   if (opts.prompt !== void 0) given.push("--prompt");
   if (opts.bead !== void 0) given.push("--bead");
@@ -80140,7 +80144,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   const issue2 = deps.issue === void 0 ? resolveWorkerIssue(target.path) : deps.issue;
   const trusted = trustedLaunchMeta(
     readSessionLaunch(readSessionRecord(target.path)),
-    readLaunchLedger(deps.home ?? (0, import_node_os25.homedir)(), target.path)
+    readLaunchLedger(deps.home ?? (0, import_node_os26.homedir)(), target.path)
   );
   const launch = trusted.launch;
   if (trusted.conflictRole) {
@@ -80184,7 +80188,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   };
 }
 function createAttachCommand() {
-  return addPlacementOptions(new Command("attach")).description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "With --fresh: launch as this specialist role").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").addHelpText("after", `
+  return addPlacementOptions(new Command("attach")).description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "Resume as this specialist role, or with --fresh launch as it (default: the role the launch ledger records; a role only the worktree record names is never restored)").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").addHelpText("after", `
 Without --fresh, xt attach resumes the worktree's previous conversation; with --fresh it
 starts a new one with the same launch settings. Example: xt attach worker-name --fresh --workers --no-attach
 `).option("--yolo", "With --fresh on a Codex worktree: disable sandboxing and approval prompts (default)").option("--no-yolo", "With --fresh on a Codex worktree: workspace-write sandbox with on-request approval").allowExcessArguments(true).action(async (name, opts, command) => {
@@ -80285,19 +80289,28 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       return;
     }
     const record2 = readSessionRecord(target.path);
-    const trusted = trustedLaunchMeta(record2?.launch ?? null, readLaunchLedger((0, import_node_os25.homedir)(), target.path));
+    const trusted = trustedLaunchMeta(record2?.launch ?? null, readLaunchLedger((0, import_node_os26.homedir)(), target.path));
     const launch = trusted.launch;
     if (trusted.conflictRole) {
       console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
     }
     if (trusted.ignoredRecordRole) {
-      console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
+      console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none or disagrees; ignoring the record's role (pass --role ${trusted.ignoredRecordRole} to restore it)`));
     }
+    const requestedRole = (opts.role ?? "").trim();
+    if (requestedRole && !isValidRoleName(requestedRole)) {
+      console.error(kleur_default.red(`
+  \u2717 --role '${requestedRole}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)
+`));
+      process.exit(1);
+    }
+    const effectiveRole2 = requestedRole || launch?.role || null;
+    const launchForRestore = effectiveRole2 && effectiveRole2 !== launch?.role ? { ...launch ?? {}, role: effectiveRole2, task: launch?.task?.startsWith("role:") || !launch?.task ? `role:${effectiveRole2}` : launch.task } : launch;
     let resumedRole = null;
     let resumedSkillPaths = [];
-    if (launch?.role && runtime !== "codex") {
+    if (effectiveRole2 && runtime !== "codex") {
       try {
-        resumedRole = resolveRole2(launch.role, repoRoot, runtime === "pi" ? "pi" : "claude");
+        resumedRole = resolveRole2(effectiveRole2, repoRoot, runtime === "pi" ? "pi" : "claude");
         if (runtime === "pi") {
           resumedSkillPaths = resolveRequestedSkills(repoRoot, resumedRole.skillPaths, "pi");
         }
@@ -80305,7 +80318,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
         resumedRole = null;
         resumedSkillPaths = [];
         const message = error62 instanceof Error ? error62.message : String(error62);
-        console.error(kleur_default.dim(`  warning: could not resolve role '${launch.role}' (${message}); resuming without its system prompt`));
+        console.error(kleur_default.dim(`  warning: could not resolve role '${effectiveRole2}' (${message}); resuming without its system prompt`));
       }
     }
     const restoredName = launch?.displayName;
@@ -80359,7 +80372,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       workspace: target.path
     });
     const restoredOptions = restoredAttachPaneOptions({
-      launch,
+      launch: launchForRestore,
       worktreePath: target.path,
       branch,
       bead: issue2?.ref ?? record2?.bead ?? null
@@ -80376,7 +80389,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
         (0, import_node_child_process25.spawnSync)("tmux", ["select-pane", "-t", paneId, "-T", restoredName], { stdio: "pipe" });
       }
       console.log(kleur_default.dim(`  restored: ${restoredOptions.map((option) => `${option.key}=${option.value}`).join(" ")}`));
-    } else if (!launch) {
+    } else if (!launchForRestore) {
       console.log(kleur_default.dim("  restored: nothing (no launch record; outside tmux)"));
     }
     const result = (0, import_node_child_process25.spawnSync)(runtime, resumeArgs, {
@@ -80406,12 +80419,12 @@ init_kleur();
 
 // src/core/jira-identity.ts
 var import_fs_extra41 = __toESM(require_lib(), 1);
-var import_node_os26 = __toESM(require("os"), 1);
+var import_node_os27 = __toESM(require("os"), 1);
 var import_node_path48 = __toESM(require("path"), 1);
 var import_node_child_process26 = require("child_process");
 var SHIM_MARKER = "# xtrm-acli-agent-shim v1";
 var DEFAULT_SITE = "mercuryintel.atlassian.net";
-function jiraIdentityPaths(home = import_node_os26.default.homedir()) {
+function jiraIdentityPaths(home = import_node_os27.default.homedir()) {
   const identityDir = import_node_path48.default.join(home, ".xtrm", "identities", "atlassian-agent");
   return {
     identityDir,
@@ -80958,7 +80971,7 @@ function createJiraCommand() {
 // src/commands/identity.ts
 init_kleur();
 var import_node_fs27 = require("fs");
-var import_node_os29 = __toESM(require("os"), 1);
+var import_node_os30 = __toESM(require("os"), 1);
 var import_node_path51 = __toESM(require("path"), 1);
 var import_node_child_process27 = require("child_process");
 
@@ -80992,7 +81005,7 @@ function resolveAgentRunId(deps = {}) {
 
 // src/core/merge-guard.ts
 var import_node_fs25 = require("fs");
-var import_node_os27 = __toESM(require("os"), 1);
+var import_node_os28 = __toESM(require("os"), 1);
 var import_node_path49 = __toESM(require("path"), 1);
 var OVERRIDE_ENV_VAR = "XTRM_MERGE_GUARD_OVERRIDE";
 var OFFLINE_ENV_VAR = "XTRM_MERGE_GUARD_OFFLINE";
@@ -81106,8 +81119,8 @@ function findValidDecision(entries, input2) {
 }
 function overrideLogPath(deps) {
   const env3 = deps.env ?? process.env;
-  const stateHome = deps.stateHome ?? (env3.XDG_STATE_HOME ?? "").trim() ?? import_node_path49.default.join(import_node_os27.default.homedir(), ".local", "state");
-  return import_node_path49.default.join(stateHome || import_node_path49.default.join(import_node_os27.default.homedir(), ".local", "state"), "xtrm", "merge-guard-override.log");
+  const stateHome = deps.stateHome ?? (env3.XDG_STATE_HOME ?? "").trim() ?? import_node_path49.default.join(import_node_os28.default.homedir(), ".local", "state");
+  return import_node_path49.default.join(stateHome || import_node_path49.default.join(import_node_os28.default.homedir(), ".local", "state"), "xtrm", "merge-guard-override.log");
 }
 function checkStateDir(dir) {
   if (!import_node_path49.default.isAbsolute(dir)) return `the state directory '${dir}' is not an absolute path`;
@@ -81464,10 +81477,10 @@ function recordMerge(input2, deps) {
 
 // src/core/reviewer-routing.ts
 var import_node_fs26 = require("fs");
-var import_node_os28 = __toESM(require("os"), 1);
+var import_node_os29 = __toESM(require("os"), 1);
 var import_node_path50 = __toESM(require("path"), 1);
 var REVIEWER_ROUTING_FILE = "reviewer-routing.md";
-function routingReminderPath(home = import_node_os28.default.homedir()) {
+function routingReminderPath(home = import_node_os29.default.homedir()) {
   return import_node_path50.default.join(home, ".xtrm", "config", REVIEWER_ROUTING_FILE);
 }
 var DEFAULT_REVIEWER_ROUTING = `# Reviewer routing
@@ -81485,7 +81498,7 @@ A PR merges only with a review by the reviewer App at its current head.
 - \`gh pr merge\` runs \`xt identity merge-check\` and refuses a missing, stale or
   CHANGES_REQUESTED review. The override is for the coordinator and the operator.
 `;
-function installRoutingReminder(home = import_node_os28.default.homedir()) {
+function installRoutingReminder(home = import_node_os29.default.homedir()) {
   const file2 = routingReminderPath(home);
   try {
     (0, import_node_fs26.readFileSync)(file2);
@@ -82145,7 +82158,7 @@ function createIdentityCommand() {
     console.log(`recorded merge of ${opts.repo}#${pr} on ${issueRef}`);
   });
   identity.command("setup").description("Install the gh shim and the role map (creates no App; the operator creates those)").option("--bin-dir <dir>", "Directory for the gh shim (default ~/.local/bin)").option("--json", "Emit JSON", false).action((opts) => {
-    const home = import_node_os29.default.homedir();
+    const home = import_node_os30.default.homedir();
     const file2 = roleMapPath(home);
     let roleMapWritten = false;
     if (!(0, import_node_fs27.existsSync)(file2)) {
@@ -82181,7 +82194,7 @@ function createIdentityCommand() {
     if (!shim.ok) process.exit(1);
   });
   identity.command("doctor").description("Report App config, key permissions, role map and gh shim state (exit 1 on a hard failure)").option("--json", "Emit JSON", false).action((opts) => {
-    const home = import_node_os29.default.homedir();
+    const home = import_node_os30.default.homedir();
     const checks = [];
     const map2 = loadRoleMap();
     if (!roleMapConfigured(home)) {
@@ -83617,7 +83630,7 @@ function createReportCommand() {
 
 // src/commands/skills.ts
 var import_fs_extra46 = __toESM(require_lib(), 1);
-var import_node_os30 = __toESM(require("os"), 1);
+var import_node_os31 = __toESM(require("os"), 1);
 var import_node_path53 = __toESM(require("path"), 1);
 init_kleur();
 init_theme();
@@ -83625,7 +83638,7 @@ init_skills_layout();
 init_skills_state();
 init_skill_discovery();
 function resolveSkillsLogPath() {
-  return import_node_path53.default.join(import_node_os30.default.homedir(), ".xtrm", "logs", "skills-state.jsonl");
+  return import_node_path53.default.join(import_node_os31.default.homedir(), ".xtrm", "logs", "skills-state.jsonl");
 }
 async function appendSkillsLog(event) {
   const logPath = resolveSkillsLogPath();
@@ -83644,7 +83657,7 @@ function resolveScope(opts, defaultScope = "global") {
 }
 async function resolveScopeRoot(scope) {
   if (scope === "global") {
-    return import_node_os30.default.homedir();
+    return import_node_os31.default.homedir();
   }
   return findProjectRoot();
 }
@@ -83670,7 +83683,7 @@ async function assertSkillsInvariants(skillsRoot, opts = {}) {
   return violations.filter((violation) => nonBlockingCodes.has(violation.code));
 }
 async function collectListState(skillsRoot, runtimes, scope) {
-  const globalSkillsRoot = resolveSkillsRoot(import_node_os30.default.homedir());
+  const globalSkillsRoot = resolveSkillsRoot(import_node_os31.default.homedir());
   const isLocalScope = scope === "local" && skillsRoot !== globalSkillsRoot;
   const [globalState, localState, globalDefaultSkills, localDefaultSkills, globalOptionalPacks, localOptionalPacks, globalUserPacks, localUserPacks] = await Promise.all([
     import_fs_extra46.default.pathExists(resolveStateFilePath(globalSkillsRoot)).then((exists) => exists ? readSkillsState(globalSkillsRoot) : createDefaultSkillsState()),
@@ -83808,7 +83821,7 @@ function ensureValidPackName(name) {
   }
 }
 function resolvePackResolutionRoots(skillsRoot) {
-  const roots = [skillsRoot, resolveSkillsRoot(import_node_os30.default.homedir())].map((root) => import_node_path53.default.resolve(root));
+  const roots = [skillsRoot, resolveSkillsRoot(import_node_os31.default.homedir())].map((root) => import_node_path53.default.resolve(root));
   return [...new Set(roots)];
 }
 async function resolveAvailablePackNames(skillsRoot) {
@@ -83838,7 +83851,7 @@ async function resolveRequestedPacks(skillsRoot, packArg, action2) {
 async function mutatePacks(opts) {
   const { skillsRoot, action: action2, packArg, runtimes, scope } = opts;
   if (action2 === "disable" && scope === "local") {
-    const globalSkillsRoot = resolveSkillsRoot(import_node_os30.default.homedir());
+    const globalSkillsRoot = resolveSkillsRoot(import_node_os31.default.homedir());
     const globalState = await readStateOrDefault(globalSkillsRoot);
     const isGloballyEnabled = globalState.enabledPacks.claude.includes(packArg) || globalState.enabledPacks.pi.includes(packArg) || globalState.enabledPacks.codex.includes(packArg);
     if (isGloballyEnabled) {
@@ -84362,7 +84375,7 @@ var import_prompts6 = __toESM(require_prompts3(), 1);
 // src/core/claude-route.ts
 var import_node_fs29 = require("fs");
 var import_node_child_process33 = require("child_process");
-var import_node_os31 = require("os");
+var import_node_os32 = require("os");
 var import_node_path55 = __toESM(require("path"), 1);
 init_zod();
 var CLAUDE_ROUTE_BLOCK_KEY = "claude_bridge";
@@ -84394,7 +84407,7 @@ var ClaudeRouteBlockSchema = external_exports.object({
     }
   }
 });
-function resolveClaudeRouteConfigLocation(env3 = process.env, homeDir = env3.HOME?.trim() || (0, import_node_os31.homedir)(), exists = import_node_fs29.existsSync) {
+function resolveClaudeRouteConfigLocation(env3 = process.env, homeDir = env3.HOME?.trim() || (0, import_node_os32.homedir)(), exists = import_node_fs29.existsSync) {
   const xdgConfigHome = env3.XDG_CONFIG_HOME?.trim();
   if (xdgConfigHome) {
     const xdgPath = import_node_path55.default.join(xdgConfigHome, CLAUDE_ROUTE_SUBDIR, CLAUDE_ROUTE_CONFIG_FILENAME);
@@ -85079,7 +85092,7 @@ async function ensureBeadsSharedServerEnabled(repoRoot, apply) {
 
 // src/core/settings-audit.ts
 var import_fs_extra49 = __toESM(require_lib(), 1);
-var import_node_os32 = __toESM(require("os"), 1);
+var import_node_os33 = __toESM(require("os"), 1);
 var import_node_path58 = __toESM(require("path"), 1);
 init_pi_runtime();
 var PI_ARRAY_FIELDS = ["packages", "extensions", "skills"];
@@ -85324,7 +85337,7 @@ async function applySettingsFixes(outcome, opts = {}) {
     (finding) => Boolean(finding.fix)
   );
   if (fixable.length === 0 || !opts.apply) return outcome;
-  const home = opts.home ?? import_node_os32.default.homedir();
+  const home = opts.home ?? import_node_os33.default.homedir();
   const stamp = opts.stamp ?? (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
   const byFile = /* @__PURE__ */ new Map();
   for (const finding of fixable) {
@@ -85384,7 +85397,7 @@ async function discoverConsumerProjects(home) {
   return found.sort((a, b) => a.localeCompare(b));
 }
 async function auditSettings(opts) {
-  const home = opts.home ?? import_node_os32.default.homedir();
+  const home = opts.home ?? import_node_os33.default.homedir();
   const outcome = {
     schema: "ReconciliationOutcome/1",
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -85414,13 +85427,13 @@ async function auditSettings(opts) {
 
 // src/core/claude-channel-status.ts
 var import_node_fs31 = require("fs");
-var import_node_os33 = require("os");
+var import_node_os34 = require("os");
 var import_node_path59 = __toESM(require("path"), 1);
 function defaultManagedSettingsPath(platform = process.platform) {
   if (platform === "darwin") return "/Library/Application Support/ClaudeCode/managed-settings.json";
   return "/etc/claude-code/managed-settings.json";
 }
-function defaultInstalledPluginsPath(homeDir = (0, import_node_os33.homedir)()) {
+function defaultInstalledPluginsPath(homeDir = (0, import_node_os34.homedir)()) {
   return import_node_path59.default.join(homeDir, ".claude", "plugins", "installed_plugins.json");
 }
 var CLAUDE_CHANNEL_POLICY_JSON = `{
@@ -85508,7 +85521,7 @@ function getClaudeChannelStatus(paths) {
 var import_node_fs32 = require("fs");
 var import_node_child_process35 = require("child_process");
 var import_node_path60 = __toESM(require("path"), 1);
-var import_node_os34 = __toESM(require("os"), 1);
+var import_node_os35 = __toESM(require("os"), 1);
 var XTRM_PACKAGES = [
   "xtrm-tools",
   "@jaggerxtrm/xtmux",
@@ -85518,7 +85531,7 @@ var DEFAULT_TTL_MS2 = 24 * 60 * 60 * 1e3;
 var NPM_VIEW_TIMEOUT_MS = 5e3;
 var NPMJS_REGISTRY = "https://registry.npmjs.org";
 function defaultCacheFile() {
-  return import_node_path60.default.join(import_node_os34.default.homedir(), ".xtrm", "cache", "npm-latest.json");
+  return import_node_path60.default.join(import_node_os35.default.homedir(), ".xtrm", "cache", "npm-latest.json");
 }
 function readCache2(file2) {
   try {
@@ -86544,11 +86557,11 @@ async function runInstall(opts = {}) {
 
 // src/utils/nudge.ts
 var import_fs_extra54 = __toESM(require_lib(), 1);
-var import_node_os35 = __toESM(require("os"), 1);
+var import_node_os36 = __toESM(require("os"), 1);
 var import_node_path64 = __toESM(require("path"), 1);
 var printedNudges = /* @__PURE__ */ new Set();
 function getNudgeStatePath(key) {
-  return import_node_path64.default.join(import_node_os35.default.homedir(), ".xtrm", "nudges", `${key}.json`);
+  return import_node_path64.default.join(import_node_os36.default.homedir(), ".xtrm", "nudges", `${key}.json`);
 }
 async function printNudgeOnce(key, lines) {
   if (printedNudges.has(key)) {
@@ -88415,7 +88428,7 @@ init_kleur();
 var import_fs_extra64 = __toESM(require_lib(), 1);
 var import_node_path76 = __toESM(require("path"), 1);
 var import_node_crypto19 = __toESM(require("crypto"), 1);
-var import_node_os36 = __toESM(require("os"), 1);
+var import_node_os37 = __toESM(require("os"), 1);
 var import_child_process8 = require("child_process");
 init_skills_layout();
 init_git_staging();
@@ -88429,7 +88442,7 @@ async function restoreBackup2(repoPath, backupPath, opts) {
   if (!import_node_path76.default.isAbsolute(backupPath) && !backupPath.startsWith("~")) {
     throw new Error(`Backup path must be absolute or ~-expandable: ${backupPath}`);
   }
-  const resolvedBackup = backupPath.startsWith("~") ? import_node_path76.default.join(import_node_os36.default.homedir(), backupPath.slice(1).replace(/^\//, "")) : backupPath;
+  const resolvedBackup = backupPath.startsWith("~") ? import_node_path76.default.join(import_node_os37.default.homedir(), backupPath.slice(1).replace(/^\//, "")) : backupPath;
   if (!await import_fs_extra64.default.pathExists(resolvedBackup)) {
     throw new Error(`Backup not found: ${resolvedBackup}`);
   }
@@ -88460,7 +88473,7 @@ async function restoreBackup2(repoPath, backupPath, opts) {
     return { component, targetDir };
   }
   inspectBackupArchive(resolvedBackup, component);
-  const staging = await import_fs_extra64.default.mkdtemp(import_node_path76.default.join(import_node_os36.default.tmpdir(), "xtrm-restore-"));
+  const staging = await import_fs_extra64.default.mkdtemp(import_node_path76.default.join(import_node_os37.default.tmpdir(), "xtrm-restore-"));
   try {
     extractValidatedBackup(resolvedBackup, component, staging);
     await assertStagedTreeSafe(staging, component);
@@ -88498,7 +88511,7 @@ async function detectSourceRepoMarker(repoPath) {
   return null;
 }
 function resolveLogPath2() {
-  return import_node_path76.default.join(import_node_os36.default.homedir(), ".xtrm", "logs", "skills-migration.jsonl");
+  return import_node_path76.default.join(import_node_os37.default.homedir(), ".xtrm", "logs", "skills-migration.jsonl");
 }
 async function appendMigrationLog(event) {
   const logPath = resolveLogPath2();
@@ -88511,7 +88524,7 @@ function hashFile4(filePath) {
   return import_node_crypto19.default.createHash("sha256").update(content).digest("hex");
 }
 async function createTarballBackup(sourceDir, backupName) {
-  const backupRoot = import_node_path76.default.join(import_node_os36.default.homedir(), ".xtrm", "migration-backups");
+  const backupRoot = import_node_path76.default.join(import_node_os37.default.homedir(), ".xtrm", "migration-backups");
   await import_fs_extra64.default.ensureDir(backupRoot);
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
   const backupPath = import_node_path76.default.join(backupRoot, `${backupName}-${timestamp}.tgz`);
@@ -89489,7 +89502,7 @@ init_kleur();
 
 // src/core/topology-projection.ts
 var import_node_child_process46 = require("child_process");
-var import_node_os37 = require("os");
+var import_node_os38 = require("os");
 var import_node_path78 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
 var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process46.execFile);
@@ -89654,7 +89667,7 @@ var flagOrNull = (v) => v === "1" ? true : v === "0" ? false : null;
 function parseXtmuxHost(stdout) {
   const parsed = JSON.parse(stdout);
   return {
-    host_id: parsed.host?.host_id || (0, import_node_os37.hostname)(),
+    host_id: parsed.host?.host_id || (0, import_node_os38.hostname)(),
     tmux_server_id: parsed.host?.tmux_server_id ?? null
   };
 }
@@ -89933,7 +89946,7 @@ function joinProjection(paneRead, enrichment, options = {}) {
     schema_version: "xtrm.topology.projection.v1",
     generated_at_ms: now(),
     host: {
-      host_id: enrichment.xtmux.data?.host_id ?? (0, import_node_os37.hostname)(),
+      host_id: enrichment.xtmux.data?.host_id ?? (0, import_node_os38.hostname)(),
       tmux_server_id: enrichment.xtmux.data?.tmux_server_id ?? null
     },
     sources: [
@@ -90225,7 +90238,7 @@ init_kleur();
 var import_node_crypto20 = require("crypto");
 var import_node_fs36 = require("fs");
 var import_node_net = __toESM(require("net"), 1);
-var import_node_os38 = __toESM(require("os"), 1);
+var import_node_os39 = __toESM(require("os"), 1);
 var import_node_path79 = __toESM(require("path"), 1);
 
 // ../packages/contracts/dist/index.js
@@ -92604,7 +92617,7 @@ var PROXY_HEADERS = [
 ];
 var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["127.0.0.1", "localhost", "[::1]"]);
 function defaultDeviceStorePath() {
-  return import_node_path79.default.join(import_node_os38.default.homedir(), ".xtrm", "agent-host", "devices.json");
+  return import_node_path79.default.join(import_node_os39.default.homedir(), ".xtrm", "agent-host", "devices.json");
 }
 function normalizeDirectHostname(value) {
   const name = value.trim().toLowerCase();
@@ -92782,7 +92795,7 @@ function parsePairRequest(text) {
 var import_node_fs42 = require("fs");
 var import_node_http = __toESM(require("http"), 1);
 var import_node_net2 = __toESM(require("net"), 1);
-var import_node_os40 = __toESM(require("os"), 1);
+var import_node_os41 = __toESM(require("os"), 1);
 var import_node_path84 = __toESM(require("path"), 1);
 
 // src/core/agent-host-history.ts
@@ -94539,7 +94552,7 @@ function boundText(text) {
 var import_node_child_process49 = require("child_process");
 var import_node_fs41 = require("fs");
 var import_promises2 = require("fs/promises");
-var import_node_os39 = __toESM(require("os"), 1);
+var import_node_os40 = __toESM(require("os"), 1);
 var import_node_path83 = __toESM(require("path"), 1);
 var CACHE_VERSION = 2;
 var READ_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -94557,7 +94570,7 @@ var REPO_MAX_PENDING = 4;
 var REPO_FAILURE_BACKOFF_MS = 10 * 6e4;
 var REPO_LOOKUP_DEADLINE_MS = REPO_LOOKUP_TIMEOUT_MS + 500;
 var REPO_SATURATION_LOG_MS = 6e4;
-function defaultSessionIndexOptions(home = import_node_os39.default.homedir()) {
+function defaultSessionIndexOptions(home = import_node_os40.default.homedir()) {
   return {
     roots: [
       { provider: "pi", dir: import_node_path83.default.join(home, ".pi", "agent", "sessions") },
@@ -95504,10 +95517,10 @@ var DEFAULT_REPLAY_LIMIT = 1024;
 function defaultSocketPath(env3 = process.env) {
   const runtimeDir = env3.XDG_RUNTIME_DIR;
   if (runtimeDir) return import_node_path84.default.join(runtimeDir, "xtrm", "agent-host.sock");
-  return import_node_path84.default.join(import_node_os40.default.homedir(), ".xtrm", "run", "agent-host.sock");
+  return import_node_path84.default.join(import_node_os41.default.homedir(), ".xtrm", "run", "agent-host.sock");
 }
 function defaultInfoPath() {
-  return import_node_path84.default.join(import_node_os40.default.homedir(), ".xtrm", "run", "agent-host.json");
+  return import_node_path84.default.join(import_node_os41.default.homedir(), ".xtrm", "run", "agent-host.json");
 }
 function agentSessionsByPane(sessions) {
   const best = /* @__PURE__ */ new Map();

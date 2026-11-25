@@ -296,13 +296,18 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         prunable: false,
     };
 
-    async function writeLaunch(launch: unknown): Promise<WorktreeInfo> {
+    /** A record and, by default, the ledger the launcher writes beside it (item 1). */
+    async function writeLaunch(launch: unknown, options: { ledger?: boolean } = {}): Promise<WorktreeInfo> {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'pi',
             launchedAt: '2026-11-25T13:56:00.302Z',
             bead: 'CORE-2792',
             launch,
         }));
+        if (options.ledger !== false) {
+            const { writeLaunchLedger } = await import('../core/session-launch.js');
+            writeLaunchLedger(process.env.HOME as string, worktree, 'pi', launch as never);
+        }
         return { ...target, path: worktree };
     }
 
@@ -325,6 +330,18 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         expect(otherRole.role).toBe('reviewer');
         expect(otherRole.model).toBe('other-model');
         expect(otherRole.thinking).toBeUndefined();
+    });
+
+    it('takes no role from a record that has no launch ledger behind it', async () => {
+        // Review item 1: a plain direct `xt claude` writes no record and no ledger,
+        // so a worker can create the record alone. Without a ledger the record's
+        // role is an ignored claim, even for --fresh.
+        const wt = await writeLaunch({ ...LAUNCH, role: 'lead', requestedRole: 'lead', task: 'role:lead' }, { ledger: false });
+        const options = buildFreshLaunchOptions(wt, {}, { issue: null, dispatcher: {} });
+        expect(options.role).toBeUndefined();
+        // The explicit flag is the operator's own claim and is honoured.
+        const explicit = buildFreshLaunchOptions(wt, { role: 'lead' }, { issue: null, dispatcher: {} });
+        expect(explicit.role).toBe('lead');
     });
 
     it('restores nothing from a legacy record instead of inventing a role', async () => {
@@ -427,6 +444,9 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
             profilePath: path.join(tempRoot, 'xtrm-0123456789abcdef.config.toml'),
             launch: { role: 'worker', model: 'gpt-codex-x' },
         }));
+        // The Codex launcher writes the same ledger as the claude/pi one.
+        const { writeLaunchLedger } = await import('../core/session-launch.js');
+        writeLaunchLedger(process.env.HOME as string, worktree, 'codex', { role: 'worker', model: 'gpt-codex-x' });
         const options = buildFreshLaunchOptions({ ...target, path: worktree, runtime: 'codex' }, {}, { issue: null, dispatcher: {} });
         expect(options.role).toBe('worker');
         expect(options.model).toBe('gpt-codex-x');
@@ -523,7 +543,13 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         await fs.remove(tempRoot);
     });
 
-    async function writeRecord(launch: unknown, extra: Record<string, unknown> = {}): Promise<void> {
+    /**
+     * Writes the worktree record AND, by default, the launch ledger the launcher
+     * writes beside it (CORE-2792 review item 1). A record with no ledger behind it
+     * carries no identity any more, so a test that restores a role must say which of
+     * the two sources it means. `{ ledger: false }` writes the record alone.
+     */
+    async function writeRecord(launch: unknown, extra: Record<string, unknown> = {}, options: { ledger?: boolean } = {}): Promise<void> {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'pi',
             launchedAt: '2026-11-25T13:56:00.302Z',
@@ -531,6 +557,10 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
             ...(launch ? { launch } : {}),
             ...extra,
         }));
+        if (launch && options.ledger !== false) {
+            const { writeLaunchLedger } = await import('../core/session-launch.js');
+            writeLaunchLedger(process.env.HOME as string, worktree, 'pi', launch as never);
+        }
     }
 
     async function attach(args: string[] = ['demo'], caps: Partial<Caps> = {}): Promise<Caps> {
@@ -752,6 +782,86 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
     });
 
 
+    it('drops a role the record names when no launch ledger exists, until --role names it', async () => {
+        // Review item 1: a plain direct `xt claude` writes no record and no ledger,
+        // and both files are the worker's uid — so a record alone is a claim, not a
+        // source. The resume drops the role, says so, and the operator can restore it.
+        await writeRecord({ ...LAUNCH, role: 'lead', requestedRole: 'lead', task: 'role:lead' }, {}, { ledger: false });
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const cap = await attach();
+        expect(cap.paneOptions['@agent_role']).toBeUndefined();
+        // The task derived from the dropped role goes with it.
+        expect(cap.paneOptions['@agent_task']).toBeUndefined();
+        // Everything that is not identity still restores.
+        expect(cap.paneOptions['@agent_worktree']).toBe(worktree);
+        expect(cap.paneOptions['@agent_bead']).toBe('CORE-2792');
+        expect(cap.spawn?.env?.XTMUX_AGENT_ROLE).toBeUndefined();
+        expect(cap.spawn?.env?.XTRM_ROLE).toBeUndefined();
+        const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
+        expect(errors).toContain("names role 'lead' but the launch ledger names none");
+        expect(errors).toContain('pass --role lead to restore it');
+
+        // The explicit flag is the operator's own claim and is honoured, with the
+        // pane metadata that belongs to it.
+        const explicit = await attach(['demo', '--role', 'lead']);
+        expect(explicit.paneOptions['@agent_role']).toBe('lead');
+        expect(explicit.paneOptions['@agent_task']).toBe('role:lead');
+        expect(explicit.spawn?.env?.XTMUX_AGENT_ROLE).toBe('lead');
+    });
+
+    it('restores the ledger role even when the attacher is a supervised specialist, and passes no marker on', async () => {
+        // Review item 3: the supervisor markers describe the ATTACHER's session. They
+        // are stripped, so the launcher's supervisor refusal cannot veto a role the
+        // ledger names, and the worker does not inherit the attacher's job id.
+        await writeRecord(LAUNCH);
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        process.env.SPECIALISTS_JOB_ID = 'job-attacher';
+        process.env.XTRM_SUPERVISOR_LAUNCH = '1';
+        const cap = await attach();
+        expect(cap.paneOptions['@agent_role']).toBe('worker');
+        const env = cap.spawn?.env ?? {};
+        expect(env.XTMUX_AGENT_ROLE).toBe('worker');
+        expect(env.SPECIALISTS_JOB_ID).toBeUndefined();
+        expect(env.XTRM_SUPERVISOR_LAUNCH).toBeUndefined();
+    });
+
+    it('removes a ledger after its worktree is gone, so no identity outlives the directory', async () => {
+        // Review item 4: `xt worktree remove`, `xt end` and a failed launch all
+        // resolve the path BEFORE the directory goes. A canonical path that no
+        // longer exists still resolves to the key it had, which is the property the
+        // removal paths depend on.
+        const { launchLedgerPath, readLaunchLedger, removeLaunchLedger, writeLaunchLedger } = await import('../core/session-launch.js');
+        const home = process.env.HOME as string;
+        expect(writeLaunchLedger(home, worktree, 'pi', LAUNCH)).toBe(true);
+        expect(readLaunchLedger(home, worktree)?.role).toBe('worker');
+        const resolvedBeforeRemoval = launchLedgerPath(home, worktree);
+        await fs.remove(worktree);
+        expect(launchLedgerPath(home, worktree)).toBe(resolvedBeforeRemoval);
+        expect(removeLaunchLedger(home, worktree)).toBe(true);
+        expect(readLaunchLedger(home, worktree)).toBeNull();
+    });
+
+    it('removes the ledger when a failed launch rolls its worktree back', async () => {
+        // Review item 4: a launch that fails after the record was written rolls the
+        // worktree back; the identity must go with it, and the key has to be
+        // resolved BEFORE `git worktree remove` (realpath cannot answer afterwards).
+        const { launchLedgerPath, readLaunchLedger, writeLaunchLedger } = await import('../core/session-launch.js');
+        const { rollbackLauncherWorktree } = await import('../utils/worktree-session.js');
+        const home = process.env.HOME as string;
+        expect(writeLaunchLedger(home, worktree, 'pi', LAUNCH)).toBe(true);
+        const key = launchLedgerPath(home, worktree);
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => (
+            command === 'git' && args[0] === 'worktree' && args[1] === 'remove'
+                ? { status: 0, stdout: '', stderr: '' }
+                : { status: 1, stdout: '', stderr: '' }
+        ));
+        rollbackLauncherWorktree(repoRoot, worktree, 'xt/demo', false);
+        expect(await fs.pathExists(key)).toBe(false);
+        expect(readLaunchLedger(home, worktree)).toBeNull();
+    });
+
     it('replaces the attacher\'s inherited git transport with the resumed worker\'s own', async () => {
         // Review finding 1. A real attacher environment: a credential helper on
         // process.env, an operator role that OWNS a GitHub App on this host (so the
@@ -846,10 +956,12 @@ describe('CORE-2792 review: trust and the restart rule', () => {
             conflictRole: 'lead',
             ignoredRecordRole: null,
         });
+        // No ledger behind the record means no identity: the role is dropped and
+        // reported, never restored from the worker's own file (review item 1).
         expect(trustedLaunchMeta(recordLaunch, null)).toEqual({
-            launch: recordLaunch,
+            launch: { ...recordLaunch, role: undefined, requestedRole: undefined },
             conflictRole: null,
-            ignoredRecordRole: null,
+            ignoredRecordRole: 'lead',
         });
         expect(trustedLaunchMeta(null, ledgerLaunch)).toEqual({
             launch: ledgerLaunch,
@@ -938,15 +1050,19 @@ describe('CORE-2792 review: trust and the restart rule', () => {
 
     it('does not inherit the old role\'s model or thinking when --fresh names another role', async () => {
         await writeRecord({ ...LAUNCH, model: 'worker-model', thinking: 'low' });
-        const same = buildFreshLaunchOptions(TARGET(), {}, { issue: null, dispatcher: {}, home: tempRoot });
+        const home = process.env.HOME as string;
+        // This block writes records only; the ledger is what makes the role real.
+        const { writeLaunchLedger } = await import('../core/session-launch.js');
+        writeLaunchLedger(home, worktree, 'pi', { ...LAUNCH, model: 'worker-model', thinking: 'low' });
+        const same = buildFreshLaunchOptions(TARGET(), {}, { issue: null, dispatcher: {}, home });
         expect(same.role).toBe('worker');
         expect(same.model).toBe('worker-model');
         expect(same.thinking).toBe('low');
-        const other = buildFreshLaunchOptions(TARGET(), { role: 'reviewer' }, { issue: null, dispatcher: {}, home: tempRoot });
+        const other = buildFreshLaunchOptions(TARGET(), { role: 'reviewer' }, { issue: null, dispatcher: {}, home });
         expect(other.role).toBe('reviewer');
         expect(other.model).toBeUndefined();
         expect(other.thinking).toBeUndefined();
-        const explicit = buildFreshLaunchOptions(TARGET(), { model: 'cli-model' }, { issue: null, dispatcher: {}, home: tempRoot });
+        const explicit = buildFreshLaunchOptions(TARGET(), { model: 'cli-model' }, { issue: null, dispatcher: {}, home });
         expect(explicit.model).toBe('cli-model');
     });
 

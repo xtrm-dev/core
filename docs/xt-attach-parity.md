@@ -208,23 +208,35 @@ GitHub App identity the next resume adopts. Three checks apply:
    (`isValidRoleName`, `launch-identity.ts:32`), so a path or a flag cannot become a
    role.
 2. The launcher writes the same `launch` block outside the worktree, at
-   `$HOME/.xtrm/state/launch-identity/<slug>-<hash12>.json`. When that ledger exists,
-   IDENTITY comes from it ALONE: `role` and `requestedRole` are taken from the ledger
-   and never from the in-worktree record (`trustedLaunchMeta`, `attach.ts:150-190`).
-   A worker that launches WITHOUT a role and writes `launch.role = "lead"` into its own
-   record therefore gains nothing — attach restores no role and reports
-   `the worktree record names role 'lead' but the launch ledger names none`. The rest
-   of the block (task, branch, parent, display name, model, thinking, skills) is not
-   identity: the ledger wins each field it carries and the record fills the gaps, which
-   keeps a ledger written before a field existed usable.
+   `$HOME/.xtrm/state/launch-identity/<slug>-<hash12>.json`. IDENTITY comes from that
+   ledger ALONE (`trustedLaunchMeta`, `attach.ts:193-240`):
+   - With a ledger that names a role, that role is used and `requestedRole` comes from
+     the ledger too. A record naming a different role is reported and ignored.
+   - With a ledger that names none, no role is restored. The record's values are
+     dropped, and `@agent_task`, when it is the `role:<ignored>` the launch derived,
+     goes with them.
+   - With NO ledger at all — missing, damaged, naming another worktree, or deleted by
+     the worker (same uid) — the record still answers for everything except identity:
+     `role` and `requestedRole` are dropped and reported. A plain direct `xt claude`
+     writes no record and no ledger, so a record on its own is a claim a worker can
+     author; it is never enough to adopt another role and its GitHub App identity.
+     The operator restores such a role explicitly: `xt attach <name> --role <name>`.
+
+   The rest of the block (task, branch, parent, display name, model, thinking, skills)
+   is not identity: the ledger wins each field it carries and the record fills the gaps,
+   which keeps a ledger written before a field existed usable.
 3. Both files are written with a temp file plus `rename`, so no reader observes a
    half-written record (`writeJsonAtomic`, `session-launch.ts`).
 4. The ledger is keyed by the REAL path (`realpath`, absolute, no trailing slash), so a
    symlinked route or a trailing slash to the same directory finds the same entry
-   (`canonicalWorktreePath`).
-5. `xt worktree remove` deletes the matching ledger (`removeLaunchLedger`,
-   `worktree.ts removeWorktreeEntry`), so the state directory does not accumulate
-   identities for paths that no longer exist.
+   (`canonicalWorktreePath`), and a key computed before a directory is removed still
+   answers after it is gone.
+5. Every removal path deletes the matching ledger, with the path resolved BEFORE the
+   directory goes (after removal `realpath` cannot answer): `xt worktree remove`
+   (`worktree.ts removeWorktreeEntry`), `xt end` (`end.ts cleanupWorktreePath`), a
+   failed claude/pi launch (`rollbackLauncherWorktree`) and a failed Codex launch
+   (`cleanupCreatedLaunch`). The state directory does not accumulate identities for
+   paths that no longer exist.
 
 **A FRESH launch made by attach.** `xt attach --fresh` runs inside whatever session the
 operator typed it in, often another agent's pane. The launcher resolves the new
@@ -232,10 +244,24 @@ session's App identity from `process.env` unless it is handed an environment
 (`WorktreeSessionOptions.identityEnv`, used at `worktree-session.ts:4137`, `:3881`;
 `codex-worktree-session.ts:416`). Attach supplies `attachLaunchEnv(process.env)`
 (`attach.ts`): the attacher's `GIT_CONFIG_*` transport, `XTRM_ROLE`, pane keys,
-dispatcher keys and supervisor markers are all stripped, so the new worker resolves its
-own App transport instead of inheriting the attacher's. The supervisor markers go for
-the same reason — they describe the attacher's session, and they would make the
-launcher refuse a role the durable record or the operator's own flag asked for.
+dispatcher keys and supervisor markers are all stripped.
+
+The identity environment is ALSO the base environment of a current-pane spawn
+(`worktree-session.ts:4111`, `launchEnv = stripLauncherModelVar(identityEnv ?? process.env)`;
+the runtime is spawned at `:4185` and `:4196`). That matters when the new worker's role
+has no GitHub App on this host — the normal case — because then the resolver exports no
+transport of its own, and an inherited credential helper, `XTRM_ROLE` or job id would
+otherwise reach the worker untouched. Feeding the stripped environment to the resolver
+alone was not enough.
+
+**The supervisor markers are stripped on both attach paths, deliberately.** They
+describe the session attach was typed in, and the started or resumed session is not that
+job's specialist. Keeping them would make the launcher's supervisor refusal
+(`launch-identity.ts:161`) veto a role the ledger or `--role` asked for. The role
+authority for attach is the durable record or the operator's flag, never an inherited
+marker. A plain `xt claude|pi` launcher keeps the markers and keeps refusing; a nested
+`xt attach` runs the worker unsupervised by the attacher's job, which is the intended
+reading of an explicit operator command.
 
 **The direct (non-tmux) launch keeps `process.env`.** A plain `xt claude|pi` started
 from a shell is the operator's own launch, and the environment in that shell is the
@@ -424,14 +450,16 @@ lives in `cli/src/tests/attach-fresh-parity.test.ts` because it drives the real
 | File | Change |
 | --- | --- |
 | `cli/src/core/session-launch.ts` | new: `SessionLaunchMeta`, `cleanLaunchValue`, `compactLaunchMeta`, `readSessionLaunch`, the out-of-worktree ledger (`launchLedgerPath` keyed by `canonicalWorktreePath`, `writeLaunchLedger`, `readLaunchLedger`, `removeLaunchLedger`) and `writeJsonAtomic` |
-| `cli/src/commands/worktree.ts` | removes a worktree's launch ledger with the worktree |
+| `cli/src/commands/worktree.ts` | removes a worktree's launch ledger with the worktree, path resolved first |
+| `cli/src/commands/end.ts` | the same on `xt end` |
+| `cli/src/utils/codex-worktree-session.ts` (cleanup) | the same on a failed Codex launch |
 | `cli/src/core/launch-identity.ts` | exports `isValidRoleName`, so a persisted role is checked with the launcher's own grammar |
 | `cli/src/utils/worktree-session.ts` | persists `launch` at launch (`:4146`); re-exports the record helpers; `SessionMeta.launch`; `identityEnv` seam for the identity resolver (`:4137`, `:3881`) |
 | `cli/src/utils/codex-worktree-session.ts` | persists `launch` in the Codex session record (`:528`); same `identityEnv` seam (`:416`) |
 | `cli/src/core/codex-session.ts` | reads `launch` back through `readSessionLaunch` |
 | `cli/src/commands/attach.ts` | restores pane options, pane title, environment and the role argv; unsets the six options first; reads the stripped environment; trusts the ledger over the worktree copy; restores role/model/thinking for `--fresh` only while the role is unchanged; strips the attacher's restored keys |
-| `cli/src/tests/attach-parity.test.ts` | 46 tests (record, ledger incl. the real-path key, the different-worktree entry and a failed write, trust incl. the forged role, pane options incl. the unsets, env incl. the credential check, argv incl. replayed `--skill` paths, title, legacy record, `--fresh` incl. its stripped identity environment) |
-| `cli/src/tests/attach-fresh-parity.test.ts` | one added test: `--fresh` does not forward the attacher's git transport |
+| `cli/src/tests/attach-parity.test.ts` | 51 tests (record, ledger incl. the real-path key, the different-worktree entry, a failed write, removal after the directory is gone and removal on a rolled-back launch, trust incl. the forged role with and without a ledger and the explicit `--role`, pane options incl. the unsets, env incl. the credential and supervisor-marker checks, argv incl. replayed `--skill` paths, title, legacy record, `--fresh` incl. its stripped identity environment) |
+| `cli/src/tests/attach-fresh-parity.test.ts` | two added tests: `--fresh` does not forward the attacher's git transport, and a current-pane spawn runs from the stripped environment |
 | `cli/src/tests/codex-k1-launch-contract.characterization.test.ts`, `cli/test/codex-k1-failure-residue.characterization.test.ts` | expectations updated for the record field and the attach tmux writes |
 
 ## 8. Remaining gaps and proposals
@@ -499,6 +527,28 @@ itself, drop inherited entries whose helper is the xt App transport
 (`!xt identity credential`) when `XTRM_ROLE` is inherited, keeping operator entries
 (proxy, insteadOf) untouched. It is a launcher-wide behaviour change with its own
 regression surface, so it is not part of this fix.
+
+### 6.8 The third review round (no ledger means no identity; the spawn base; removal)
+
+```
+drops a role the record names when no launch ledger exists, until --role names it
+  → resume: no @agent_role, no @agent_task=role:lead, no XTMUX_AGENT_ROLE/XTRM_ROLE,
+    stderr "names role 'lead' but the launch ledger names none … pass --role lead to restore it"
+  → `xt attach demo --role lead`: @agent_role=lead, @agent_task=role:lead, XTMUX_AGENT_ROLE=lead
+
+starts a current-pane worker from the stripped environment, not the attacher's own
+  → control (no identityEnv): SPECIALISTS_JOB_ID=job-attacher, XTRM_SUPERVISOR_LAUNCH=1,
+    GIT_CONFIG_VALUE_0=!attacher-leak in the spawned runtime env
+  → fixed (identityEnv): all four absent
+
+restores the ledger role even when the attacher is a supervised specialist, and passes no marker on
+removes a ledger after its worktree is gone, so no identity outlives the directory
+removes the ledger when a failed launch rolls its worktree back (path resolved first)
+takes no role from a record that has no launch ledger behind it (--fresh path)
+```
+
+`cli/src/tests/attach-parity.test.ts` holds 51 tests and
+`cli/src/tests/attach-fresh-parity.test.ts` 9.
 
 ## 9. Reproducing the evidence
 

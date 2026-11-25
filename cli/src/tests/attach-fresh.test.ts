@@ -50,7 +50,10 @@ describe('withRestoredDispatcher', () => {
 describe('freshOnlyOptions', () => {
   it('names every fresh-only option that was given, and nothing for a plain attach', () => {
     expect(freshOnlyOptions({ attach: true })).toEqual([]);
+    // CORE-2792 review item 1: --role is NOT fresh-only any more. A resume drops a
+    // role no launch ledger names, and `xt attach <name> --role <name>` is how the
+    // operator restores it, so the flag must be accepted without --fresh.
     expect(freshOnlyOptions({ role: 'r', model: 'm', prompt: 'p', bead: 'b', window: true, newSession: true, pane: 's:w', workers: true, windowName: 'workers', session: 's', layout: 'tiled', parent: '$1', attach: false, yolo: false }))
-      .toEqual(['--role', '--model', '--prompt', '--bead', '--window', '--new-session', '--pane', '--workers', '--window-name', '--session', '--layout', '--parent', '--no-attach', '--no-yolo']);
+      .toEqual(['--model', '--prompt', '--bead', '--window', '--new-session', '--pane', '--workers', '--window-name', '--session', '--layout', '--parent', '--no-attach', '--no-yolo']);
   });
 });
