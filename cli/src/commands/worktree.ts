@@ -19,6 +19,7 @@ import {
     readProcessCwds,
     summarize,
 } from '../core/worktree-reap.js';
+import { gatherKeybindingProbes, installKeybinding, releasePane } from '../core/worktree-release-pane.js';
 
 export interface WorktreeInfo {
     path: string;
@@ -1781,12 +1782,23 @@ export function createWorktreeCommand(): Command {
                 }
             }
 
-            if (nested.length === 0 && orphanDirs.length === 0 && prunable.length === 0) {
+            // prefix+X is a separate install surface: report it here so a missing snippet is
+            // visible from the same command that reports worktree state.
+            const keybinding = gatherKeybindingProbes();
+            const keybindingFailing = keybinding.filter(probe => !probe.ok).length;
+            console.log(kleur.bold('\n  prefix+X release binding:'));
+            for (const probe of keybinding) {
+                const mark = probe.ok ? t.success('  ✓') : kleur.red('  ✗');
+                console.log(`${mark} ${probe.label}: ${probe.detail}`);
+            }
+
+            if (nested.length === 0 && orphanDirs.length === 0 && prunable.length === 0 && keybindingFailing === 0) {
                 console.log(t.success('\n  ✓ No stale worktree issues detected\n'));
                 return;
             }
 
             console.log(kleur.bold('\n  Remediation:'));
+            if (keybindingFailing > 0) console.log(kleur.dim('    xt worktree install-keybinding'));
             console.log(kleur.dim('    xt worktree clean --orphans --dry-run'));
             console.log(kleur.dim('    xt worktree clean --orphans --yes'));
             console.log(kleur.dim(`    git -C ${repoRoot} worktree prune --expire now`));
@@ -1982,6 +1994,72 @@ export function createWorktreeCommand(): Command {
                 console.log(kleur.dim(`    ${message}`));
             }
             console.log('');
+        });
+
+    cmd.command('release')
+        .description('Release the worktree of an agent pane: remove it when git state allows, otherwise nudge the agent')
+        .option('--pane <id>', 'tmux pane id (the binding passes #{pane_id})')
+        .option('--client <name>', 'tmux client that must answer the confirmation (the binding passes #{client_name})')
+        .option('--yes', 'Skip the confirmation; only the confirmed re-run sets this', false)
+        .option('--dry-run', 'Check the worktree and print the verdict without removing anything', false)
+        .option('--expect-head <sha>', 'Refuse unless HEAD is still this commit (set by the confirmed re-run)')
+        .action(async (opts: { pane?: string; client?: string; yes: boolean; dryRun: boolean; expectHead?: string }) => {
+            if (!opts.pane) {
+                console.error(kleur.red('\n  ✗ --pane is required (the tmux binding passes #{pane_id})\n'));
+                process.exit(1);
+            }
+
+            const outcome = await releasePane({
+                paneId: opts.pane,
+                client: opts.client,
+                yes: opts.yes,
+                dryRun: opts.dryRun,
+                expectHead: opts.expectHead,
+            });
+
+            // Inside tmux the operator sees the verdict in the status line; this JSON is for
+            // --dry-run, scripts, and a run outside tmux.
+            if (opts.dryRun || !process.env.TMUX) {
+                console.log(JSON.stringify({
+                    action: outcome.action,
+                    detail: outcome.detail,
+                    worktree: outcome.worktree ?? null,
+                    branch: outcome.branch ?? null,
+                    blockers: outcome.blockers,
+                }, null, 2));
+            }
+
+            if (outcome.action === 'refused') process.exitCode = 1;
+        });
+
+    cmd.command('install-keybinding')
+        .description('Install the tmux prefix+X binding that releases the agent pane worktree')
+        .option('--dry-run', 'Print the snippet without writing anything', false)
+        .option('-y, --yes', 'Skip confirmation', false)
+        .action(async (opts: { dryRun: boolean; yes: boolean }) => {
+            let result;
+            try {
+                result = await installKeybinding({ dryRun: opts.dryRun, yes: opts.yes });
+            } catch (error) {
+                console.error(kleur.red(`\n  ✗ ${error instanceof Error ? error.message : String(error)}\n`));
+                process.exit(1);
+            }
+
+            if (opts.dryRun) {
+                console.log(t.bold('\n  xt worktree release keybinding (dry run)\n'));
+                console.log(kleur.dim(`  ── ${result.snippetPath} (mode 0644)`));
+                console.log(`\n${result.messages.join('\n')}`);
+                return;
+            }
+
+            console.log(t.bold('\n  xt worktree release keybinding\n'));
+            for (const path of result.written) {
+                console.log(t.success(`  ✓ wrote ${path}`));
+            }
+            for (const message of result.messages) {
+                console.log(kleur.dim(`    ${message}`));
+            }
+            console.log(kleur.dim('\n  Press prefix+X in an agent pane; the tree is removed only when git state allows.\n'));
         });
 
     cmd.command('remove <name>')
