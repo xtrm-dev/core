@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 
 import { parseCodexSessionMeta } from './codex-runtime.js';
+import { readSessionLaunch, type SessionLaunchMeta } from './session-launch.js';
 
 export interface CodexWorktreeSession {
     runtime: 'codex';
@@ -30,6 +31,11 @@ export interface CodexWorktreeSession {
      * launch carried no bead; a record without it stays valid.
      */
     bead?: string;
+    /**
+     * CORE-2792: the launch identity (role, task, model, …) the pane options and
+     * pane environment carried. Read back defensively, like the bead.
+     */
+    launch?: SessionLaunchMeta;
 }
 
 export interface CodexTrustProfile {
@@ -177,10 +183,12 @@ export function readCodexWorktreeSession(worktreePath: string): CodexWorktreeSes
         // absent one is a valid record and a non-string/empty one is dropped rather
         // than carried. A damaged file can then never name an Issue, and the ref
         // shape is still validated by the attach-side reader before it reaches `sb`.
-        const { bead: rawBead, ...validated } = parsed;
+        const { bead: rawBead, launch: rawLaunch, ...validated } = parsed;
         const session = validated as unknown as CodexWorktreeSession;
         const bead = typeof rawBead === 'string' ? rawBead.trim() : '';
         if (bead) session.bead = bead;
+        const launch = readSessionLaunch({ launch: rawLaunch });
+        if (launch) session.launch = launch;
         return session;
     } catch {
         return null;

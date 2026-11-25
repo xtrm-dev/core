@@ -32,6 +32,7 @@ import {
 import {
     buildAgentEnv,
     chooseAttachCommand,
+    compactLaunchMeta,
     isProjectPackSkillPath,
     parseSpecialistJson,
     projectPackSkillName,
@@ -522,6 +523,18 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // CORE-2728: the Issue travels with the session record, so attach can
         // restore the original dispatcher without a live pane.
         ...(opts.bead ? { bead: opts.bead } : {}),
+        // CORE-2792: the launch identity, persisted from the same values the pane
+        // options above carry; those options die with the pane, this record does not.
+        launch: compactLaunchMeta({
+            role: roleName,
+            requestedRole: opts.role,
+            task: roleName ? `role:${roleName}` : `session:${slug}`,
+            worktree: worktreePath,
+            branch: branchName,
+            parentSession,
+            sessionName,
+            model: selectedModel,
+        }),
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
 
     if (window) {

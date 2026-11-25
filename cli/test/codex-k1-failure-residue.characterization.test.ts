@@ -185,14 +185,25 @@ describe('K1 negative proof — post-worktree-creation failure residue (xtrm-ozk
             .toContain(fs.realpathSync(wtPath));
 
         // CHARACTERIZATION: session metadata survives the failed launch too,
-        // and it records only { runtime, launchedAt } (worktree-session.ts:1261-1264).
+        // and it records { runtime, launchedAt } plus the CORE-2792 launch block
+        // (worktree-session.ts:1261-1264, :4146). The block written before tmux
+        // fails is the launch identity, so a later attach has something to
+        // restore even from a launch that never produced a session.
         // No session or thread id is persisted anywhere — the fact that forces
         // K2 to add thread identity for Codex.
         const metaPath = path.join(wtPath, '.xtrm', 'session-meta.json');
         expect(fs.existsSync(metaPath)).toBe(true);
         const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<string, unknown>;
-        expect(Object.keys(meta).sort()).toEqual(['launchedAt', 'runtime']);
+        expect(Object.keys(meta).sort()).toEqual(['launch', 'launchedAt', 'runtime']);
         expect(meta.runtime).toBe('claude');
+        expect(meta.launch).toMatchObject({
+            task: 'session:residue1',
+            worktree: wtPath,
+            branch: 'xt/residue1',
+            sessionName: 'claude-residue1',
+            displayName: 'myproject-xt-claude-residue1',
+        });
+        expect((meta.launch as Record<string, unknown>).role).toBeUndefined();
     });
 
     it('encodes the runtime in the worktree directory name but NOT in the branch name', () => {
@@ -337,15 +348,17 @@ describe('K1 — xt attach resume shape (xtrm-ozknq.5)', () => {
         expect(r.status).toBe(5);
     });
 
-    it('attaches without tmux — the resume path is entirely tmux-free', () => {
-        // Behavioral half: the attach above already succeeded on a PATH that
-        // contains no tmux at all. Source half: attach.ts never names tmux.
-        // CHARACTERIZATION: launch goes through tmux, resume does not. The two
-        // halves of a session's lifetime use different transports, so a session
-        // resumed by `xt attach` loses its pane metadata (@agent_role,
-        // @agent_bead, @agent_state).
+    it('attaches without tmux, and restores pane metadata only when a pane exists', () => {
+        // Behavioral half: the two attaches above ran on a PATH that contains no
+        // tmux at all, so a resume outside tmux still works and stays tmux-free.
+        // CORE-2792 changed the source half: attach DOES name tmux now, because
+        // it restores the launcher's @agent_* pane options onto the pane it runs
+        // in — behind the $TMUX guard, so a tmux-free host keeps this path.
         const source = fs.readFileSync(ATTACH_SRC, 'utf8');
-        expect(source).not.toMatch(/tmux/i);
+        expect(source).toMatch(/export function currentPaneId/);
+        expect(source).toMatch(/if \(!env\.TMUX\) return null;/);
+        // The pane is only ever addressed by an exact pane id, never a session name.
+        expect(source).toMatch(/const PANE_ID = \/\^%\[0-9\]\+\$\//);
     });
 });
 

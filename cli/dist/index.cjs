@@ -67162,6 +67162,46 @@ function validateLayout(layout) {
   if (layout !== void 0 && !LAYOUT_RE.test(layout)) throw new Error(`invalid tmux layout '${layout}'`);
 }
 
+// src/core/session-launch.ts
+var LAUNCH_FIELDS = [
+  "role",
+  "requestedRole",
+  "task",
+  "worktree",
+  "branch",
+  "parentSession",
+  "sessionName",
+  "displayName",
+  "model",
+  "thinking"
+];
+var MAX_LAUNCH_VALUE = 4096;
+var CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+function cleanLaunchValue(value) {
+  if (typeof value !== "string") return void 0;
+  const text = value.trim();
+  if (!text || text.length > MAX_LAUNCH_VALUE || CONTROL_CHARS.test(text)) return void 0;
+  return text;
+}
+function compactLaunchMeta(launch) {
+  const out = {};
+  for (const key of LAUNCH_FIELDS) {
+    const value = cleanLaunchValue(launch[key]);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+function readSessionLaunch(record2) {
+  if (!record2 || typeof record2.launch !== "object" || record2.launch === null) return null;
+  const raw = record2.launch;
+  const out = {};
+  for (const key of LAUNCH_FIELDS) {
+    const value = cleanLaunchValue(raw[key]);
+    if (value) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 // src/utils/worktree-session.ts
 var LITERAL_TURN1_BYTE_CEILING = 50 * 1024;
 var RUNTIME_ARG_BYTE_CEILING = 128 * 1024 - 1;
@@ -68822,6 +68862,25 @@ function writeSessionBindingId(worktreePath, bindingId) {
     return false;
   }
 }
+function writeSessionLaunch(worktreePath, runtime, launch) {
+  const compact = compactLaunchMeta(launch);
+  if (Object.keys(compact).length === 0) return false;
+  let meta3 = null;
+  try {
+    meta3 = readSessionMeta(worktreePath);
+  } catch {
+    meta3 = null;
+  }
+  const base = meta3 && typeof meta3.runtime === "string" ? meta3 : { runtime, launchedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  try {
+    const dest = sessionMetaPath(worktreePath);
+    (0, import_node_fs9.mkdirSync)(import_node_path23.default.dirname(dest), { recursive: true });
+    (0, import_node_fs9.writeFileSync)(dest, JSON.stringify({ ...base, launch: compact }, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
 function unregisterPluginsForWorktree(worktreePath) {
   const localSettingsPath = import_node_path23.default.join(worktreePath, ".claude", "settings.local.json");
   try {
@@ -69539,6 +69598,19 @@ async function launchTmuxSession(args) {
     }
   }
   const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
+  const launchedOption = (key) => plan.paneOptions.find((option) => option.key === key)?.value;
+  writeSessionLaunch(worktreePath, runtime, {
+    role: launchedOption("@agent_role"),
+    requestedRole: args.mode === "role" ? args.requestedRole : void 0,
+    task: launchedOption("@agent_task"),
+    worktree: launchedOption("@agent_worktree"),
+    branch: launchedOption("@agent_branch"),
+    parentSession: launchedOption("@agent_parent_session"),
+    sessionName: plan.sessionName,
+    displayName: sessionDisplayName,
+    model: modelOverride,
+    thinking: thinkingOverride
+  });
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
     const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
@@ -72452,10 +72524,12 @@ function readCodexWorktreeSession(worktreePath) {
     if (parsed.runtime !== "codex" || typeof parsed.launchedAt !== "string" || !Number.isFinite(Date.parse(parsed.launchedAt)) || typeof parsed.threadId !== "string" || !UUID2.test(parsed.threadId) || parsed.safetyProfile !== "codex-yolo" && parsed.safetyProfile !== "codex-workspace-write" || typeof parsed.profileName !== "string" || !PROFILE_NAME.test(parsed.profileName) || typeof parsed.profilePath !== "string" || !import_node_path30.default.isAbsolute(parsed.profilePath) || import_node_path30.default.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
       return null;
     }
-    const { bead: rawBead, ...validated } = parsed;
+    const { bead: rawBead, launch: rawLaunch, ...validated } = parsed;
     const session = validated;
     const bead = typeof rawBead === "string" ? rawBead.trim() : "";
     if (bead) session.bead = bead;
+    const launch = readSessionLaunch({ launch: rawLaunch });
+    if (launch) session.launch = launch;
     return session;
   } catch {
     return null;
@@ -72845,7 +72919,19 @@ async function launchCodexWorktreeSession(opts) {
     profilePath: trustProfile.path,
     // CORE-2728: the Issue travels with the session record, so attach can
     // restore the original dispatcher without a live pane.
-    ...opts.bead ? { bead: opts.bead } : {}
+    ...opts.bead ? { bead: opts.bead } : {},
+    // CORE-2792: the launch identity, persisted from the same values the pane
+    // options above carry; those options die with the pane, this record does not.
+    launch: compactLaunchMeta({
+      role: roleName,
+      requestedRole: opts.role,
+      task: roleName ? `role:${roleName}` : `session:${slug}`,
+      worktree: worktreePath,
+      branch: branchName,
+      parentSession,
+      sessionName,
+      model: selectedModel
+    })
   })) cleanupAndFail("Could not persist Codex worktree session metadata");
   if (window) {
     removeSignalCleanup();
@@ -79820,8 +79906,8 @@ function matchWorktree(worktrees, name) {
   const norm = shortBranch.startsWith("xt/") ? `refs/heads/${shortBranch}` : `refs/heads/xt/${shortBranch}`;
   return worktrees.find((wt) => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch) ?? worktrees.find((wt) => (0, import_node_path46.basename)(wt.path) === name) ?? worktrees.find((wt) => (0, import_node_path46.basename)(wt.path).endsWith(`-${name}`));
 }
-function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktreePath = null) {
-  const stripped = stripDispatcherEnv(base);
+function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktreePath = null, restoredPaneOptions = []) {
+  const stripped = stripRestoredEnv(stripDispatcherEnv(base));
   const ownEnv = {};
   const ownHolder = (holder ?? "").trim();
   if (ownHolder) {
@@ -79831,7 +79917,43 @@ function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktr
     const ownAgentName = cleanAgentName(worktreePath ? (0, import_node_path46.basename)(worktreePath) : null);
     if (ownAgentName) ownEnv[XTRM_AGENT_NAME_VAR] = ownAgentName;
   }
-  return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...ownEnv };
+  const agentEnv = buildAgentEnv(restoredPaneOptions);
+  const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity()) : {};
+  const restoredRole = restoredPaneOptions.find((option) => option.key === "@agent_role")?.value ?? "";
+  const roleEnv = restoredRole && worktreePath ? resolveLaunchIdentity({ holder: holder ?? "", roleName: restoredRole, cwd: worktreePath, forwardInherited: true }).env : {};
+  const runtimeEnv = runtime === "codex" ? { XTMUX_AGENT_RUNTIME: "codex" } : {};
+  const restored = { ...runtimeEnv, ...agentEnv, ...sessionEnv, ...roleEnv };
+  return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored };
+}
+var RESTORED_ENV_KEYS = /^(?:XTMUX_AGENT_[A-Z0-9_]+|XTRM_SESSION_ID|XTRM_SESSION_NAME|XTRM_ROLE|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$/;
+function stripRestoredEnv(env3) {
+  const out = {};
+  for (const [key, value] of Object.entries(env3)) {
+    if (!RESTORED_ENV_KEYS.test(key)) out[key] = value;
+  }
+  return out;
+}
+function restoredAttachPaneOptions(input2) {
+  const { launch, worktreePath, branch, bead } = input2;
+  const options = [];
+  const parentSession = launch?.parentSession ?? "";
+  if (parentSession) options.push({ key: "@agent_parent_session", value: parentSession });
+  const task = launch?.task ?? (launch?.role ? `role:${launch.role}` : "");
+  if (task) options.push({ key: "@agent_task", value: task });
+  options.push({ key: "@agent_worktree", value: worktreePath });
+  options.push({ key: "@agent_branch", value: launch?.branch ?? branch });
+  if (bead) options.push({ key: "@agent_bead", value: bead });
+  if (launch?.role) options.push({ key: "@agent_role", value: launch.role });
+  return options;
+}
+var PANE_ID = /^%[0-9]+$/;
+function currentPaneId(env3 = process.env) {
+  const fromEnv = (env3.TMUX_PANE ?? "").trim();
+  if (PANE_ID.test(fromEnv)) return fromEnv;
+  if (!env3.TMUX) return null;
+  const probe2 = (0, import_node_child_process25.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], { stdio: "pipe", encoding: "utf8" });
+  const paneId = (probe2.stdout ?? "").trim();
+  return PANE_ID.test(paneId) ? paneId : null;
 }
 function holderFromWorktreePath(worktreePath) {
   const match = /^.+?-xt-(?:claude|pi|codex)-(.+)$/.exec((0, import_node_path46.basename)(worktreePath));
@@ -79845,10 +79967,15 @@ function readSessionRecord(worktreePath) {
     return {
       runtime: "codex",
       launchedAt: codex.launchedAt,
-      ...codex.bead ? { bead: codex.bead } : {}
+      ...codex.bead ? { bead: codex.bead } : {},
+      ...codex.launch ? { launch: codex.launch } : {}
     };
   }
-  return readSessionMeta(worktreePath);
+  const meta3 = readSessionMeta(worktreePath);
+  if (!meta3) return null;
+  const { launch: rawLaunch, ...rest } = meta3;
+  const launch = readSessionLaunch({ launch: rawLaunch });
+  return launch ? { ...rest, launch } : rest;
 }
 function resolveWorkerIssue(worktreePath, deps = {}) {
   const meta3 = (deps.readMeta ?? readSessionRecord)(worktreePath);
@@ -79901,16 +80028,18 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   const slug = holderFromWorktreePath(target.path);
   if (!slug) throw new Error(`the worktree name ${(0, import_node_path46.basename)(target.path)} does not follow <repo>-xt-<runtime>-<slug>; cannot derive its holder`);
   const issue2 = deps.issue === void 0 ? resolveWorkerIssue(target.path) : deps.issue;
+  const launch = readSessionLaunch(readSessionRecord(target.path));
   const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue2?.ref ?? null, {
     bindingId: issue2?.bindingId ?? null,
     workspace: target.path
   });
   return {
     runtime: target.runtime === "pi" ? "pi" : "claude",
-    role: opts.role,
+    role: opts.role ?? launch?.role ?? launch?.requestedRole,
     bead: opts.bead ?? issue2?.ref,
     prompt: readFreshPrompt(opts.prompt),
-    model: opts.model,
+    model: opts.model ?? launch?.model,
+    thinking: opts.thinking ?? launch?.thinking,
     attach: opts.attach,
     window: Boolean(opts.window),
     newSession: Boolean(opts.newSession),
@@ -79998,37 +80127,56 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
     }
     const runtime = target.runtime ?? await pickRuntime();
     if (opts.fresh) {
-      let launch;
+      let launch2;
       try {
-        launch = buildFreshLaunchOptions(target, { ...opts, passthrough: extra });
+        launch2 = buildFreshLaunchOptions(target, { ...opts, passthrough: extra });
       } catch (error62) {
         console.error(kleur_default.red(`
   \u2717 ${error62 instanceof Error ? error62.message : String(error62)}
 `));
         process.exit(1);
       }
-      launch.runtime = runtime === "pi" ? "pi" : "claude";
+      launch2.runtime = runtime === "pi" ? "pi" : "claude";
       if (runtime === "codex") {
         if (opts.parent) {
           console.error(kleur_default.red("\n  \u2717 --parent is not supported for a Codex session\n"));
           process.exit(1);
         }
         await launchCodexWorktreeSession({
-          role: launch.role,
-          bead: launch.bead,
-          prompt: launch.prompt,
-          model: launch.model,
-          attach: launch.attach,
-          window: launch.window,
+          role: launch2.role,
+          bead: launch2.bead,
+          prompt: launch2.prompt,
+          model: launch2.model,
+          attach: launch2.attach,
+          window: launch2.window,
           yolo: opts.yolo !== false,
           passthrough: extra,
-          existingWorktree: launch.existingWorktree
+          existingWorktree: launch2.existingWorktree
         });
       } else {
-        await launchWorktreeSession(launch);
+        await launchWorktreeSession(launch2);
       }
       return;
     }
+    const record2 = readSessionRecord(target.path);
+    const launch = record2?.launch ?? null;
+    let resumedRole = null;
+    let resumedSkillPaths = [];
+    if (launch?.role && runtime !== "codex") {
+      try {
+        resumedRole = resolveRole2(launch.role, repoRoot, runtime === "pi" ? "pi" : "claude");
+        if (runtime === "pi") {
+          resumedSkillPaths = resolveRequestedSkills(repoRoot, resumedRole.skillPaths, "pi");
+        }
+      } catch (error62) {
+        resumedRole = null;
+        resumedSkillPaths = [];
+        const message = error62 instanceof Error ? error62.message : String(error62);
+        console.error(kleur_default.dim(`  warning: could not resolve role '${launch.role}' (${message}); resuming without its system prompt`));
+      }
+    }
+    const restoredName = launch?.displayName;
+    const restoredPrompt = resumedRole && resumedRole.systemPrompt.trim().length > 0 ? resumedRole.systemPrompt : null;
     let resumeArgs;
     if (runtime === "codex") {
       const session = readCodexWorktreeSession(target.path);
@@ -80042,8 +80190,16 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       if (specialistsPluginInstalled()) {
         resumeArgs.push("--channels", SPECIALISTS_CHANNEL_ENTRY);
       }
+      if (restoredName) resumeArgs.push("--name", restoredName);
+      if (restoredPrompt) resumeArgs.push("--append-system-prompt", restoredPrompt);
     } else {
       resumeArgs = ["-c"];
+      if (restoredName) resumeArgs.push("--name", restoredName);
+      if (restoredPrompt) resumeArgs.push("--append-system-prompt", restoredPrompt);
+      if (resumedRole) {
+        resumeArgs.push("--no-skills");
+        for (const skill of resumedSkillPaths) resumeArgs.push("--skill", skill);
+      }
     }
     console.log(t.bold(`
   Attaching to ${branch}`));
@@ -80063,7 +80219,29 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       bindingId: issue2?.bindingId ?? null,
       workspace: target.path
     });
-    const result = (0, import_node_child_process25.spawnSync)(runtime, resumeArgs, { cwd: target.path, stdio: "inherit", env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path) });
+    const restoredOptions = restoredAttachPaneOptions({
+      launch,
+      worktreePath: target.path,
+      branch,
+      bead: issue2?.ref ?? record2?.bead ?? null
+    });
+    const paneId = currentPaneId();
+    if (paneId) {
+      for (const { key, value } of restoredOptions) {
+        (0, import_node_child_process25.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
+      }
+      if (restoredName) {
+        (0, import_node_child_process25.spawnSync)("tmux", ["select-pane", "-t", paneId, "-T", restoredName], { stdio: "pipe" });
+      }
+      console.log(kleur_default.dim(`  restored: ${restoredOptions.map((option) => `${option.key}=${option.value}`).join(" ")}`));
+    } else if (!launch) {
+      console.log(kleur_default.dim("  restored: nothing (no launch record; outside tmux)"));
+    }
+    const result = (0, import_node_child_process25.spawnSync)(runtime, resumeArgs, {
+      cwd: target.path,
+      stdio: "inherit",
+      env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path, restoredOptions)
+    });
     process.exit(result.status ?? 0);
   });
 }
@@ -92815,7 +92993,7 @@ var FILE_EXCERPT_LINES = 200;
 var GIT_TIMEOUT_MS = 5e3;
 var GIT_MAX_BUFFER = 4 * 1024 * KB;
 var BOUNDED_MAX_CHARS = 1024;
-var CONTROL_CHARS = /[\u0000-\u001F\u007F]+/g;
+var CONTROL_CHARS2 = /[\u0000-\u001F\u007F]+/g;
 var ALL_KINDS = [
   "issue",
   "epic",
@@ -93165,7 +93343,7 @@ function truncateUtf8(text, maxBytes) {
   return newline >= 0 && newline >= cut.length * 0.75 ? cut.slice(0, newline + 1) : cut;
 }
 function bounded(value) {
-  return value.replace(CONTROL_CHARS, " ").slice(0, BOUNDED_MAX_CHARS) || "?";
+  return value.replace(CONTROL_CHARS2, " ").slice(0, BOUNDED_MAX_CHARS) || "?";
 }
 
 // src/core/agent-host-origin.ts
@@ -94227,7 +94405,7 @@ var CACHE_WRITE_DELAY_MS = 2e3;
 var TITLE_MAX_CHARS = 200;
 var BOUNDED_MAX_CHARS2 = 1024;
 var PATH_MAX_CHARS = 4096;
-var CONTROL_CHARS2 = /[\u0000-\u001F\u007F]+/g;
+var CONTROL_CHARS3 = /[\u0000-\u001F\u007F]+/g;
 var HAS_CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
 var REPO_LOOKUP_TIMEOUT_MS = 2e3;
 var REPO_TTL_MS = 6e4;
@@ -94861,7 +95039,7 @@ function textOf(content) {
 }
 function bounded2(value, max) {
   if (typeof value !== "string") return void 0;
-  const text = value.replace(CONTROL_CHARS2, " ").replace(/\s+/g, " ").trim();
+  const text = value.replace(CONTROL_CHARS3, " ").replace(/\s+/g, " ").trim();
   if (!text) return void 0;
   return text.length > max ? `${text.slice(0, max - 1)}\u2026` : text;
 }

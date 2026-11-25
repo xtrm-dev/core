@@ -2912,7 +2912,21 @@ export interface SessionMeta {
      * rather than the newest binding somebody else wrote on the same Issue.
      */
     bindingId?: string;
+    /**
+     * CORE-2792: the launch identity the pane options and the pane environment
+     * carried. A tmux pane option dies with the pane (a power loss, a reopened
+     * terminal), so `xt attach` restores these values from here instead.
+     * Absent on a record written before this field existed — then attach
+     * restores only what the worktree itself still answers.
+     */
+    launch?: SessionLaunchMeta;
 }
+
+// CORE-2792: the launch record's type and validation live in core/session-launch.ts;
+// re-exported here because every launcher and attach already import this module.
+export { compactLaunchMeta, cleanLaunchValue, readSessionLaunch, type SessionLaunchMeta } from '../core/session-launch.js';
+import type { SessionLaunchMeta } from '../core/session-launch.js';
+import { compactLaunchMeta } from '../core/session-launch.js';
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
 function sessionMetaPath(worktreePath: string): string {
@@ -2962,6 +2976,40 @@ export function writeSessionBindingId(worktreePath: string, bindingId: string | 
         const dest = sessionMetaPath(worktreePath);
         mkdirSync(path.dirname(dest), { recursive: true });
         writeFileSync(dest, JSON.stringify({ ...meta, bindingId: id }, null, 2));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * CORE-2792: persist the launch identity next to the session record, amending an
+ * existing one (bead, bindingId and launchedAt survive). Creates the record when
+ * the worktree has none, so an EXISTING worktree gains the record on its next
+ * launch too. Fail-soft like the other record writes: a launch never fails on it.
+ */
+export function writeSessionLaunch(
+    worktreePath: string,
+    runtime: 'claude' | 'pi' | 'codex',
+    launch: SessionLaunchMeta,
+): boolean {
+    const compact = compactLaunchMeta(launch);
+    // Nothing to say: keep the record as it is rather than writing an empty block
+    // over one a previous launch wrote.
+    if (Object.keys(compact).length === 0) return false;
+    let meta: SessionMeta | null = null;
+    try {
+        meta = readSessionMeta(worktreePath);
+    } catch {
+        meta = null;
+    }
+    const base: SessionMeta = meta && typeof meta.runtime === 'string'
+        ? meta
+        : { runtime, launchedAt: new Date().toISOString() };
+    try {
+        const dest = sessionMetaPath(worktreePath);
+        mkdirSync(path.dirname(dest), { recursive: true });
+        writeFileSync(dest, JSON.stringify({ ...base, launch: compact }, null, 2));
         return true;
     } catch {
         return false;
@@ -4089,6 +4137,24 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     }
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
     const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
+    // CORE-2792: every @agent_* pane option dies with the pane (power loss, a
+    // reopened terminal), which left `xt attach` with nothing to restore. The
+    // worktree record outlives the pane, so the launch identity is persisted
+    // there from the same pane-option values the launch actually writes.
+    const launchedOption = (key: string): string | undefined =>
+        plan.paneOptions.find(option => option.key === key)?.value;
+    writeSessionLaunch(worktreePath, runtime, {
+        role: launchedOption('@agent_role'),
+        requestedRole: args.mode === 'role' ? args.requestedRole : undefined,
+        task: launchedOption('@agent_task'),
+        worktree: launchedOption('@agent_worktree'),
+        branch: launchedOption('@agent_branch'),
+        parentSession: launchedOption('@agent_parent_session'),
+        sessionName: plan.sessionName,
+        displayName: sessionDisplayName,
+        model: modelOverride,
+        thinking: thinkingOverride,
+    });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 
