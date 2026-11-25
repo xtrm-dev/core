@@ -211,6 +211,15 @@ export interface WorktreeSessionOptions {
     model?: string;
     /** Explicit Pi --thinking override; with --role, wins over the specialist default. */
     thinking?: string;
+    /**
+     * The environment the launch-identity resolver reads (CORE-2792 review, gap 2).
+     * Absent means `process.env`, which is right when the operator's own shell is
+     * the launcher. A launcher that runs INSIDE another agent session — `xt attach
+     * --fresh` is one — must pass an environment with that session's `XTRM_ROLE`
+     * and `GIT_CONFIG_*` stripped, or the new session inherits the attacher's App
+     * identity ahead of its own.
+     */
+    identityEnv?: NodeJS.ProcessEnv;
     /** Force a new tmux session even when inside $TMUX. Outside $TMUX this is the default. */
     newSession?: boolean;
     /** With --role: override @agent_parent_session on the target pane (tmux session name, id, or #{session_id}). */
@@ -3840,6 +3849,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         dispatcherDeps: opts.dispatcherDeps,
         restoredDispatcher: existing?.dispatcher,
         placement: resolvedPlacement,
+        identityEnv: opts.identityEnv,
     };
 
     if (resolvedRole) {
@@ -3878,7 +3888,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // CORE-2528: the role App identity, when this host has the App for that role
     // and an installation for the repo owner. Otherwise the launch keeps the
     // operator identity (no XTRM_ROLE, no transport rewrite).
-    const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
+    const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
@@ -3984,6 +3994,8 @@ type TmuxLaunchArgs = {
     /** CORE-2775: the dispatcher restored from the worktree's binding (fresh session); absent for a first launch. */
     restoredDispatcher?: Record<string, string>;
     placement?: ResolvedPlacement;
+    /** CORE-2792 review gap 2: the environment the identity resolver reads; see WorktreeSessionOptions.identityEnv. */
+    identityEnv?: NodeJS.ProcessEnv;
 } & (
     | {
         mode: 'role';
@@ -4124,7 +4136,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
     }
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
-    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
+    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true, env: args.identityEnv });
     // CORE-2792: every @agent_* pane option dies with the pane (power loss, a
     // reopened terminal), which left `xt attach` with nothing to restore. The
     // worktree record outlives the pane, so the launch identity is persisted

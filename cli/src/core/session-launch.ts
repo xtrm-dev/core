@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { basename } from 'node:path';
 
@@ -143,8 +143,9 @@ export function readSessionLaunch(record: { launch?: unknown } | null | undefine
  * CORE-2792 review (trust): the in-worktree record is writable by the worker it
  * describes, so it cannot be the only word on which role — and therefore which
  * GitHub App identity — a resume adopts. The launcher also writes the same block
- * OUTSIDE the worktree, under `$HOME/.xtrm/state/launch-identity/`, and attach
- * refuses a role the two sources disagree on.
+ * OUTSIDE the worktree, under `$HOME/.xtrm/state/launch-identity/`, and when that
+ * ledger exists attach takes `role`/`requestedRole` from it ALONE, never from the
+ * worktree record (attach.ts `trustedLaunchMeta`).
  *
  * Honest limit: on a single-user host the worker runs as the same uid and can
  * write that ledger too. The ledger raises the cost of an accidental or partial
@@ -161,9 +162,25 @@ export interface LaunchLedgerEntry {
 
 /** Where the out-of-worktree copy lives; `home` is injectable for tests. */
 export function launchLedgerPath(home: string, worktreePath: string): string {
-    const slug = (basename(worktreePath) || 'worktree').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 64);
-    const digest = createHash('sha256').update(worktreePath).digest('hex').slice(0, 12);
+    const canonical = canonicalWorktreePath(worktreePath);
+    const slug = (basename(canonical) || 'worktree').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 64);
+    const digest = createHash('sha256').update(canonical).digest('hex').slice(0, 12);
     return path.join(home, '.xtrm', 'state', 'launch-identity', `${slug}-${digest}.json`);
+}
+
+/**
+ * The path a ledger is keyed by: real, absolute, no trailing slash. Without this
+ * a trailing slash or a symlinked route to the same directory (both spellings a
+ * shell hands out) would hash to a different file and the ledger would read as
+ * absent. A path that does not exist keeps its resolved spelling, so a write for
+ * a worktree that is about to disappear still lands somewhere predictable.
+ */
+export function canonicalWorktreePath(worktreePath: string): string {
+    try {
+        return realpathSync.native(worktreePath);
+    } catch {
+        return path.resolve(worktreePath);
+    }
 }
 
 /** Write a JSON file in one step: a reader never sees a half-written record. */
@@ -193,8 +210,23 @@ export function writeLaunchLedger(
 ): boolean {
     const compact = compactLaunchMeta(launch);
     if (Object.keys(compact).length === 0) return false;
-    const entry: LaunchLedgerEntry = { worktree: worktreePath, runtime, launch: compact };
+    const entry: LaunchLedgerEntry = { worktree: canonicalWorktreePath(worktreePath), runtime, launch: compact };
     return writeJsonAtomic(launchLedgerPath(home, worktreePath), entry);
+}
+
+/**
+ * Drop the ledger of a worktree that is going away. Called on removal so the
+ * state directory does not accumulate identities for paths that no longer
+ * exist; a leftover entry is only ever read for its own path, so a failure here
+ * is untidy, never unsafe.
+ */
+export function removeLaunchLedger(home: string, worktreePath: string): boolean {
+    try {
+        rmSync(launchLedgerPath(home, worktreePath), { force: true });
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -207,7 +239,8 @@ export function readLaunchLedger(home: string, worktreePath: string): SessionLau
         const raw = JSON.parse(readFileSync(launchLedgerPath(home, worktreePath), 'utf8')) as unknown;
         if (!raw || typeof raw !== 'object') return null;
         const entry = raw as Record<string, unknown>;
-        if (entry.worktree !== worktreePath) return null;
+        if (typeof entry.worktree !== 'string') return null;
+        if (canonicalWorktreePath(entry.worktree) !== canonicalWorktreePath(worktreePath)) return null;
         return readSessionLaunch({ launch: entry.launch });
     } catch {
         return null;

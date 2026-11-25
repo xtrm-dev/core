@@ -208,11 +208,42 @@ GitHub App identity the next resume adopts. Three checks apply:
    (`isValidRoleName`, `launch-identity.ts:32`), so a path or a flag cannot become a
    role.
 2. The launcher writes the same `launch` block outside the worktree, at
-   `$HOME/.xtrm/state/launch-identity/<slug>-<hash12>.json`. `xt attach` reads both
-   and prefers the ledger; a disagreement over the role is reported on stderr and the
-   ledger's role wins (`trustedLaunchMeta`, `attach.ts:150-175`).
+   `$HOME/.xtrm/state/launch-identity/<slug>-<hash12>.json`. When that ledger exists,
+   IDENTITY comes from it ALONE: `role` and `requestedRole` are taken from the ledger
+   and never from the in-worktree record (`trustedLaunchMeta`, `attach.ts:150-190`).
+   A worker that launches WITHOUT a role and writes `launch.role = "lead"` into its own
+   record therefore gains nothing — attach restores no role and reports
+   `the worktree record names role 'lead' but the launch ledger names none`. The rest
+   of the block (task, branch, parent, display name, model, thinking, skills) is not
+   identity: the ledger wins each field it carries and the record fills the gaps, which
+   keeps a ledger written before a field existed usable.
 3. Both files are written with a temp file plus `rename`, so no reader observes a
    half-written record (`writeJsonAtomic`, `session-launch.ts`).
+4. The ledger is keyed by the REAL path (`realpath`, absolute, no trailing slash), so a
+   symlinked route or a trailing slash to the same directory finds the same entry
+   (`canonicalWorktreePath`).
+5. `xt worktree remove` deletes the matching ledger (`removeLaunchLedger`,
+   `worktree.ts removeWorktreeEntry`), so the state directory does not accumulate
+   identities for paths that no longer exist.
+
+**A FRESH launch made by attach.** `xt attach --fresh` runs inside whatever session the
+operator typed it in, often another agent's pane. The launcher resolves the new
+session's App identity from `process.env` unless it is handed an environment
+(`WorktreeSessionOptions.identityEnv`, used at `worktree-session.ts:4137`, `:3881`;
+`codex-worktree-session.ts:416`). Attach supplies `attachLaunchEnv(process.env)`
+(`attach.ts`): the attacher's `GIT_CONFIG_*` transport, `XTRM_ROLE`, pane keys,
+dispatcher keys and supervisor markers are all stripped, so the new worker resolves its
+own App transport instead of inheriting the attacher's. The supervisor markers go for
+the same reason — they describe the attacher's session, and they would make the
+launcher refuse a role the durable record or the operator's own flag asked for.
+
+**The direct (non-tmux) launch keeps `process.env`.** A plain `xt claude|pi` started
+from a shell is the operator's own launch, and the environment in that shell is the
+operator's: someone who exported a credential helper or a proxy configuration expects it
+to apply. That path (`worktree-session.ts:3881`) therefore inherits by design, and this
+document records it rather than stripping it. A launch nested inside another agent's
+session does inherit that session's `GIT_CONFIG_*`; the safe rule — strip the App
+transport when `XTRM_ROLE` is inherited — is a launcher-wide change, proposed in §8.8.
 
 Honest limit: on a single-user host the worker runs as the same uid and can write the
 ledger too. The ledger raises the cost of a partial forgery — a hand-edited checkout
@@ -364,17 +395,43 @@ XTMUX_AGENT_BEAD=CORE-2792 XTMUX_AGENT_BRANCH=xt/demo XTMUX_AGENT_WORKTREE=…
 worktree itself can answer are correct. Before the fix the pane kept all three stale
 values and the worker inherited a coordinator's role.
 
+### 6.7 The second review round (identity from the ledger alone, and `--fresh` env)
+
+Both behaviours are pinned by tests that would fail on the reviewed commit `b4f778d3`:
+
+```
+takes identity from the ledger alone, so a record cannot add a role the ledger lacks
+  → a role-less launch, a record forged to role 'lead', a ledger that names no role:
+    attach restores NO @agent_role, exports no XTMUX_AGENT_ROLE/XTRM_ROLE, and warns
+    "names role 'lead' but the launch ledger names none"
+
+does not forward the attacher's git transport when the identity environment is given
+  → control (no identityEnv): the tmux -e list contains '!attacher-leak'
+  → fixed (identityEnv = attachLaunchEnv(process.env)): it does not, and the new
+    session still gets its own XTRM_ROLE=worker
+
+keys the ledger by the real path, so a trailing slash or a symlink finds it
+reads no ledger that names a different worktree
+keeps the record when the ledger write fails
+```
+
+`cli/src/tests/attach-parity.test.ts` now holds 46 tests; the `--fresh` transport test
+lives in `cli/src/tests/attach-fresh-parity.test.ts` because it drives the real
+`launchWorktreeSession`.
+
 ## 7. Files changed
 
 | File | Change |
 | --- | --- |
-| `cli/src/core/session-launch.ts` | new: `SessionLaunchMeta`, `cleanLaunchValue`, `compactLaunchMeta`, `readSessionLaunch`, the out-of-worktree ledger (`launchLedgerPath`, `writeLaunchLedger`, `readLaunchLedger`) and `writeJsonAtomic` |
+| `cli/src/core/session-launch.ts` | new: `SessionLaunchMeta`, `cleanLaunchValue`, `compactLaunchMeta`, `readSessionLaunch`, the out-of-worktree ledger (`launchLedgerPath` keyed by `canonicalWorktreePath`, `writeLaunchLedger`, `readLaunchLedger`, `removeLaunchLedger`) and `writeJsonAtomic` |
+| `cli/src/commands/worktree.ts` | removes a worktree's launch ledger with the worktree |
 | `cli/src/core/launch-identity.ts` | exports `isValidRoleName`, so a persisted role is checked with the launcher's own grammar |
-| `cli/src/utils/worktree-session.ts` | persists `launch` at launch (`:4146`); re-exports the record helpers; `SessionMeta.launch` |
-| `cli/src/utils/codex-worktree-session.ts` | persists `launch` in the Codex session record (`:528`) |
+| `cli/src/utils/worktree-session.ts` | persists `launch` at launch (`:4146`); re-exports the record helpers; `SessionMeta.launch`; `identityEnv` seam for the identity resolver (`:4137`, `:3881`) |
+| `cli/src/utils/codex-worktree-session.ts` | persists `launch` in the Codex session record (`:528`); same `identityEnv` seam (`:416`) |
 | `cli/src/core/codex-session.ts` | reads `launch` back through `readSessionLaunch` |
 | `cli/src/commands/attach.ts` | restores pane options, pane title, environment and the role argv; unsets the six options first; reads the stripped environment; trusts the ledger over the worktree copy; restores role/model/thinking for `--fresh` only while the role is unchanged; strips the attacher's restored keys |
-| `cli/src/tests/attach-parity.test.ts` | 39 tests (record, ledger, trust, pane options incl. the unsets, env incl. the credential check, argv incl. replayed `--skill` paths, title, legacy record, `--fresh`) |
+| `cli/src/tests/attach-parity.test.ts` | 46 tests (record, ledger incl. the real-path key, the different-worktree entry and a failed write, trust incl. the forged role, pane options incl. the unsets, env incl. the credential check, argv incl. replayed `--skill` paths, title, legacy record, `--fresh` incl. its stripped identity environment) |
+| `cli/src/tests/attach-fresh-parity.test.ts` | one added test: `--fresh` does not forward the attacher's git transport |
 | `cli/src/tests/codex-k1-launch-contract.characterization.test.ts`, `cli/test/codex-k1-failure-residue.characterization.test.ts` | expectations updated for the record field and the attach tmux writes |
 
 ## 8. Remaining gaps and proposals
@@ -430,6 +487,18 @@ worktree record, or a signed entry appended by the launcher with the key held ou
 the agent's home. Until then, treat the ledger as tamper-evident rather than
 tamper-proof, and keep the operator's habit of reading the `restored:` line attach
 prints.
+
+### 8.8 Inherited transport on a nested direct launch
+
+`xt claude|pi` started inside another agent session inherits that session's
+`GIT_CONFIG_*` list, and `resolveLaunchIdentity({forwardInherited: true})` forwards it
+ahead of the new session's own helper (`worktree-session.ts:4137` — the tmux path, and
+`:3881` — the direct path). `xt attach` closes this for both of its paths by passing
+`identityEnv`; a launcher started directly still inherits. Proposal: in the launcher
+itself, drop inherited entries whose helper is the xt App transport
+(`!xt identity credential`) when `XTRM_ROLE` is inherited, keeping operator entries
+(proxy, insteadOf) untouched. It is a launcher-wide behaviour change with its own
+regression surface, so it is not part of this fix.
 
 ## 9. Reproducing the evidence
 

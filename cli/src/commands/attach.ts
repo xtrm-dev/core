@@ -131,6 +131,32 @@ export function stripRestoredEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
+ * The environment a FRESH launch started by attach hands to the launcher's identity
+ * resolver (CORE-2792 review, gap 2).
+ *
+ * `xt attach --fresh` runs inside whatever session the operator typed it in — often
+ * another agent's pane. The launcher resolves the new session's App identity from
+ * `process.env` unless it is given an environment, so without this the new worker
+ * inherits the ATTACHER's `XTRM_ROLE` and `GIT_CONFIG_*` transport ahead of its own,
+ * exactly the leak the resume path closes. Dispatcher and pane keys go too, as on
+ * the resume path.
+ *
+ * The supervisor markers go for the same reason: they describe the attacher's
+ * session, not the one being started, and they would make the launcher refuse a
+ * role that its own durable record or the operator's flag asked for. A plain
+ * `xt claude|pi` launcher keeps them and keeps refusing.
+ */
+const SUPERVISOR_MARKERS = ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH'];
+
+export function attachLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const stripped: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(stripRestoredEnv(stripDispatcherEnv(env)))) {
+        if (!SUPERVISOR_MARKERS.includes(key)) stripped[key] = value;
+    }
+    return stripped;
+}
+
+/**
  * The six pane options a role launch writes and a resume owns (CORE-2792). attach
  * unsets every one of them before it restores the record's values: a pane that
  * hosted a coordinator keeps `@agent_role=lead` and the old bead otherwise,
@@ -151,29 +177,41 @@ export const RESTORED_PANE_KEYS = [
  * The worktree record is writable by the worker it describes, so `launch.role`
  * from that file alone could let a worker adopt another role — and with it
  * another GitHub App identity — on the next attach. The launcher writes the same
- * block outside the worktree; this function merges the two and refuses the role
- * when they disagree, so the pane comes back WITHOUT a role instead of with a
- * forged one, and the operator is told why.
+ * block outside the worktree; when that ledger exists, IDENTITY comes from it
+ * alone: `role` and `requestedRole` are taken from the ledger and never from the
+ * worktree record, so a worker that launches without a role cannot write one
+ * into its own record and have attach restore it (the round-2 HIGH finding).
  *
- * When only one source exists, that source answers. A worktree record with no
- * ledger is the pre-review case (§5 of the parity document) and is accepted with
- * the caller's note.
+ * The rest of the block (task, branch, parent, display name, model, thinking,
+ * skills) is not identity: the ledger wins each field it carries, and the record
+ * fills the gaps, which is what makes a ledger written before a field existed
+ * still usable.
+ *
+ * When only the worktree record exists, it answers, and the caller's note says
+ * so. When only the ledger exists, it answers.
  */
 export function trustedLaunchMeta(
     recordLaunch: SessionLaunchMeta | null,
     ledgerLaunch: SessionLaunchMeta | null,
-): { launch: SessionLaunchMeta | null; conflictRole: string | null } {
-    if (!ledgerLaunch && !recordLaunch) return { launch: null, conflictRole: null };
-    if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null };
-    if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null };
+): { launch: SessionLaunchMeta | null; conflictRole: string | null; ignoredRecordRole: string | null } {
+    if (!ledgerLaunch && !recordLaunch)
+        return { launch: null, conflictRole: null, ignoredRecordRole: null };
+    if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null, ignoredRecordRole: null };
+    if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null, ignoredRecordRole: null };
     const recordRole = recordLaunch.role ?? null;
     const ledgerRole = ledgerLaunch.role ?? null;
-    // The ledger is the copy the worker's own checkout cannot rewrite, so it wins
-    // every field it carries. A disagreement over the role is reported, and the
-    // ledger's role is the one restored.
-    const merged: SessionLaunchMeta = { ...recordLaunch, ...ledgerLaunch };
+    // Identity comes from the ledger only. Strip both role fields from the record
+    // before merging, so a record that names a role the ledger does not know is
+    // an ignored claim rather than a restored one.
+    const { role: _recordRole, requestedRole: _recordRequestedRole, ...recordRest } = recordLaunch;
+    const merged: SessionLaunchMeta = { ...recordRest, ...ledgerLaunch };
+    delete merged.role;
+    delete merged.requestedRole;
+    if (ledgerRole) merged.role = ledgerRole;
+    if (ledgerLaunch.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
     const conflictRole = recordRole && ledgerRole && recordRole !== ledgerRole ? recordRole : null;
-    return { launch: merged, conflictRole };
+    const ignoredRecordRole = recordRole && !ledgerRole ? recordRole : null;
+    return { launch: merged, conflictRole, ignoredRecordRole };
 }
 
 /**
@@ -411,6 +449,9 @@ export function buildFreshLaunchOptions(
     if (trusted.conflictRole) {
         console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
     }
+    if (trusted.ignoredRecordRole) {
+        console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
+    }
     // Model and thinking belong to the role they came from (review finding 3): a
     // restart under a DIFFERENT role must not inherit the old role's defaults, and
     // a recorded value is only ever an explicit operator override now.
@@ -438,6 +479,8 @@ export function buildFreshLaunchOptions(
         layout: opts.layout,
         parent: opts.parent,
         passthrough: opts.passthrough,
+        // The attacher's own identity must not travel into the new session.
+        identityEnv: attachLaunchEnv(process.env),
         existingWorktree: {
             path: target.path,
             branch: target.branch.replace('refs/heads/', ''),
@@ -561,6 +604,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                         role: launch.role, bead: launch.bead, prompt: launch.prompt, model: launch.model,
                         attach: launch.attach, window: launch.window, yolo: opts.yolo !== false,
                         passthrough: extra, existingWorktree: launch.existingWorktree,
+                        identityEnv: launch.identityEnv,
                     });
                 } else {
                     await launchWorktreeSession(launch);
@@ -575,11 +619,15 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             const record = readSessionRecord(target.path);
             // CORE-2792 review (trust): the worktree copy is the worker's own file.
             // The launcher's out-of-worktree ledger is merged in, and a disagreement
-            // over the role drops the role rather than adopting a forged identity.
+            // over the role takes the role from the ledger alone, so a worker that
+            // wrote a role into its own record gains nothing.
             const trusted = trustedLaunchMeta(record?.launch ?? null, readLaunchLedger(homedir(), target.path));
             const launch = trusted.launch;
             if (trusted.conflictRole) {
                 console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
+            }
+            if (trusted.ignoredRecordRole) {
+                console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
             }
             // A role launch carried its identity as an inline system prompt and,
             // for pi, an isolated skill pool. Both are derivable from the role

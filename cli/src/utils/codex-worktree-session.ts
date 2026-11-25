@@ -69,6 +69,8 @@ export interface CodexWorktreeSessionOptions {
     dispatcherDeps?: DispatcherIdentityDeps;
     /** CORE-2775: start a FRESH Codex session in this existing worktree (`xt attach --fresh`); nothing is created or removed. */
     existingWorktree?: ExistingWorktree;
+    /** CORE-2792: the environment the identity resolver reads; see WorktreeSessionOptions.identityEnv. */
+    identityEnv?: NodeJS.ProcessEnv;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -413,7 +415,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
     // CORE-2528: role App identity when this host has the App and its installation
     // covers the repo owner; otherwise the operator identity, as before.
-    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
+    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });
     const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
     const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
     if (opts.bead && !existing) {

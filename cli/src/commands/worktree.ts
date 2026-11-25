@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, unlink
 import { homedir } from 'node:os';
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SessionMeta } from '../utils/worktree-session.js';
+import { removeLaunchLedger } from '../core/session-launch.js';
 import { unregisterPluginsForWorktree } from '../utils/worktree-session.js';
 import { t } from '../utils/theme.js';
 import { resolveDefaultBranchRef } from '../utils/worktree-base.js';
@@ -1530,6 +1531,8 @@ function removeWorktreeEntry(repoRoot: string, worktreePath: string): { ok: bool
 
     unregisterPluginsForWorktree(worktreePath);
     clearStatuslineClaim(repoRoot);
+    // CORE-2792: the launch ledger names this path, so it goes with the worktree.
+    removeLaunchLedger(homedir(), worktreePath);
     return { ok: true, message: `Removed ${worktreePath}` };
 }
 

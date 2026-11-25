@@ -3585,8 +3585,8 @@ var require_universalify = __commonJS({
       return Object.defineProperty(function(...args) {
         if (typeof args[args.length - 1] === "function") fn.apply(this, args);
         else {
-          return new Promise((resolve7, reject) => {
-            args.push((err, res) => err != null ? reject(err) : resolve7(res));
+          return new Promise((resolve8, reject) => {
+            args.push((err, res) => err != null ? reject(err) : resolve8(res));
             fn.apply(this, args);
           });
         }
@@ -4441,18 +4441,18 @@ var require_fs = __commonJS({
       if (typeof callback === "function") {
         return fs68.exists(filename, callback);
       }
-      return new Promise((resolve7) => {
-        return fs68.exists(filename, resolve7);
+      return new Promise((resolve8) => {
+        return fs68.exists(filename, resolve8);
       });
     };
     exports2.read = function(fd, buffer, offset, length, position, callback) {
       if (typeof callback === "function") {
         return fs68.read(fd, buffer, offset, length, position, callback);
       }
-      return new Promise((resolve7, reject) => {
+      return new Promise((resolve8, reject) => {
         fs68.read(fd, buffer, offset, length, position, (err, bytesRead, buffer2) => {
           if (err) return reject(err);
-          resolve7({ bytesRead, buffer: buffer2 });
+          resolve8({ bytesRead, buffer: buffer2 });
         });
       });
     };
@@ -4460,10 +4460,10 @@ var require_fs = __commonJS({
       if (typeof args[args.length - 1] === "function") {
         return fs68.write(fd, buffer, ...args);
       }
-      return new Promise((resolve7, reject) => {
+      return new Promise((resolve8, reject) => {
         fs68.write(fd, buffer, ...args, (err, bytesWritten, buffer2) => {
           if (err) return reject(err);
-          resolve7({ bytesWritten, buffer: buffer2 });
+          resolve8({ bytesWritten, buffer: buffer2 });
         });
       });
     };
@@ -4471,10 +4471,10 @@ var require_fs = __commonJS({
       if (typeof args[args.length - 1] === "function") {
         return fs68.readv(fd, buffers, ...args);
       }
-      return new Promise((resolve7, reject) => {
+      return new Promise((resolve8, reject) => {
         fs68.readv(fd, buffers, ...args, (err, bytesRead, buffers2) => {
           if (err) return reject(err);
-          resolve7({ bytesRead, buffers: buffers2 });
+          resolve8({ bytesRead, buffers: buffers2 });
         });
       });
     };
@@ -4482,10 +4482,10 @@ var require_fs = __commonJS({
       if (typeof args[args.length - 1] === "function") {
         return fs68.writev(fd, buffers, ...args);
       }
-      return new Promise((resolve7, reject) => {
+      return new Promise((resolve8, reject) => {
         fs68.writev(fd, buffers, ...args, (err, bytesWritten, buffers2) => {
           if (err) return reject(err);
-          resolve7({ bytesWritten, buffers: buffers2 });
+          resolve8({ bytesWritten, buffers: buffers2 });
         });
       });
     };
@@ -10443,7 +10443,7 @@ function isRef(value) {
 function cloneIssues(issues) {
   return issues.map((iss) => iss.path ? { ...iss, path: iss.path.slice() } : { ...iss });
 }
-function isRecursive(inst, stack, resolve7) {
+function isRecursive(inst, stack, resolve8) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -10453,7 +10453,7 @@ function isRecursive(inst, stack, resolve7) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve7);
+      const answer = isRecursive(child, stack, resolve8);
       if (answer > result)
         result = answer;
     }
@@ -10464,7 +10464,7 @@ function isRecursive(inst, stack, resolve7) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve7) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve8) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -10528,7 +10528,7 @@ function isRecursive(inst, stack, resolve7) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve7 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve8 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -28722,7 +28722,7 @@ var require_prompt = __commonJS({
 var require_text = __commonJS({
   "../node_modules/prompts/dist/elements/text.js"(exports2, module2) {
     "use strict";
-    function asyncGeneratorStep(gen, resolve7, reject, _next, _throw, key, arg) {
+    function asyncGeneratorStep(gen, resolve8, reject, _next, _throw, key, arg) {
       try {
         var info = gen[key](arg);
         var value = info.value;
@@ -28731,7 +28731,7 @@ var require_text = __commonJS({
         return;
       }
       if (info.done) {
-        resolve7(value);
+        resolve8(value);
       } else {
         Promise.resolve(value).then(_next, _throw);
       }
@@ -28739,13 +28739,13 @@ var require_text = __commonJS({
     function _asyncToGenerator(fn) {
       return function() {
         var self = this, args = arguments;
-        return new Promise(function(resolve7, reject) {
+        return new Promise(function(resolve8, reject) {
           var gen = fn.apply(self, args);
           function _next(value) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "next", value);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "next", value);
           }
           function _throw(err) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "throw", err);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "throw", err);
           }
           _next(void 0);
         });
@@ -29461,7 +29461,7 @@ var require_dateparts = __commonJS({
 var require_date = __commonJS({
   "../node_modules/prompts/dist/elements/date.js"(exports2, module2) {
     "use strict";
-    function asyncGeneratorStep(gen, resolve7, reject, _next, _throw, key, arg) {
+    function asyncGeneratorStep(gen, resolve8, reject, _next, _throw, key, arg) {
       try {
         var info = gen[key](arg);
         var value = info.value;
@@ -29470,7 +29470,7 @@ var require_date = __commonJS({
         return;
       }
       if (info.done) {
-        resolve7(value);
+        resolve8(value);
       } else {
         Promise.resolve(value).then(_next, _throw);
       }
@@ -29478,13 +29478,13 @@ var require_date = __commonJS({
     function _asyncToGenerator(fn) {
       return function() {
         var self = this, args = arguments;
-        return new Promise(function(resolve7, reject) {
+        return new Promise(function(resolve8, reject) {
           var gen = fn.apply(self, args);
           function _next(value) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "next", value);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "next", value);
           }
           function _throw(err) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "throw", err);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "throw", err);
           }
           _next(void 0);
         });
@@ -29687,7 +29687,7 @@ ${i ? ` ` : figures.pointerSmall} ${color.red().italic(l)}`, ``);
 var require_number = __commonJS({
   "../node_modules/prompts/dist/elements/number.js"(exports2, module2) {
     "use strict";
-    function asyncGeneratorStep(gen, resolve7, reject, _next, _throw, key, arg) {
+    function asyncGeneratorStep(gen, resolve8, reject, _next, _throw, key, arg) {
       try {
         var info = gen[key](arg);
         var value = info.value;
@@ -29696,7 +29696,7 @@ var require_number = __commonJS({
         return;
       }
       if (info.done) {
-        resolve7(value);
+        resolve8(value);
       } else {
         Promise.resolve(value).then(_next, _throw);
       }
@@ -29704,13 +29704,13 @@ var require_number = __commonJS({
     function _asyncToGenerator(fn) {
       return function() {
         var self = this, args = arguments;
-        return new Promise(function(resolve7, reject) {
+        return new Promise(function(resolve8, reject) {
           var gen = fn.apply(self, args);
           function _next(value) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "next", value);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "next", value);
           }
           function _throw(err) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "throw", err);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "throw", err);
           }
           _next(void 0);
         });
@@ -30133,7 +30133,7 @@ Instructions:
 var require_autocomplete = __commonJS({
   "../node_modules/prompts/dist/elements/autocomplete.js"(exports2, module2) {
     "use strict";
-    function asyncGeneratorStep(gen, resolve7, reject, _next, _throw, key, arg) {
+    function asyncGeneratorStep(gen, resolve8, reject, _next, _throw, key, arg) {
       try {
         var info = gen[key](arg);
         var value = info.value;
@@ -30142,7 +30142,7 @@ var require_autocomplete = __commonJS({
         return;
       }
       if (info.done) {
-        resolve7(value);
+        resolve8(value);
       } else {
         Promise.resolve(value).then(_next, _throw);
       }
@@ -30150,13 +30150,13 @@ var require_autocomplete = __commonJS({
     function _asyncToGenerator(fn) {
       return function() {
         var self = this, args = arguments;
-        return new Promise(function(resolve7, reject) {
+        return new Promise(function(resolve8, reject) {
           var gen = fn.apply(self, args);
           function _next(value) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "next", value);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "next", value);
           }
           function _throw(err) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "throw", err);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "throw", err);
           }
           _next(void 0);
         });
@@ -30787,7 +30787,7 @@ var require_dist = __commonJS({
       for (var i = 0, arr2 = new Array(len); i < len; i++) arr2[i] = arr[i];
       return arr2;
     }
-    function asyncGeneratorStep(gen, resolve7, reject, _next, _throw, key, arg) {
+    function asyncGeneratorStep(gen, resolve8, reject, _next, _throw, key, arg) {
       try {
         var info = gen[key](arg);
         var value = info.value;
@@ -30796,7 +30796,7 @@ var require_dist = __commonJS({
         return;
       }
       if (info.done) {
-        resolve7(value);
+        resolve8(value);
       } else {
         Promise.resolve(value).then(_next, _throw);
       }
@@ -30804,13 +30804,13 @@ var require_dist = __commonJS({
     function _asyncToGenerator(fn) {
       return function() {
         var self = this, args = arguments;
-        return new Promise(function(resolve7, reject) {
+        return new Promise(function(resolve8, reject) {
           var gen = fn.apply(self, args);
           function _next(value) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "next", value);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "next", value);
           }
           function _throw(err) {
-            asyncGeneratorStep(gen, resolve7, reject, _next, _throw, "throw", err);
+            asyncGeneratorStep(gen, resolve8, reject, _next, _throw, "throw", err);
           }
           _next(void 0);
         });
@@ -36035,7 +36035,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve7.call(this, root, ref);
+      let _sch = resolve8.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -36062,7 +36062,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve7(root, ref) {
+    function resolve8(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -36926,7 +36926,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve7(baseURI, relativeURI, options) {
+    function resolve8(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -37317,7 +37317,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve7,
+      resolve: resolve8,
       resolveComponent,
       equal,
       serialize,
@@ -67228,9 +67228,17 @@ function readSessionLaunch(record2) {
   return Object.keys(out).length > 0 ? out : null;
 }
 function launchLedgerPath(home, worktreePath) {
-  const slug = ((0, import_node_path23.basename)(worktreePath) || "worktree").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 64);
-  const digest = (0, import_node_crypto8.createHash)("sha256").update(worktreePath).digest("hex").slice(0, 12);
+  const canonical2 = canonicalWorktreePath(worktreePath);
+  const slug = ((0, import_node_path23.basename)(canonical2) || "worktree").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 64);
+  const digest = (0, import_node_crypto8.createHash)("sha256").update(canonical2).digest("hex").slice(0, 12);
   return path27.join(home, ".xtrm", "state", "launch-identity", `${slug}-${digest}.json`);
+}
+function canonicalWorktreePath(worktreePath) {
+  try {
+    return import_node_fs9.realpathSync.native(worktreePath);
+  } catch {
+    return path27.resolve(worktreePath);
+  }
 }
 function writeJsonAtomic2(dest, data) {
   const temporary = `${dest}.${process.pid}.tmp`;
@@ -67250,15 +67258,24 @@ function writeJsonAtomic2(dest, data) {
 function writeLaunchLedger(home, worktreePath, runtime, launch) {
   const compact = compactLaunchMeta(launch);
   if (Object.keys(compact).length === 0) return false;
-  const entry = { worktree: worktreePath, runtime, launch: compact };
+  const entry = { worktree: canonicalWorktreePath(worktreePath), runtime, launch: compact };
   return writeJsonAtomic2(launchLedgerPath(home, worktreePath), entry);
+}
+function removeLaunchLedger(home, worktreePath) {
+  try {
+    (0, import_node_fs9.rmSync)(launchLedgerPath(home, worktreePath), { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 function readLaunchLedger(home, worktreePath) {
   try {
     const raw = JSON.parse((0, import_node_fs9.readFileSync)(launchLedgerPath(home, worktreePath), "utf8"));
     if (!raw || typeof raw !== "object") return null;
     const entry = raw;
-    if (entry.worktree !== worktreePath) return null;
+    if (typeof entry.worktree !== "string") return null;
+    if (canonicalWorktreePath(entry.worktree) !== canonicalWorktreePath(worktreePath)) return null;
     return readSessionLaunch({ launch: entry.launch });
   } catch {
     return null;
@@ -67344,7 +67361,7 @@ async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
       return;
     }
     if (instanceId || Date.now() >= deadline) break;
-    await new Promise((resolve7) => setTimeout(resolve7, RUNTIME_READY_POLL_INTERVAL_MS));
+    await new Promise((resolve8) => setTimeout(resolve8, RUNTIME_READY_POLL_INTERVAL_MS));
   }
   const assignee = instanceId ? runtimeAssigneeFromOrigin(runtime, instanceId) : null;
   if (!assignee) {
@@ -69473,7 +69490,8 @@ async function launchWorktreeSession(opts) {
     hasInitialPrompt,
     dispatcherDeps: opts.dispatcherDeps,
     restoredDispatcher: existing?.dispatcher,
-    placement: resolvedPlacement
+    placement: resolvedPlacement,
+    identityEnv: opts.identityEnv
   };
   if (resolvedRole) {
     await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
@@ -69493,7 +69511,7 @@ async function launchWorktreeSession(opts) {
     }
   }
   const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
-  const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
+  const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
   const launchResult2 = (0, import_node_child_process11.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
@@ -69645,7 +69663,7 @@ async function launchTmuxSession(args) {
       if (bindingId) writeSessionBindingId(worktreePath, bindingId);
     }
   }
-  const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
+  const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true, env: args.identityEnv });
   const launchedOption = (key) => plan.paneOptions.find((option) => option.key === key)?.value;
   writeSessionLaunch(worktreePath, runtime, {
     role: launchedOption("@agent_role"),
@@ -69709,9 +69727,9 @@ async function launchTmuxSession(args) {
       stdio: "inherit",
       env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
     });
-    const runtimeExit = new Promise((resolve7) => {
-      runtimeProcess.once("error", () => resolve7(1));
-      runtimeProcess.once("exit", (code) => resolve7(code ?? 1));
+    const runtimeExit = new Promise((resolve8) => {
+      runtimeProcess.once("error", () => resolve8(1));
+      runtimeProcess.once("exit", (code) => resolve8(code ?? 1));
     });
     await assignBeadToRuntime(bead, runtime, paneId2, worktreePath, { previousInstanceId, readyAfterMs: readyAfterMs2 });
     process.exit(await runtimeExit);
@@ -72687,7 +72705,7 @@ async function waitForCodexSession(sessionsRoot, cwd, launchedAfterMs) {
   while (Date.now() <= deadline) {
     const session = findCodexSession({ sessionsRoot, cwd, launchedAfterMs });
     if (session) return session;
-    await new Promise((resolve7) => setTimeout(resolve7, SESSION_DISCOVERY_POLL_MS));
+    await new Promise((resolve8) => setTimeout(resolve8, SESSION_DISCOVERY_POLL_MS));
   }
   return null;
 }
@@ -72879,7 +72897,7 @@ async function launchCodexWorktreeSession(opts) {
     ...roleName ? [{ key: "@agent_role", value: roleName }] : []
   ];
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
-  const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
+  const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });
   const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path32.default.basename(worktreePath) });
   const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
   if (opts.bead && !existing) {
@@ -74599,7 +74617,7 @@ var retryifyAsync = (fn, options) => {
           throw error62;
         const delay2 = Math.round(interval * Math.random());
         if (delay2 > 0) {
-          const delayPromise = new Promise((resolve7) => setTimeout(resolve7, delay2));
+          const delayPromise = new Promise((resolve8) => setTimeout(resolve8, delay2));
           return delayPromise.then(() => attempt.apply(void 0, args));
         } else {
           return attempt.apply(void 0, args);
@@ -79550,6 +79568,7 @@ function removeWorktreeEntry(repoRoot, worktreePath) {
   }
   unregisterPluginsForWorktree(worktreePath);
   clearStatuslineClaim2(repoRoot);
+  removeLaunchLedger((0, import_node_os24.homedir)(), worktreePath);
   return { ok: true, message: `Removed ${worktreePath}` };
 }
 function getRepoRoot(cwd) {
@@ -79991,6 +80010,14 @@ function stripRestoredEnv(env3) {
   }
   return out;
 }
+var SUPERVISOR_MARKERS2 = ["SPECIALISTS_JOB_ID", "XTRM_SUPERVISOR_LAUNCH"];
+function attachLaunchEnv(env3) {
+  const stripped = {};
+  for (const [key, value] of Object.entries(stripRestoredEnv(stripDispatcherEnv(env3)))) {
+    if (!SUPERVISOR_MARKERS2.includes(key)) stripped[key] = value;
+  }
+  return stripped;
+}
 var RESTORED_PANE_KEYS = [
   "@agent_parent_session",
   "@agent_task",
@@ -80000,14 +80027,21 @@ var RESTORED_PANE_KEYS = [
   "@agent_role"
 ];
 function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
-  if (!ledgerLaunch && !recordLaunch) return { launch: null, conflictRole: null };
-  if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null };
-  if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null };
+  if (!ledgerLaunch && !recordLaunch)
+    return { launch: null, conflictRole: null, ignoredRecordRole: null };
+  if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null, ignoredRecordRole: null };
+  if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null, ignoredRecordRole: null };
   const recordRole = recordLaunch.role ?? null;
   const ledgerRole = ledgerLaunch.role ?? null;
-  const merged = { ...recordLaunch, ...ledgerLaunch };
+  const { role: _recordRole, requestedRole: _recordRequestedRole, ...recordRest } = recordLaunch;
+  const merged = { ...recordRest, ...ledgerLaunch };
+  delete merged.role;
+  delete merged.requestedRole;
+  if (ledgerRole) merged.role = ledgerRole;
+  if (ledgerLaunch.requestedRole) merged.requestedRole = ledgerLaunch.requestedRole;
   const conflictRole = recordRole && ledgerRole && recordRole !== ledgerRole ? recordRole : null;
-  return { launch: merged, conflictRole };
+  const ignoredRecordRole = recordRole && !ledgerRole ? recordRole : null;
+  return { launch: merged, conflictRole, ignoredRecordRole };
 }
 function restoredAttachPaneOptions(input2) {
   const { launch, worktreePath, branch, bead } = input2;
@@ -80112,6 +80146,9 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   if (trusted.conflictRole) {
     console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
   }
+  if (trusted.ignoredRecordRole) {
+    console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
+  }
   const recordedRole = launch?.role ?? launch?.requestedRole;
   const requestedRole = (opts.role ?? "").trim() || void 0;
   const roleUnchanged = !requestedRole || requestedRole === recordedRole;
@@ -80136,6 +80173,8 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
     layout: opts.layout,
     parent: opts.parent,
     passthrough: opts.passthrough,
+    // The attacher's own identity must not travel into the new session.
+    identityEnv: attachLaunchEnv(process.env),
     existingWorktree: {
       path: target.path,
       branch: target.branch.replace("refs/heads/", ""),
@@ -80237,7 +80276,8 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
           window: launch2.window,
           yolo: opts.yolo !== false,
           passthrough: extra,
-          existingWorktree: launch2.existingWorktree
+          existingWorktree: launch2.existingWorktree,
+          identityEnv: launch2.identityEnv
         });
       } else {
         await launchWorktreeSession(launch2);
@@ -80249,6 +80289,9 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
     const launch = trusted.launch;
     if (trusted.conflictRole) {
       console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
+    }
+    if (trusted.ignoredRecordRole) {
+      console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
     }
     let resumedRole = null;
     let resumedSkillPaths = [];
@@ -83530,7 +83573,7 @@ async function listReports(cwd) {
 }
 async function diffReports(cwd, a, b) {
   const reportsDir = import_path24.default.join(cwd, ".xtrm", "reports");
-  const resolve7 = async (ref) => {
+  const resolve8 = async (ref) => {
     if (await import_fs_extra45.default.pathExists(ref)) return ref;
     const candidate = import_path24.default.join(reportsDir, ref.endsWith(".md") ? ref : `${ref}.md`);
     if (await import_fs_extra45.default.pathExists(candidate)) return candidate;
@@ -83539,8 +83582,8 @@ async function diffReports(cwd, a, b) {
     console.error(kleur_default.red(`  No report matching "${ref}"`));
     process.exit(1);
   };
-  const pathA = await resolve7(a);
-  const pathB = await resolve7(b);
+  const pathA = await resolve8(a);
+  const pathB = await resolve8(b);
   const result = run3("diff", ["--unified=3", "--color=always", pathA, pathB], cwd);
   if (!result.out) {
     console.log(kleur_default.dim("\n  Reports are identical\n"));
@@ -89218,10 +89261,10 @@ function createMigrateCommand() {
           input: process.stdin,
           output: process.stdout
         });
-        const answer = await new Promise((resolve7) => {
+        const answer = await new Promise((resolve8) => {
           rl.question(
             kleur_default.yellow("  \u26A0  This will DELETE per-repo skills/hooks. Continue? [y/N] "),
-            resolve7
+            resolve8
           );
         });
         rl.close();
@@ -92863,7 +92906,7 @@ var LaunchRejection = class extends Error {
   }
   code;
 };
-var runProcess = (file2, args, options) => new Promise((resolve7) => {
+var runProcess = (file2, args, options) => new Promise((resolve8) => {
   (0, import_node_child_process47.execFile)(
     file2,
     [...args],
@@ -92871,7 +92914,7 @@ var runProcess = (file2, args, options) => new Promise((resolve7) => {
     (error62, stdout, stderr) => {
       const code = error62?.code;
       const status2 = error62 ? typeof code === "number" ? code : null : 0;
-      resolve7({ status: status2, stdout, stderr: stderr || (error62 && status2 === null ? error62.message : "") });
+      resolve8({ status: status2, stdout, stderr: stderr || (error62 && status2 === null ? error62.message : "") });
     }
   );
 });
@@ -93302,7 +93345,7 @@ ${statText}
   };
 }
 function git5(cwd, args) {
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     (0, import_node_child_process48.execFile)(
       "git",
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
@@ -93313,7 +93356,7 @@ function git5(cwd, args) {
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat", GIT_OPTIONAL_LOCKS: "0" }
       },
       (error62, stdout, stderr) => {
-        if (!error62) return resolve7(stdout);
+        if (!error62) return resolve8(stdout);
         if (error62.code === "ENOENT" && !stderr) return reject(new Unresolved("git_unavailable"));
         if (/not a git repository/i.test(stderr)) return reject(new Unresolved("not_a_git_repository"));
         reject(new Unresolved("commit_not_found"));
@@ -93977,13 +94020,13 @@ var AgentHostRegistry = class {
       case "abort":
         break;
     }
-    return new Promise((resolve7) => {
+    return new Promise((resolve8) => {
       const timer = setTimeout(
         () => this.finishPending(command.commandId, "failed", "command_timeout", "the session producer did not answer"),
         this.commandTimeoutMs
       );
       timer.unref?.();
-      this.pending.set(command.commandId, { sessionId, connection, payload: command, timer, resolve: resolve7 });
+      this.pending.set(command.commandId, { sessionId, connection, payload: command, timer, resolve: resolve8 });
       try {
         connection.sendCommand(sessionId, command);
       } catch (error62) {
@@ -94974,7 +95017,7 @@ function remoteUrl(configOut) {
   return (remotes.find((match) => match[1] === "origin") ?? remotes[0])?.[2];
 }
 function git6(cwd, args) {
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     (0, import_node_child_process49.execFile)(
       "git",
       ["-C", cwd, ...args],
@@ -94983,7 +95026,7 @@ function git6(cwd, args) {
       (error62, stdout) => {
         const code = error62 && typeof error62.code === "number" ? error62.code : null;
         if (error62 && code !== 1) reject(error62);
-        else resolve7(stdout);
+        else resolve8(stdout);
       }
     );
   });
@@ -95446,7 +95489,7 @@ var TopologyFeed = class {
   }
 };
 function sleep(ms) {
-  return new Promise((resolve7) => setTimeout(resolve7, ms));
+  return new Promise((resolve8) => setTimeout(resolve8, ms));
 }
 
 // src/core/agent-host.ts
@@ -95968,13 +96011,13 @@ async function claimSocketPath(socketPath) {
   const dir = import_node_path84.default.dirname(socketPath);
   (0, import_node_fs42.mkdirSync)(dir, { recursive: true, mode: 448 });
   if (!(0, import_node_fs42.existsSync)(socketPath)) return;
-  const alive = await new Promise((resolve7) => {
+  const alive = await new Promise((resolve8) => {
     const probe2 = import_node_net2.default.connect(socketPath);
     probe2.once("connect", () => {
       probe2.destroy();
-      resolve7(true);
+      resolve8(true);
     });
-    probe2.once("error", () => resolve7(false));
+    probe2.once("error", () => resolve8(false));
   });
   if (alive) throw new Error(`an agent host is already listening on ${socketPath}`);
   (0, import_node_fs42.unlinkSync)(socketPath);
@@ -96001,18 +96044,18 @@ function sendJson(res, status2, body, headers = {}) {
   res.end(text);
 }
 function listen(server, target, host) {
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     server.once("error", reject);
     const done = () => {
       server.off("error", reject);
-      resolve7();
+      resolve8();
     };
     if (typeof target === "string") server.listen(target, done);
     else server.listen(target, host, done);
   });
 }
 function closeServer(server) {
-  return new Promise((resolve7) => server.close(() => resolve7()));
+  return new Promise((resolve8) => server.close(() => resolve8()));
 }
 function safeUnlink(file2) {
   try {
@@ -96077,42 +96120,42 @@ async function probeAgentHost(port, timeoutMs = PROBE_TIMEOUT_MS) {
   return probeSessionList(port, timeoutMs);
 }
 function probeHealth(port, timeoutMs = PROBE_TIMEOUT_MS) {
-  return new Promise((resolve7) => {
+  return new Promise((resolve8) => {
     const req = import_node_http2.default.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: "/v1/health", timeout: timeoutMs, agent: false }, (res) => {
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
-        if (res.statusCode === 404) return resolve7("missing");
-        if (res.statusCode !== 200) return resolve7("down");
+        if (res.statusCode === 404) return resolve8("missing");
+        if (res.statusCode !== 200) return resolve8("down");
         try {
-          resolve7(JSON.parse(Buffer.concat(chunks).toString("utf8")).status === "ok" ? "ok" : "down");
+          resolve8(JSON.parse(Buffer.concat(chunks).toString("utf8")).status === "ok" ? "ok" : "down");
         } catch {
-          resolve7("down");
+          resolve8("down");
         }
       });
-      res.on("error", () => resolve7("down"));
+      res.on("error", () => resolve8("down"));
     });
     req.on("timeout", () => req.destroy());
-    req.on("error", () => resolve7("down"));
+    req.on("error", () => resolve8("down"));
   });
 }
 function probeSessionList(port, timeoutMs) {
-  return new Promise((resolve7) => {
+  return new Promise((resolve8) => {
     const req = import_node_http2.default.get({ host: AGENT_HOST_BIND_ADDRESS, port, path: "/v1/sessions?scope=live", timeout: timeoutMs, agent: false }, (res) => {
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
-        if (res.statusCode !== 200) return resolve7(false);
+        if (res.statusCode !== 200) return resolve8(false);
         try {
-          resolve7(JSON.parse(Buffer.concat(chunks).toString("utf8")).schema === "xtrm.agent-host-api.v1");
+          resolve8(JSON.parse(Buffer.concat(chunks).toString("utf8")).schema === "xtrm.agent-host-api.v1");
         } catch {
-          resolve7(false);
+          resolve8(false);
         }
       });
-      res.on("error", () => resolve7(false));
+      res.on("error", () => resolve8(false));
     });
     req.on("timeout", () => req.destroy());
-    req.on("error", () => resolve7(false));
+    req.on("error", () => resolve8(false));
   });
 }
 async function liveHost(infoPath) {
@@ -96261,7 +96304,7 @@ function safeUnlink2(file2) {
   }
 }
 function sleep2(ms) {
-  return new Promise((resolve7) => setTimeout(resolve7, ms));
+  return new Promise((resolve8) => setTimeout(resolve8, ms));
 }
 
 // src/commands/host.ts
@@ -96390,7 +96433,7 @@ function runningHost() {
   return info && pidAlive(info.pid) ? info : null;
 }
 function localApi(info, method, route, body) {
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     const req = import_node_http3.default.request(
       {
         host: AGENT_HOST_BIND_ADDRESS,
@@ -96407,7 +96450,7 @@ function localApi(info, method, route, body) {
           try {
             const reply = JSON.parse(text);
             if (reply.kind === "error") reject(new Error(`${reply.code}: ${reply.message}`));
-            else resolve7(reply);
+            else resolve8(reply);
           } catch {
             reject(new Error(`the agent host answered ${res.statusCode} with a non-JSON body`));
           }

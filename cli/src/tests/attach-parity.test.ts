@@ -336,6 +336,87 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         expect(options.model).toBeUndefined();
     });
 
+    it('hands the launcher an environment without the attacher\'s identity (gap 2)', async () => {
+        // `xt attach --fresh` runs inside the operator's current pane, often another
+        // agent session. Without `identityEnv` the launcher resolves the new
+        // session's App identity from process.env and forwards the ATTACHER's
+        // credential helper ahead of the worker's.
+        const wt = await writeLaunch(LAUNCH);
+        const saved: Record<string, string | undefined> = {};
+        for (const key of ['XTRM_ROLE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'SPECIALISTS_JOB_ID', 'XTMUX_AGENT_ROLE', 'XTRM_SESSION_ID']) {
+            saved[key] = process.env[key];
+        }
+        process.env.XTRM_ROLE = 'lead';
+        process.env.GIT_CONFIG_COUNT = '1';
+        process.env.GIT_CONFIG_KEY_0 = 'credential.helper';
+        process.env.GIT_CONFIG_VALUE_0 = '!attacher-leak';
+        process.env.SPECIALISTS_JOB_ID = 'job-1';
+        process.env.XTMUX_AGENT_ROLE = 'lead';
+        process.env.XTRM_SESSION_ID = '$0';
+        try {
+            const options = buildFreshLaunchOptions(wt, {}, { issue: null, dispatcher: {} });
+            const env = options.identityEnv ?? {};
+            for (const key of ['XTRM_ROLE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'SPECIALISTS_JOB_ID', 'XTMUX_AGENT_ROLE', 'XTRM_SESSION_ID']) {
+                expect(env[key]).toBeUndefined();
+            }
+            // Everything the launcher legitimately needs from the caller survives.
+            expect(env.PATH).toBe(process.env.PATH);
+        } finally {
+            for (const [key, value] of Object.entries(saved)) {
+                if (value === undefined) delete process.env[key];
+                else process.env[key] = value;
+            }
+        }
+    });
+
+    it('resolves the new session\'s own App identity from that stripped environment', async () => {
+        // The mechanism the fix depends on: the same call the launcher makes, with
+        // the attacher's environment replaced. A real role map plus a real App make
+        // the resolver reach its forwarding loop, so a leak would show up here.
+        const { resolveLaunchIdentity } = await import('../core/launch-identity.js');
+        const { attachLaunchEnv } = await import('../commands/attach.js');
+        const home = path.join(tempRoot, 'identity-home');
+        await fs.ensureDir(path.join(home, '.xtrm', 'config'));
+        await fs.writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1, default: 'worker', specialists: {}, apps: { worker: 'xtrm-worker' },
+        }));
+        await fs.ensureDir(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker'));
+        await fs.writeFile(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker', 'app.json'), JSON.stringify({
+            slug: 'xtrm-worker', appId: '12345', installations: { acme: '67890' },
+        }));
+        const attacher: NodeJS.ProcessEnv = {
+            ...process.env,
+            XTRM_ROLE: 'lead',
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: 'credential.helper',
+            GIT_CONFIG_VALUE_0: '!attacher-leak',
+        };
+        // spawnSync is mocked in this block, so the repo slug is injected rather
+        // than detected: the resolver's forwarding loop is what this test needs.
+        const deps = { repo: 'acme/demo', home, roleMapExists: true };
+        const resolved = resolveLaunchIdentity({
+            holder: 'demo',
+            roleName: 'worker',
+            cwd: worktree,
+            env: attachLaunchEnv(attacher),
+            deps,
+            forwardInherited: true,
+        });
+        expect(resolved.env.XTRM_ROLE).toBe('worker');
+        const values = Object.entries(resolved.env).filter(([key]) => key.startsWith('GIT_CONFIG_VALUE_')).map(([, value]) => value);
+        expect(values).not.toContain('!attacher-leak');
+        // The control: the unstripped environment is what leaked before.
+        const leaked = resolveLaunchIdentity({
+            holder: 'demo',
+            roleName: 'worker',
+            cwd: worktree,
+            env: attacher,
+            deps,
+            forwardInherited: true,
+        });
+        expect(Object.values(leaked.env)).toContain('!attacher-leak');
+    });
+
     it('reads a Codex record\'s launch block too', async () => {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'codex',
@@ -652,6 +733,25 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(errors).toContain('launch ledger disagrees');
     });
 
+    it('does not restore a role a worker forged into its own record when the ledger names none', async () => {
+        // The same scenario end to end: a role-less launch, a forged record, a resume.
+        const { writeLaunchLedger } = await import('../core/session-launch.js');
+        const { role: _role, requestedRole: _requested, ...ledgerWithoutRole } = LAUNCH;
+        await writeRecord({ ...LAUNCH, role: 'lead', requestedRole: 'lead', task: 'role:lead' });
+        expect(writeLaunchLedger(process.env.HOME as string, worktree, 'pi', ledgerWithoutRole)).toBe(true);
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const cap = await attach();
+        expect(cap.paneOptions['@agent_role']).toBeUndefined();
+        expect(cap.paneOptions['@agent_worktree']).toBe(worktree);
+        // The forged role never reaches the runtime either.
+        expect(cap.spawn?.env?.XTMUX_AGENT_ROLE).toBeUndefined();
+        expect(cap.spawn?.env?.XTRM_ROLE).toBeUndefined();
+        const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
+        expect(errors).toContain("names role 'lead' but the launch ledger names none");
+    });
+
+
     it('replaces the attacher\'s inherited git transport with the resumed worker\'s own', async () => {
         // Review finding 1. A real attacher environment: a credential helper on
         // process.env, an operator role that OWNS a GitHub App on this host (so the
@@ -744,10 +844,96 @@ describe('CORE-2792 review: trust and the restart rule', () => {
         expect(trustedLaunchMeta(recordLaunch, ledgerLaunch)).toEqual({
             launch: { ...ledgerLaunch },
             conflictRole: 'lead',
+            ignoredRecordRole: null,
         });
-        expect(trustedLaunchMeta(recordLaunch, null)).toEqual({ launch: recordLaunch, conflictRole: null });
-        expect(trustedLaunchMeta(null, ledgerLaunch)).toEqual({ launch: ledgerLaunch, conflictRole: null });
-        expect(trustedLaunchMeta(null, null)).toEqual({ launch: null, conflictRole: null });
+        expect(trustedLaunchMeta(recordLaunch, null)).toEqual({
+            launch: recordLaunch,
+            conflictRole: null,
+            ignoredRecordRole: null,
+        });
+        expect(trustedLaunchMeta(null, ledgerLaunch)).toEqual({
+            launch: ledgerLaunch,
+            conflictRole: null,
+            ignoredRecordRole: null,
+        });
+        expect(trustedLaunchMeta(null, null)).toEqual({
+            launch: null,
+            conflictRole: null,
+            ignoredRecordRole: null,
+        });
+    });
+
+    it('takes identity from the ledger alone, so a record cannot add a role the ledger lacks', async () => {
+        // Round-2 HIGH: a worker launched WITHOUT a role writes launch.role="lead"
+        // into its own session-meta.json. The ledger exists and names no role, so the
+        // record's role is an ignored claim — never a restored identity.
+        const { trustedLaunchMeta } = await import('../commands/attach.js');
+        const { role: _role, requestedRole: _requested, ...ledgerWithoutRole } = LAUNCH;
+        const forged = { ...LAUNCH, role: 'lead', requestedRole: 'lead', task: 'role:lead' };
+        const result = trustedLaunchMeta(forged, ledgerWithoutRole);
+        expect(result.launch?.role).toBeUndefined();
+        expect(result.launch?.requestedRole).toBeUndefined();
+        expect(result.ignoredRecordRole).toBe('lead');
+        expect(result.conflictRole).toBeNull();
+        // Identity is the only thing the ledger monopolizes: the rest still merges,
+        // and the ledger wins each field it carries.
+        expect(result.launch?.task).toBe('role:worker');
+        expect(result.launch?.branch).toBe('xt/demo');
+        // A ledger that names a role still wins over a forged one, and reports both.
+        const withLedgerRole = trustedLaunchMeta(forged, LAUNCH);
+        expect(withLedgerRole.launch?.role).toBe('worker');
+        expect(withLedgerRole.conflictRole).toBe('lead');
+        // A record that names no role adds none.
+        const quiet = trustedLaunchMeta({ ...LAUNCH, role: undefined }, ledgerWithoutRole);
+        expect(quiet.ignoredRecordRole).toBeNull();
+        expect(quiet.launch?.role).toBeUndefined();
+    });
+
+    it('keys the ledger by the real path, so a trailing slash or a symlink finds it', async () => {
+        const { launchLedgerPath, writeLaunchLedger, readLaunchLedger } = await import('../core/session-launch.js');
+        const home = path.join(tempRoot, 'home');
+        const plain = launchLedgerPath(home, worktree);
+        expect(launchLedgerPath(home, `${worktree}/`)).toBe(plain);
+        const link = path.join(tempRoot, 'repo-link');
+        await fs.symlink(path.join(tempRoot, 'repo'), link, 'dir').catch(async () => {
+            await fs.ensureDir(path.join(tempRoot, 'repo'));
+            await fs.symlink(path.join(tempRoot, 'repo'), link, 'dir');
+        });
+        const linked = path.join(link, '.xtrm', 'worktrees', 'repo-xt-pi-demo');
+        expect(launchLedgerPath(home, linked)).toBe(plain);
+        // A write through the symlinked route is readable through the real one.
+        expect(writeLaunchLedger(home, linked, 'pi', LAUNCH)).toBe(true);
+        expect(readLaunchLedger(home, worktree)?.role).toBe('worker');
+    });
+
+    it('reads no ledger that names a different worktree', async () => {
+        const { launchLedgerPath, readLaunchLedger } = await import('../core/session-launch.js');
+        const home = path.join(tempRoot, 'home');
+        const dest = launchLedgerPath(home, worktree);
+        await fs.ensureDir(path.dirname(dest));
+        await fs.writeFile(dest, JSON.stringify({ worktree: path.join(tempRoot, 'other'), runtime: 'pi', launch: LAUNCH }));
+        expect(readLaunchLedger(home, worktree)).toBeNull();
+        await fs.writeFile(dest, JSON.stringify({ runtime: 'pi', launch: LAUNCH }));
+        expect(readLaunchLedger(home, worktree)).toBeNull();
+    });
+
+    it('keeps the record when the ledger write fails', async () => {
+        const { launchLedgerPath, readLaunchLedger } = await import('../core/session-launch.js');
+        const { writeSessionLaunch, readSessionMeta } = await import('../utils/worktree-session.js');
+        // A file where the state directory should be makes the ledger write fail.
+        const blocked = path.join(tempRoot, 'blocked-home');
+        await fs.ensureDir(blocked);
+        await fs.writeFile(path.join(blocked, '.xtrm'), 'not a directory');
+        const previousHome = process.env.HOME;
+        process.env.HOME = blocked;
+        try {
+            expect(writeSessionLaunch(worktree, 'pi', LAUNCH)).toBe(true);
+            expect(readSessionMeta(worktree)?.launch?.role).toBe('worker');
+            expect(readLaunchLedger(blocked, worktree)).toBeNull();
+            expect(launchLedgerPath(blocked, worktree)).toContain('.xtrm');
+        } finally {
+            process.env.HOME = previousHome;
+        }
     });
 
     it('does not inherit the old role\'s model or thinking when --fresh names another role', async () => {
