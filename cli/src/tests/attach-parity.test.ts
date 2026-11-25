@@ -314,12 +314,17 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         expect(options.existingWorktree?.path).toBe(worktree);
     });
 
-    it('lets an explicit flag win over the record', async () => {
+    it('lets an explicit flag win over the record, and does not carry another role\'s defaults', async () => {
         const wt = await writeLaunch({ ...LAUNCH, thinking: 'low' });
-        const options = buildFreshLaunchOptions(wt, { role: 'reviewer', model: 'other-model' }, { issue: null, dispatcher: {} });
-        expect(options.role).toBe('reviewer');
-        expect(options.model).toBe('other-model');
-        expect(options.thinking).toBe('low');
+        const sameRole = buildFreshLaunchOptions(wt, { model: 'other-model' }, { issue: null, dispatcher: {} });
+        expect(sameRole.model).toBe('other-model');
+        expect(sameRole.thinking).toBe('low');
+        // CORE-2792 review (finding 3): `thinking` and `model` are defaults OF the
+        // role, so naming a different role drops them.
+        const otherRole = buildFreshLaunchOptions(wt, { role: 'reviewer', model: 'other-model' }, { issue: null, dispatcher: {} });
+        expect(otherRole.role).toBe('reviewer');
+        expect(otherRole.model).toBe('other-model');
+        expect(otherRole.thinking).toBeUndefined();
     });
 
     it('restores nothing from a legacy record instead of inventing a role', async () => {
@@ -360,6 +365,8 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
     interface Caps {
         spawn: { command: string; args: string[]; env?: NodeJS.ProcessEnv } | null;
         paneOptions: Record<string, string>;
+        /** Pane options the command explicitly unset, in order. */
+        unset: string[];
         paneTitle: string | null;
         /** When set, `sp view` answers with this role specification. */
         roleSpec?: unknown;
@@ -375,10 +382,20 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
                     return ok(`worktree ${repoRoot}\nHEAD abc123\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD def456\nbranch refs/heads/xt/demo\n\n`);
                 }
                 if (args[0] === 'log') return ok('2026-11-25 13:40:00 +0000\x1fCORE-2792 work\n');
+                if (joined.includes('remote get-url origin')) return ok('git@github.com:acme/demo.git\n');
                 return { status: 1, stdout: '', stderr: '' };
             }
             if (command === 'tmux') {
-                if (args[0] === 'set-option') { cap.paneOptions[args[4]] = args[5]; return ok(); }
+                if (args[0] === 'set-option') {
+                    if (args.includes('-u')) {
+                        const key = args[args.length - 1];
+                        cap.unset.push(key);
+                        delete cap.paneOptions[key];
+                    } else {
+                        cap.paneOptions[args[args.length - 2]] = args[args.length - 1];
+                    }
+                    return ok();
+                }
                 if (args[0] === 'select-pane') { cap.paneTitle = args[4]; return ok(); }
                 if (args[0] === 'display-message' && joined.includes('#{pane_id}')) return ok('%10\n');
                 if (args[0] === 'display-message' && joined.includes('#{session_id}')) return ok('$0\n');
@@ -436,7 +453,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
     }
 
     async function attach(args: string[] = ['demo'], caps: Partial<Caps> = {}): Promise<Caps> {
-        const cap: Caps = { spawn: null, paneOptions: {}, paneTitle: null, ...caps };
+        const cap: Caps = { spawn: null, paneOptions: {}, unset: [], paneTitle: null, ...caps };
         install(cap);
         const { createAttachCommand } = await import('../commands/attach.js');
         await expect(createAttachCommand().parseAsync(args, { from: 'user' })).rejects.toThrow('exit:0');
@@ -600,5 +617,154 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(cap.spawn?.args).toEqual(['-c']);
         expect(cap.paneTitle).toBeNull();
         expect(cap.paneOptions['@agent_role']).toBeUndefined();
+    });
+    // ---- CORE-2792 review findings -------------------------------------------
+
+    it('unsets every restored pane option first, so a stale lead role cannot survive', async () => {
+        // A legacy record answers nothing about a role, and the pane remembers one:
+        // the previous occupant was a coordinator.
+        await writeRecord(null);
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const cap = await attach();
+        for (const key of ['@agent_parent_session', '@agent_task', '@agent_worktree', '@agent_branch', '@agent_bead', '@agent_role']) {
+            expect(cap.unset).toContain(key);
+        }
+        // Unset before set: the keys the record cannot answer stay absent.
+        expect(cap.paneOptions['@agent_role']).toBeUndefined();
+        expect(cap.paneOptions['@agent_task']).toBeUndefined();
+        expect(cap.paneOptions['@agent_parent_session']).toBeUndefined();
+        expect(cap.paneOptions['@agent_worktree']).toBe(worktree);
+    });
+
+    it('takes the role from the launch ledger when the worktree record disagrees', async () => {
+        // The worker can rewrite its own record; the launcher's copy is outside the
+        // checkout. The ledger wins and the disagreement is reported.
+        const { writeLaunchLedger } = await import('../core/session-launch.js');
+        await writeRecord({ ...LAUNCH, role: 'lead', requestedRole: 'lead', task: 'role:lead' });
+        expect(writeLaunchLedger(process.env.HOME as string, worktree, 'pi', LAUNCH)).toBe(true);
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const cap = await attach();
+        expect(cap.paneOptions['@agent_role']).toBe('worker');
+        const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
+        expect(errors).toContain("the worktree record names role 'lead'");
+        expect(errors).toContain('launch ledger disagrees');
+    });
+
+    it('replaces the attacher\'s inherited git transport with the resumed worker\'s own', async () => {
+        // Review finding 1. A real attacher environment: a credential helper on
+        // process.env, an operator role that OWNS a GitHub App on this host (so the
+        // resolver reaches its forwarding loop), and a github.com origin. The
+        // resumed worker must get its own App transport — never the attacher's
+        // helper, which would let it push as the operator.
+        await writeRecord(LAUNCH);
+        const home = process.env.HOME as string;
+        await fs.ensureDir(path.join(home, '.xtrm', 'config'));
+        await fs.writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1,
+            default: 'worker',
+            specialists: {},
+            apps: { worker: 'xtrm-worker' },
+        }));
+        await fs.ensureDir(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker'));
+        await fs.writeFile(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker', 'app.json'), JSON.stringify({
+            slug: 'xtrm-worker',
+            appId: '12345',
+            installations: { acme: '67890' },
+        }));
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        process.env.GIT_CONFIG_COUNT = '1';
+        process.env.GIT_CONFIG_KEY_0 = 'credential.helper';
+        process.env.GIT_CONFIG_VALUE_0 = '!attacher-leak';
+        const cap = await attach();
+        const env = cap.spawn?.env ?? {};
+        expect(env.GIT_CONFIG_KEY_0).toBe('url.https://github.com/.insteadOf');
+        const values = Object.entries(env).filter(([key]) => key.startsWith('GIT_CONFIG_VALUE_')).map(([, value]) => value);
+        expect(values).toContain('!xt identity credential');
+        expect(values).not.toContain('!attacher-leak');
+        expect(env.GIT_CONFIG_COUNT).toBe('5');
+    });
+
+    it('replays the operator\'s recorded --skill paths on a pi resume', async () => {
+        const existing = path.join(tempRoot, 'extra-skill', 'SKILL.md');
+        await fs.ensureDir(path.dirname(existing));
+        await fs.writeFile(existing, '# extra\n');
+        const missing = path.join(tempRoot, 'gone-skill', 'SKILL.md');
+        await writeRecord({ ...LAUNCH, skills: [existing, missing] });
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const cap = await attach(['demo'], {
+            roleSpec: { specialist: { prompt: { system: 'You are the demo worker.' }, skills: { paths: [] } } },
+        });
+        expect(cap.spawn?.args).toContain('--no-skills');
+        const skillFlags = (cap.spawn?.args ?? []).flatMap((arg, index, all) => (arg === '--skill' ? [all[index + 1]] : []));
+        expect(skillFlags).toContain(existing);
+        expect(skillFlags).not.toContain(missing);
+        const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
+        expect(errors).toContain('no longer exists');
+    });
+});
+
+describe('CORE-2792 review: trust and the restart rule', () => {
+    let tempRoot = '';
+    let worktree = '';
+
+    const TARGET = (): WorktreeInfo => ({ path: worktree, branch: 'refs/heads/xt/demo', head: 'abc123', prunable: false });
+
+    beforeEach(async () => {
+        tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'xtrm-attach-trust-'));
+        worktree = path.join(tempRoot, 'repo', '.xtrm', 'worktrees', 'repo-xt-pi-demo');
+        await fs.ensureDir(path.join(worktree, '.xtrm'));
+    });
+
+    afterEach(async () => {
+        await fs.remove(tempRoot);
+    });
+
+    async function writeRecord(launch: unknown): Promise<void> {
+        await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
+            runtime: 'pi', launchedAt: '2026-11-25T13:56:00.302Z', bead: 'CORE-2792', launch,
+        }));
+    }
+
+    it('refuses a role name outside the launcher grammar, keeping the rest of the record', async () => {
+        const { readSessionLaunch } = await import('../core/session-launch.js');
+        const launch = readSessionLaunch({ launch: { ...LAUNCH, role: '../../etc/passwd', requestedRole: '--evil' } });
+        expect(launch?.role).toBeUndefined();
+        expect(launch?.requestedRole).toBeUndefined();
+        expect(launch?.task).toBe('role:worker');
+    });
+
+    it('prefers the launch ledger and reports a disagreement', async () => {
+        const { trustedLaunchMeta } = await import('../commands/attach.js');
+        const recordLaunch = { ...LAUNCH, role: 'lead', requestedRole: 'lead' };
+        const ledgerLaunch = { ...LAUNCH, role: 'worker', requestedRole: 'worker' };
+        expect(trustedLaunchMeta(recordLaunch, ledgerLaunch)).toEqual({
+            launch: { ...ledgerLaunch },
+            conflictRole: 'lead',
+        });
+        expect(trustedLaunchMeta(recordLaunch, null)).toEqual({ launch: recordLaunch, conflictRole: null });
+        expect(trustedLaunchMeta(null, ledgerLaunch)).toEqual({ launch: ledgerLaunch, conflictRole: null });
+        expect(trustedLaunchMeta(null, null)).toEqual({ launch: null, conflictRole: null });
+    });
+
+    it('does not inherit the old role\'s model or thinking when --fresh names another role', async () => {
+        await writeRecord({ ...LAUNCH, model: 'worker-model', thinking: 'low' });
+        const same = buildFreshLaunchOptions(TARGET(), {}, { issue: null, dispatcher: {}, home: tempRoot });
+        expect(same.role).toBe('worker');
+        expect(same.model).toBe('worker-model');
+        expect(same.thinking).toBe('low');
+        const other = buildFreshLaunchOptions(TARGET(), { role: 'reviewer' }, { issue: null, dispatcher: {}, home: tempRoot });
+        expect(other.role).toBe('reviewer');
+        expect(other.model).toBeUndefined();
+        expect(other.thinking).toBeUndefined();
+        const explicit = buildFreshLaunchOptions(TARGET(), { model: 'cli-model' }, { issue: null, dispatcher: {}, home: tempRoot });
+        expect(explicit.model).toBe('cli-model');
+    });
+
+    it('ignores a pane id that arrives without a tmux server', () => {
+        expect(currentPaneId({ TMUX_PANE: '%3' } as NodeJS.ProcessEnv)).toBeNull();
     });
 });

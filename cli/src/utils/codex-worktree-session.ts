@@ -40,6 +40,7 @@ import {
     shellQuote,
     withPaneUnsets,
 } from './worktree-session.js';
+import { writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
@@ -513,6 +514,20 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // that means the on-disk state would disagree with what we report.
     const session = await waitForCodexSession(path.join(codexHome, 'sessions'), worktreePath, launchedAfterMs);
     const launchedAt = new Date(launchedAfterMs).toISOString();
+    // CORE-2792: the launch identity, persisted from the same values the pane
+    // options above carry; those options die with the pane, this record does not.
+    // `model` is only the operator's explicit override — a role default is
+    // re-derived from the role name, so a stale copy must not pin it.
+    const launchRecord = compactLaunchMeta({
+        role: roleName,
+        requestedRole: opts.role,
+        task: roleName ? `role:${roleName}` : `session:${slug}`,
+        worktree: worktreePath,
+        branch: branchName,
+        parentSession,
+        sessionName,
+        model: opts.model,
+    });
     if (session && !writeCodexWorktreeSession(worktreePath, {
         runtime: 'codex',
         launchedAt,
@@ -523,19 +538,11 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // CORE-2728: the Issue travels with the session record, so attach can
         // restore the original dispatcher without a live pane.
         ...(opts.bead ? { bead: opts.bead } : {}),
-        // CORE-2792: the launch identity, persisted from the same values the pane
-        // options above carry; those options die with the pane, this record does not.
-        launch: compactLaunchMeta({
-            role: roleName,
-            requestedRole: opts.role,
-            task: roleName ? `role:${roleName}` : `session:${slug}`,
-            worktree: worktreePath,
-            branch: branchName,
-            parentSession,
-            sessionName,
-            model: selectedModel,
-        }),
+        launch: launchRecord,
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
+    // The same block outside the worktree, so a resume can cross-check the worker's
+    // own copy (CORE-2792 review, trust). Fail-soft.
+    writeLaunchLedger(os.homedir(), worktreePath, 'codex', launchRecord);
 
     if (window) {
         removeSignalCleanup();

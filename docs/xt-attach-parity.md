@@ -93,6 +93,18 @@ are unchanged from the base commit.
 in `packages/contracts/dist/index.js:2138`, but no launcher writes it. It is a dead
 field, not a parity gap (see §8.5).
 
+**Unset before set.** Setting a pane option never clears a stale one, so a pane that
+previously hosted a coordinator would keep `@agent_role=lead` and the old bead
+whenever the record has nothing to say about them. `xt attach` therefore unsets all
+six keys (`set-option -pu`, `attach.ts:600-608`) before it writes the restored
+values. A key the record cannot answer ends up absent, which is the truth, instead of
+silently describing the previous occupant.
+
+The options are **not** unset when the worker exits. They describe the pane that
+hosted the worker while it ran, and a pane still showing that worker's output must
+not lose the identity of the process that wrote it; the runtime's agent-state hook
+already moves `@agent_state` to its terminal value.
+
 ### 4.2 Environment
 
 The launcher exports `XTMUX_AGENT_<X>` for every `@agent_<x>` option except
@@ -108,7 +120,7 @@ The launcher exports `XTMUX_AGENT_<X>` for every `@agent_<x>` option except
 | E6 | `XTMUX_AGENT_PARENT_SESSION` | same | **RESTORED** | RESTORED | |
 | E7 | `XTRM_SESSION_ID` | `worktree-session.ts:4299-4304` (`buildSessionIdentityEnv`) | **RESTORED** `attach.ts:56-108` | RESTORED | the tmux session the pane runs in |
 | E8 | `XTRM_SESSION_NAME` | same | **RESTORED** | RESTORED | |
-| E9 | `XTRM_ROLE` + `GIT_CONFIG_*` transport | `launch-identity.ts:315` via `worktree-session.ts:4216` | **RESTORED** `attach.ts:56-108` | RESTORED | re-derived from `launch.role` by the same resolver the launcher uses |
+| E9 | `XTRM_ROLE` + `GIT_CONFIG_*` transport | `launch-identity.ts:315` via `worktree-session.ts:4216` | **RESTORED** `attach.ts:56-108` | RESTORED | re-derived from `launch.role` by the same resolver the launcher uses, reading the environment the attacher's transport was already stripped from (§4.8) |
 | E10 | `XTMUX_AGENT_RUNTIME=codex` | `codex-worktree-session.ts:431` | **RESTORED** `attach.ts:56-108` | RESTORED | Codex only |
 | E11 | `SUBSTRATE_HOLDER`, `XTRM_AGENT_NAME`, git identity | inherited from the launcher's own environment | RESTORED | RESTORED | already restored (CORE-2727), rebuilt by `buildAttachEnv` |
 | E12 | `XTRM_DISPATCHER_*` | `worktree-session.ts:4109` (`buildDispatcherEnvWithResolution`) | RESTORED | RESTORED | already restored (CORE-2728), from the Substrate binding |
@@ -123,7 +135,7 @@ The launcher exports `XTMUX_AGENT_<X>` for every `@agent_<x>` option except
 | --- | --- | --- | --- | --- | --- |
 | A1 | `--name <displayName>` | `worktree-session.ts:2378` | **RESTORED** `attach.ts:551/555` | RESTORED (launcher) | from `launch.displayName` |
 | A2 | `--append-system-prompt <role prompt>` | `worktree-session.ts:2470` | **RESTORED** `attach.ts:507-525`, `:552/556` | RESTORED (launcher) | `resolveRole(launch.role)` → `role.systemPrompt`; a failed resolution warns and resumes without it |
-| A3 | Pi skill pool (`--no-skills --skill <path>…`) | `worktree-session.ts:2479-2480` | **RESTORED** `attach.ts:517`, `:557-561` | RESTORED (launcher) | `resolveRequestedSkills` resolves the declared paths exactly as the launcher does |
+| A3 | Pi skill pool (`--no-skills --skill <path>…`) | `worktree-session.ts:2479-2480` | **RESTORED** `attach.ts:517`, `:557-561` | RESTORED (launcher) | `resolveRequestedSkills` resolves the declared paths exactly as the launcher does; the operator's own repeatable `--skill` paths are recorded as `launch.skills` and replayed, minus any path that no longer exists (warned, not fatal) |
 | A4 | model (`--model` / `-m`) | `worktree-session.ts:2382` | n/a (runtime session state) | RESTORED from `launch.model` (`attach.ts:356`) | a resumed session keeps its own model, including an operator's in-session change |
 | A5 | thinking (`--thinking`, Pi) | `worktree-session.ts:2397` | n/a (runtime session state) | RESTORED from `launch.thinking` (`attach.ts:357`) | Pi records `thinking_level_change` in its session file |
 | A6 | `--channels plugin:specialists@xtrm` | `worktree-session.ts:2392`, `:3882` | RESTORED | RESTORED | already restored (CORE-2284) |
@@ -161,6 +173,10 @@ Restored by this change: 20 (`P1, P2, P4-P7, T1`, `E1-E10`, `A1-A3`). The four
 remaining are `P3` and `E14` (deliberate) and `S1`, `S2` (need post-spawn work);
 each is under §8.
 
+The counts do not move for the review fixes: a **wrongly** restored item is still
+restored. `E9` was exported from the attacher's environment, so the worker received
+the attacher's credential helper; it now receives its own App's transport (§4.8).
+
 ### 4.7 Other launcher state (outside the counted inventory)
 
 These four pieces of state belong to the launch but are not table rows, because
@@ -173,6 +189,35 @@ neither side is a `xt attach` concern and nothing is lost when the pane dies.
 | Git hooks path | `normalizeWorktreeHooksPath` (`worktree-session.ts:2833` region) writes an absolute `core.hooksPath` for the worktree | n/a (persists on disk) | Stored in the worktree's git config, not in the pane. |
 | xtmux registration (`@agent_state`, `@agent_instance_id`, `agent.state` events) | the runtime's own agent-state hook, not the launcher; the launcher only seeds `@agent_state=idle` (`worktree-session.ts:2435`) | RESTORED by the hook as soon as the runtime starts | The hook owns these values and rewrites them on every attach; a launcher-side restore would race it. Consumers: `topology-feed.ts:54`, `topology-projection.ts:77-85`. |
 | Role file / prompt file | none — the role identity is inline (`--append-system-prompt`, the `@agent_*` options). The `@agent_prompt_file` option was dropped in xtrm-8zsi1 (`worktree-session.ts:2418` comment) | n/a | There is no role file to read; the recorded role name is re-resolved through `sp view`, which is the durable source (§3). |
+
+### 4.8 Who `xt attach` trusts, and why
+
+Two properties of the durable source matter, because a resume acts on it.
+
+**The environment the resolver sees.** `GIT_CONFIG_*` is a list, not a map: if the
+attacher's entries survive at index 0, they are consulted before the worker's own App
+helper, and the worker can push as the operator. `buildAttachEnv` strips that
+transport first and hands the *stripped* environment to `resolveLaunchIdentity`, so
+the resolver can never re-forward what the attacher had (`attach.ts:88-101`).
+
+**The record the role comes from.** `.xtrm/session-meta.json` lives in the worker's
+own checkout, so the worker can rewrite `launch.role` — and the role selects the
+GitHub App identity the next resume adopts. Three checks apply:
+
+1. `readSessionLaunch` accepts a role only if it matches the launcher's own grammar
+   (`isValidRoleName`, `launch-identity.ts:32`), so a path or a flag cannot become a
+   role.
+2. The launcher writes the same `launch` block outside the worktree, at
+   `$HOME/.xtrm/state/launch-identity/<slug>-<hash12>.json`. `xt attach` reads both
+   and prefers the ledger; a disagreement over the role is reported on stderr and the
+   ledger's role wins (`trustedLaunchMeta`, `attach.ts:150-175`).
+3. Both files are written with a temp file plus `rename`, so no reader observes a
+   half-written record (`writeJsonAtomic`, `session-launch.ts`).
+
+Honest limit: on a single-user host the worker runs as the same uid and can write the
+ledger too. The ledger raises the cost of a partial forgery — a hand-edited checkout
+copy, a damaged record, a stale worktree — and makes the disagreement visible. It is
+not a privilege boundary; §8.7 proposes one.
 
 ## 5. Records written before this fix
 
@@ -274,16 +319,62 @@ XTMUX_AGENT_BEAD=CORE-2792 … XTRM_SESSION_NAME=xx   (identical to the launch)
 so an operator does not have to remember `--role` after a power loss. An explicit
 flag still wins over the record.
 
+### 6.5 The four review fixes, failing on the reviewed commit
+
+`cli/src/tests/attach-review-fixes.test.ts` (kept outside the tree, copied into a
+detached checkout of `89ac7233`) fails there with exactly the reported symptoms:
+
+```
+× finding 1: replaces the attacher transport with the worker App transport
+  AssertionError: expected 'credential.helper' to be 'url.https://github.com/.insteadOf'
+× finding 2: unsets the six pane options before restoring, so a lead role cannot survive
+  AssertionError: expected [] to include '@agent_parent_session'
+× finding 3: --fresh with another role does not inherit the old role defaults
+  AssertionError: expected 'worker-model' to be undefined
+× finding 4: refuses a role outside the launcher grammar
+  AssertionError: expected '../../etc/passwd' to be undefined
+```
+
+The same four behaviours pass on the branch, each as a test in
+`cli/src/tests/attach-parity.test.ts` (39 tests there).
+
+### 6.6 A stale pane on a real throwaway socket (finding 2)
+
+`xt attach` typed into a pane that previously hosted a coordinator, with both durable
+sources deliberately made silent (the worktree `launch` block and the out-of-worktree
+ledger deleted). Throwaway socket only.
+
+```
+== stale: pane options BEFORE xt attach (stale, hand-set) ==
+@agent_bead OLD-9
+@agent_role lead
+@agent_task role:lead
+== stale: pane options after xt attach ==
+@agent_bead CORE-2792
+@agent_branch xt/demo
+@agent_worktree /tmp/xtrm-parity-demo-stale-LDDknl/repo/.xtrm/worktrees/repo-xt-pi-demo
+== attach: restored line ==
+  restored: @agent_worktree=… @agent_branch=xt/demo @agent_bead=CORE-2792
+== attach env ==
+argv=-c
+XTMUX_AGENT_BEAD=CORE-2792 XTMUX_AGENT_BRANCH=xt/demo XTMUX_AGENT_WORKTREE=…
+```
+
+`@agent_role=lead`, `@agent_task=role:lead` and the stale bead are gone; the three the
+worktree itself can answer are correct. Before the fix the pane kept all three stale
+values and the worker inherited a coordinator's role.
+
 ## 7. Files changed
 
 | File | Change |
 | --- | --- |
-| `cli/src/core/session-launch.ts` | new: `SessionLaunchMeta`, `cleanLaunchValue`, `compactLaunchMeta`, `readSessionLaunch` |
+| `cli/src/core/session-launch.ts` | new: `SessionLaunchMeta`, `cleanLaunchValue`, `compactLaunchMeta`, `readSessionLaunch`, the out-of-worktree ledger (`launchLedgerPath`, `writeLaunchLedger`, `readLaunchLedger`) and `writeJsonAtomic` |
+| `cli/src/core/launch-identity.ts` | exports `isValidRoleName`, so a persisted role is checked with the launcher's own grammar |
 | `cli/src/utils/worktree-session.ts` | persists `launch` at launch (`:4146`); re-exports the record helpers; `SessionMeta.launch` |
 | `cli/src/utils/codex-worktree-session.ts` | persists `launch` in the Codex session record (`:528`) |
 | `cli/src/core/codex-session.ts` | reads `launch` back through `readSessionLaunch` |
-| `cli/src/commands/attach.ts` | restores pane options, pane title, environment and the role argv; restores role/model/thinking for `--fresh`; strips the attacher's restored keys |
-| `cli/src/tests/attach-parity.test.ts` | 31 tests (record, pane options, env, argv, title, legacy record, `--fresh`) |
+| `cli/src/commands/attach.ts` | restores pane options, pane title, environment and the role argv; unsets the six options first; reads the stripped environment; trusts the ledger over the worktree copy; restores role/model/thinking for `--fresh` only while the role is unchanged; strips the attacher's restored keys |
+| `cli/src/tests/attach-parity.test.ts` | 39 tests (record, ledger, trust, pane options incl. the unsets, env incl. the credential check, argv incl. replayed `--skill` paths, title, legacy record, `--fresh`) |
 | `cli/src/tests/codex-k1-launch-contract.characterization.test.ts`, `cli/test/codex-k1-failure-residue.characterization.test.ts` | expectations updated for the record field and the attach tmux writes |
 
 ## 8. Remaining gaps and proposals
@@ -329,6 +420,17 @@ read. Out of scope here.
 A bare `xt attach` resumes in the pane it was started in, by design. `--fresh` goes
 back through the launcher and keeps the operator's placement flags.
 
+### 8.7 A trust boundary the worker cannot cross
+
+§4.8 keeps the launch identity outside the worktree, but the worker still runs as the
+same uid and can write that ledger. Proposal for a separate issue: write the record
+from a principal the agent cannot impersonate — the tmux server's own environment
+(`set-environment`, which the pane cannot rewrite), a supervisor process that owns the
+worktree record, or a signed entry appended by the launcher with the key held outside
+the agent's home. Until then, treat the ledger as tamper-evident rather than
+tamper-proof, and keep the operator's habit of reading the `restored:` line attach
+prints.
+
 ## 9. Reproducing the evidence
 
 ```bash
@@ -336,6 +438,8 @@ back through the launcher and keeps the operator's placement flags.
 KEEP=1 bash /tmp/parity-demo.sh <checkout-root> <label> keep     # xt attach
 KEEP=1 bash /tmp/parity-demo.sh <checkout-root> <label> legacy   # pre-fix record
 KEEP=1 bash /tmp/parity-demo.sh <checkout-root> <label> fresh    # xt attach --fresh
+KEEP=1 bash /tmp/parity-demo.sh <checkout-root> <label> stale    # a pane that held a lead
+                                                                 # (both durable sources deleted)
 ```
 
 `<checkout-root>` is a checkout whose `cli/dist/index.cjs` is built. Running the CLI
@@ -344,5 +448,6 @@ from TypeScript source is not possible: `cli/src/core/pi-runtime.ts:56` uses
 scope`).
 
 Validation for this change: `npx tsc --noEmit` clean, `npm run build` clean,
-`npx vitest run src/tests/attach-parity.test.ts` 31/31, plus the characterization
-suites named in §7.
+`npx vitest run src/tests/attach-parity.test.ts` 39/39, plus the characterization
+suites named in §7. `cli/src/tests/attach-parity-behaviour.test.ts` is the same proof
+in behavioural form, run against both the base commit and the branch.

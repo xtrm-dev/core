@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import prompts from 'prompts';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename } from 'node:path';
 import { t } from '../utils/theme.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
@@ -21,6 +22,7 @@ import {
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import { resolveLaunchIdentity } from '../core/launch-identity.js';
+import { readLaunchLedger } from '../core/session-launch.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import { addPlacementOptions } from '../utils/launch-placement-options.js';
 import type { WorktreeInfo } from './worktree.js';
@@ -92,8 +94,18 @@ export function buildAttachEnv(
     const agentEnv = buildAgentEnv(restoredPaneOptions);
     const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity()) : {};
     const restoredRole = restoredPaneOptions.find(option => option.key === '@agent_role')?.value ?? '';
+    // The attacher's inherited git transport is already gone from `stripped`, and the
+    // resolver must read THAT environment: with no `env` it falls back to process.env
+    // and re-adds the attacher's credential helper ahead of the worker's (CORE-2792
+    // review, credential leak).
     const roleEnv = restoredRole && worktreePath
-        ? resolveLaunchIdentity({ holder: holder ?? '', roleName: restoredRole, cwd: worktreePath, forwardInherited: true }).env
+        ? resolveLaunchIdentity({
+            holder: holder ?? '',
+            roleName: restoredRole,
+            cwd: worktreePath,
+            env: stripped,
+            forwardInherited: true,
+        }).env
         : {};
     const runtimeEnv: Record<string, string> = runtime === 'codex' ? { XTMUX_AGENT_RUNTIME: 'codex' } : {};
     const restored = { ...runtimeEnv, ...agentEnv, ...sessionEnv, ...roleEnv };
@@ -116,6 +128,52 @@ export function stripRestoredEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
         if (!RESTORED_ENV_KEYS.test(key)) out[key] = value;
     }
     return out;
+}
+
+/**
+ * The six pane options a role launch writes and a resume owns (CORE-2792). attach
+ * unsets every one of them before it restores the record's values: a pane that
+ * hosted a coordinator keeps `@agent_role=lead` and the old bead otherwise,
+ * because setting an option never clears a stale one (review finding 2).
+ */
+export const RESTORED_PANE_KEYS = [
+    '@agent_parent_session',
+    '@agent_task',
+    '@agent_worktree',
+    '@agent_branch',
+    '@agent_bead',
+    '@agent_role',
+] as const;
+
+/**
+ * The launch record this command is willing to act on (CORE-2792 review, trust).
+ *
+ * The worktree record is writable by the worker it describes, so `launch.role`
+ * from that file alone could let a worker adopt another role — and with it
+ * another GitHub App identity — on the next attach. The launcher writes the same
+ * block outside the worktree; this function merges the two and refuses the role
+ * when they disagree, so the pane comes back WITHOUT a role instead of with a
+ * forged one, and the operator is told why.
+ *
+ * When only one source exists, that source answers. A worktree record with no
+ * ledger is the pre-review case (§5 of the parity document) and is accepted with
+ * the caller's note.
+ */
+export function trustedLaunchMeta(
+    recordLaunch: SessionLaunchMeta | null,
+    ledgerLaunch: SessionLaunchMeta | null,
+): { launch: SessionLaunchMeta | null; conflictRole: string | null } {
+    if (!ledgerLaunch && !recordLaunch) return { launch: null, conflictRole: null };
+    if (!ledgerLaunch) return { launch: recordLaunch, conflictRole: null };
+    if (!recordLaunch) return { launch: ledgerLaunch, conflictRole: null };
+    const recordRole = recordLaunch.role ?? null;
+    const ledgerRole = ledgerLaunch.role ?? null;
+    // The ledger is the copy the worker's own checkout cannot rewrite, so it wins
+    // every field it carries. A disagreement over the role is reported, and the
+    // ledger's role is the one restored.
+    const merged: SessionLaunchMeta = { ...recordLaunch, ...ledgerLaunch };
+    const conflictRole = recordRole && ledgerRole && recordRole !== ledgerRole ? recordRole : null;
+    return { launch: merged, conflictRole };
 }
 
 /**
@@ -160,9 +218,11 @@ const PANE_ID = /^%[0-9]+$/;
  * outside tmux, where there is no pane to restore onto (env only).
  */
 export function currentPaneId(env: NodeJS.ProcessEnv = process.env): string | null {
+    // A pane id without a server to ask is a leftover variable, not a pane
+    // (CORE-2792 review): `TMUX` is what proves this process runs inside tmux.
+    if (!env.TMUX) return null;
     const fromEnv = (env.TMUX_PANE ?? '').trim();
     if (PANE_ID.test(fromEnv)) return fromEnv;
-    if (!env.TMUX) return null;
     const probe = spawnSync('tmux', ['display-message', '-p', '#{pane_id}'], { stdio: 'pipe', encoding: 'utf8' });
     const paneId = (probe.stdout ?? '').trim();
     return PANE_ID.test(paneId) ? paneId : null;
@@ -334,7 +394,7 @@ export function readFreshPrompt(raw: string | undefined, read: (file: string) =>
 export function buildFreshLaunchOptions(
     target: WorktreeInfo,
     opts: FreshAttachOptions,
-    deps: { issue?: WorkerIssue | null; dispatcher?: Record<string, string> } = {},
+    deps: { issue?: WorkerIssue | null; dispatcher?: Record<string, string>; home?: string } = {},
 ): WorktreeSessionOptions {
     const slug = holderFromWorktreePath(target.path);
     if (!slug) throw new Error(`the worktree name ${basename(target.path)} does not follow <repo>-xt-<runtime>-<slug>; cannot derive its holder`);
@@ -343,18 +403,31 @@ export function buildFreshLaunchOptions(
     // model and thinking the original launch carried are restored from the
     // worktree record unless the operator gives them explicitly; nothing else is
     // inferred (no prompt, no bead beyond the recorded Issue).
-    const launch = readSessionLaunch(readSessionRecord(target.path));
+    const trusted = trustedLaunchMeta(
+        readSessionLaunch(readSessionRecord(target.path)),
+        readLaunchLedger(deps.home ?? homedir(), target.path),
+    );
+    const launch = trusted.launch;
+    if (trusted.conflictRole) {
+        console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
+    }
+    // Model and thinking belong to the role they came from (review finding 3): a
+    // restart under a DIFFERENT role must not inherit the old role's defaults, and
+    // a recorded value is only ever an explicit operator override now.
+    const recordedRole = launch?.role ?? launch?.requestedRole;
+    const requestedRole = (opts.role ?? '').trim() || undefined;
+    const roleUnchanged = !requestedRole || requestedRole === recordedRole;
     const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue?.ref ?? null, {
         bindingId: issue?.bindingId ?? null,
         workspace: target.path,
     });
     return {
         runtime: target.runtime === 'pi' ? 'pi' : 'claude',
-        role: opts.role ?? launch?.role ?? launch?.requestedRole,
+        role: requestedRole ?? recordedRole,
         bead: opts.bead ?? issue?.ref,
         prompt: readFreshPrompt(opts.prompt),
-        model: opts.model ?? launch?.model,
-        thinking: opts.thinking ?? launch?.thinking,
+        model: opts.model ?? (roleUnchanged ? launch?.model : undefined),
+        thinking: opts.thinking ?? (roleUnchanged ? launch?.thinking : undefined),
         attach: opts.attach,
         window: Boolean(opts.window),
         newSession: Boolean(opts.newSession),
@@ -500,7 +573,14 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             // continues the conversation — so the record is read once, here, for
             // both the argv below and the pane metadata further down.
             const record = readSessionRecord(target.path);
-            const launch = record?.launch ?? null;
+            // CORE-2792 review (trust): the worktree copy is the worker's own file.
+            // The launcher's out-of-worktree ledger is merged in, and a disagreement
+            // over the role drops the role rather than adopting a forged identity.
+            const trusted = trustedLaunchMeta(record?.launch ?? null, readLaunchLedger(homedir(), target.path));
+            const launch = trusted.launch;
+            if (trusted.conflictRole) {
+                console.error(kleur.yellow(`  ⚠ the worktree record names role '${trusted.conflictRole}' but the launch ledger disagrees; restoring the ledger's role`));
+            }
             // A role launch carried its identity as an inline system prompt and,
             // for pi, an isolated skill pool. Both are derivable from the role
             // name the record kept. A failed resolution warns and never blocks the
@@ -554,11 +634,21 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                 resumeArgs = ['-c'];
                 if (restoredName) resumeArgs.push('--name', restoredName);
                 if (restoredPrompt) resumeArgs.push('--append-system-prompt', restoredPrompt);
-                if (resumedRole) {
+                // Extra --skill entries the operator gave at launch (review nit):
+                // the pool is rebuilt here, so an unrecorded addition would vanish.
+                // A path that no longer exists is dropped with a warning rather than
+                // handed to pi as a hard error.
+                const recordedSkills = launch?.skills ?? [];
+                const extraSkills: string[] = [];
+                for (const skill of recordedSkills) {
+                    if (existsSync(skill)) extraSkills.push(skill);
+                    else console.error(kleur.dim(`  warning: recorded skill '${skill}' no longer exists; not passing it to pi`));
+                }
+                if (resumedRole || extraSkills.length > 0) {
                     // Same pool policy as the launcher: no global skill discovery,
-                    // exactly the role's declared skills.
+                    // exactly the role's declared skills plus the recorded extras.
                     resumeArgs.push('--no-skills');
-                    for (const skill of resumedSkillPaths) resumeArgs.push('--skill', skill);
+                    for (const skill of [...resumedSkillPaths, ...extraSkills]) resumeArgs.push('--skill', skill);
                 }
             }
 
@@ -601,6 +691,15 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             });
             const paneId = currentPaneId();
             if (paneId) {
+                // Review finding 2: a pane that hosted a coordinator keeps
+                // @agent_role=lead and the old bead, because setting an option never
+                // clears a stale one. Unset the six keys first, so a value the record
+                // does not name ends up ABSENT. They are not unset on exit: they
+                // describe the pane that hosts the worker while it runs, and a pane
+                // still showing its output must not lose the identity it ran under.
+                for (const key of RESTORED_PANE_KEYS) {
+                    spawnSync('tmux', ['set-option', '-p', '-u', '-t', paneId, key], { stdio: 'pipe' });
+                }
                 for (const { key, value } of restoredOptions) {
                     spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
                 }

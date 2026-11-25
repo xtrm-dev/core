@@ -1,3 +1,10 @@
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { basename } from 'node:path';
+
+import { isValidRoleName } from './launch-identity.js';
+
 /**
  * CORE-2792: the launch identity a worktree session was started with.
  *
@@ -33,10 +40,20 @@ export interface SessionLaunchMeta {
      * even though the conversation is continued.
      */
     displayName?: string;
-    /** Explicit `--model` override (or the role model), when the launch carried one. */
+    /**
+     * Explicit `--model` override, when the operator gave one. A role's default
+     * model is NOT recorded: the role name re-derives it, and a stale copy must
+     * not override a role whose default changed.
+     */
     model?: string;
-    /** Explicit `--thinking` override (Pi), when the launch carried one. */
+    /** Explicit `--thinking` override (Pi), when the operator gave one. */
     thinking?: string;
+    /**
+     * Extra `--skill <path>` entries the operator requested on top of the role's
+     * declared skills (Pi). A resume replays them: the pool is rebuilt from
+     * scratch, so an unrecorded extra skill silently disappears.
+     */
+    skills?: string[];
 }
 
 const LAUNCH_FIELDS = [
@@ -53,6 +70,8 @@ const LAUNCH_FIELDS = [
 ] as const satisfies ReadonlyArray<keyof SessionLaunchMeta>;
 
 const MAX_LAUNCH_VALUE = 4096;
+/** Enough for a role's pool plus operator additions; a longer list is not a launch. */
+const MAX_LAUNCH_SKILLS = 64;
 // Control characters would corrupt a tmux option value or a spawned env entry.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
@@ -64,13 +83,39 @@ export function cleanLaunchValue(value: unknown): string | undefined {
     return text;
 }
 
+/**
+ * A role name the launch record may carry. The record is a file inside the
+ * worker's own worktree, so a forged value must not be able to name a path, a
+ * flag or a second role: the same grammar the launcher accepts is the only one
+ * attach will act on (CORE-2792 review, trust).
+ */
+function cleanRoleValue(value: unknown): string | undefined {
+    const text = cleanLaunchValue(value);
+    return text && isValidRoleName(text) ? text : undefined;
+}
+
+function cleanSkillList(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const out: string[] = [];
+    for (const entry of value) {
+        const path = cleanLaunchValue(entry);
+        if (path && !out.includes(path)) out.push(path);
+        if (out.length >= MAX_LAUNCH_SKILLS) break;
+    }
+    return out.length > 0 ? out : undefined;
+}
+
 /** The launch record without empty, non-string or unusable values — never a placeholder. */
 export function compactLaunchMeta(launch: SessionLaunchMeta): SessionLaunchMeta {
     const out: SessionLaunchMeta = {};
     for (const key of LAUNCH_FIELDS) {
-        const value = cleanLaunchValue(launch[key]);
+        const value = key === 'role' || key === 'requestedRole'
+            ? cleanRoleValue(launch[key])
+            : cleanLaunchValue(launch[key]);
         if (value) out[key] = value;
     }
+    const skills = cleanSkillList(launch.skills);
+    if (skills) out.skills = skills;
     return out;
 }
 
@@ -84,8 +129,87 @@ export function readSessionLaunch(record: { launch?: unknown } | null | undefine
     const raw = record.launch as Record<string, unknown>;
     const out: SessionLaunchMeta = {};
     for (const key of LAUNCH_FIELDS) {
-        const value = cleanLaunchValue(raw[key]);
+        const value = key === 'role' || key === 'requestedRole'
+            ? cleanRoleValue(raw[key])
+            : cleanLaunchValue(raw[key]);
         if (value) out[key] = value;
     }
+    const skills = cleanSkillList(raw.skills);
+    if (skills) out.skills = skills;
     return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * CORE-2792 review (trust): the in-worktree record is writable by the worker it
+ * describes, so it cannot be the only word on which role — and therefore which
+ * GitHub App identity — a resume adopts. The launcher also writes the same block
+ * OUTSIDE the worktree, under `$HOME/.xtrm/state/launch-identity/`, and attach
+ * refuses a role the two sources disagree on.
+ *
+ * Honest limit: on a single-user host the worker runs as the same uid and can
+ * write that ledger too. The ledger raises the cost of an accidental or partial
+ * forgery (a hand-edited copy, a damaged checkout, a stale worktree record) and
+ * makes the disagreement visible; it is not a privilege boundary. A real one
+ * needs a record written by another security principal — proposal in
+ * docs/xt-attach-parity.md §8.7.
+ */
+export interface LaunchLedgerEntry {
+    worktree: string;
+    runtime: string;
+    launch: SessionLaunchMeta;
+}
+
+/** Where the out-of-worktree copy lives; `home` is injectable for tests. */
+export function launchLedgerPath(home: string, worktreePath: string): string {
+    const slug = (basename(worktreePath) || 'worktree').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 64);
+    const digest = createHash('sha256').update(worktreePath).digest('hex').slice(0, 12);
+    return path.join(home, '.xtrm', 'state', 'launch-identity', `${slug}-${digest}.json`);
+}
+
+/** Write a JSON file in one step: a reader never sees a half-written record. */
+export function writeJsonAtomic(dest: string, data: unknown): boolean {
+    const temporary = `${dest}.${process.pid}.tmp`;
+    try {
+        mkdirSync(path.dirname(dest), { recursive: true });
+        writeFileSync(temporary, JSON.stringify(data, null, 2));
+        renameSync(temporary, dest);
+        return true;
+    } catch {
+        try {
+            rmSync(temporary, { force: true });
+        } catch {
+            // Nothing left to clean up.
+        }
+        return false;
+    }
+}
+
+/** Fail-soft: a launch never fails because the ledger could not be written. */
+export function writeLaunchLedger(
+    home: string,
+    worktreePath: string,
+    runtime: string,
+    launch: SessionLaunchMeta,
+): boolean {
+    const compact = compactLaunchMeta(launch);
+    if (Object.keys(compact).length === 0) return false;
+    const entry: LaunchLedgerEntry = { worktree: worktreePath, runtime, launch: compact };
+    return writeJsonAtomic(launchLedgerPath(home, worktreePath), entry);
+}
+
+/**
+ * The ledger entry for THIS worktree, or null. An entry that names a different
+ * worktree is not an answer for this one: the path is part of the identity, so a
+ * hash collision or a moved ledger file reads as absent.
+ */
+export function readLaunchLedger(home: string, worktreePath: string): SessionLaunchMeta | null {
+    try {
+        const raw = JSON.parse(readFileSync(launchLedgerPath(home, worktreePath), 'utf8')) as unknown;
+        if (!raw || typeof raw !== 'object') return null;
+        const entry = raw as Record<string, unknown>;
+        if (entry.worktree !== worktreePath) return null;
+        return readSessionLaunch({ launch: entry.launch });
+    } catch {
+        return null;
+    }
 }

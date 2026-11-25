@@ -2926,7 +2926,7 @@ export interface SessionMeta {
 // re-exported here because every launcher and attach already import this module.
 export { compactLaunchMeta, cleanLaunchValue, readSessionLaunch, type SessionLaunchMeta } from '../core/session-launch.js';
 import type { SessionLaunchMeta } from '../core/session-launch.js';
-import { compactLaunchMeta } from '../core/session-launch.js';
+import { compactLaunchMeta, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
 function sessionMetaPath(worktreePath: string): string {
@@ -2938,10 +2938,7 @@ export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi',
         const meta: SessionMeta = { runtime, launchedAt: new Date().toISOString() };
         const issueRef = (bead ?? '').trim();
         if (issueRef) meta.bead = issueRef;
-        const dest = sessionMetaPath(worktreePath);
-        mkdirSync(path.dirname(dest), { recursive: true });
-        writeFileSync(dest, JSON.stringify(meta, null, 2));
-        return true;
+        return writeJsonAtomic(sessionMetaPath(worktreePath), meta);
     } catch {
         return false;
     }
@@ -2972,14 +2969,7 @@ export function writeSessionBindingId(worktreePath: string, bindingId: string | 
     if (!id) return false;
     const meta = readSessionMeta(worktreePath);
     if (!meta || typeof meta.runtime !== 'string') return false;
-    try {
-        const dest = sessionMetaPath(worktreePath);
-        mkdirSync(path.dirname(dest), { recursive: true });
-        writeFileSync(dest, JSON.stringify({ ...meta, bindingId: id }, null, 2));
-        return true;
-    } catch {
-        return false;
-    }
+    return writeJsonAtomic(sessionMetaPath(worktreePath), { ...meta, bindingId: id });
 }
 
 /**
@@ -3006,14 +2996,12 @@ export function writeSessionLaunch(
     const base: SessionMeta = meta && typeof meta.runtime === 'string'
         ? meta
         : { runtime, launchedAt: new Date().toISOString() };
-    try {
-        const dest = sessionMetaPath(worktreePath);
-        mkdirSync(path.dirname(dest), { recursive: true });
-        writeFileSync(dest, JSON.stringify({ ...base, launch: compact }, null, 2));
-        return true;
-    } catch {
-        return false;
-    }
+    // CORE-2792 review: the worktree copy is the worker's own file, so the same
+    // block also lands outside the worktree (see core/session-launch.ts). Both
+    // writes are atomic, and a failure here never fails the launch.
+    const recorded = writeJsonAtomic(sessionMetaPath(worktreePath), { ...base, launch: compact });
+    writeLaunchLedger(os.homedir(), worktreePath, runtime, compact);
+    return recorded;
 }
 
 export function unregisterPluginsForWorktree(worktreePath: string): void {
@@ -4152,8 +4140,11 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         parentSession: launchedOption('@agent_parent_session'),
         sessionName: plan.sessionName,
         displayName: sessionDisplayName,
+        // Only what the operator asked for: a role default is re-derived from the
+        // role name, so recording it would freeze a value that may change.
         model: modelOverride,
         thinking: thinkingOverride,
+        skills: explicitSkillPaths,
     });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
