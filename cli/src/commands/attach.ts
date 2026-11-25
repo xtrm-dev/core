@@ -431,13 +431,6 @@ export function readFreshPrompt(raw: string | undefined, read: (file: string) =>
 }
 
 /**
- * The launch a FRESH session in an existing xt worktree is made from (CORE-2775).
- * The options feed the same launcher as `xt claude|pi|codex`; the worktree-derived
- * identity (slug = holder, name, branch) and the dispatcher restored from the
- * worktree's own launch binding replace what a first launch derives or creates.
- * Throws a one-line message when the worktree does not carry enough to restart.
- */
-/**
  * `--role` on either attach path: one helper, so a resume and a `--fresh` launch
  * cannot validate the same flag differently. `undefined` when the operator gave
  * no role.
@@ -452,6 +445,13 @@ function parseAttachRole(raw: string | undefined): string | undefined {
     return value;
 }
 
+/**
+ * The launch a FRESH session in an existing xt worktree is made from (CORE-2775).
+ * The options feed the same launcher as `xt claude|pi|codex`; the worktree-derived
+ * identity (slug = holder, name, branch) and the dispatcher restored from the
+ * worktree's own launch binding replace what a first launch derives or creates.
+ * Throws a one-line message when the worktree does not carry enough to restart.
+ */
 export function buildFreshLaunchOptions(
     target: WorktreeInfo,
     opts: FreshAttachOptions,

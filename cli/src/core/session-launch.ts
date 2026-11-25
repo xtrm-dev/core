@@ -75,7 +75,6 @@ const MAX_LAUNCH_SKILLS = 64;
 // Control characters would corrupt a tmux option value or a spawned env entry.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
-/** A record value this module is willing to write or trust: bounded, trimmed text. */
 /** The task label a role launch records; the launcher and attach share this rule. */
 export function taskForRole(role: string): string {
     return `role:${role}`;
@@ -90,6 +89,7 @@ export function taskWithRole(task: string | undefined, role: string): string {
     return !task || task.startsWith('role:') ? taskForRole(role) : task;
 }
 
+/** A record value this module is willing to write or trust: bounded, trimmed text. */
 export function cleanLaunchValue(value: unknown): string | undefined {
     if (typeof value !== 'string') return undefined;
     const text = value.trim();

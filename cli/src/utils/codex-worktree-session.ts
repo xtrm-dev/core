@@ -40,7 +40,7 @@ import {
     shellQuote,
     withPaneUnsets,
 } from './worktree-session.js';
-import { canonicalWorktreePath, removeLaunchLedger, writeLaunchLedger } from '../core/session-launch.js';
+import { canonicalWorktreePath, removeLaunchLedger, taskForRole, writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
@@ -407,7 +407,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         : '';
     const paneOptions: Array<{ key: string; value: string }> = [
         { key: '@agent_parent_session', value: parentSession },
-        { key: '@agent_task', value: roleName ? `role:${roleName}` : `session:${slug}` },
+        { key: '@agent_task', value: roleName ? taskForRole(roleName) : `session:${slug}` },
         { key: '@agent_state', value: 'idle' },
         { key: '@agent_worktree', value: worktreePath },
         { key: '@agent_branch', value: branchName },
@@ -527,7 +527,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const launchRecord = compactLaunchMeta({
         role: roleName,
         requestedRole: opts.role,
-        task: roleName ? `role:${roleName}` : `session:${slug}`,
+        task: roleName ? taskForRole(roleName) : `session:${slug}`,
         worktree: worktreePath,
         branch: branchName,
         parentSession,

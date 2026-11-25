@@ -2564,7 +2564,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         sessionDisplayName,
         sessionName,
         runtimeArgs,
-        agentTask: `role:${role.name}`,
+        agentTask: taskForRole(role.name),
         bead,
         role: role.name,
         parentSessionId,
@@ -2972,7 +2972,7 @@ export interface SessionMeta {
 // re-exported here because every launcher and attach already import this module.
 export { compactLaunchMeta, cleanLaunchValue, readSessionLaunch, type SessionLaunchMeta } from '../core/session-launch.js';
 import type { SessionLaunchMeta } from '../core/session-launch.js';
-import { canonicalWorktreePath, compactLaunchMeta, removeLaunchLedger, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
+import { canonicalWorktreePath, compactLaunchMeta, removeLaunchLedger, taskForRole, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
 function sessionMetaPath(worktreePath: string): string {

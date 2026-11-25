@@ -68708,7 +68708,7 @@ function buildRoleTmuxPlan(args) {
     sessionDisplayName,
     sessionName,
     runtimeArgs,
-    agentTask: `role:${role.name}`,
+    agentTask: taskForRole(role.name),
     bead,
     role: role.name,
     parentSessionId,
@@ -72919,7 +72919,7 @@ async function launchCodexWorktreeSession(opts) {
   }).stdout ?? "").trim() : "";
   const paneOptions = [
     { key: "@agent_parent_session", value: parentSession },
-    { key: "@agent_task", value: roleName ? `role:${roleName}` : `session:${slug}` },
+    { key: "@agent_task", value: roleName ? taskForRole(roleName) : `session:${slug}` },
     { key: "@agent_state", value: "idle" },
     { key: "@agent_worktree", value: worktreePath },
     { key: "@agent_branch", value: branchName },
@@ -73012,7 +73012,7 @@ async function launchCodexWorktreeSession(opts) {
   const launchRecord = compactLaunchMeta({
     role: roleName,
     requestedRole: opts.role,
-    task: roleName ? `role:${roleName}` : `session:${slug}`,
+    task: roleName ? taskForRole(roleName) : `session:${slug}`,
     worktree: worktreePath,
     branch: branchName,
     parentSession,

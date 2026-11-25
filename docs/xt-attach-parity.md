@@ -267,6 +267,15 @@ the inherited `GIT_CONFIG_COUNT` names). One list, shared by `xt claude`, `xt pi
 `xt codex`; `cli/src/tests/codex-launch-env.test.ts` pins the Codex path, the claude/pi
 paths reach the same function.
 
+Ceiling of that probe: `absentLaunchIdentityKeys` compares the pane environment with
+`process.env`, the environment of the process that runs the launcher — it does not read
+the tmux server's environment (`show-environment -g`) or a pane's. A key that lives only
+in the tmux server environment, set by an earlier launch and never exported by this one,
+is therefore not listed for an unset. In practice the launcher exports what it needs and
+the server environment is the operator's own shell inheritance; closing the gap would
+mean a `tmux show-environment` round trip in the launch path, which is proposed in §8.8
+rather than done here.
+
 **`--role` is validated by one helper on both paths.** `parseAttachRole` (`attach.ts`)
 trims, rejects a non-name with `--role '<value>' is not a role name …` and exits 1, so a
 resume and a `--fresh` launch cannot accept different values. The role→task label
