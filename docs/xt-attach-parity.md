@@ -254,6 +254,26 @@ transport of its own, and an inherited credential helper, `XTRM_ROLE` or job id 
 otherwise reach the worker untouched. Feeding the stripped environment to the resolver
 alone was not enough.
 
+**Every runtime clears the identity keys it does not export.** A tmux `-e` sets an
+environment entry and cannot remove one, and a pane child inherits the environment of
+whatever created it. The Codex launch builds its pane command from `-e` exports only, so
+`xt attach --fresh` from a role pane would otherwise hand that pane's `XTRM_ROLE`,
+`SPECIALISTS_JOB_ID` or `GIT_CONFIG_*` to the worker it starts. `paneUnsetPrefix` and
+`withPaneUnsetsArgv` (`worktree-session.ts`) now clear, in front of the runtime, every
+dispatcher key the launch does not export (`absentDispatcherEnvKeys`, CORE-2727) AND every
+identity key the attacher carries and the launch does not (`absentLaunchIdentityKeys`:
+`XTRM_ROLE`, `SPECIALISTS_JOB_ID`, `XTRM_SUPERVISOR_LAUNCH`, plus the git transport slots
+the inherited `GIT_CONFIG_COUNT` names). One list, shared by `xt claude`, `xt pi` and
+`xt codex`; `cli/src/tests/codex-launch-env.test.ts` pins the Codex path, the claude/pi
+paths reach the same function.
+
+**`--role` is validated by one helper on both paths.** `parseAttachRole` (`attach.ts`)
+trims, rejects a non-name with `--role '<value>' is not a role name …` and exits 1, so a
+resume and a `--fresh` launch cannot accept different values. The role→task label
+(`role:<name>` vs `session:<slug>`) is likewise one rule (`taskWithRole` in
+`core/session-launch.ts`): a forced role rewrites a role task and leaves a session task
+alone.
+
 **The supervisor markers are stripped on both attach paths, deliberately.** They
 describe the session attach was typed in, and the started or resumed session is not that
 job's specialist. Keeping them would make the launcher's supervisor refusal
@@ -458,7 +478,8 @@ lives in `cli/src/tests/attach-fresh-parity.test.ts` because it drives the real
 | `cli/src/utils/codex-worktree-session.ts` | persists `launch` in the Codex session record (`:528`); same `identityEnv` seam (`:416`) |
 | `cli/src/core/codex-session.ts` | reads `launch` back through `readSessionLaunch` |
 | `cli/src/commands/attach.ts` | restores pane options, pane title, environment and the role argv; unsets the six options first; reads the stripped environment; trusts the ledger over the worktree copy; restores role/model/thinking for `--fresh` only while the role is unchanged; strips the attacher's restored keys |
-| `cli/src/tests/attach-parity.test.ts` | 51 tests (record, ledger incl. the real-path key, the different-worktree entry, a failed write, removal after the directory is gone and removal on a rolled-back launch, trust incl. the forged role with and without a ledger and the explicit `--role`, pane options incl. the unsets, env incl. the credential and supervisor-marker checks, argv incl. replayed `--skill` paths, title, legacy record, `--fresh` incl. its stripped identity environment) |
+| `cli/src/tests/attach-parity.test.ts` | 53 tests (record, ledger incl. the real-path key, the different-worktree entry, a failed write, removal after the directory is gone and removal on a rolled-back launch, trust incl. the forged role with and without a ledger and the explicit `--role`, pane options incl. the unsets, env incl. the credential and supervisor-marker checks, argv incl. replayed `--skill` paths, title, legacy record, `--fresh` incl. its stripped identity environment and its shared `--role` validation, the role→task rule) |
+| `cli/src/tests/codex-launch-env.test.ts` | 1 test: the Codex pane command clears the attacher's identity keys it does not export |
 | `cli/src/tests/attach-fresh-parity.test.ts` | two added tests: `--fresh` does not forward the attacher's git transport, and a current-pane spawn runs from the stripped environment |
 | `cli/src/tests/codex-k1-launch-contract.characterization.test.ts`, `cli/test/codex-k1-failure-residue.characterization.test.ts` | expectations updated for the record field and the attach tmux writes |
 
@@ -547,8 +568,27 @@ removes the ledger when a failed launch rolls its worktree back (path resolved f
 takes no role from a record that has no launch ledger behind it (--fresh path)
 ```
 
-`cli/src/tests/attach-parity.test.ts` holds 51 tests and
-`cli/src/tests/attach-fresh-parity.test.ts` 9.
+### 6.9 The fourth review round (the Codex spawn base, `--role` on both paths, nits)
+
+```
+unsets the attacher role and git transport the pane environment does not export
+  → attacher env: XTRM_ROLE=lead, SPECIALISTS_JOB_ID=job-attacher,
+    GIT_CONFIG_COUNT=1, GIT_CONFIG_KEY_0=credential.helper, GIT_CONFIG_VALUE_0=!attacher-leak
+  → pane command: env -u 'XTRM_ROLE' -u 'SPECIALISTS_JOB_ID' -u 'GIT_CONFIG_COUNT'
+    -u 'GIT_CONFIG_KEY_0' -u 'GIT_CONFIG_VALUE_0' <node buffer command>
+  → no `-e XTRM_ROLE=…`, `-e SPECIALISTS_JOB_ID=…` or `-e GIT_CONFIG_…` in the new-session args
+validates --role on the fresh path through the same rule as a resume
+  → `--fresh --role 'bad role!'`: exit 1, "--role 'bad role!' is not a role name (…)"
+  → `--fresh --role lead`: role lead
+gives a forced --role the role task and leaves a session task alone
+  → role:worker + lead -> role:lead; no task + lead -> role:lead; session:demo + lead -> session:demo
+```
+
+Fail-on-`c8af5ba2`: the branch's `attach-parity.test.ts` and `codex-launch-env.test.ts`
+copied into a detached worktree of that commit → 3 failed / 51 passed; here 54 passed.
+
+`cli/src/tests/attach-parity.test.ts` holds 53 tests,
+`cli/src/tests/attach-fresh-parity.test.ts` 9 and `cli/src/tests/codex-launch-env.test.ts` 1.
 
 ## 9. Reproducing the evidence
 

@@ -162,31 +162,24 @@ function cleanupWorktreePath(worktreePath: string, repoRoot: string): WorktreeCl
         warnings.push((pruneResult.stderr ?? '').trim());
     }
 
-    // The worktree's identity record goes with it on every exit path, including
-    // one where git had already dropped the registration.
-    if (!existsSync(worktreePath)) removeLaunchLedger(os.homedir(), ledgerPath);
-
+    // A missing directory is only a warning for git: drop whatever remains and let
+    // the single removal below decide. The identity record goes with it on every
+    // exit path, including one where git had already dropped the registration.
     const isMissing = !existsSync(worktreePath);
-    if (isMissing) {
-        return {
-            removed: true,
-            alreadyMissing: removeResult.status !== 0,
-            warnings,
-        };
-    }
-
-    try {
-        rmSync(worktreePath, { recursive: true, force: true });
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
+    if (!isMissing) {
+        try {
+            rmSync(worktreePath, { recursive: true, force: true });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
+        }
     }
 
     const removed = !existsSync(worktreePath);
     if (removed) removeLaunchLedger(os.homedir(), ledgerPath);
     return {
         removed,
-        alreadyMissing: false,
+        alreadyMissing: isMissing && removeResult.status !== 0,
         warnings,
     };
 }

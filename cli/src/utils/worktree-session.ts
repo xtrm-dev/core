@@ -1928,9 +1928,42 @@ function slugifyForSession(input: string): string {
  * of them.
  */
 export function paneUnsetPrefix(env: Record<string, string>): string {
-    const absent = absentDispatcherEnvKeys(env);
+    const absent = [...absentDispatcherEnvKeys(env), ...absentLaunchIdentityKeys(env)];
     if (absent.length === 0) return '';
     return ['env', ...absent.flatMap((key) => ['-u', shellQuote(key)])].join(' ');
+}
+
+/** One cap for the inherited git transport entries this module copies or clears. */
+const MAX_INHERITED_GIT_CONFIG = 1024;
+
+/** Every key that says WHO is launching; absent from the pane env, none may be inherited. */
+const LAUNCH_IDENTITY_ENV_KEYS: readonly string[] = ['XTRM_ROLE', 'SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH'];
+
+/**
+ * Identity keys the pane environment does not export but the process that created
+ * the pane carries. A tmux `-e` cannot remove a key, and a pane child inherits the
+ * server's (or, for a current-pane launch, the launcher's) environment, so without
+ * this an `xt attach --fresh` from a role pane would hand its `XTRM_ROLE` and its
+ * git transport to the worker it starts. Review item 1 of round 4: the Codex
+ * launch shares this list, so all three runtimes clear the same keys.
+ */
+export function absentLaunchIdentityKeys(env: Record<string, string>, inherited: NodeJS.ProcessEnv = process.env): string[] {
+    const keys: string[] = [];
+    for (const key of LAUNCH_IDENTITY_ENV_KEYS) {
+        const value = env[key];
+        const wasSet = (inherited[key] ?? '').trim() !== '';
+        if ((typeof value !== 'string' || value.trim() === '') && wasSet) keys.push(key);
+    }
+    const count = Number(inherited.GIT_CONFIG_COUNT ?? '');
+    const inheritedSlots = Number.isInteger(count) && count > 0 ? Math.min(count, MAX_INHERITED_GIT_CONFIG) : 0;
+    if (inheritedSlots > 0 && (env.GIT_CONFIG_COUNT ?? '').trim() === '') {
+        keys.push('GIT_CONFIG_COUNT');
+        for (let index = 0; index < inheritedSlots; index += 1) {
+            if (!(env[`GIT_CONFIG_KEY_${index}`] ?? '').trim()) keys.push(`GIT_CONFIG_KEY_${index}`);
+            if (!(env[`GIT_CONFIG_VALUE_${index}`] ?? '').trim()) keys.push(`GIT_CONFIG_VALUE_${index}`);
+        }
+    }
+    return keys;
 }
 
 /** `command` behind the pane's `env -u` unsets (D7); unchanged when there are none. */
@@ -1945,7 +1978,7 @@ export function withPaneUnsets(command: string, env: Record<string, string>): st
  * keys `absentDispatcherEnvKeys` reports. Unchanged when there are none.
  */
 export function withPaneUnsetsArgv(argv: string[], env: Record<string, string>): string[] {
-    const absent = absentDispatcherEnvKeys(env);
+    const absent = [...absentDispatcherEnvKeys(env), ...absentLaunchIdentityKeys(env)];
     if (absent.length === 0) return argv;
     return ['env', ...absent.flatMap((key) => ['-u', key]), ...argv];
 }

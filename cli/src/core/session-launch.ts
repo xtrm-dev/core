@@ -76,6 +76,20 @@ const MAX_LAUNCH_SKILLS = 64;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 /** A record value this module is willing to write or trust: bounded, trimmed text. */
+/** The task label a role launch records; the launcher and attach share this rule. */
+export function taskForRole(role: string): string {
+    return `role:${role}`;
+}
+
+/**
+ * The task a forced `--role` gives a restored launch: a role task follows the named
+ * role, a session task stays (that launch was not a role launch), and a launch with
+ * no task at all gets the role's.
+ */
+export function taskWithRole(task: string | undefined, role: string): string {
+    return !task || task.startsWith('role:') ? taskForRole(role) : task;
+}
+
 export function cleanLaunchValue(value: unknown): string | undefined {
     if (typeof value !== 'string') return undefined;
     const text = value.trim();

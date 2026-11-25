@@ -344,6 +344,36 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         expect(explicit.role).toBe('lead');
     });
 
+    it('validates --role on the fresh path through the same rule as a resume', async () => {
+        // Review round 4, item 2: one helper, so `--fresh --role` cannot accept a
+        // name a resume would refuse.
+        const wt = await writeLaunch(LAUNCH);
+        const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+            throw new Error(`exit:${code ?? 0}`);
+        }) as never);
+        const errors: string[] = [];
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(((...args: unknown[]) => {
+            errors.push(args.map(String).join(' '));
+        }) as never);
+        try {
+            expect(() => buildFreshLaunchOptions(wt, { role: 'bad role!' }, { issue: null, dispatcher: {} })).toThrow('exit:1');
+            expect(errors.join('\n')).toContain("--role 'bad role!' is not a role name");
+            const valid = buildFreshLaunchOptions(wt, { role: 'lead' }, { issue: null, dispatcher: {} });
+            expect(valid.role).toBe('lead');
+        } finally {
+            exitSpy.mockRestore();
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('gives a forced --role the role task and leaves a session task alone', async () => {
+        // Review round 4, nit: the role->task rule lives in one place.
+        const { taskWithRole } = await import('../core/session-launch.js');
+        expect(taskWithRole('role:worker', 'lead')).toBe('role:lead');
+        expect(taskWithRole(undefined, 'lead')).toBe('role:lead');
+        expect(taskWithRole('session:demo', 'lead')).toBe('session:demo');
+    });
+
     it('restores nothing from a legacy record instead of inventing a role', async () => {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'pi', launchedAt: '2026-11-20T00:00:00.000Z',

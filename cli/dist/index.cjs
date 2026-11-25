@@ -67185,6 +67185,12 @@ var LAUNCH_FIELDS = [
 var MAX_LAUNCH_VALUE = 4096;
 var MAX_LAUNCH_SKILLS = 64;
 var CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+function taskForRole(role) {
+  return `role:${role}`;
+}
+function taskWithRole(task, role) {
+  return !task || task.startsWith("role:") ? taskForRole(role) : task;
+}
 function cleanLaunchValue(value) {
   if (typeof value !== "string") return void 0;
   const text = value.trim();
@@ -68383,16 +68389,36 @@ function slugifyForSession(input2) {
   return s.slice(0, 32) || "x";
 }
 function paneUnsetPrefix(env3) {
-  const absent = absentDispatcherEnvKeys(env3);
+  const absent = [...absentDispatcherEnvKeys(env3), ...absentLaunchIdentityKeys(env3)];
   if (absent.length === 0) return "";
   return ["env", ...absent.flatMap((key) => ["-u", shellQuote(key)])].join(" ");
+}
+var MAX_INHERITED_GIT_CONFIG = 1024;
+var LAUNCH_IDENTITY_ENV_KEYS = ["XTRM_ROLE", "SPECIALISTS_JOB_ID", "XTRM_SUPERVISOR_LAUNCH"];
+function absentLaunchIdentityKeys(env3, inherited = process.env) {
+  const keys = [];
+  for (const key of LAUNCH_IDENTITY_ENV_KEYS) {
+    const value = env3[key];
+    const wasSet = (inherited[key] ?? "").trim() !== "";
+    if ((typeof value !== "string" || value.trim() === "") && wasSet) keys.push(key);
+  }
+  const count = Number(inherited.GIT_CONFIG_COUNT ?? "");
+  const inheritedSlots = Number.isInteger(count) && count > 0 ? Math.min(count, MAX_INHERITED_GIT_CONFIG) : 0;
+  if (inheritedSlots > 0 && (env3.GIT_CONFIG_COUNT ?? "").trim() === "") {
+    keys.push("GIT_CONFIG_COUNT");
+    for (let index = 0; index < inheritedSlots; index += 1) {
+      if (!(env3[`GIT_CONFIG_KEY_${index}`] ?? "").trim()) keys.push(`GIT_CONFIG_KEY_${index}`);
+      if (!(env3[`GIT_CONFIG_VALUE_${index}`] ?? "").trim()) keys.push(`GIT_CONFIG_VALUE_${index}`);
+    }
+  }
+  return keys;
 }
 function withPaneUnsets(command, env3) {
   const prefix = paneUnsetPrefix(env3);
   return prefix ? `${prefix} ${command}` : command;
 }
 function withPaneUnsetsArgv(argv, env3) {
-  const absent = absentDispatcherEnvKeys(env3);
+  const absent = [...absentDispatcherEnvKeys(env3), ...absentLaunchIdentityKeys(env3)];
   if (absent.length === 0) return argv;
   return ["env", ...absent.flatMap((key) => ["-u", key]), ...argv];
 }
@@ -78203,26 +78229,20 @@ function cleanupWorktreePath(worktreePath, repoRoot) {
   if (pruneResult.status !== 0 && (pruneResult.stderr ?? "").trim()) {
     warnings.push((pruneResult.stderr ?? "").trim());
   }
-  if (!(0, import_node_fs21.existsSync)(worktreePath)) removeLaunchLedger(import_node_os24.default.homedir(), ledgerPath);
   const isMissing = !(0, import_node_fs21.existsSync)(worktreePath);
-  if (isMissing) {
-    return {
-      removed: true,
-      alreadyMissing: removeResult.status !== 0,
-      warnings
-    };
-  }
-  try {
-    (0, import_node_fs21.rmSync)(worktreePath, { recursive: true, force: true });
-  } catch (error62) {
-    const message = error62 instanceof Error ? error62.message : String(error62);
-    warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
+  if (!isMissing) {
+    try {
+      (0, import_node_fs21.rmSync)(worktreePath, { recursive: true, force: true });
+    } catch (error62) {
+      const message = error62 instanceof Error ? error62.message : String(error62);
+      warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
+    }
   }
   const removed = !(0, import_node_fs21.existsSync)(worktreePath);
   if (removed) removeLaunchLedger(import_node_os24.default.homedir(), ledgerPath);
   return {
     removed,
-    alreadyMissing: false,
+    alreadyMissing: isMissing && removeResult.status !== 0,
     warnings
   };
 }
@@ -80138,6 +80158,17 @@ function readFreshPrompt(raw, read = (f) => (0, import_node_fs23.readFileSync)(f
   if (!raw.startsWith("@")) return raw;
   return read(raw.slice(1));
 }
+function parseAttachRole(raw) {
+  const value = (raw ?? "").trim();
+  if (!value) return void 0;
+  if (!isValidRoleName(value)) {
+    console.error(kleur_default.red(`
+  \u2717 --role '${value}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)
+`));
+    process.exit(1);
+  }
+  return value;
+}
 function buildFreshLaunchOptions(target, opts, deps = {}) {
   const slug = holderFromWorktreePath(target.path);
   if (!slug) throw new Error(`the worktree name ${(0, import_node_path47.basename)(target.path)} does not follow <repo>-xt-<runtime>-<slug>; cannot derive its holder`);
@@ -80154,7 +80185,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
     console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none; ignoring the record's role`));
   }
   const recordedRole = launch?.role ?? launch?.requestedRole;
-  const requestedRole = (opts.role ?? "").trim() || void 0;
+  const requestedRole = parseAttachRole(opts.role);
   const roleUnchanged = !requestedRole || requestedRole === recordedRole;
   const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue2?.ref ?? null, {
     bindingId: issue2?.bindingId ?? null,
@@ -80297,15 +80328,9 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
     if (trusted.ignoredRecordRole) {
       console.error(kleur_default.yellow(`  \u26A0 the worktree record names role '${trusted.ignoredRecordRole}' but the launch ledger names none or disagrees; ignoring the record's role (pass --role ${trusted.ignoredRecordRole} to restore it)`));
     }
-    const requestedRole = (opts.role ?? "").trim();
-    if (requestedRole && !isValidRoleName(requestedRole)) {
-      console.error(kleur_default.red(`
-  \u2717 --role '${requestedRole}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)
-`));
-      process.exit(1);
-    }
+    const requestedRole = parseAttachRole(opts.role) ?? "";
     const effectiveRole2 = requestedRole || launch?.role || null;
-    const launchForRestore = effectiveRole2 && effectiveRole2 !== launch?.role ? { ...launch ?? {}, role: effectiveRole2, task: launch?.task?.startsWith("role:") || !launch?.task ? `role:${effectiveRole2}` : launch.task } : launch;
+    const launchForRestore = effectiveRole2 && effectiveRole2 !== launch?.role ? { ...launch ?? {}, role: effectiveRole2, task: taskWithRole(launch?.task, effectiveRole2) } : launch;
     let resumedRole = null;
     let resumedSkillPaths = [];
     if (effectiveRole2 && runtime !== "codex") {

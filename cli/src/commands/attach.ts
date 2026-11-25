@@ -22,7 +22,7 @@ import {
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import { isValidRoleName, resolveLaunchIdentity } from '../core/launch-identity.js';
-import { readLaunchLedger } from '../core/session-launch.js';
+import { readLaunchLedger, taskWithRole } from '../core/session-launch.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import { addPlacementOptions } from '../utils/launch-placement-options.js';
 import type { WorktreeInfo } from './worktree.js';
@@ -437,6 +437,21 @@ export function readFreshPrompt(raw: string | undefined, read: (file: string) =>
  * worktree's own launch binding replace what a first launch derives or creates.
  * Throws a one-line message when the worktree does not carry enough to restart.
  */
+/**
+ * `--role` on either attach path: one helper, so a resume and a `--fresh` launch
+ * cannot validate the same flag differently. `undefined` when the operator gave
+ * no role.
+ */
+function parseAttachRole(raw: string | undefined): string | undefined {
+    const value = (raw ?? '').trim();
+    if (!value) return undefined;
+    if (!isValidRoleName(value)) {
+        console.error(kleur.red(`\n  ✗ --role '${value}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)\n`));
+        process.exit(1);
+    }
+    return value;
+}
+
 export function buildFreshLaunchOptions(
     target: WorktreeInfo,
     opts: FreshAttachOptions,
@@ -464,7 +479,7 @@ export function buildFreshLaunchOptions(
     // restart under a DIFFERENT role must not inherit the old role's defaults, and
     // a recorded value is only ever an explicit operator override now.
     const recordedRole = launch?.role ?? launch?.requestedRole;
-    const requestedRole = (opts.role ?? '').trim() || undefined;
+    const requestedRole = parseAttachRole(opts.role);
     const roleUnchanged = !requestedRole || requestedRole === recordedRole;
     const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue?.ref ?? null, {
         bindingId: issue?.bindingId ?? null,
@@ -640,14 +655,10 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             // Review item 1: a role the durable ledger does not name is never
             // restored from the worker's own file. The operator can still ask for
             // it explicitly, and that flag is validated like a launch's --role.
-            const requestedRole = (opts.role ?? '').trim();
-            if (requestedRole && !isValidRoleName(requestedRole)) {
-                console.error(kleur.red(`\n  ✗ --role '${requestedRole}' is not a role name (letters, digits, '.', '_' and '-', at most 64, first character alphanumeric)\n`));
-                process.exit(1);
-            }
+            const requestedRole = parseAttachRole(opts.role) ?? '';
             const effectiveRole = requestedRole || launch?.role || null;
             const launchForRestore: SessionLaunchMeta | null = effectiveRole && effectiveRole !== launch?.role
-                ? { ...(launch ?? {}), role: effectiveRole, task: launch?.task?.startsWith('role:') || !launch?.task ? `role:${effectiveRole}` : launch.task }
+                ? { ...(launch ?? {}), role: effectiveRole, task: taskWithRole(launch?.task, effectiveRole) }
                 : launch;
             // A role launch carried its identity as an inline system prompt and,
             // for pi, an isolated skill pool. Both are derivable from the role
