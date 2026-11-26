@@ -64,11 +64,13 @@ Taking a hold (`sb issue claim`):
 2. `sb` reads `@agent_holder` of that pane. `sb` continues only when it equals the holder of the operation. An in-process specialist or another holder has a different holder and never changes the parent pane.
 3. `sb` sets `@agent_issue` to the claimed ref.
 
-Ending a hold (`release`, `close`, `cancel`, and `state <ref> done|cancelled`):
+Ending a hold (`release`, `close`, `cancel`, and `state <ref> done|cancelled|archived`):
 
 1. `sb` lists the panes of the tmux server and unsets `@agent_issue` on every pane whose value equals the ref (case-insensitive).
 2. The holder gate does not apply. A lead that closes a worker's Issue clears the worker's pane.
 3. Each unset is logged.
+
+Scope: `sb` reaches the tmux server that the process runs under (`$TMUX`). Panes on another server or host are not updated, and a process outside tmux logs a skip. Cross-host sync is not part of this schema (XTRM-1077).
 
 Failures:
 
