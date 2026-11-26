@@ -172,7 +172,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     await expect(launchWorktreeSession({
       runtime: 'pi',
       role: 'blank',
-      bead: 'hostile-prefix',
+      issue: 'hostile-prefix',
     })).rejects.toThrow('exit:1');
 
     expect(mocked.spawnSync).toHaveBeenCalledWith(
@@ -622,7 +622,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     await expect(launchWorktreeSession({
       runtime: 'claude',
       role: 'reviewer',
-      bead: 'large-bead',
+      issue: 'large-bead',
       name: 'large',
       newSession: true,
       attach: false,

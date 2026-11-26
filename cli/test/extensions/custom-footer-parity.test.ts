@@ -55,7 +55,7 @@ describe("custom-footer git-only (beads retired)", () => {
 		shortcuts = {};
 		requestRenderSpy = vi.fn();
 		cacheRoot = mkdtempSync(join(tmpdir(), "xtrm-footer-cache-"));
-		process.env.XTRM_BEADS_CACHE_ROOT = cacheRoot;
+		process.env.XTRM_ISSUE_CACHE_ROOT = cacheRoot;
 		ctx = {
 			cwd: repoRoot,
 			model: { id: "gpt-5", contextWindow: 200_000 },
@@ -85,7 +85,7 @@ describe("custom-footer git-only (beads retired)", () => {
 	});
 
 	afterEach(() => {
-		delete process.env.XTRM_BEADS_CACHE_ROOT;
+		delete process.env.XTRM_ISSUE_CACHE_ROOT;
 		rmSync(cacheRoot, { recursive: true, force: true });
 		vi.useRealTimers();
 	});

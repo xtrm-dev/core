@@ -42,6 +42,7 @@ import {
 } from './worktree-session.js';
 import { canonicalWorktreePath, removeLaunchLedger, taskForRole, writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
+import { applyPaneOptions, relationshipPaneOptions } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
@@ -49,7 +50,7 @@ import { fetchWorktreeBase } from './worktree-base.js';
 export interface CodexWorktreeSessionOptions {
     name?: string;
     role?: string;
-    bead?: string;
+    issue?: string;
     prompt?: string;
     model?: string;
     skills?: string[];
@@ -139,10 +140,10 @@ function skillNames(paths: string[]): string[] {
     });
 }
 
-function renderCodexTask(role: string, bead: string, cwd: string): string {
+function renderCodexTask(role: string, issue: string, cwd: string): string {
     const result = spawnSync('sp', [
         'render-task', role,
-        '--bead', bead,
+        '--issue-ref', issue,
         '--cwd', cwd,
         '--context-depth', '3',
         '--surface', 'codex',
@@ -210,7 +211,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         sessionSlug: opts.name,
     });
     if (!optionCheck.ok) fail(optionCheck.error);
-    if (opts.role && opts.bead && opts.prompt) fail('--bead and --prompt are mutually exclusive with --role');
+    if (opts.role && opts.issue && opts.prompt) fail('--issue and --prompt are mutually exclusive with --role');
     const window = Boolean(opts.window);
     if (window && !process.env.TMUX) fail('--window requires running inside tmux');
     if (window && structured) fail('--window cannot combine with --json');
@@ -276,8 +277,8 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
             developerInstructions = role.systemPrompt;
             selectedModel ??= role.model;
             roleSkillPaths = role.skillPaths;
-            if (opts.bead && !existing) {
-                prompt = renderCodexTask(opts.role, opts.bead, mainRoot);
+            if (opts.issue && !existing) {
+                prompt = renderCodexTask(opts.role, opts.issue, mainRoot);
             } else {
                 requestedSkills = [...roleSkillPaths, ...requestedSkills];
             }
@@ -287,9 +288,9 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // ResolveRequestedSkills dedupes by realpath internally.
         requestedSkills = resolveRequestedSkills(mainRoot, requestedSkills, 'codex');
         // SEC-03: the validation set covers role skill paths in EVERY role
-        // launch — including --bead, where the compose set deliberately leaves
+        // launch — including --issue, where the compose set deliberately leaves
         // them out — so a project-pack reference can never slip through with a
-        // dead/wrong skill. Project-pack skills are outside this bead's codex
+        // dead/wrong skill. Project-pack skills are outside this issue's codex
         // scope and codex does not materialize them; fail closed before any
         // worktree state exists. A path into the same project pack is still
         // unsupported, so only a global enablement/global path is remediated.
@@ -316,7 +317,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         passthrough: passthrough.argv,
     });
     const sessionName = roleName
-        ? `role-codex-${slugify(roleName)}${opts.bead ? `-${slugify(opts.bead)}` : ''}`
+        ? `role-codex-${slugify(roleName)}${opts.issue ? `-${slugify(opts.issue)}` : ''}`
         : `codex-${slugify(slug)}`;
     if (!window && spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0) {
         fail(`tmux session already exists: ${sessionName}`);
@@ -341,7 +342,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // Git-first worktree create (CORE-2307): `git worktree add` is the
         // primary path — codex launches must not require bd. bd is attempted
         // as a FALLBACK only if git itself failed; observable behavior is
-        // identical. Flag surface untouched in this lane (XTRM-93 owns --bead).
+        // identical. Flag surface untouched in this lane (XTRM-93 owns --issue).
         const codexGit = spawnSync('git', ['worktree', 'add', '-b', branchName, worktreePath, base.ref], {
             cwd: mainRoot, stdio: structured ? 'pipe' : 'inherit',
         });
@@ -411,7 +412,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         { key: '@agent_state', value: 'idle' },
         { key: '@agent_worktree', value: worktreePath },
         { key: '@agent_branch', value: branchName },
-        ...(opts.bead ? [{ key: '@agent_bead', value: opts.bead }] : []),
+        ...(opts.issue ? [{ key: '@agent_issue', value: opts.issue }] : []),
         ...(roleName ? [{ key: '@agent_role', value: roleName }] : []),
     ];
     // CORE-2390: dispatcher identity; a --window worker also carries the
@@ -422,17 +423,24 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });
     const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
     const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
-    if (opts.bead && !existing) {
+    if (opts.issue && !existing) {
         // CORE-2728: persist who dispatched this Codex worker before it starts, from
         // the same resolution the pane env exports. A failed or old sb is one
         // warning, never a failed launch.
         const recorded = recordDispatcherBinding({
-            ref: opts.bead,
+            ref: opts.issue,
             resolution: dispatcher.resolution,
             workspace: worktreePath,
         });
         if (recorded.warning) process.stderr.write(recorded.warning);
     }
+    // CORE-2801: one parent source and the ownership/relationship options (see docs/agent-identity.md).
+    const parentFromDispatcher = dispatcherEnv.XTRM_PARENT_SESSION_ID;
+    if (parentFromDispatcher) {
+        const entry = paneOptions.find(option => option.key === '@agent_parent_session');
+        if (entry) entry.value = parentFromDispatcher;
+    }
+    paneOptions.push(...relationshipPaneOptions({ holder: slug, dispatcherEnv }));
     const agentEnv = {
         ...buildAgentEnv(paneOptions),
         XTMUX_AGENT_RUNTIME: 'codex',
@@ -508,9 +516,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
             stdio: 'pipe', encoding: 'utf8',
         }).stdout ?? '').trim().split(/\r?\n/, 1)[0] ?? '';
     if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail('Could not resolve Codex pane id');
-    for (const { key, value } of paneOptions) {
-        spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
-    }
+    applyPaneOptions(paneId, paneOptions);
 
     // Codex only writes a rollout record once a thread opens, which does not
     // happen until the first turn. A bare launch therefore has nothing to
@@ -543,7 +549,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         profilePath: trustProfile.path,
         // CORE-2728: the Issue travels with the session record, so attach can
         // restore the original dispatcher without a live pane.
-        ...(opts.bead ? { bead: opts.bead } : {}),
+        ...(opts.issue ? { issue: opts.issue } : {}),
         launch: launchRecord,
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
     // The same block outside the worktree, so a resume can cross-check the worker's

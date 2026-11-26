@@ -304,13 +304,14 @@ try {
   assert.notEqual(headBranch, 'main', 'coordinator branch is not distinct from main');
   r.ok('step 4: verify distinct coordinator worktree and branch', `${coordBranch} @ ${coordWorktree}`);
 
-  // ── STEP 5: verify parent session, role and bead pane metadata ────────────
+  // ── STEP 5: verify parent session, role and issue pane metadata ────────────
   assert.equal(paneOption(coordPane, '@agent_parent_session'), orchSession, '@agent_parent_session does not point at the orchestrator');
   assert.equal(paneOption(coordPane, '@agent_role'), 'chain-coordinator', '@agent_role missing or wrong');
-  assert.equal(paneOption(coordPane, '@agent_bead'), BEAD, '@agent_bead missing or wrong');
+  assert.equal(paneOption(coordPane, '@agent_issue'), BEAD, '@agent_issue missing or wrong');
+  assert.equal(paneOption(coordPane, '@agent_bead'), '', 'the legacy @agent_bead is never written (CORE-2801)');
   assert.equal(paneOption(coordPane, '@agent_task'), 'role:chain-coordinator', '@agent_task missing or wrong');
   assert.equal(paneOption(coordPane, '@agent_state'), 'idle', '@agent_state not primed to idle');
-  r.ok('step 5: verify parent session, role and bead pane metadata', `parent=${orchSession} role=chain-coordinator bead=${BEAD}`);
+  r.ok('step 5: verify parent session, role and issue pane metadata', `parent=${orchSession} role=chain-coordinator issue=${BEAD}`);
 
   // ── STEPS 7-10: live specialist chain ─────────────────────────────────────
   if (!LIVE) {

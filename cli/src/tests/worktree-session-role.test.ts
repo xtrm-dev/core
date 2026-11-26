@@ -23,7 +23,7 @@ import {
     launcherModelResolution,
     strayProjectSettingsModel,
     resolveLauncherModel,
-    stripLauncherModelVar,
+    stripInheritedLaunchEnv,
     ensureClaudePackSkillLinks,
     claudeExplicitSkillLines,
     guardRolePassthrough,
@@ -102,7 +102,7 @@ describe('renderRoleTask', () => {
 const fs = require('node:fs');
 fs.writeFileSync(process.env.XTRM_RENDER_CAPTURE, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
 if (process.env.XTRM_RENDER_FAIL === '1') {
-  process.stdout.write(JSON.stringify({ ok: false, error: { code: 'bead_not_found', message: 'missing bead' } }));
+  process.stdout.write(JSON.stringify({ ok: false, error: { code: 'bead_not_found', message: 'missing issue' } }));
   process.exit(1);
 }
 process.stdout.write(JSON.stringify({
@@ -130,7 +130,7 @@ process.stdout.write(JSON.stringify({
         withRenderTaskSp(false, () => {
             const result = renderRoleTask({
                 role: 'chain-coordinator',
-                bead: 'xtrm-k2ufi',
+                issue: 'xtrm-k2ufi',
                 cwd: os.tmpdir(),
                 runtime: 'claude',
             });
@@ -139,7 +139,7 @@ process.stdout.write(JSON.stringify({
             const invocation = JSON.parse(readFileSync(capture, 'utf8'));
             expect(invocation.cwd).toBe(os.tmpdir());
             expect(invocation.argv).toEqual([
-                'render-task', 'chain-coordinator', '--bead', 'xtrm-k2ufi',
+                'render-task', 'chain-coordinator', '--issue-ref', 'xtrm-k2ufi',
                 '--cwd', os.tmpdir(), '--context-depth', '3', '--surface', 'claude',
             ]);
         });
@@ -148,8 +148,8 @@ process.stdout.write(JSON.stringify({
     it('surfaces stable renderer failures before provisioning', () => {
         withRenderTaskSp(true, () => {
             expect(() => renderRoleTask({
-                role: 'chain-coordinator', bead: 'missing', cwd: os.tmpdir(), runtime: 'pi',
-            })).toThrow(/bead_not_found.*missing bead/);
+                role: 'chain-coordinator', issue: 'missing', cwd: os.tmpdir(), runtime: 'pi',
+            })).toThrow(/bead_not_found.*missing issue/);
         });
     });
 });
@@ -289,30 +289,30 @@ describe('checkByteCeiling', () => {
         if (!result.ok) {
             expect(result.error).toContain('61440');
             expect(result.error).toContain('51200');
-            expect(result.error).toContain('--bead');
+            expect(result.error).toContain('--issue');
         }
     });
 
-    it('accepts a 100KB rendered bead without applying the literal-prompt ceiling', () => {
+    it('accepts a 100KB rendered issue without applying the literal-prompt ceiling', () => {
         expect(checkByteCeiling({
             systemPrompt: 'role',
             body: 'B'.repeat(100 * 1024),
-            source: 'bead',
+            source: 'issue',
         }).ok).toBe(true);
     });
 
-    it('rejects a rendered bead that exceeds one safe runtime argument', () => {
+    it('rejects a rendered issue that exceeds one safe runtime argument', () => {
         const result = checkByteCeiling({
             systemPrompt: 'role',
             body: 'B'.repeat(128 * 1024),
-            source: 'bead',
+            source: 'issue',
         });
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error).toContain('runtime argument ceiling');
     });
 
     it('rejects NUL bytes before spawning a runtime', () => {
-        const result = checkByteCeiling({ systemPrompt: 'role', body: 'a\0b', source: 'bead' });
+        const result = checkByteCeiling({ systemPrompt: 'role', body: 'a\0b', source: 'issue' });
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error).toContain('NUL');
     });
@@ -577,16 +577,16 @@ describe('buildBareTmuxPlan', () => {
         ]);
     });
 
-    it('binds --bead as pane + session metadata without touching the session name', () => {
+    it('binds --issue as pane + session metadata without touching the session name', () => {
         const plan = buildBareTmuxPlan({ ...WT,
             runtime: 'claude',
             sessionSlug: 'demo',
-            bead: 'xtrm-3xgs5',
+            issue: 'xtrm-3xgs5',
             parentSessionId: '$7',
             turn1Body: 'hi',
         });
 
-        // Bare session identity is the slug alone — the bead does not enter it.
+        // Bare session identity is the slug alone — the issue does not enter it.
         expect(plan.sessionName).toBe('claude-demo');
         expect(plan.paneOptions).toEqual([
             { key: '@agent_parent_session', value: '$7' },
@@ -594,7 +594,7 @@ describe('buildBareTmuxPlan', () => {
             { key: '@agent_state', value: 'idle' },
             { key: '@agent_worktree', value: WT.worktreePath },
             { key: '@agent_branch', value: WT.branchName },
-            { key: '@agent_bead', value: 'xtrm-3xgs5' },
+            { key: '@agent_issue', value: 'xtrm-3xgs5' },
         ]);
         // A bare session has no role to publish.
         expect(plan.paneOptions.some((o) => o.key === '@agent_role')).toBe(false);
@@ -660,7 +660,7 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         const plan = buildRoleTmuxPlan({ ...WT,
             runtime: 'pi',
             role,
-            bead: 'xtmux-2i5',
+            issue: 'xtmux-2i5',
             parentSessionId: '$3',
             turn1Body: '/skill:a /skill:b\n\ntask body',
         });
@@ -676,8 +676,8 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         // Turn-1 body is the last positional (pi convention: no `--` delimiter)
         expect(plan.runtimeArgs.at(-1)).toBe('/skill:a /skill:b\n\ntask body');
         expect(plan.runtimeArgs).not.toContain('--');
-        const bead = plan.paneOptions.find((o) => o.key === '@agent_bead');
-        expect(bead?.value).toBe('xtmux-2i5');
+        const issue = plan.paneOptions.find((o) => o.key === '@agent_issue');
+        expect(issue?.value).toBe('xtmux-2i5');
         const task = plan.paneOptions.find((o) => o.key === '@agent_task');
         expect(task?.value).toBe('role:chain-coordinator');
         const parent = plan.paneOptions.find((o) => o.key === '@agent_parent_session');
@@ -696,7 +696,7 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         expect(roleOption?.value).toBe('chain-coordinator');
     });
 
-    it('omits @agent_bead and bead-slug when bead is not provided', () => {
+    it('omits @agent_issue and issue-slug when issue is not provided', () => {
         const plan = buildRoleTmuxPlan({ ...WT,
             runtime: 'pi',
             role,
@@ -704,7 +704,7 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
             turn1Body: '',
         });
         expect(plan.sessionName).toBe('role-pi-chain-coordinator');
-        expect(plan.paneOptions.some((o) => o.key === '@agent_bead')).toBe(false);
+        expect(plan.paneOptions.some((o) => o.key === '@agent_issue')).toBe(false);
         const parent = plan.paneOptions.find((o) => o.key === '@agent_parent_session');
         expect(parent?.value).toBe('');
     });
@@ -736,14 +736,14 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         const piPlan = buildRoleTmuxPlan({ ...WT,
             runtime: 'pi',
             role,
-            bead: 'xtmux-3h8',
+            issue: 'xtmux-3h8',
             parentSessionId: '',
             turn1Body: '',
         });
         const claudePlan = buildRoleTmuxPlan({ ...WT,
             runtime: 'claude',
             role,
-            bead: 'xtmux-3h8',
+            issue: 'xtmux-3h8',
             parentSessionId: '',
             turn1Body: '',
         });
@@ -751,11 +751,11 @@ describe('buildRoleTmuxPlan (pi runtime)', () => {
         expect(claudePlan.sessionName).toBe('role-claude-chain-coordinator-xtmux-3h8');
     });
 
-    it('slugifies bead ids with weird characters', () => {
+    it('slugifies issue ids with weird characters', () => {
         const plan = buildRoleTmuxPlan({ ...WT,
             runtime: 'pi',
             role,
-            bead: 'MY BEAD/1',
+            issue: 'MY BEAD/1',
             parentSessionId: '',
             turn1Body: '',
         });
@@ -1254,11 +1254,11 @@ describe('the two spawn paths read one settings root (CORE-2761)', () => {
     });
 });
 
-describe('stripLauncherModelVar', () => {
+describe('stripInheritedLaunchEnv', () => {
     // A seat launched from inside another seat must not inherit the parent's
     // model: a wrong value passes the cross-check against the wrong answer.
     it('removes only the model variable', () => {
-        expect(stripLauncherModelVar({ PI_MODEL: 'opus', PATH: '/bin' })).toEqual({ PATH: '/bin' });
+        expect(stripInheritedLaunchEnv({ PI_MODEL: 'opus', PATH: '/bin' })).toEqual({ PATH: '/bin' });
     });
 });
 
@@ -1553,20 +1553,20 @@ describe('buildAgentEnv', () => {
         }).paneOptions);
         expect(env.XTMUX_AGENT_TASK).toBe('role:chain-coordinator');
         expect(env.XTMUX_AGENT_PARENT_SESSION).toBe('$5');
-        expect(env.XTMUX_AGENT_BEAD).toBeUndefined();
+        expect(env.XTMUX_AGENT_ISSUE).toBeUndefined();
         expect(env.XTMUX_AGENT_PROMPT_FILE).toBeUndefined();
     });
 
-    it('includes bead when provided', () => {
+    it('includes issue when provided', () => {
         const env = buildAgentEnv(buildRoleTmuxPlan({
             ...WT,
             runtime: 'pi',
             role,
             parentSessionId: '',
-            bead: 'xtmux-1lb.5',
+            issue: 'xtmux-1lb.5',
             turn1Body: '',
         }).paneOptions);
-        expect(env.XTMUX_AGENT_BEAD).toBe('xtmux-1lb.5');
+        expect(env.XTMUX_AGENT_ISSUE).toBe('xtmux-1lb.5');
     });
 
     // Env is derived from the pane options so the two can never drift; the
@@ -1577,7 +1577,7 @@ describe('buildAgentEnv', () => {
             runtime: 'pi',
             role,
             parentSessionId: '$5',
-            bead: 'xtrm-6hey0',
+            issue: 'xtrm-6hey0',
             turn1Body: '',
         }).paneOptions);
         expect(env).toEqual({
@@ -1585,7 +1585,7 @@ describe('buildAgentEnv', () => {
             XTMUX_AGENT_TASK: 'role:chain-coordinator',
             XTMUX_AGENT_WORKTREE: WT.worktreePath,
             XTMUX_AGENT_BRANCH: WT.branchName,
-            XTMUX_AGENT_BEAD: 'xtrm-6hey0',
+            XTMUX_AGENT_ISSUE: 'xtrm-6hey0',
             XTMUX_AGENT_ROLE: 'chain-coordinator',
         });
         expect(env.XTMUX_AGENT_STATE).toBeUndefined();
@@ -3141,7 +3141,7 @@ describe('buildBufferedRuntimeCommand', () => {
         expect(command).toContain('node:path');
         expect(command).toContain('path.basename(payload.runtimeCmd)');
         expect(command).toContain('xtrm-role-safe');
-        expect(command).not.toContain('rendered bead body');
+        expect(command).not.toContain('rendered issue body');
     });
 
     it.each([false, true])('times out and deletes the buffer when the parent disappears (loaded=%s)', (loaded) => {

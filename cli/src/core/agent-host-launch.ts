@@ -144,7 +144,7 @@ export function buildXtPiArgs(options: LaunchOptions, parentTmuxSessionId: strin
     if (options.name) args.push(options.name);
     args.push('--no-attach', '--json', '--new-session');
     if (options.role) args.push(`--role=${options.role}`);
-    if (options.bead) args.push(`--bead=${options.bead}`);
+    if (options.bead) args.push(`--issue=${options.bead}`);
     if (options.model) args.push(`--model=${options.model}`);
     if (options.thinking) args.push(`--thinking=${options.thinking}`);
     for (const skill of options.skills ?? []) args.push(`--skill=${skill}`);

@@ -1,5 +1,5 @@
 // EVAL-01 — Claude column of the cross-runtime hook/matcher release gate.
-// Bead xtrm-wiy5n.4.2.2; matrix in docs/design/audit-reconcile-v0724.md
+// Issue xtrm-wiy5n.4.2.2; matrix in docs/design/audit-reconcile-v0724.md
 // § "EVAL-01 — Cross-runtime hook/matcher suite".
 //
 // The units under test are the real xtmux Claude hooks, vendored byte-identical

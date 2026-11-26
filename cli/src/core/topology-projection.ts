@@ -77,6 +77,8 @@ const PANE_FIELDS = [
     '@agent_state',
     '@agent_role',
     '@agent_task',
+    '@agent_issue',
+    // Read-only fallback for panes launched before CORE-2801; nothing writes it any more.
     '@agent_bead',
     '@agent_worktree',
     '@agent_branch',
@@ -232,6 +234,20 @@ export interface RawPane {
     agent: TopologyPaneAgent | null;
 }
 
+const LOGIN_SHELLS = new Set(['zsh', 'bash', 'sh', 'fish', 'dash']);
+const LIVE_STATES = new Set(['idle', 'running', 'needs-input']);
+
+/**
+ * A pane whose agent exited keeps its last `@agent_state` (no hook runs after the
+ * process ends). A live state on a pane that runs a login shell is therefore
+ * published as `exited` (CORE-2801); the option itself is not rewritten.
+ */
+export function effectiveAgentState(state: string | undefined, currentCommand: string | undefined): string | null {
+    const value = (state ?? '').trim();
+    if (!value) return null;
+    return LIVE_STATES.has(value) && LOGIN_SHELLS.has((currentCommand ?? '').trim()) ? 'exited' : value;
+}
+
 export function parsePanes(stdout: string): RawPane[] {
     const panes: RawPane[] = [];
     for (const line of stdout.split('\n')) {
@@ -240,17 +256,18 @@ export function parsePanes(stdout: string): RawPane[] {
         if (cols.length < PANE_FIELDS.length) continue;
         const [
             pane_id, session_id, session_name, window_id, current_command, current_path,
-            state, role, task, bead_id, worktree, branch, parent_session_id, parent_pane_id, instance_id,
+            state, role, task, issue_id, legacy_bead_id, worktree, branch, parent_session_id, parent_pane_id, instance_id,
             window_index, pane_index, window_active, pane_active,
         ] = cols;
         const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP);
         // A pane is an xtrm-launched agent only if it carries lineage. A plain
         // shell gets `agent: null` rather than an object of empty strings —
         // "not an agent" and "an agent with no role" are different facts.
+        const bead_id = issue_id?.trim() ? issue_id : legacy_bead_id;
         const lineage = [state, role, task, bead_id, worktree, branch, parent_session_id];
         const agent: TopologyPaneAgent | null = lineage.some(Boolean)
             ? {
-                state: blankToNull(state),
+                state: effectiveAgentState(state, current_command),
                 role: blankToNull(role),
                 task: blankToNull(task),
                 bead_id: blankToNull(bead_id),
@@ -319,7 +336,7 @@ export function parseJobs(stdout: string): TopologyJob[] {
 }
 
 /**
- * An issue ref as panes publish it (`@agent_bead`): `XTRM-629`, `CORE-10.2`,
+ * An issue ref as panes publish it (`@agent_issue`): `XTRM-629`, `CORE-10.2`,
  * or a legacy Beads id such as `xtrm-d1fod.3`. Anything else is never passed to
  * `sb`, so a pane option cannot smuggle a flag into the argv.
  */

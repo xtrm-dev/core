@@ -386,7 +386,7 @@ class Wake(Base):
         for flag in ("--fresh", "--no-attach", "--pane", "sess:@1"):
             self.assertIn(flag, cmd)
         self.assertNotIn("--new-session", cmd)
-        self.assertNotIn("--bead", cmd)  # the parked pane had no @agent_bead, so the wake gives none
+        self.assertNotIn("--issue", cmd)  # the parked pane had no @agent_issue, so the wake gives none
         self.assertNotIn("--role", cmd)  # nor an @agent_role: a bare launch stays bare
         nudge_file = pm_park.parked_dir() / "lead-a.nudge.md"
         self.assertEqual(cmd[cmd.index("--prompt") + 1], f"@{nudge_file}")
@@ -407,7 +407,7 @@ class Wake(Base):
         rec = self.rec()
         self.assertEqual(rec["xt_name"], self.wt.name)
         self.assertEqual(rec["runtime"], "claude")
-        self.assertIsNone(rec["agent_bead"])
+        self.assertIsNone(rec["agent_issue"])
         self.assertIsNone(rec["launch_role"])
         self.assertIn("parent_session", rec)
 
@@ -417,7 +417,7 @@ class Wake(Base):
         def with_opts(args, input=None, timeout=60):
             if args[:3] == ["tmux", "show-options", "-p"]:
                 orig.calls.append((list(args), input))
-                return cp(out={"@agent_role": "lead\n", "@agent_bead": "CORE-9\n", "@agent_parent_session": "$4\n"}[args[-1]])
+                return cp(out={"@agent_role": "lead\n", "@agent_issue": "CORE-9\n", "@agent_parent_session": "$4\n"}[args[-1]])
             return orig(args, input, timeout)
         (self.wt / ".xtrm").mkdir()
         (self.wt / ".xtrm" / "session-meta.json").write_text(json.dumps({"runtime": "pi", "launchedAt": "x"}))
@@ -425,14 +425,14 @@ class Wake(Base):
         with mock.patch.object(pm_park, "run", with_opts):
             self.assertEqual(self.park(name="lead-b", at="2026-11-22T14:00:00Z"), 0)
         rec = self.rec("lead-b")
-        self.assertEqual((rec["launch_role"], rec["agent_bead"], rec["parent_session"], rec["runtime"]),
+        self.assertEqual((rec["launch_role"], rec["agent_issue"], rec["parent_session"], rec["runtime"]),
                          ("lead", "CORE-9", "$4", "pi"))
         self.fake.capture = "[pm_park wake lead-b] You were respawned"
         with mock.patch.object(pm_park, "run", with_opts):
             self.assertEqual(self.wake_ok(name="lead-b"), 0)
         cmd = self.xt_call()
         self.assertEqual(cmd[cmd.index("--role") + 1], "lead")
-        self.assertEqual(cmd[cmd.index("--bead") + 1], "CORE-9")
+        self.assertEqual(cmd[cmd.index("--issue") + 1], "CORE-9")
         self.assertEqual(cmd[cmd.index("--parent") + 1], "$4")
 
     def test_park_refuses_when_the_launch_role_cannot_be_read(self):

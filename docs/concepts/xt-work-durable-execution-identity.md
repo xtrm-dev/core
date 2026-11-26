@@ -58,11 +58,11 @@ If the work grows, becomes ambiguous, or is handed to another worker, the lightw
 A future stable facade could look like:
 
 ```bash
-xt work start --bead <id>
+xt work start --issue <id>
 xt work start "<small bounded task>" --validation "<proof>"
 xt work resume <id>
 xt work status [id]
-xt work note "<meaningful progress>" [--bead <id>]
+xt work note "<meaningful progress>" [--issue <id>]
 xt work done [id] --reason "<validated result>"
 xt work guide
 ```

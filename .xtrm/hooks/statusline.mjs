@@ -38,7 +38,7 @@ function runFast(cwd, cmd, timeout = GIT_TIMEOUT_MS) {
 }
 
 function resolveMainRoot(cwd) {
-  const override = process.env.XTRM_BEADS_CACHE_ROOT;
+  const override = process.env.XTRM_ISSUE_CACHE_ROOT || process.env.XTRM_BEADS_CACHE_ROOT; // legacy name: read-only fallback (CORE-2801)
   if (override) return override;
   let current = resolve(cwd);
   while (true) {

@@ -38,8 +38,8 @@ afterEach(() => {
 });
 
 describe('Codex worktree launcher', () => {
-    it('rejects a role-declared project-pack skill even with --bead (SEC-03)', async () => {
-        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-bead-pack-'));
+    it('rejects a role-declared project-pack skill even with --issue (SEC-03)', async () => {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-issue-pack-'));
         roots.push(repoRoot);
         process.chdir(repoRoot);
         fs.ensureDirSync(path.join(repoRoot, '.xtrm', 'skills', 'infra', 'service-knowledge'));
@@ -85,12 +85,12 @@ describe('Codex worktree launcher', () => {
         const exitSpy = exitByThrow();
         const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
         await expect(launchCodexWorktreeSession({
-            name: 'bead-pack',
+            name: 'issue-pack',
             role: 'roller',
             attach: false,
             json: true,
             yolo: false,
-            bead: 'xtrm-lk07w.14',
+            issue: 'xtrm-lk07w.14',
         })).rejects.toThrow('exit:1');
 
         expect(errorSpy.mock.calls.flat().join(' ')).toContain('do not support');
@@ -612,11 +612,11 @@ describe('Codex worktree launcher', () => {
     });
 
     /**
-     * A real Codex `--bead` launch on a mocked spawn surface. `sbResult` models the
+     * A real Codex `--issue` launch on a mocked spawn surface. `sbResult` models the
      * launch-time `sb provenance dispatch` answer, so M9 can fail it.
      */
-    async function beadLaunch(sbResult: { status: number | null; stdout?: string; stderr?: string } = { status: 0, stdout: '{}' }) {
-        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-bead-dispatch-'));
+    async function issueLaunch(sbResult: { status: number | null; stdout?: string; stderr?: string } = { status: 0, stdout: '{}' }) {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-issue-dispatch-'));
         roots.push(repoRoot);
         const codexHome = path.join(repoRoot, 'codex-home');
         const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-demo`);
@@ -695,7 +695,7 @@ describe('Codex worktree launcher', () => {
             attach: false,
             json: true,
             yolo: false,
-            bead: 'CORE-2728',
+            issue: 'CORE-2728',
             dispatcherDeps: {
                 sessionsDir,
                 startPid: 300,
@@ -710,8 +710,8 @@ describe('Codex worktree launcher', () => {
         return { sbCalls, stderrLines, stdoutSpy, worktreePath, sessionsDir };
     }
 
-    it('a --bead launch records the dispatcher on the Substrate binding (CORE-2728)', async () => {
-        const { sbCalls, stderrLines, stdoutSpy, worktreePath, sessionsDir } = await beadLaunch();
+    it('a --issue launch records the dispatcher on the Substrate binding (CORE-2728)', async () => {
+        const { sbCalls, stderrLines, stdoutSpy, worktreePath, sessionsDir } = await issueLaunch();
 
         expect(sbCalls).toHaveLength(1);
         expect(sbCalls[0]).toEqual([
@@ -722,16 +722,16 @@ describe('Codex worktree launcher', () => {
         ]);
         expect(stderrLines).toEqual([]);
         expect(stdoutSpy).toHaveBeenCalled();
-        // CORE-2728 S1: the bead rides the Codex session record, so `xt attach`
+        // CORE-2728 S1: the issue rides the Codex session record, so `xt attach`
         // can resolve the issue (and the binding) with no pane left at all.
         expect(fs.readJsonSync(path.join(worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
             runtime: 'codex',
             threadId: '019fc3bc-fb7a-7ae0-9536-125624bf726b',
-            bead: 'CORE-2728',
+            issue: 'CORE-2728',
         });
-        // End to end: a real Codex --bead launch, NO pane, then attach resolves
+        // End to end: a real Codex --issue launch, NO pane, then attach resolves
         // the ref from the record and restores the original participant.
-        const ref = resolveWorkerIssueRef(worktreePath, { paneBead: () => null });
+        const ref = resolveWorkerIssueRef(worktreePath, { paneIssue: () => null });
         expect(ref).toBe('CORE-2728');
         const restored = attachDispatcherEnv(ref, {
             env: {},
@@ -754,7 +754,7 @@ describe('Codex worktree launcher', () => {
     });
 
     it('CORE-2728 M9: a failed sb still warns once and the launch continues', async () => {
-        const { sbCalls, stderrLines, worktreePath } = await beadLaunch({ status: 1, stdout: '', stderr: 'no store' });
+        const { sbCalls, stderrLines, worktreePath } = await issueLaunch({ status: 1, stdout: '', stderr: 'no store' });
         expect(sbCalls).toHaveLength(1);
         // One warning, no stack, and the launch still wrote its record and outcome.
         const warnings = stderrLines.filter((line) => line.includes('could not record the dispatcher'));
@@ -763,7 +763,7 @@ describe('Codex worktree launcher', () => {
         ]);
         expect(fs.readJsonSync(path.join(worktreePath, '.xtrm', 'session-meta.json'))).toMatchObject({
             runtime: 'codex',
-            bead: 'CORE-2728',
+            issue: 'CORE-2728',
         });
     });
 });

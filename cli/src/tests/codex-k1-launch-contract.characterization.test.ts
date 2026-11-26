@@ -350,7 +350,7 @@ describe('codex K1 launch contract (characterization)', () => {
     expect(capture.stdout).toEqual(['pi-routing:%9\n']);
   });
 
-  it('pins stream routing on rejection (mutually exclusive --bead/--prompt): stdout empty, error on stderr', async () => {
+  it('pins stream routing on rejection (mutually exclusive --issue/--prompt): stdout empty, error on stderr', async () => {
     const repoRoot = await makeRepo();
     installSpawnSync({ repoRoot });
 
@@ -361,7 +361,7 @@ describe('codex K1 launch contract (characterization)', () => {
     await expect(launchWorktreeSession({
       runtime: 'pi',
       role: 'blank',
-      bead: 'some-bead',
+      issue: 'some-issue',
       prompt: 'literal body',
     })).rejects.toThrow('exit:1');
 
@@ -370,7 +370,7 @@ describe('codex K1 launch contract (characterization)', () => {
     // silent on stdout (worktree-session.ts:1503).
     expect(capture.stdout).toEqual([]);
     expect(capture.log).toEqual([]);
-    expect(stderrText(capture)).toContain('--bead and --prompt are mutually exclusive');
+    expect(stderrText(capture)).toContain('--issue and --prompt are mutually exclusive');
   });
 
   it('pins stream routing on rejection (not a git repository): stdout empty, error on stderr', async () => {
@@ -435,9 +435,9 @@ describe('codex K1 launch contract (characterization)', () => {
         message: /outside the supported range/,
       },
       {
-        name: 'mutually exclusive --bead and --prompt in role mode',
+        name: 'mutually exclusive --issue and --prompt in role mode',
         site: 'worktree-session.ts:1503',
-        opts: { runtime: 'pi', role: 'blank', bead: 'b', prompt: 'p' },
+        opts: { runtime: 'pi', role: 'blank', issue: 'b', prompt: 'p' },
         message: /mutually exclusive/,
       },
       {
@@ -618,7 +618,7 @@ describe('codex K1 launch contract (characterization)', () => {
       expect(new Date(meta.launchedAt as string).toISOString()).toBe(meta.launchedAt);
       // A bare launch records exactly the pane options it wrote: its task, its
       // worktree and branch, its parent session and the session name. No role
-      // (there is none), no model, no thinking, no bead.
+      // (there is none), no model, no thinking, no issue.
       expect(meta.launch).toMatchObject({ task: 'session:meta', worktree: worktreePath, branch: 'xt/meta' });
       expect(meta.launch).not.toHaveProperty('role');
       expect(meta.launch).not.toHaveProperty('model');

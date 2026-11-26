@@ -61,7 +61,7 @@ describe('parseSpecialistJson — execution.interactive (envelope additive field
 });
 
 describe('resolveSubordinateLaunch — argv-level P1-05 checks', () => {
-    const base = { runtime: 'pi' as const, role: 'chain-coordinator', bead: 'xtrm-6hey0', insideTmux: true };
+    const base = { runtime: 'pi' as const, role: 'chain-coordinator', issue: 'xtrm-6hey0', insideTmux: true };
 
     it('accepts a complete subordinate launch', () => {
         expect(resolveSubordinateLaunch(base)).toEqual({
@@ -69,11 +69,11 @@ describe('resolveSubordinateLaunch — argv-level P1-05 checks', () => {
         });
     });
 
-    it('requires --bead — a coordinator with no epic has no scope to own', () => {
-        const r = resolveSubordinateLaunch({ ...base, bead: undefined });
+    it('requires --issue — a coordinator with no epic has no scope to own', () => {
+        const r = resolveSubordinateLaunch({ ...base, issue: undefined });
         expect(r.ok).toBe(false);
         if (r.ok) throw new Error('unreachable');
-        expect(r.error).toContain('requires --bead');
+        expect(r.error).toContain('requires --issue');
     });
 
     it('leaves parenting to an explicit --parent when the operator named one', () => {
@@ -106,11 +106,11 @@ describe('resolveSubordinateLaunch — argv-level P1-05 checks', () => {
     });
 
     it('shapes every rejection with the canonical remediation command', () => {
-        const r = resolveSubordinateLaunch({ ...base, bead: undefined });
+        const r = resolveSubordinateLaunch({ ...base, issue: undefined });
         if (r.ok) throw new Error('unreachable');
         expect(r.error).toBe(subordinateRejection(
             'pi',
-            '--subordinate scopes a coordinator to one epic and requires --bead',
+            '--subordinate scopes a coordinator to one epic and requires --issue',
         ));
         expect(r.error).toContain('--new-session');
         expect(r.error).toContain('--no-attach');
@@ -228,12 +228,12 @@ describe('rejected subordinate launch leaves no worktree behind', () => {
         },
     );
 
-    it('rejects --subordinate without --bead and creates nothing', () => {
+    it('rejects --subordinate without --issue and creates nothing', () => {
         const { repo, bin } = sandboxRepo();
         writeSp(bin, true);
         const r = runXt(repo, bin, ['claude', 'c', '--role', 'chain-coordinator', '--subordinate', '--parent', 'x']);
         expect(r.status).not.toBe(0);
-        expect(`${r.stdout}${r.stderr}`).toContain('requires --bead');
+        expect(`${r.stdout}${r.stderr}`).toContain('requires --issue');
         expect(worktreeCount(repo)).toBe(0);
     });
 
@@ -241,7 +241,7 @@ describe('rejected subordinate launch leaves no worktree behind', () => {
         const { repo, bin } = sandboxRepo();
         writeSp(bin, false);
         const r = runXt(repo, bin, [
-            'claude', 'c', '--role', 'chain-coordinator', '--bead', 'b', '--subordinate', '--parent', 'x',
+            'claude', 'c', '--role', 'chain-coordinator', '--issue', 'b', '--subordinate', '--parent', 'x',
         ]);
         expect(r.status).not.toBe(0);
         expect(`${r.stdout}${r.stderr}`).toContain('execution.interactive=false');

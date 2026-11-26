@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// CORE-2454: xt pi launches with an initial prompt (--prompt, or --bead with
+// CORE-2454: xt pi launches with an initial prompt (--prompt, or --issue with
 // --role) export XTRM_INITIAL_PROMPT=1 to the Pi process; launches without an
 // initial prompt do not. Covers both sides plus the claude-runtime negative.
 
@@ -55,7 +55,7 @@ function installMock(h: Harness): void {
     if (command === 'sp' && args[0] === 'render-task') {
       return {
         status: 0,
-        stdout: JSON.stringify({ ok: true, initial_prompt: 'do the bead task', prompt_hash: 'h', components: [] }),
+        stdout: JSON.stringify({ ok: true, initial_prompt: 'do the issue task', prompt_hash: 'h', components: [] }),
         stderr: '',
       };
     }
@@ -139,12 +139,12 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     vi.restoreAllMocks();
   });
 
-  it('unit: --prompt and --bead-with---role count as an initial prompt', async () => {
+  it('unit: --prompt and --issue-with---role count as an initial prompt', async () => {
     const { hasInitialPromptForLaunch, piInitialPromptEnv } = await import('../utils/worktree-session.js');
     expect(hasInitialPromptForLaunch({ prompt: 'hi' })).toBe(true);
-    expect(hasInitialPromptForLaunch({ role: 'testrole', bead: 'X-1' })).toBe(true);
+    expect(hasInitialPromptForLaunch({ role: 'testrole', issue: 'X-1' })).toBe(true);
     expect(hasInitialPromptForLaunch({})).toBe(false);
-    expect(hasInitialPromptForLaunch({ bead: 'X-1' })).toBe(false);
+    expect(hasInitialPromptForLaunch({ issue: 'X-1' })).toBe(false);
     expect(hasInitialPromptForLaunch({ role: 'testrole' })).toBe(false);
     expect(piInitialPromptEnv('pi', true)).toEqual({ XTRM_INITIAL_PROMPT: '1' });
     expect(piInitialPromptEnv('pi', false)).toEqual({ XTRM_INITIAL_PROMPT: '0' });
@@ -169,16 +169,16 @@ describe('xt pi XTRM_INITIAL_PROMPT launch env (CORE-2454)', () => {
     expect(envPairs(h.newSessionArgs)).toHaveProperty('XTRM_INITIAL_PROMPT', '0');
   });
 
-  it('role pi with --bead exports XTRM_INITIAL_PROMPT=1', async () => {
+  it('role pi with --issue exports XTRM_INITIAL_PROMPT=1', async () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(
-      launchWorktreeSession({ runtime: 'pi', name: 'ip3', role: 'testrole', bead: 'X-1', attach: false }),
+      launchWorktreeSession({ runtime: 'pi', name: 'ip3', role: 'testrole', issue: 'X-1', attach: false }),
     ).rejects.toThrow('exit:0');
     expect(envPairs(h.newSessionArgs)['XTRM_INITIAL_PROMPT']).toBe('1');
   });
 
-  it('role pi without prompt or bead exports XTRM_INITIAL_PROMPT=0', async () => {
+  it('role pi without prompt or issue exports XTRM_INITIAL_PROMPT=0', async () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(

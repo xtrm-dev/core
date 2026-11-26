@@ -7,7 +7,7 @@ A build lane is a lead. A legacy `*-coord` session with no role file acts as a l
 ## Start (first, and after every compaction)
 
 `python3 <pack>/project-management/scripts/pm_session.py show` prints your role, project, bound issue, the COMMON GOAL and your TOOLS. Clear
-every `KIT:` line first; bind your workstream epic (`pm_session.py init --issue <epic>`) when `--bead` did not. Your epic and every contract you
+every `KIT:` line first; bind your workstream epic (`pm_session.py init --issue <epic>`) when `--issue` did not. Your epic and every contract you
 write name the section of the goal they serve (SKILL.md rule 56). When work and goal disagree, journal a `blocker`; it reaches the manager at
 its hourly read, unless rule 40 says it cannot wait.
 
@@ -99,7 +99,7 @@ A lead parks itself when its next wake is a known time or event more than about 
 ## 8. Launching a lead
 
 The manager launches it from the main checkout, in its own tmux session:
-`xt claude <epic>-<area>-lead --window --role lead --bead <workstream ref> --model sonnet -- --effort high`, then the kit check
+`xt claude <epic>-<area>-lead --window --role lead --issue <workstream ref> --model sonnet -- --effort high`, then the kit check
 `pm_session.py show --dir <worktree>` (`references/launching.md`, "Session kit"). Branch `xt/<name>`; session and holder names match. The
 `<epic>-<area>-lead` name is a convention and the routing fallback; the launch role routes it. The workstream issue's SCOPE
 includes the section 3 audit. Every lead launch prompt and resume line says: "Load project-management; read references/lead.md and

@@ -123,21 +123,22 @@ async function identity(hook, sessionId, env) {
   let tmuxSession;
   let tmuxWindow;
   let role = bounded(env.XTMUX_AGENT_ROLE);
-  let bead = bounded(env.XTMUX_AGENT_BEAD);
+  // The live pane option wins over the frozen launch env; XTMUX_AGENT_BEAD / @agent_bead are read-only legacy fallbacks (CORE-2801).
+  let bead = bounded(env.XTMUX_AGENT_ISSUE) ?? bounded(env.XTMUX_AGENT_BEAD);
   let parentTmux;
   let worktree;
   let branch;
   if (pane) {
     const out = await run('tmux', [
       'display-message', '-p', '-t', pane,
-      '#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}',
+      '#{session_name}\t#{@agent_role}\t#{@agent_issue}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}',
     ]);
     if (out) {
-      const [name, paneRole, paneBead, parent, paneWorktree, paneBranch, windowName] = out.replace(/\n$/, '').split('\t');
+      const [name, paneRole, paneIssue, paneBead, parent, paneWorktree, paneBranch, windowName] = out.replace(/\n$/, '').split('\t');
       tmuxSession = bounded(name);
       tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = bounded(paneRole) ?? role;
-      bead = bounded(paneBead) ?? bead;
+      bead = bounded(paneIssue) ?? bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
       worktree = bounded(paneWorktree, 4096);
       branch = bounded(paneBranch);

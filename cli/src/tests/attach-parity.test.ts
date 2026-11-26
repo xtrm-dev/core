@@ -46,7 +46,7 @@ describe('CORE-2792 launch record', () => {
         await fs.remove(tempRoot);
     });
 
-    it('persists the launch identity and preserves the bead, binding and launch time', async () => {
+    it('persists the launch identity and preserves the issue, binding and launch time', async () => {
         const { writeSessionMeta, writeSessionBindingId, writeSessionLaunch, readSessionMeta, readSessionLaunch } =
             await import('../utils/worktree-session.js');
         const worktree = path.join(tempRoot, 'repo-xt-pi-demo');
@@ -60,7 +60,7 @@ describe('CORE-2792 launch record', () => {
         expect(meta).toMatchObject({
             runtime: 'pi',
             launchedAt,
-            bead: 'CORE-2792',
+            issue: 'CORE-2792',
             bindingId: 'exb_01a212fd',
             launch: LAUNCH,
         });
@@ -114,19 +114,19 @@ describe('CORE-2792 restored pane options', () => {
             launch: LAUNCH,
             worktreePath: '/repo/.xtrm/worktrees/repo-xt-pi-demo',
             branch: 'xt/demo',
-            bead: 'CORE-2792',
+            issue: 'CORE-2792',
         })).toEqual([
             { key: '@agent_parent_session', value: '$0' },
             { key: '@agent_task', value: 'role:worker' },
             { key: '@agent_worktree', value: '/repo/.xtrm/worktrees/repo-xt-pi-demo' },
             { key: '@agent_branch', value: 'xt/demo' },
-            { key: '@agent_bead', value: 'CORE-2792' },
+            { key: '@agent_issue', value: 'CORE-2792' },
             { key: '@agent_role', value: 'worker' },
         ]);
     });
 
     it('never writes the runtime-owned keys', () => {
-        const keys = restoredAttachPaneOptions({ launch: LAUNCH, worktreePath: '/w', branch: 'xt/demo', bead: 'CORE-1' })
+        const keys = restoredAttachPaneOptions({ launch: LAUNCH, worktreePath: '/w', branch: 'xt/demo', issue: 'CORE-1' })
             .map(option => option.key);
         expect(keys).not.toContain('@agent_state');
         expect(keys).not.toContain('@agent_instance_id');
@@ -137,20 +137,20 @@ describe('CORE-2792 restored pane options', () => {
             launch: null,
             worktreePath: '/w',
             branch: 'xt/demo',
-            bead: 'CORE-2792',
+            issue: 'CORE-2792',
         })).toEqual([
             { key: '@agent_worktree', value: '/w' },
             { key: '@agent_branch', value: 'xt/demo' },
-            { key: '@agent_bead', value: 'CORE-2792' },
+            { key: '@agent_issue', value: 'CORE-2792' },
         ]);
     });
 
     it('derives @agent_task from the role when the record only names a role', () => {
         const keys = restoredAttachPaneOptions({
-            launch: { role: 'reviewer' }, worktreePath: '/w', branch: 'xt/demo', bead: null,
+            launch: { role: 'reviewer' }, worktreePath: '/w', branch: 'xt/demo', issue: null,
         });
         expect(keys).toEqual(expect.arrayContaining([{ key: '@agent_task', value: 'role:reviewer' }]));
-        expect(keys.map(option => option.key)).not.toContain('@agent_bead');
+        expect(keys.map(option => option.key)).not.toContain('@agent_issue');
     });
 });
 
@@ -160,7 +160,7 @@ describe('CORE-2792 restored environment', () => {
         TMUX: '/tmp/tmux,1,1',
         TMUX_PANE: '%14',
         XTMUX_AGENT_ROLE: 'lead',
-        XTMUX_AGENT_BEAD: 'XTRM-1025',
+        XTMUX_AGENT_ISSUE: 'XTRM-1025',
         XTRM_ROLE: 'lead',
         XTRM_SESSION_ID: '$0',
         XTRM_SESSION_NAME: 'xx',
@@ -187,7 +187,7 @@ describe('CORE-2792 restored environment', () => {
         ]);
         expect(env.XTMUX_AGENT_ROLE).toBe('worker');
         expect(env.XTMUX_AGENT_TASK).toBe('role:worker');
-        expect(env.XTMUX_AGENT_BEAD).toBeUndefined();
+        expect(env.XTMUX_AGENT_ISSUE).toBeUndefined();
         expect(env.XTRM_SESSION_ID).toBeUndefined();
         expect(env.XTRM_SESSION_NAME).toBeUndefined();
         expect(env.GIT_CONFIG_COUNT).toBeUndefined();
@@ -338,7 +338,7 @@ describe('CORE-2792 xt attach --fresh restores the launch identity', () => {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'pi',
             launchedAt: '2026-11-25T13:56:00.302Z',
-            bead: 'CORE-2792',
+            issue: 'CORE-2792',
             launch,
         }));
         if (options.ledger !== false) {
@@ -620,7 +620,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
             runtime: 'pi',
             launchedAt: '2026-11-25T13:56:00.302Z',
-            bead: 'CORE-2792',
+            issue: 'CORE-2792',
             ...(launch ? { launch } : {}),
             ...extra,
         }));
@@ -648,7 +648,8 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
             '@agent_task': 'role:worker',
             '@agent_worktree': worktree,
             '@agent_branch': 'xt/demo',
-            '@agent_bead': 'CORE-2792',
+            '@agent_issue': 'CORE-2792',
+            '@agent_holder': 'demo',
             '@agent_role': 'worker',
         });
     });
@@ -670,7 +671,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         const env = cap.spawn?.env ?? {};
         expect(env.XTMUX_AGENT_ROLE).toBe('worker');
         expect(env.XTMUX_AGENT_TASK).toBe('role:worker');
-        expect(env.XTMUX_AGENT_BEAD).toBe('CORE-2792');
+        expect(env.XTMUX_AGENT_ISSUE).toBe('CORE-2792');
         expect(env.XTMUX_AGENT_WORKTREE).toBe(worktree);
         expect(env.XTMUX_AGENT_BRANCH).toBe('xt/demo');
         expect(env.XTMUX_AGENT_PARENT_SESSION).toBe('$0');
@@ -691,7 +692,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(recorded.paneOptions['@agent_parent_session']).toBe('$2');
     });
 
-    it('restores worktree, branch and bead from a legacy record, and invents no role', async () => {
+    it('restores worktree, branch and issue from a legacy record, and invents no role', async () => {
         await writeRecord(null);
         process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
         process.env.TMUX_PANE = '%10';
@@ -703,7 +704,8 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
             '@agent_parent_session': '$0',
             '@agent_worktree': worktree,
             '@agent_branch': 'xt/demo',
-            '@agent_bead': 'CORE-2792',
+            '@agent_issue': 'CORE-2792',
+            '@agent_holder': 'demo',
         });
         const env = cap.spawn?.env ?? {};
         expect(env.XTMUX_AGENT_ROLE).toBeUndefined();
@@ -729,7 +731,8 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
             '@agent_task': 'role:worker',
             '@agent_worktree': worktree,
             '@agent_branch': 'xt/demo',
-            '@agent_bead': 'CORE-2792',
+            '@agent_issue': 'CORE-2792',
+            '@agent_holder': 'demo',
         });
     });
 
@@ -819,7 +822,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
         process.env.TMUX_PANE = '%10';
         const cap = await attach();
-        for (const key of ['@agent_parent_session', '@agent_task', '@agent_worktree', '@agent_branch', '@agent_bead', '@agent_role']) {
+        for (const key of ['@agent_parent_session', '@agent_task', '@agent_worktree', '@agent_branch', '@agent_issue', '@agent_role']) {
             expect(cap.unset).toContain(key);
         }
         // Unset before set: the keys the record cannot answer stay absent.
@@ -878,7 +881,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(cap.paneOptions['@agent_task']).toBeUndefined();
         // Everything that is not identity still restores.
         expect(cap.paneOptions['@agent_worktree']).toBe(worktree);
-        expect(cap.paneOptions['@agent_bead']).toBe('CORE-2792');
+        expect(cap.paneOptions['@agent_issue']).toBe('CORE-2792');
         expect(cap.spawn?.env?.XTMUX_AGENT_ROLE).toBeUndefined();
         expect(cap.spawn?.env?.XTRM_ROLE).toBeUndefined();
         const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
@@ -1046,7 +1049,7 @@ describe('CORE-2792 review: trust and the restart rule', () => {
 
     async function writeRecord(launch: unknown): Promise<void> {
         await fs.writeFile(path.join(worktree, '.xtrm', 'session-meta.json'), JSON.stringify({
-            runtime: 'pi', launchedAt: '2026-11-25T13:56:00.302Z', bead: 'CORE-2792', launch,
+            runtime: 'pi', launchedAt: '2026-11-25T13:56:00.302Z', issue: 'CORE-2792', launch,
         }));
     }
 

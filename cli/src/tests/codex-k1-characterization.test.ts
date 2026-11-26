@@ -44,7 +44,7 @@ describe('K1 runtime characterization', () => {
     const shared = {
       sessionDisplayName: 'workspace-core-k1',
       sessionSlug: 'k1-baseline',
-      bead: 'xtrm-ozknq.5',
+      issue: 'xtrm-ozknq.5',
       parentSessionId: '$41',
       worktreePath: '/workspace/core-k1',
       branchName: 'feature/xtrm-ozknq-5-characterization',

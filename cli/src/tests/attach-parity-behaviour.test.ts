@@ -58,13 +58,13 @@ describe('CORE-2792 attach restores the launch identity', () => {
             [
                 { key: '@agent_role', value: 'worker' },
                 { key: '@agent_task', value: 'role:worker' },
-                { key: '@agent_bead', value: 'CORE-2792' },
+                { key: '@agent_issue', value: 'CORE-2792' },
                 { key: '@agent_worktree', value: worktree },
             ] as never,
         );
         expect(env.XTMUX_AGENT_ROLE).toBe('worker');
         expect(env.XTMUX_AGENT_TASK).toBe('role:worker');
-        expect(env.XTMUX_AGENT_BEAD).toBe('CORE-2792');
+        expect(env.XTMUX_AGENT_ISSUE).toBe('CORE-2792');
         // The attacher's own worktree must not survive into the resumed worker.
         expect(env.XTMUX_AGENT_WORKTREE).toBe(worktree);
         expect(env.SUBSTRATE_HOLDER).toBe('demo');

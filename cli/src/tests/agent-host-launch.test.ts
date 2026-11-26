@@ -90,7 +90,7 @@ describe('launch argv (XTRM-566)', () => {
         const args = buildXtPiArgs(ALL_OPTIONS, '$7');
         expect(args).toEqual([
             'pi', 'gui-worker', '--no-attach', '--json', '--new-session',
-            '--role=executor', '--bead=XTRM-1', '--model=opencode-go/deepseek-v4.1-flash', '--thinking=low',
+            '--role=executor', '--issue=XTRM-1', '--model=opencode-go/deepseek-v4.1-flash', '--thinking=low',
             '--skill=multiplexing', '--skill=/abs/skill',
             `--prompt=${ALL_OPTIONS.prompt}`, '--parent=$7',
         ]);

@@ -28,10 +28,10 @@ Agent infrastructure: runtimes, skills, hooks, packages.
 | `xt worktree` | Manage session worktrees |
 | `xt status` / `xt docs` / `xt memory` | Status+sync, doc drift checks, project memory |
 
-Common launch flags: `--bead <id>` (legacy alias for the bound Issue; prefer `--issue`), `--no-attach`, `--json`,
+Common launch flags: `--issue <id>` (the bound Issue; `--bead` is a hidden, deprecated alias), `--no-attach`, `--json`,
 `--prompt "..."`, `--model <id>`.
 
-**`--bead`/`--issue` binds the Issue at launch.** The worker's own `sb issue claim` then fails
+**`--issue` binds the Issue at launch.** The worker's own `sb issue claim` then fails
 with "already claimed by <runtime>/<slug>" — that slug is the worker itself. It is not a
 conflict. Workers should verify the assignee matches their own runtime origin and
 proceed; agents have stopped dead on this.

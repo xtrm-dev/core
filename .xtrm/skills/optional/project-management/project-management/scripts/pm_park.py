@@ -300,9 +300,10 @@ def park(a: argparse.Namespace) -> int:
            "xt_name": pathlib.Path(worktree).name,
            # A normal xt launch does not carry these into the pane, so the nudge names them (operator-lead ruling, CORE-2775).
            "pm_env": {k: os.environ[k] for k in ("PM_CONFIG", "PM_PROJECT", "PM_STATE_DIR") if os.environ.get(k)}, "launch_role": launch_role,
-           # Only a pane that carried @agent_bead gets --bead on the wake; the Issue a parked pane was
-           # launched for otherwise comes back from the worktree's own record.
-           "agent_bead": pane_option(pane, "@agent_bead"),
+           # Only a pane that carried @agent_issue gets --issue on the wake; the Issue a parked pane was
+           # launched for otherwise comes back from the worktree's own record. @agent_bead is the
+           # read-only fallback for a pane launched before CORE-2801.
+           "agent_issue": pane_option(pane, "@agent_issue") or pane_option(pane, "@agent_bead"),
            "parent_session": pane_option(pane, "@agent_parent_session"),
            "runtime": recorded_runtime(worktree, a.runtime), "model": a.model, "tmux_target": placement,
            "pane_id": pane, "park_time": fmt(t0), "handoff_seq": handoff_seq, "park_seq": None, "wake": wake,
@@ -452,8 +453,10 @@ def xt_command(rec: dict, nudge_file: pathlib.Path) -> list[str]:
     target_live = bool(target and run(["tmux", "display-message", "-p", "-t", target, "#{window_id}"]).returncode == 0)
     if target_live:
         cmd += ["--pane", target]
-    if rec.get("agent_bead"):
-        cmd += ["--bead", rec["agent_bead"]]
+    # A wake record written before CORE-2801 names the key agent_bead.
+    issue = rec.get("agent_issue") or rec.get("agent_bead")
+    if issue:
+        cmd += ["--issue", issue]
     if rec.get("launch_role"):
         # The role selects its default placement when the parked window is gone.
         cmd += ["--role", rec["launch_role"]]

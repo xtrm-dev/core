@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import kleur from 'kleur';
 import { execSync } from 'node:child_process';
 import fs from 'fs-extra';
@@ -43,7 +43,8 @@ export function createClaudeCommand(): Command {
         .description('Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring')
         .argument('[name]', 'Optional session name — used as xt/<name> branch (random if omitted)')
         .option('--role <name>', 'Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role — creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata')
-        .option('--bead <id>', 'Bind a bead to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only — @agent_bead pane option + XTMUX_AGENT_BEAD — and combines freely with --prompt')
+        .option('--issue <id>', 'Bind an issue to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only — @agent_issue pane option + XTMUX_AGENT_ISSUE — and combines freely with --prompt')
+        .addOption(new Option('--bead <id>', 'Deprecated alias of --issue').hideHelp())
         .option('--prompt <text>', 'Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1')
         .option('--no-attach', 'Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)')
         .option('--json', 'With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output')
@@ -54,7 +55,7 @@ export function createClaudeCommand(): Command {
         .option('--ns', 'Alias for --new-session')
         .option('--parent <target>', 'With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})')
         .option('--child', 'With --role: explicit form of the auto-behavior — @agent_parent_session = current pane\'s session_id')
-        .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one')
+        .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one')
         .option('--subordinate', 'Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch')
         .option('--window', 'Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>')
         .option('--window-name <name>', 'Name the detached tmux window (with --window)')
@@ -80,16 +81,17 @@ Explicit --pane, --workers, --window, --new-session and --session options win.
 Examples:
   $ xt claude demo --no-attach --prompt 'inspect the failing build' --model claude-opus-4-8
   $ xt claude worker --no-attach --prompt '/multiplexing leggi /tmp/brief.txt e seguilo'
-  $ xt claude worker --no-attach --bead xyz --prompt 'work this bead'   # bead as pane metadata
+  $ xt claude worker --no-attach --issue xyz --prompt 'work this issue'   # issue as pane metadata
   $ xt claude worker --prompt 'audit the auth flow' -- --add-dir ~/notes
-  $ xt claude coord --role chain-coordinator --bead xyz --subordinate   # subordinate coordinator (P0-05)
-  $ xt claude --role reviewer --bead xyz -- --add-dir ~/notes
+  $ xt claude coord --role chain-coordinator --issue xyz --subordinate   # subordinate coordinator (P0-05)
+  $ xt claude --role reviewer --issue xyz -- --add-dir ~/notes
   $ xt claude --role chain-coordinator --model claude-opus-4-8
   $ xt claude --role reviewer --prompt 'review the auth changes in cli/src/auth/'
   $ xt claude --role planner                          # skills-only prime; pane idles
 `)
         .action(async (name: string | undefined, opts: {
             role?: string;
+            issue?: string;
             bead?: string;
             prompt?: string;
             attach?: boolean;
@@ -125,7 +127,7 @@ Examples:
                 runtime: 'claude',
                 name,
                 role: opts.role,
-                bead: opts.bead,
+                issue: opts.issue ?? opts.bead,
                 prompt: opts.prompt,
                 attach: opts.attach,
                 json: Boolean(opts.json),
