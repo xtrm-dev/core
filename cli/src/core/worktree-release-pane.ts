@@ -232,48 +232,39 @@ export interface ReleaseOptions {
  * nothing before it can be skipped by a flag.
  */
 export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome> {
+    // Every refusal leaves a log row: the operator pressed a key that could have deleted
+    // a tree, so "why nothing happened" must survive the press.
+    const refuse = (detail: string, worktree?: string): ReleaseOutcome => {
+        notify(detail, opts.paneId);
+        logEvent({ action: 'refused', pane: opts.paneId, worktree, detail });
+        return { action: 'refused', paneId: opts.paneId, ...(worktree ? { worktree } : {}), blockers: [], detail };
+    };
+
     const paneError = validatePaneId(opts.paneId);
-    if (paneError) {
-        notify(`release refused: ${paneError}`);
-        return { action: 'refused', paneId: opts.paneId, blockers: [], detail: paneError };
-    }
+    if (paneError) return refuse(`release refused: ${paneError}`);
+
     if (opts.client !== undefined && opts.client !== '') {
         const clientError = validateClientName(opts.client);
-        if (clientError) {
-            notify(`release refused: ${clientError}`);
-            return { action: 'refused', paneId: opts.paneId, blockers: [], detail: clientError };
-        }
+        if (clientError) return refuse(`release refused: ${clientError}`);
     }
     if (!process.env.TMUX) {
-        const detail = 'not inside tmux — release acts on the pane that pressed the key';
-        notify(detail);
-        return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
+        return refuse('not inside tmux — release acts on the pane that pressed the key');
     }
 
     const info = readPaneInfo(opts.paneId);
     if (!info.pane) {
-        const detail = `cannot read pane ${opts.paneId}: ${info.error ?? 'unknown error'}`;
-        notify(detail, opts.paneId);
-        return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
+        return refuse(`cannot read pane ${opts.paneId}: ${info.error ?? 'unknown error'}`);
     }
     const pane = info.pane;
 
-    if (pane.dead) {
-        const detail = 'pane is dead; nothing to release';
-        notify(detail, opts.paneId);
-        return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
-    }
+    if (pane.dead) return refuse('pane is dead; nothing to release', pane.worktree);
     if (!pane.worktree) {
-        const detail = 'pane has no @agent_worktree — it is not an xt agent worktree';
-        notify(detail, opts.paneId);
-        return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
+        return refuse('pane has no @agent_worktree — it is not an xt agent worktree');
     }
 
     const repoRoot = mainRootFor(pane.worktree);
     if (!repoRoot) {
-        const detail = `cannot resolve the main checkout for ${pane.worktree}`;
-        notify(detail, opts.paneId);
-        return { action: 'refused', paneId: opts.paneId, worktree: pane.worktree, blockers: [], detail };
+        return refuse(`cannot resolve the main checkout for ${pane.worktree}`, pane.worktree);
     }
 
     const allowed = new Set<number>();
@@ -464,17 +455,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         const detail = `git worktree remove refused: ${reason}`;
         // Put the launch links back: the tree stays, so it must stay wired to the
         // main checkout's skills exactly as it was.
-        let restored = 0;
-        for (const { linkPath, target } of unlinked) {
-            try {
-                if (!existsSync(linkPath) && lstatSync(join(linkPath, '..')).isDirectory()) {
-                    symlinkSync(target, linkPath);
-                    restored += 1;
-                }
-            } catch {
-                // A link that cannot be restored is named below; the tree itself is intact.
-            }
-        }
+        const restored = restoreLauncherLinks(unlinked);
         const linksNote = unlinked.length > 0
             ? `; ${restored}/${unlinked.length} launch links restored`
             : '';
@@ -496,6 +477,30 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         branch: check.facts.branch, head, detail: 'removed; branch kept',
     });
     return { ...base, action: 'released', detail: `removed ${pane.worktree}; branch ${check.facts.branch ?? '(detached)'} kept` };
+}
+
+export interface UnlinkedLauncherLink {
+    linkPath: string;
+    target: string;
+}
+
+/**
+ * Undo the unlink when the removal still fails: a tree that stays must stay wired to the
+ * main checkout's skills. Returns how many links were recreated.
+ */
+export function restoreLauncherLinks(unlinked: UnlinkedLauncherLink[]): number {
+    let restored = 0;
+    for (const { linkPath, target } of unlinked) {
+        try {
+            if (!existsSync(linkPath) && lstatSync(dirname(linkPath)).isDirectory()) {
+                symlinkSync(target, linkPath);
+                restored += 1;
+            }
+        } catch {
+            // A link that cannot be restored is reported by the caller; the tree is intact.
+        }
+    }
+    return restored;
 }
 
 /** The prefix checkbox, before anything is written. */

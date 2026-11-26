@@ -75,6 +75,8 @@ afterAll(() => {
     else process.env.TMUX = originalTmux;
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
+    if (originalStateHome === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = originalStateHome;
     for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -89,6 +91,14 @@ function fakeAgentArgv(): string[] {
         'process.stdin.on("data", d => process.stdout.write("read:" + String(d))); setInterval(() => {}, 1000);',
     ];
 }
+
+/**
+ * The real-prompt case drives the BUILT CLI, so it needs dist, tmux and `script` (for the
+ * pty). skipIf keeps it visible as a skip instead of a pass when one is missing.
+ */
+const canDriveRealCli = hasTmux()
+    && spawnSync('script', ['--version'], { stdio: 'pipe' }).status === 0
+    && fs.existsSync(path.resolve(process.cwd(), 'dist/index.cjs'));
 
 describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
     it('removes a clean tree, moves the pane to the main checkout and keeps the branch', async () => {
@@ -127,13 +137,12 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
         }
     }, 120_000);
 
-    it('releases through the real CLI and a real prompt', async () => {
+    it.skipIf(!canDriveRealCli)('releases through the real CLI and a real prompt', async () => {
         // The in-process path cannot be tested here: confirmRelease uses spawnSync and
         // blocks the event loop, so nothing in this process could type the answer. Driving
         // the built CLI from a child process exercises the whole chain — argv, prompt,
         // answer, removal — which is the chain round 3 broke.
         const cliEntry = path.resolve(process.cwd(), 'dist/index.cjs');
-        if (!fs.existsSync(cliEntry) || spawnSync('script', ['--version'], { stdio: 'pipe' }).status !== 0) return;
 
         const { repoRoot, worktree } = makeRepoWithWorktree();
         const socket = `xt-release-test-cli-${process.pid}`;
@@ -144,8 +153,11 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
         tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
         process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
 
+        // `script` allocates the pty the prompt needs; TERM is required because the CI
+        // runner has none and tmux attach then fails with "terminal does not support clear".
         const client = spawn('script', ['-qfc', `tmux -L ${socket} attach -t t`, '/dev/null'], {
             stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, TERM: process.env.TERM ?? 'xterm-256color' },
         });
         try {
             let clientName = '';

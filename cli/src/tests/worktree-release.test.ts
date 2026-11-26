@@ -18,7 +18,7 @@ import {
     validatePaneId,
     sourceLine,
 } from '../core/worktree-release.js';
-import { confirmWith, escapePromptText } from '../core/worktree-release-pane.js';
+import { confirmWith, escapePromptText, restoreLauncherLinks } from '../core/worktree-release-pane.js';
 import type { ClassifyContext, ReleaseCheckOptions } from '../core/worktree-release.js';
 
 const created: string[] = [];
@@ -510,6 +510,30 @@ describe('confirmation command shape', () => {
         // rc 0 without the marker is not a confirmation.
         const silent = fakeSpawn({ status: 0, stdout: '' });
         expect(confirmWith(silent.spawn, { client: '/dev/pts/9', prompt: 'x' })).toBe('declined');
+    });
+});
+
+describe('launcher link restore', () => {
+    // A failed removal keeps the tree, so the tree must stay wired to the main checkout's
+    // skills: the links unlinked before the attempt are put back.
+    it('recreates a link it removed and reports the count', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-release-restore-'));
+        created.push(root);
+        const specialists = path.join(root, '.specialists');
+        fs.mkdirSync(specialists);
+        const linkPath = path.join(specialists, 'user');
+        const target = '../../main/.specialists/user';
+        fs.symlinkSync(target, linkPath);
+        fs.unlinkSync(linkPath);
+
+        expect(restoreLauncherLinks([{ linkPath, target }])).toBe(1);
+        expect(fs.readlinkSync(linkPath)).toBe(target);
+    });
+
+    it('reports zero when the parent directory is gone', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-release-restore-'));
+        created.push(root);
+        expect(restoreLauncherLinks([{ linkPath: path.join(root, 'missing', 'user'), target: '../x' }])).toBe(0);
     });
 });
 
