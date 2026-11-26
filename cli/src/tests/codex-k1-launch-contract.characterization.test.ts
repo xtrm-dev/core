@@ -608,12 +608,20 @@ describe('codex K1 launch contract (characterization)', () => {
       expect(await fs.pathExists(metaPath)).toBe(true);
       const meta = JSON.parse(await fs.readFile(metaPath, 'utf8')) as Record<string, unknown>;
 
-      // Exact key set — an ADDED key must fail this test.
-      expect(Object.keys(meta).sort()).toEqual(['launchedAt', 'runtime']);
+      // Exact key set — an ADDED key must fail this test. CORE-2792 added
+      // `launch`: the identity the pane options carry, persisted because those
+      // options die with the pane and `xt attach` has to restore them.
+      expect(Object.keys(meta).sort()).toEqual(['launch', 'launchedAt', 'runtime']);
       expect(meta.runtime).toBe(runtime);
       expect(typeof meta.launchedAt).toBe('string');
       // ISO-8601 instant that round-trips through Date.
       expect(new Date(meta.launchedAt as string).toISOString()).toBe(meta.launchedAt);
+      // A bare launch records exactly the pane options it wrote: its task, its
+      // worktree and branch, its parent session and the session name. No role
+      // (there is none), no model, no thinking, no bead.
+      expect(meta.launch).toMatchObject({ task: 'session:meta', worktree: worktreePath, branch: 'xt/meta' });
+      expect(meta.launch).not.toHaveProperty('role');
+      expect(meta.launch).not.toHaveProperty('model');
 
       // CHARACTERIZATION: current behavior, see xtrm-ozknq.5 — no session id,
       // thread id, or conversation id is persisted anywhere in the worktree.

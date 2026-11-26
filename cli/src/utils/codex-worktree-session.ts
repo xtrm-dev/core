@@ -32,6 +32,7 @@ import {
 import {
     buildAgentEnv,
     chooseAttachCommand,
+    compactLaunchMeta,
     isProjectPackSkillPath,
     parseSpecialistJson,
     projectPackSkillName,
@@ -39,6 +40,7 @@ import {
     shellQuote,
     withPaneUnsets,
 } from './worktree-session.js';
+import { canonicalWorktreePath, removeLaunchLedger, taskForRole, writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
@@ -67,6 +69,8 @@ export interface CodexWorktreeSessionOptions {
     dispatcherDeps?: DispatcherIdentityDeps;
     /** CORE-2775: start a FRESH Codex session in this existing worktree (`xt attach --fresh`); nothing is created or removed. */
     existingWorktree?: ExistingWorktree;
+    /** CORE-2792: the environment the identity resolver reads; see WorktreeSessionOptions.identityEnv. */
+    identityEnv?: NodeJS.ProcessEnv;
 }
 
 const SESSION_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -164,7 +168,11 @@ function cleanupCreatedLaunch(
 ): void {
     if (buffer) spawnSync('tmux', ['delete-buffer', '-b', buffer], { stdio: 'ignore' });
     spawnSync('tmux', ['kill-session', '-t', `=${sessionName}`], { stdio: 'ignore' });
-    spawnSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: mainRoot, stdio: 'pipe' });
+    // Resolved before the directory goes (CORE-2792 review, item 4): the ledger is
+    // keyed by the canonical path, which realpath cannot answer for a removed dir.
+    const ledgerPath = canonicalWorktreePath(worktreePath);
+    const removal = spawnSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: mainRoot, stdio: 'pipe' });
+    if (removal.status === 0 || !existsSync(worktreePath)) removeLaunchLedger(os.homedir(), ledgerPath);
     spawnSync('git', ['branch', '-D', branchName], { cwd: mainRoot, stdio: 'pipe' });
     if (profile) removeCodexTrustProfile(profile, worktreePath);
 }
@@ -399,7 +407,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         : '';
     const paneOptions: Array<{ key: string; value: string }> = [
         { key: '@agent_parent_session', value: parentSession },
-        { key: '@agent_task', value: roleName ? `role:${roleName}` : `session:${slug}` },
+        { key: '@agent_task', value: roleName ? taskForRole(roleName) : `session:${slug}` },
         { key: '@agent_state', value: 'idle' },
         { key: '@agent_worktree', value: worktreePath },
         { key: '@agent_branch', value: branchName },
@@ -411,7 +419,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
     // CORE-2528: role App identity when this host has the App and its installation
     // covers the repo owner; otherwise the operator identity, as before.
-    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true });
+    const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });
     const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) });
     const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
     if (opts.bead && !existing) {
@@ -512,6 +520,20 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     // that means the on-disk state would disagree with what we report.
     const session = await waitForCodexSession(path.join(codexHome, 'sessions'), worktreePath, launchedAfterMs);
     const launchedAt = new Date(launchedAfterMs).toISOString();
+    // CORE-2792: the launch identity, persisted from the same values the pane
+    // options above carry; those options die with the pane, this record does not.
+    // `model` is only the operator's explicit override — a role default is
+    // re-derived from the role name, so a stale copy must not pin it.
+    const launchRecord = compactLaunchMeta({
+        role: roleName,
+        requestedRole: opts.role,
+        task: roleName ? taskForRole(roleName) : `session:${slug}`,
+        worktree: worktreePath,
+        branch: branchName,
+        parentSession,
+        sessionName,
+        model: opts.model,
+    });
     if (session && !writeCodexWorktreeSession(worktreePath, {
         runtime: 'codex',
         launchedAt,
@@ -522,7 +544,11 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // CORE-2728: the Issue travels with the session record, so attach can
         // restore the original dispatcher without a live pane.
         ...(opts.bead ? { bead: opts.bead } : {}),
+        launch: launchRecord,
     })) cleanupAndFail('Could not persist Codex worktree session metadata');
+    // The same block outside the worktree, so a resume can cross-check the worker's
+    // own copy (CORE-2792 review, trust). Fail-soft.
+    writeLaunchLedger(os.homedir(), worktreePath, 'codex', launchRecord);
 
     if (window) {
         removeSignalCleanup();

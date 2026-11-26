@@ -211,6 +211,15 @@ export interface WorktreeSessionOptions {
     model?: string;
     /** Explicit Pi --thinking override; with --role, wins over the specialist default. */
     thinking?: string;
+    /**
+     * The environment the launch-identity resolver reads (CORE-2792 review, gap 2).
+     * Absent means `process.env`, which is right when the operator's own shell is
+     * the launcher. A launcher that runs INSIDE another agent session — `xt attach
+     * --fresh` is one — must pass an environment with that session's `XTRM_ROLE`
+     * and `GIT_CONFIG_*` stripped, or the new session inherits the attacher's App
+     * identity ahead of its own.
+     */
+    identityEnv?: NodeJS.ProcessEnv;
     /** Force a new tmux session even when inside $TMUX. Outside $TMUX this is the default. */
     newSession?: boolean;
     /** With --role: override @agent_parent_session on the target pane (tmux session name, id, or #{session_id}). */
@@ -1919,9 +1928,42 @@ function slugifyForSession(input: string): string {
  * of them.
  */
 export function paneUnsetPrefix(env: Record<string, string>): string {
-    const absent = absentDispatcherEnvKeys(env);
+    const absent = [...absentDispatcherEnvKeys(env), ...absentLaunchIdentityKeys(env)];
     if (absent.length === 0) return '';
     return ['env', ...absent.flatMap((key) => ['-u', shellQuote(key)])].join(' ');
+}
+
+/** One cap for the inherited git transport entries this module copies or clears. */
+const MAX_INHERITED_GIT_CONFIG = 1024;
+
+/** Every key that says WHO is launching; absent from the pane env, none may be inherited. */
+const LAUNCH_IDENTITY_ENV_KEYS: readonly string[] = ['XTRM_ROLE', 'SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH'];
+
+/**
+ * Identity keys the pane environment does not export but the process that created
+ * the pane carries. A tmux `-e` cannot remove a key, and a pane child inherits the
+ * server's (or, for a current-pane launch, the launcher's) environment, so without
+ * this an `xt attach --fresh` from a role pane would hand its `XTRM_ROLE` and its
+ * git transport to the worker it starts. Review item 1 of round 4: the Codex
+ * launch shares this list, so all three runtimes clear the same keys.
+ */
+export function absentLaunchIdentityKeys(env: Record<string, string>, inherited: NodeJS.ProcessEnv = process.env): string[] {
+    const keys: string[] = [];
+    for (const key of LAUNCH_IDENTITY_ENV_KEYS) {
+        const value = env[key];
+        const wasSet = (inherited[key] ?? '').trim() !== '';
+        if ((typeof value !== 'string' || value.trim() === '') && wasSet) keys.push(key);
+    }
+    const count = Number(inherited.GIT_CONFIG_COUNT ?? '');
+    const inheritedSlots = Number.isInteger(count) && count > 0 ? Math.min(count, MAX_INHERITED_GIT_CONFIG) : 0;
+    if (inheritedSlots > 0 && (env.GIT_CONFIG_COUNT ?? '').trim() === '') {
+        keys.push('GIT_CONFIG_COUNT');
+        for (let index = 0; index < inheritedSlots; index += 1) {
+            if (!(env[`GIT_CONFIG_KEY_${index}`] ?? '').trim()) keys.push(`GIT_CONFIG_KEY_${index}`);
+            if (!(env[`GIT_CONFIG_VALUE_${index}`] ?? '').trim()) keys.push(`GIT_CONFIG_VALUE_${index}`);
+        }
+    }
+    return keys;
 }
 
 /** `command` behind the pane's `env -u` unsets (D7); unchanged when there are none. */
@@ -1936,7 +1978,7 @@ export function withPaneUnsets(command: string, env: Record<string, string>): st
  * keys `absentDispatcherEnvKeys` reports. Unchanged when there are none.
  */
 export function withPaneUnsetsArgv(argv: string[], env: Record<string, string>): string[] {
-    const absent = absentDispatcherEnvKeys(env);
+    const absent = [...absentDispatcherEnvKeys(env), ...absentLaunchIdentityKeys(env)];
     if (absent.length === 0) return argv;
     return ['env', ...absent.flatMap((key) => ['-u', key]), ...argv];
 }
@@ -2522,7 +2564,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         sessionDisplayName,
         sessionName,
         runtimeArgs,
-        agentTask: `role:${role.name}`,
+        agentTask: taskForRole(role.name),
         bead,
         role: role.name,
         parentSessionId,
@@ -2771,6 +2813,9 @@ export function refuseModelAfterRollback(
 }
 
 export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: string, branchName: string, deleteBranch: boolean): void {
+    // Resolved before the directory goes: after removal realpath cannot answer, and
+    // the ledger is keyed by the canonical path (CORE-2792 review, item 4).
+    const ledgerPath = canonicalWorktreePath(worktreePath);
     const removal = spawnSync('git', ['worktree', 'remove', '--force', worktreePath], {
         cwd: mainRepoRoot,
         stdio: 'pipe',
@@ -2782,6 +2827,7 @@ export function rollbackLauncherWorktree(mainRepoRoot: string, worktreePath: str
         ));
         return;
     }
+    removeLaunchLedger(os.homedir(), ledgerPath);
     if (!deleteBranch) return;
     const branchRemoval = spawnSync('git', ['branch', '-D', branchName], {
         cwd: mainRepoRoot,
@@ -2912,7 +2958,21 @@ export interface SessionMeta {
      * rather than the newest binding somebody else wrote on the same Issue.
      */
     bindingId?: string;
+    /**
+     * CORE-2792: the launch identity the pane options and the pane environment
+     * carried. A tmux pane option dies with the pane (a power loss, a reopened
+     * terminal), so `xt attach` restores these values from here instead.
+     * Absent on a record written before this field existed — then attach
+     * restores only what the worktree itself still answers.
+     */
+    launch?: SessionLaunchMeta;
 }
+
+// CORE-2792: the launch record's type and validation live in core/session-launch.ts;
+// re-exported here because every launcher and attach already import this module.
+export { compactLaunchMeta, cleanLaunchValue, readSessionLaunch, type SessionLaunchMeta } from '../core/session-launch.js';
+import type { SessionLaunchMeta } from '../core/session-launch.js';
+import { canonicalWorktreePath, compactLaunchMeta, removeLaunchLedger, taskForRole, writeJsonAtomic, writeLaunchLedger } from '../core/session-launch.js';
 
 // Write to .xtrm/ (gitignored) to prevent the file from ever being committed.
 function sessionMetaPath(worktreePath: string): string {
@@ -2924,10 +2984,7 @@ export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi',
         const meta: SessionMeta = { runtime, launchedAt: new Date().toISOString() };
         const issueRef = (bead ?? '').trim();
         if (issueRef) meta.bead = issueRef;
-        const dest = sessionMetaPath(worktreePath);
-        mkdirSync(path.dirname(dest), { recursive: true });
-        writeFileSync(dest, JSON.stringify(meta, null, 2));
-        return true;
+        return writeJsonAtomic(sessionMetaPath(worktreePath), meta);
     } catch {
         return false;
     }
@@ -2958,14 +3015,39 @@ export function writeSessionBindingId(worktreePath: string, bindingId: string | 
     if (!id) return false;
     const meta = readSessionMeta(worktreePath);
     if (!meta || typeof meta.runtime !== 'string') return false;
+    return writeJsonAtomic(sessionMetaPath(worktreePath), { ...meta, bindingId: id });
+}
+
+/**
+ * CORE-2792: persist the launch identity next to the session record, amending an
+ * existing one (bead, bindingId and launchedAt survive). Creates the record when
+ * the worktree has none, so an EXISTING worktree gains the record on its next
+ * launch too. Fail-soft like the other record writes: a launch never fails on it.
+ */
+export function writeSessionLaunch(
+    worktreePath: string,
+    runtime: 'claude' | 'pi' | 'codex',
+    launch: SessionLaunchMeta,
+): boolean {
+    const compact = compactLaunchMeta(launch);
+    // Nothing to say: keep the record as it is rather than writing an empty block
+    // over one a previous launch wrote.
+    if (Object.keys(compact).length === 0) return false;
+    let meta: SessionMeta | null = null;
     try {
-        const dest = sessionMetaPath(worktreePath);
-        mkdirSync(path.dirname(dest), { recursive: true });
-        writeFileSync(dest, JSON.stringify({ ...meta, bindingId: id }, null, 2));
-        return true;
+        meta = readSessionMeta(worktreePath);
     } catch {
-        return false;
+        meta = null;
     }
+    const base: SessionMeta = meta && typeof meta.runtime === 'string'
+        ? meta
+        : { runtime, launchedAt: new Date().toISOString() };
+    // CORE-2792 review: the worktree copy is the worker's own file, so the same
+    // block also lands outside the worktree (see core/session-launch.ts). Both
+    // writes are atomic, and a failure here never fails the launch.
+    const recorded = writeJsonAtomic(sessionMetaPath(worktreePath), { ...base, launch: compact });
+    writeLaunchLedger(os.homedir(), worktreePath, runtime, compact);
+    return recorded;
 }
 
 export function unregisterPluginsForWorktree(worktreePath: string): void {
@@ -3804,6 +3886,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         dispatcherDeps: opts.dispatcherDeps,
         restoredDispatcher: existing?.dispatcher,
         placement: resolvedPlacement,
+        identityEnv: opts.identityEnv,
     };
 
     if (resolvedRole) {
@@ -3842,11 +3925,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // CORE-2528: the role App identity, when this host has the App for that role
     // and an installation for the repo owner. Otherwise the launch keeps the
     // operator identity (no XTRM_ROLE, no transport rewrite).
-    const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath });
+    const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripLauncherModelVar(stripDispatcherEnv(process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripLauncherModelVar(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -3948,6 +4031,8 @@ type TmuxLaunchArgs = {
     /** CORE-2775: the dispatcher restored from the worktree's binding (fresh session); absent for a first launch. */
     restoredDispatcher?: Record<string, string>;
     placement?: ResolvedPlacement;
+    /** CORE-2792 review gap 2: the environment the identity resolver reads; see WorktreeSessionOptions.identityEnv. */
+    identityEnv?: NodeJS.ProcessEnv;
 } & (
     | {
         mode: 'role';
@@ -4052,7 +4137,13 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             branchCreatedByLauncher: args.branchCreatedByLauncher ?? false,
         }),
     });
-    const launchEnv = stripLauncherModelVar(process.env);
+    // CORE-2792 review (item 2): in current-pane mode the runtime inherits this
+    // object, so `process.env` is the spawn base. `xt attach` hands the launcher a
+    // stripped identityEnv (no attacher XTRM_ROLE, GIT_CONFIG_*, pane, dispatcher or
+    // supervisor keys); deriving the base from it means the attacher's identity
+    // cannot reach the worker even when the worker's role has no App of its own,
+    // which is the case identityEnv alone did not cover.
+    const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
 
     const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
@@ -4088,7 +4179,28 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
     }
     // CORE-2528: role App identity for every tmux `-e` env (see resolveLaunchIdentity).
-    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true });
+    const launchIdentity = resolveLaunchIdentity({ holder: sessionSlug, roleName: args.requestedRole, cwd: worktreePath, forwardInherited: true, env: args.identityEnv });
+    // CORE-2792: every @agent_* pane option dies with the pane (power loss, a
+    // reopened terminal), which left `xt attach` with nothing to restore. The
+    // worktree record outlives the pane, so the launch identity is persisted
+    // there from the same pane-option values the launch actually writes.
+    const launchedOption = (key: string): string | undefined =>
+        plan.paneOptions.find(option => option.key === key)?.value;
+    writeSessionLaunch(worktreePath, runtime, {
+        role: launchedOption('@agent_role'),
+        requestedRole: args.mode === 'role' ? args.requestedRole : undefined,
+        task: launchedOption('@agent_task'),
+        worktree: launchedOption('@agent_worktree'),
+        branch: launchedOption('@agent_branch'),
+        parentSession: launchedOption('@agent_parent_session'),
+        sessionName: plan.sessionName,
+        displayName: sessionDisplayName,
+        // Only what the operator asked for: a role default is re-derived from the
+        // role name, so recording it would freeze a value that may change.
+        model: modelOverride,
+        thinking: thinkingOverride,
+        skills: explicitSkillPaths,
+    });
     // CORE-2454: first-turn hold signal — only Pi, only with an initial prompt.
     const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
 

@@ -30,6 +30,8 @@ interface Capture {
   payload: { runtimeArgs?: string[] } | null;
   paneOptions: Record<string, string>;
   gitCalls: string[];
+  /** The runtime process's own environment (current-pane mode inherits it). */
+  spawnEnv: NodeJS.ProcessEnv | null;
 }
 
 function install(repoRoot: string, cap: Capture): void {
@@ -39,6 +41,8 @@ function install(repoRoot: string, cap: Capture): void {
     if (command === 'git') {
       cap.gitCalls.push(joined);
       if (joined === 'rev-parse --show-toplevel') return ok(`${repoRoot}\n`);
+      // detectRepo runs `git -C <cwd> remote get-url origin`, so the flag is not args[0].
+      if (args.includes('remote') && args.includes('get-url')) return ok('git@github.com:acme/demo.git\n');
       if (joined === 'rev-parse --git-common-dir') return ok('.git\n');
       if (args[0] === 'symbolic-ref') return ok('origin/main\n');
       if (args[0] === 'rev-parse' && args[1] === '--verify' && args[2] === '--quiet' && (args[3] ?? '').startsWith('origin/')) return ok();
@@ -56,6 +60,10 @@ function install(repoRoot: string, cap: Capture): void {
     if (command === 'sp' && args[0] === 'render-skill-prefix') return ok(JSON.stringify({ ok: true, skill_prefix: '' }));
     if (command === 'sp' && args[0] === 'render-task') return ok(JSON.stringify({ ok: true, initial_prompt: '', prompt_hash: 'h', components: [] }));
     if (command === 'sb') return { status: 1, stdout: '', stderr: 'no sb' };
+    if (command === 'pi' || command === 'claude' || command === 'codex') {
+      cap.spawnEnv = (mo as { env?: NodeJS.ProcessEnv }).env ?? null;
+      return ok();
+    }
     if (command === 'tmux') {
       if (args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
       if (args[0] === 'new-session') { cap.newSessionArgs = [...args]; return ok(); }
@@ -134,7 +142,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
   });
 
   async function launch(runtime: 'claude' | 'pi', existing: boolean, dispatcher: Record<string, string> = {}, bead?: string, noPrompt = false, placement?: { pane?: string; workers?: boolean }): Promise<Capture & { env: Record<string, string>; args: string[] }> {
-    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [], spawnEnv: null };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const slug = 'par1';
@@ -225,7 +233,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
 
   it('exports the dispatcher restored from the binding, not the caller\'s', async () => {
     process.env.XTRM_DISPATCHER_NAME = 'caller-session';
-    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [], spawnEnv: null };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     const worktree = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-claude-par1');
@@ -243,8 +251,101 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     expect(env.SUBSTRATE_HOLDER).toBe('par1');
   });
 
+  it('does not forward the attacher\'s git transport when the identity environment is given', async () => {
+    // CORE-2792 review gap 2: `xt attach --fresh` runs inside the operator's pane,
+    // often another agent session. The launcher resolves the new session's App
+    // identity from process.env unless the caller supplies a stripped environment,
+    // so without this the new worker inherited the attacher's credential helper.
+    const home = process.env.HOME as string;
+    fs.ensureDirSync(path.join(home, '.xtrm', 'config'));
+    fs.writeFileSync(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+      version: 1, default: 'worker', specialists: { testrole: 'worker' }, apps: { worker: 'xtrm-worker' },
+    }));
+    fs.ensureDirSync(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker'));
+    fs.writeFileSync(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-worker', 'app.json'), JSON.stringify({
+      slug: 'xtrm-worker', appId: '12345', installations: { acme: '67890' },
+    }));
+    process.env.XTRM_ROLE = 'lead';
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = 'credential.helper';
+    process.env.GIT_CONFIG_VALUE_0 = '!attacher-leak';
+
+    const run = async (identityEnv?: NodeJS.ProcessEnv): Promise<Record<string, string>> => {
+      const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [], spawnEnv: null };
+      install(repoRoot, cap);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      const worktree = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-claude-par1');
+      await fs.ensureDir(worktree);
+      await expect(launchWorktreeSession({
+        runtime: 'claude', role: 'testrole', prompt: 'hi', attach: false, newSession: true,
+        ...(identityEnv ? { identityEnv } : {}),
+        existingWorktree: { path: worktree, branch: 'xt/par1', slug: 'par1', dispatcher: {} },
+      })).rejects.toThrow('exit:0');
+      return envPairs(cap.newSessionArgs);
+    };
+
+    // Control: with no environment the resolver reads process.env, and the
+    // attacher's helper is forwarded — the defect this fix closes.
+    const leaked = await run();
+    expect(Object.values(leaked)).toContain('!attacher-leak');
+    // XTRM_ROLE carries the mapped agent role, not the specialist name.
+    expect(leaked.XTRM_ROLE).toBe('worker');
+
+    // Fixed: the stripped environment carries no attacher identity, and the new
+    // session keeps its own App transport.
+    const attacherEnv = { ...process.env };
+    const cleaned = await run((await import('../commands/attach.js')).attachLaunchEnv(attacherEnv));
+    expect(Object.values(cleaned)).not.toContain('!attacher-leak');
+    expect(cleaned.XTRM_ROLE).toBe('worker');
+  });
+
+  it('starts a current-pane worker from the stripped environment, not the attacher\'s own', async () => {
+    // Review item 2: inside tmux the default `xt attach --fresh` reuses the current
+    // pane, and the runtime inherits the spawn base env. identityEnv only fed the
+    // resolver, so the attacher's XTRM_ROLE/GIT_CONFIG_*/SPECIALISTS_JOB_ID reached
+    // the worker whenever the worker's role had no App of its own — which is the
+    // normal case on a host without one, so no App is configured here.
+    process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+    process.env.TMUX_PANE = '%9';
+    process.env.XTRM_ROLE = 'lead';
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = 'credential.helper';
+    process.env.GIT_CONFIG_VALUE_0 = '!attacher-leak';
+    process.env.SPECIALISTS_JOB_ID = 'job-attacher';
+    process.env.XTRM_SUPERVISOR_LAUNCH = '1';
+
+    const run = async (identityEnv?: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv> => {
+      const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [], spawnEnv: null };
+      install(repoRoot, cap);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      const worktree = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-claude-par1');
+      await fs.ensureDir(worktree);
+      await expect(launchWorktreeSession({
+        runtime: 'claude', role: 'testrole', prompt: 'hi', attach: true, newSession: false,
+        ...(identityEnv ? { identityEnv } : {}),
+        existingWorktree: { path: worktree, branch: 'xt/par1', slug: 'par1', dispatcher: {} },
+      })).rejects.toThrow('exit:0');
+      return cap.spawnEnv ?? {};
+    };
+
+    // Control: no identityEnv — the attacher's inherited environment is the base.
+    const inherited = await run();
+    expect(inherited.SPECIALISTS_JOB_ID).toBe('job-attacher');
+    expect(inherited.XTRM_SUPERVISOR_LAUNCH).toBe('1');
+    expect(inherited.GIT_CONFIG_VALUE_0).toBe('!attacher-leak');
+
+    // Fixed: nothing the attacher carried survives to the worker.
+    const attacherEnv = { ...process.env };
+    const worker = await run((await import('../commands/attach.js')).attachLaunchEnv(attacherEnv));
+    expect(worker.SPECIALISTS_JOB_ID).toBeUndefined();
+    expect(worker.XTRM_SUPERVISOR_LAUNCH).toBeUndefined();
+    expect(worker.GIT_CONFIG_VALUE_0).toBeUndefined();
+    expect(worker.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(worker.XTRM_ROLE).toBeUndefined();
+  });
+
   it('refuses a worktree that does not exist', async () => {
-    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [] };
+    const cap: Capture = { newSessionArgs: null, placementArgs: [], payload: null, paneOptions: {}, gitCalls: [], spawnEnv: null };
     install(repoRoot, cap);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
     await expect(launchWorktreeSession({

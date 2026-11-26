@@ -28,6 +28,13 @@ export const SUPERVISOR_MARKERS = ['SPECIALISTS_JOB_ID', 'XTRM_SUPERVISOR_LAUNCH
 const ROLE_NAMES: readonly AgentRole[] = ['reviewer', 'worker', 'coordinator'];
 /** A role or specialist name: no path separators, no leading dash, bounded. */
 const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/**
+ * The one grammar a role name may follow, exported so a reader of a persisted
+ * launch record applies exactly the check a launch does (CORE-2792 review).
+ */
+export function isValidRoleName(name: string): boolean {
+    return ROLE_NAME.test(name);
+}
 const COUNT = /^\d+$/;
 /** Above this many inherited entries the launch refuses to walk them. */
 const MAX_INHERITED_CONFIG = 1024;

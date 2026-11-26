@@ -2,12 +2,14 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import { spawnSync } from 'node:child_process';
 import { existsSync, rmSync, unlinkSync } from 'node:fs';
+import os from 'node:os';
 import { join, dirname, isAbsolute, resolve } from 'node:path';
 import { t } from '../utils/theme.js';
 import { unregisterPluginsForWorktree } from '../utils/worktree-session.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
 import { readCodexWorktreeSession, removeCodexTrustProfile } from '../core/codex-session.js';
 import { dirtyPaths, unpushedCommits } from '../core/worktree-reap.js';
+import { canonicalWorktreePath, removeLaunchLedger } from '../core/session-launch.js';
 
 /**
  * The removal half of the reap predicate that applies at session close.
@@ -137,6 +139,9 @@ interface WorktreeCleanupResult {
 
 function cleanupWorktreePath(worktreePath: string, repoRoot: string): WorktreeCleanupResult {
     const warnings: string[] = [];
+    // CORE-2792 review (item 4): resolve before the directory goes — the launch
+    // ledger is keyed by the canonical path, which realpath cannot answer later.
+    const ledgerPath = canonicalWorktreePath(worktreePath);
     const removeResult = spawnSync(
         'git',
         ['worktree', 'remove', worktreePath, '--force'],
@@ -157,25 +162,24 @@ function cleanupWorktreePath(worktreePath: string, repoRoot: string): WorktreeCl
         warnings.push((pruneResult.stderr ?? '').trim());
     }
 
+    // A missing directory is only a warning for git: drop whatever remains and let
+    // the single removal below decide. The identity record goes with it on every
+    // exit path, including one where git had already dropped the registration.
     const isMissing = !existsSync(worktreePath);
-    if (isMissing) {
-        return {
-            removed: true,
-            alreadyMissing: removeResult.status !== 0,
-            warnings,
-        };
+    if (!isMissing) {
+        try {
+            rmSync(worktreePath, { recursive: true, force: true });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
+        }
     }
 
-    try {
-        rmSync(worktreePath, { recursive: true, force: true });
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        warnings.push(`Could not remove directory ${worktreePath}: ${message}`);
-    }
-
+    const removed = !existsSync(worktreePath);
+    if (removed) removeLaunchLedger(os.homedir(), ledgerPath);
     return {
-        removed: !existsSync(worktreePath),
-        alreadyMissing: false,
+        removed,
+        alreadyMissing: isMissing && removeResult.status !== 0,
         warnings,
     };
 }

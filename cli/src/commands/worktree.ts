@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, unlink
 import { homedir } from 'node:os';
 import { join, dirname, isAbsolute, resolve, sep } from 'node:path';
 import type { SessionMeta } from '../utils/worktree-session.js';
+import { canonicalWorktreePath, removeLaunchLedger } from '../core/session-launch.js';
 import { unregisterPluginsForWorktree } from '../utils/worktree-session.js';
 import { t } from '../utils/theme.js';
 import { resolveDefaultBranchRef } from '../utils/worktree-base.js';
@@ -1523,6 +1524,9 @@ function printReapHuman(plan: ReapPlan, outcomes: ReapOutcome[] | null): void {
 }
 
 function removeWorktreeEntry(repoRoot: string, worktreePath: string): { ok: boolean; message: string } {
+    // CORE-2792 review (item 4): the ledger is keyed by the canonical path, and
+    // realpath cannot answer once the directory is gone — resolve it first.
+    const ledgerPath = canonicalWorktreePath(worktreePath);
     const remove = git(['worktree', 'remove', worktreePath, '--force'], repoRoot);
     if (!remove.ok) {
         return { ok: false, message: remove.err || `could not remove ${worktreePath}` };
@@ -1530,6 +1534,8 @@ function removeWorktreeEntry(repoRoot: string, worktreePath: string): { ok: bool
 
     unregisterPluginsForWorktree(worktreePath);
     clearStatuslineClaim(repoRoot);
+    // CORE-2792: the launch ledger names this path, so it goes with the worktree.
+    removeLaunchLedger(homedir(), ledgerPath);
     return { ok: true, message: `Removed ${worktreePath}` };
 }
 
