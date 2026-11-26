@@ -169,6 +169,35 @@ describe('checkRelease — work that must survive', () => {
         expect(kinds(check(worktree, repoRoot))).toContain('ignored-work');
     });
 
+    it('treats specialists runtime state as regenerable, not as work', () => {
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        write(path.join(worktree, '.gitignore'), '.specialists/\n');
+        git(['add', '-A'], worktree);
+        git(['commit', '--quiet', '-m', 'ignore'], worktree);
+        git(['push', '--quiet'], worktree);
+
+        // The runtime roots .gitignore names (CORE-2670) plus the local-only ones:
+        // every one of them must leave the worktree releasable.
+        const runtimePaths = [
+            '.specialists/leases/87bd7571.json',
+            '.specialists/logs/runtime-diagnostics.log',
+            '.specialists/settlements/act:x/att:x:1.json',
+            '.specialists/interactions/act:x/msg:x.json',
+            '.specialists/jobs/job-1/state.json',
+            '.specialists/ready/act:x.json',
+            '.specialists/trace.jsonl',
+            '.specialists/db/traces.db',
+            '.specialists/db/traces.db-wal',
+            '.specialists/executor-result.md',
+        ];
+        for (const runtimePath of runtimePaths) write(path.join(worktree, runtimePath), '{}\n');
+
+        expect(kinds(check(worktree, repoRoot))).not.toContain('ignored-work');
+
+        write(path.join(worktree, '.specialists/notes/todo.md'), 'hand-written\n');
+        expect(kinds(check(worktree, repoRoot))).toContain('ignored-work');
+    });
+
     it('blocks a locked worktree', () => {
         const { repoRoot, worktree } = makeRepoWithWorktree();
         git(['worktree', 'lock', '--reason', 'operator', worktree], repoRoot);
@@ -238,6 +267,16 @@ describe('checkRelease — launcher scaffolding', () => {
     it('exempts runtime state but not arbitrary ignored data', () => {
         const ctx: ClassifyContext = { worktree: '/w', repoRoot: '/r', exemptLinks: new Set() };
         expect(classifyIgnored('.xtrm/session-meta.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/leases/87bd7571.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/logs/runtime-diagnostics.log', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/settlements/act:x/att:x:1.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/interactions/act:x/msg:x.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/jobs/job-1/state.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/ready/act:x.json', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/trace.jsonl', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/db/traces.db', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/executor-result.md', ctx)).toBe('exempt');
+        expect(classifyIgnored('.specialists/notes/todo.md', ctx)).toBe('work');
         expect(classifyIgnored('node_modules/pkg/index.js', ctx)).toBe('artifact');
         expect(classifyIgnored('data/fixtures.db', ctx)).toBe('work');
         expect(classifyIgnored('.env', ctx)).toBe('work');

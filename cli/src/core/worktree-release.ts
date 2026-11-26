@@ -64,7 +64,20 @@ const RUNTIME_STATE_FILES = new Set([
     '.xtrm/session-meta.json', '.xtrm/debug.db', '.xtrm/.last-reap-sweep',
     '.xtrm/skills/state.json', '.substrate-issue',
 ]);
-const RUNTIME_STATE_PREFIXES = ['.xtrm/state/', '.xtrm/cache/'];
+const RUNTIME_STATE_PREFIXES = [
+    '.xtrm/state/', '.xtrm/cache/',
+    // Written by the specialists runtime in every worktree it touches: lease and job
+    // records, the diagnostics log, pending message bodies, activation receipts already
+    // recorded in Substrate, and the trace database. They never hold hand-made work, and
+    // without them no such worktree could be released. This is the complete set of
+    // `.specialists` runtime roots and generated files that .gitignore documents
+    // (CORE-2670), plus the local-only roots in .git/info/exclude; a root missing here
+    // makes its worktree unreleasable, so keep it in step with that block.
+    '.specialists/leases/', '.specialists/logs/', '.specialists/settlements/',
+    '.specialists/interactions/', '.specialists/jobs/', '.specialists/ready/',
+    '.specialists/db/',
+];
+const RUNTIME_STATE_NAMES = new Set(['.specialists/trace.jsonl', '.specialists/executor-result.md']);
 
 /** Scaffolding whose churn is tooling output, not work. */
 const SCAFFOLD_PREFIXES = ['.beads/', '.xtrm/', '.claude/', '.pi/'];
@@ -199,6 +212,7 @@ export function classifyPath(path: string, ctx: ClassifyContext): 'exempt' | 'wo
 export function classifyIgnored(path: string, ctx: ClassifyContext): 'exempt' | 'artifact' | 'work' {
     if (path.split('/').some(segment => REGENERABLE_SEGMENTS.has(segment))) return 'artifact';
     if (RUNTIME_STATE_FILES.has(path)) return 'exempt';
+    if (RUNTIME_STATE_NAMES.has(path)) return 'exempt';
     if (RUNTIME_STATE_PREFIXES.some(prefix => path.startsWith(prefix))) return 'exempt';
     if (isScaffoldPath(path, ctx)) return 'exempt';
     return 'work';
@@ -456,7 +470,7 @@ export function checkRelease(opts: ReleaseCheckOptions): ReleaseCheck {
     facts.exemptLinks = [...exempt];
     const ctx: ClassifyContext = { worktree, repoRoot, exemptLinks: exempt };
 
-    const status = spawnSync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching'], {
+    const status = spawnSync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
         cwd: worktree, encoding: 'utf8', stdio: 'pipe', timeout: 60_000, maxBuffer: 32 * 1024 * 1024,
     });
     if (status.status !== 0) {
@@ -465,15 +479,23 @@ export function checkRelease(opts: ReleaseCheckOptions): ReleaseCheck {
     } else {
         for (const item of parseStatusZ(status.stdout ?? '')) {
             const paths = item.from ? [item.path, item.from] : [item.path];
-            if (item.status.startsWith('!!')) {
-                for (const path of paths) {
-                    if (classifyIgnored(path, ctx) === 'work') facts.ignoredWork.push(path);
-                }
-                continue;
-            }
             for (const path of paths) {
                 if (classifyPath(path, ctx) === 'work') facts.dirty.push(path);
             }
+        }
+    }
+
+    // Ignored paths come from their own listing: `git status --ignored` collapses a wholly
+    // ignored directory to one entry (`.specialists/`), which cannot be classified, and it
+    // names no file the operator could recognise.
+    const ignored = spawnSync('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], {
+        cwd: worktree, encoding: 'utf8', stdio: 'pipe', timeout: 60_000, maxBuffer: 32 * 1024 * 1024,
+    });
+    if (ignored.status !== 0) {
+        blockers.push({ kind: 'unreadable', detail: `git ls-files --ignored failed: ${(ignored.stderr ?? '').trim() || 'unknown error'}`, paths: [] });
+    } else {
+        for (const path of (ignored.stdout ?? '').split('\0')) {
+            if (path.length > 0 && classifyIgnored(path, ctx) === 'work') facts.ignoredWork.push(path);
         }
     }
     facts.dirty = [...new Set(facts.dirty)];

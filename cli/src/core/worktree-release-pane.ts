@@ -353,7 +353,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         return { ...base, action: 'checked', detail };
     }
 
-    const prompt = `release ${escapePromptText(check.facts.branch ?? 'detached')} and move this pane to the main checkout? y/n`;
+    const prompt = `release ${escapePromptText(check.facts.branch ?? 'detached')} and move this pane to the main checkout? its .specialists runtime state goes too. y/n`;
     logEvent({
         action: 'prompted', pane: opts.paneId, client: opts.client, worktree: pane.worktree,
         branch: check.facts.branch, head, detail: 'prompt shown to the pressing client',
@@ -471,10 +471,10 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         tmux(['set-option', '-p', '-u', '-t', opts.paneId, option]);
     }
 
-    notify(`released ${pane.worktree} (${check.facts.branch ?? 'detached'}); launch links removed, branch kept`, opts.paneId);
+    notify(`released ${pane.worktree} (${check.facts.branch ?? 'detached'}); branch kept, .specialists runtime state removed with the tree`, opts.paneId);
     logEvent({
         action: 'released', pane: opts.paneId, worktree: pane.worktree,
-        branch: check.facts.branch, head, detail: 'removed; branch kept',
+        branch: check.facts.branch, head, detail: 'removed; branch kept; .specialists runtime state removed',
     });
     return { ...base, action: 'released', detail: `removed ${pane.worktree}; branch ${check.facts.branch ?? '(detached)'} kept` };
 }
