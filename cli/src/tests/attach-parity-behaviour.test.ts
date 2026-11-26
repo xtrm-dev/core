@@ -88,6 +88,10 @@ describe('CORE-2792 attach restores the launch identity', () => {
         // CORE-2792 review item 1: the role must be backed by the out-of-worktree
         // ledger the launcher writes; a record alone names no identity. The env is
         // set so the ledger lands in this test's HOME.
+        //
+        // On the merge base this case fails on a MISSING EXPORT (`writeSessionLaunch`
+        // does not exist at b37a85aa), not on the role assertion below; the two cases
+        // above are the ones that fail behaviourally there (review nit 4).
         const previousHome = process.env.HOME;
         process.env.HOME = path.join(tempRoot, 'home');
         try {

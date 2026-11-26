@@ -85,11 +85,18 @@ export function buildSessionIdentityEnv(identity: TmuxSessionIdentity): Record<s
  * Resolve the CURRENT tmux session identity (current-pane launches run
  * inside the caller's session, so both id and name are known pre-spawn).
  * Any probe failure yields absent fields — never fabricated values.
+ *
+ * `env` is the environment that says whether a tmux server is reachable. Callers
+ * that already hold an environment (attach restores into the environment it was
+ * handed, which is not always the ambient one) pass it, so the gate and the probe
+ * cannot disagree — a CI process with no `TMUX` of its own still resolves the pane
+ * it was told about (CORE-2792 review, blocker).
  */
 export function resolveCurrentTmuxSessionIdentity(
     probe: TmuxProbe = defaultProbe,
+    env: NodeJS.ProcessEnv = process.env,
 ): TmuxSessionIdentity {
-    if (!process.env.TMUX) return { sessionId: null, sessionName: null };
+    if (!env.TMUX) return { sessionId: null, sessionName: null };
     let sessionId: string | null = null;
     let sessionName: string | null = null;
     try {

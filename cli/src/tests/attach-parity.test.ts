@@ -196,17 +196,54 @@ describe('CORE-2792 restored environment', () => {
     });
 
     it('re-adds the resumed worker\'s own session identity', () => {
-        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
-            const joined = args.join(' ');
-            if (command === 'tmux' && joined.includes('#{session_id}')) return { status: 0, stdout: '$3\n', stderr: '' };
-            if (command === 'tmux' && joined.includes('#{session_name}')) return { status: 0, stdout: 'sess\n', stderr: '' };
-            return { status: 1, stdout: '', stderr: '' };
-        });
-        const env = buildAttachEnv(BASE, 'pi', {}, 'demo', '/repo/.xtrm/worktrees/repo-xt-pi-demo', [
-            { key: '@agent_role', value: 'worker' },
-        ]);
-        expect(env.XTRM_SESSION_ID).toBe('$3');
-        expect(env.XTRM_SESSION_NAME).toBe('sess');
+        const previousTmux = process.env.TMUX;
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        try {
+            mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+                const joined = args.join(' ');
+                if (command === 'tmux' && joined.includes('#{session_id}')) return { status: 0, stdout: '$3\n', stderr: '' };
+                if (command === 'tmux' && joined.includes('#{session_name}')) return { status: 0, stdout: 'sess\n', stderr: '' };
+                return { status: 1, stdout: '', stderr: '' };
+            });
+            const env = buildAttachEnv(BASE, 'pi', {}, 'demo', '/repo/.xtrm/worktrees/repo-xt-pi-demo', [
+                { key: '@agent_role', value: 'worker' },
+            ]);
+            expect(env.XTRM_SESSION_ID).toBe('$3');
+            expect(env.XTRM_SESSION_NAME).toBe('sess');
+        } finally {
+            if (previousTmux === undefined) delete process.env.TMUX;
+            else process.env.TMUX = previousTmux;
+        }
+    });
+
+    it('resolves the session identity from the environment it was handed, not the ambient one', () => {
+        // Review blocker: `base.TMUX` gated the restore while the probe re-gated on
+        // process.env.TMUX, so a process with no tmux variable of its own (CI, a
+        // timer wake) got no XTRM_SESSION_* even though the pane was real.
+        const previousTmux = process.env.TMUX;
+        delete process.env.TMUX;
+        try {
+            mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+                const joined = args.join(' ');
+                if (command === 'tmux' && joined.includes('#{session_id}')) return { status: 0, stdout: '$9\n', stderr: '' };
+                if (command === 'tmux' && joined.includes('#{session_name}')) return { status: 0, stdout: 'hermetic\n', stderr: '' };
+                return { status: 1, stdout: '', stderr: '' };
+            });
+            const env = buildAttachEnv(
+                { ...BASE, TMUX: '/tmp/tmux-1000/default,1,0' },
+                'pi', {}, 'demo', '/repo/.xtrm/worktrees/repo-xt-pi-demo',
+                [{ key: '@agent_role', value: 'worker' }],
+            );
+            expect(env.XTRM_SESSION_ID).toBe('$9');
+            expect(env.XTRM_SESSION_NAME).toBe('hermetic');
+            // And with no tmux in the handed environment there is nothing to probe.
+            const { TMUX: _tmux, ...outsideBase } = BASE;
+            const outside = buildAttachEnv(outsideBase, 'pi', {}, 'demo', '/repo/.xtrm/worktrees/repo-xt-pi-demo', []);
+            expect(outside.XTRM_SESSION_ID).toBeUndefined();
+        } finally {
+            if (previousTmux === undefined) delete process.env.TMUX;
+            else process.env.TMUX = previousTmux;
+        }
     });
 
     it('exports the role identity the launcher itself would export for this worktree', async () => {
@@ -644,6 +681,16 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(env.SUBSTRATE_HOLDER).toBe('demo');
     });
 
+    it('keeps the parent session the record names, and adds one when it names none', async () => {
+        // XTRM-1069: a resumed pane's parent session is the session it now runs
+        // in; a recorded launch keeps the one it recorded.
+        await writeRecord({ ...LAUNCH, parentSession: '$2' });
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        const recorded = await attach();
+        expect(recorded.paneOptions['@agent_parent_session']).toBe('$2');
+    });
+
     it('restores worktree, branch and bead from a legacy record, and invents no role', async () => {
         await writeRecord(null);
         process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
@@ -651,6 +698,9 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         process.env.XTMUX_AGENT_ROLE = 'lead';
         const cap = await attach();
         expect(cap.paneOptions).toEqual({
+            // XTRM-1069: the record names no parent, so the session the resumed
+            // pane now runs in does — never an empty option.
+            '@agent_parent_session': '$0',
             '@agent_worktree': worktree,
             '@agent_branch': 'xt/demo',
             '@agent_bead': 'CORE-2792',
@@ -675,6 +725,7 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         process.env.TMUX_PANE = '%10';
         const cap = await attach();
         expect(cap.paneOptions).toEqual({
+            '@agent_parent_session': '$0',
             '@agent_task': 'role:worker',
             '@agent_worktree': worktree,
             '@agent_branch': 'xt/demo',
@@ -774,7 +825,9 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         // Unset before set: the keys the record cannot answer stay absent.
         expect(cap.paneOptions['@agent_role']).toBeUndefined();
         expect(cap.paneOptions['@agent_task']).toBeUndefined();
-        expect(cap.paneOptions['@agent_parent_session']).toBeUndefined();
+        // The parent session is NOT one of the keys that may stay absent: the
+        // resumed pane always runs inside a session (XTRM-1069).
+        expect(cap.paneOptions['@agent_parent_session']).toBe('$0');
         expect(cap.paneOptions['@agent_worktree']).toBe(worktree);
     });
 
@@ -925,6 +978,34 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
         expect(values).toContain('!xt identity credential');
         expect(values).not.toContain('!attacher-leak');
         expect(env.GIT_CONFIG_COUNT).toBe('5');
+    });
+
+    it('refuses a reviewer resume whose App is configured but not installed', async () => {
+        // Review finding 2: the launcher refuses a reviewer on the operator
+        // identity; a resume restarted the runtime without asking, so the pane said
+        // "reviewer", the reviewer prompt was applied, and the session held the
+        // operator's credentials with no signal at all.
+        await writeRecord({ ...LAUNCH, role: 'reviewer', requestedRole: 'reviewer', task: 'role:reviewer' });
+        const home = process.env.HOME as string;
+        await fs.ensureDir(path.join(home, '.xtrm', 'config'));
+        await fs.writeFile(path.join(home, '.xtrm', 'config', 'identity-role-map.json'), JSON.stringify({
+            version: 1,
+            default: 'worker',
+            specialists: {},
+            apps: { worker: 'xtrm-worker', reviewer: 'xtrm-reviewer' },
+        }));
+        await fs.ensureDir(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer'));
+        await fs.writeFile(path.join(home, '.xtrm', 'identities', 'github-apps', 'xtrm-reviewer', 'app.json'), JSON.stringify({
+            slug: 'xtrm-reviewer',
+            appId: '55555',
+            // Configured on this host, installed for another owner only.
+            installations: { other: '999' },
+        }));
+        process.env.TMUX = '/tmp/tmux-1000/default,6956,0';
+        process.env.TMUX_PANE = '%10';
+        await expect(attach()).rejects.toThrow('exit:1');
+        const errors = vi.mocked(console.error).mock.calls.map(call => String(call[0])).join('\n');
+        expect(errors).toContain('refusing to launch a reviewer with the operator identity');
     });
 
     it('replays the operator\'s recorded --skill paths on a pi resume', async () => {

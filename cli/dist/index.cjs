@@ -64470,8 +64470,8 @@ function buildSessionIdentityEnv(identity) {
   if (sessionName) env3[XTRM_SESSION_NAME_VAR] = sessionName;
   return env3;
 }
-function resolveCurrentTmuxSessionIdentity(probe2 = defaultProbe) {
-  if (!process.env.TMUX) return { sessionId: null, sessionName: null };
+function resolveCurrentTmuxSessionIdentity(probe2 = defaultProbe, env3 = process.env) {
+  if (!env3.TMUX) return { sessionId: null, sessionName: null };
   let sessionId = null;
   let sessionName = null;
   try {
@@ -80007,7 +80007,7 @@ function matchWorktree(worktrees, name) {
   const norm = shortBranch.startsWith("xt/") ? `refs/heads/${shortBranch}` : `refs/heads/xt/${shortBranch}`;
   return worktrees.find((wt) => wt.branch === norm || wt.branch === `refs/heads/${shortBranch}` || wt.branch === shortBranch) ?? worktrees.find((wt) => (0, import_node_path47.basename)(wt.path) === name) ?? worktrees.find((wt) => (0, import_node_path47.basename)(wt.path).endsWith(`-${name}`));
 }
-function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktreePath = null, restoredPaneOptions = []) {
+function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktreePath = null, restoredPaneOptions = [], resolvedRoleIdentity = null) {
   const stripped = stripRestoredEnv(stripDispatcherEnv(base));
   const ownEnv = {};
   const ownHolder = (holder ?? "").trim();
@@ -80019,15 +80019,16 @@ function buildAttachEnv(base, runtime, dispatcherEnv = {}, holder = null, worktr
     if (ownAgentName) ownEnv[XTRM_AGENT_NAME_VAR] = ownAgentName;
   }
   const agentEnv = buildAgentEnv(restoredPaneOptions);
-  const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity()) : {};
+  const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity(void 0, base)) : {};
   const restoredRole = restoredPaneOptions.find((option) => option.key === "@agent_role")?.value ?? "";
-  const roleEnv = restoredRole && worktreePath ? resolveLaunchIdentity({
+  const roleIdentity = restoredRole && worktreePath ? resolvedRoleIdentity ?? resolveLaunchIdentity({
     holder: holder ?? "",
     roleName: restoredRole,
     cwd: worktreePath,
     env: stripped,
     forwardInherited: true
-  }).env : {};
+  }) : null;
+  const roleEnv = roleIdentity ? roleIdentity.env : {};
   const runtimeEnv = runtime === "codex" ? { XTMUX_AGENT_RUNTIME: "codex" } : {};
   const restored = { ...runtimeEnv, ...agentEnv, ...sessionEnv, ...roleEnv };
   return runtime === "claude" ? { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored, ...claudeMcpEnv(runtime) } : { ...stripped, ...dispatcherEnv, ...ownEnv, ...restored };
@@ -80069,9 +80070,9 @@ function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
   return { launch: merged, conflictRole, ignoredRecordRole };
 }
 function restoredAttachPaneOptions(input2) {
-  const { launch, worktreePath, branch, bead } = input2;
+  const { launch, worktreePath, branch, bead, currentSessionId } = input2;
   const options = [];
-  const parentSession = launch?.parentSession ?? "";
+  const parentSession = (launch?.parentSession ?? "").trim() || (currentSessionId ?? "").trim();
   if (parentSession) options.push({ key: "@agent_parent_session", value: parentSession });
   const task = launch?.task ?? (launch?.role ? `role:${launch.role}` : "");
   if (task) options.push({ key: "@agent_task", value: task });
@@ -80186,7 +80187,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   }
   const recordedRole = launch?.role ?? launch?.requestedRole;
   const requestedRole = parseAttachRole(opts.role);
-  const roleUnchanged = !requestedRole || requestedRole === recordedRole;
+  const roleUnchanged = !requestedRole || requestedRole === recordedRole || requestedRole === launch?.requestedRole || launch?.role != null && resolveAgentRole(requestedRole, loadRoleMap()) === launch.role;
   const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue2?.ref ?? null, {
     bindingId: issue2?.bindingId ?? null,
     workspace: target.path
@@ -80348,6 +80349,22 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
     }
     const restoredName = launch?.displayName;
     const restoredPrompt = resumedRole && resumedRole.systemPrompt.trim().length > 0 ? resumedRole.systemPrompt : null;
+    const restoredRoleIdentity = effectiveRole2 && runtime !== "codex" ? resolveLaunchIdentity({
+      holder: holderFromWorktreePath(target.path) ?? "",
+      roleName: effectiveRole2,
+      cwd: target.path,
+      env: attachLaunchEnv(process.env),
+      forwardInherited: true
+    }) : null;
+    if (restoredRoleIdentity?.refused) {
+      console.error(kleur_default.red(`
+  \u2717 ${restoredRoleIdentity.refused}
+`));
+      process.exit(1);
+    }
+    if (restoredRoleIdentity?.note) {
+      console.error(kleur_default.dim(`  ${restoredRoleIdentity.note}`));
+    }
     let resumeArgs;
     if (runtime === "codex") {
       const session = readCodexWorktreeSession(target.path);
@@ -80400,7 +80417,10 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       launch: launchForRestore,
       worktreePath: target.path,
       branch,
-      bead: issue2?.ref ?? record2?.bead ?? null
+      bead: issue2?.ref ?? record2?.bead ?? null,
+      // XTRM-1069: a resumed pane's parent session is the session it now
+      // runs in; the record only has the launch's own (older) one.
+      currentSessionId: process.env.TMUX ? resolveCurrentTmuxSessionIdentity().sessionId : null
     });
     const paneId = currentPaneId();
     if (paneId) {
@@ -80420,7 +80440,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
     const result = (0, import_node_child_process25.spawnSync)(runtime, resumeArgs, {
       cwd: target.path,
       stdio: "inherit",
-      env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path, restoredOptions)
+      env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path, restoredOptions, restoredRoleIdentity)
     });
     process.exit(result.status ?? 0);
   });

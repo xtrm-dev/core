@@ -267,6 +267,26 @@ the inherited `GIT_CONFIG_COUNT` names). One list, shared by `xt claude`, `xt pi
 `xt codex`; `cli/src/tests/codex-launch-env.test.ts` pins the Codex path, the claude/pi
 paths reach the same function.
 
+**The resumed pane always has a parent session.** `restoredAttachPaneOptions` re-asserts
+`@agent_parent_session` on every resume: the record's value when it has one, otherwise the
+tmux session the resumed pane now runs in (XTRM-1069 — every resumed pane showed the
+option empty while a fresh launch showed `$0`). The other five keys stay absent when the
+record cannot answer them.
+
+**The launcher's identity refusal is mirrored, not swallowed.** The resume path resolves
+the role identity once, before any argv is built, and acts on the whole result: a
+`refused` (a reviewer App configured but not installed for the repo owner, or not
+configured at all with a reviewer requested) prints the refusal and exits 1, exactly as
+`worktree-session.ts` does at launch; a `note` (for example "no App is configured; launching
+with the operator identity") goes to stderr. The same resolved result builds the spawn
+environment, so the pane cannot be labelled with a role the environment does not carry.
+
+**A role name is equivalent when it maps to the same role.** `--fresh --role <name>`
+keeps the recorded model/thinking when the name equals the recorded `role` or the recorded
+`requestedRole`, or when the role map resolves it to the recorded role — a launch recorded
+as `requestedRole: senior-engineer` / `role: worker` is the same launch when re-created
+with either name.
+
 Ceiling of that probe: `absentLaunchIdentityKeys` compares the pane environment with
 `process.env`, the environment of the process that runs the launcher — it does not read
 the tmux server's environment (`show-environment -g`) or a pane's. A key that lives only

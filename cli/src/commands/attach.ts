@@ -22,6 +22,7 @@ import {
 } from '../core/dispatcher-identity.js';
 import { buildGitIdentityEnv, resolveGitEmail } from '../core/git-identity.js';
 import { isValidRoleName, resolveLaunchIdentity } from '../core/launch-identity.js';
+import { loadRoleMap, resolveAgentRole } from '../core/identity-roles.js';
 import { readLaunchLedger, taskWithRole } from '../core/session-launch.js';
 import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
 import { addPlacementOptions } from '../utils/launch-placement-options.js';
@@ -62,6 +63,7 @@ export function buildAttachEnv(
     holder: string | null = null,
     worktreePath: string | null = null,
     restoredPaneOptions: ReadonlyArray<{ key: string; value: string }> = [],
+    resolvedRoleIdentity: ReturnType<typeof resolveLaunchIdentity> | null = null,
 ): NodeJS.ProcessEnv {
     // D6 (CORE-2727): `base` is the ATTACHER's environment. Its dispatcher keys,
     // agent name, parent pane/session and git identity describe the session the
@@ -92,21 +94,22 @@ export function buildAttachEnv(
     // from them (CORE-2792), plus the session identity of the pane that now
     // hosts the worker and the role identity of the recorded role.
     const agentEnv = buildAgentEnv(restoredPaneOptions);
-    const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity()) : {};
+    const sessionEnv = base.TMUX ? buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity(undefined, base)) : {};
     const restoredRole = restoredPaneOptions.find(option => option.key === '@agent_role')?.value ?? '';
     // The attacher's inherited git transport is already gone from `stripped`, and the
     // resolver must read THAT environment: with no `env` it falls back to process.env
     // and re-adds the attacher's credential helper ahead of the worker's (CORE-2792
     // review, credential leak).
-    const roleEnv = restoredRole && worktreePath
-        ? resolveLaunchIdentity({
+    const roleIdentity = restoredRole && worktreePath
+        ? resolvedRoleIdentity ?? resolveLaunchIdentity({
             holder: holder ?? '',
             roleName: restoredRole,
             cwd: worktreePath,
             env: stripped,
             forwardInherited: true,
-        }).env
-        : {};
+        })
+        : null;
+    const roleEnv = roleIdentity ? roleIdentity.env : {};
     const runtimeEnv: Record<string, string> = runtime === 'codex' ? { XTMUX_AGENT_RUNTIME: 'codex' } : {};
     const restored = { ...runtimeEnv, ...agentEnv, ...sessionEnv, ...roleEnv };
     return runtime === 'claude'
@@ -240,10 +243,17 @@ export function restoredAttachPaneOptions(input: {
     worktreePath: string;
     branch: string;
     bead: string | null;
+    /**
+     * The tmux session hosting the resumed pane. A resumed pane always has a
+     * parent session — the one it now runs in — so `@agent_parent_session` is
+     * re-asserted even when the record names none (XTRM-1069: every resumed pane
+     * showed it empty while a fresh launch showed its session id).
+     */
+    currentSessionId?: string | null;
 }): Array<{ key: string; value: string }> {
-    const { launch, worktreePath, branch, bead } = input;
+    const { launch, worktreePath, branch, bead, currentSessionId } = input;
     const options: Array<{ key: string; value: string }> = [];
-    const parentSession = launch?.parentSession ?? '';
+    const parentSession = (launch?.parentSession ?? '').trim() || (currentSessionId ?? '').trim();
     if (parentSession) options.push({ key: '@agent_parent_session', value: parentSession });
     const task = launch?.task ?? (launch?.role ? `role:${launch.role}` : '');
     if (task) options.push({ key: '@agent_task', value: task });
@@ -480,7 +490,16 @@ export function buildFreshLaunchOptions(
     // a recorded value is only ever an explicit operator override now.
     const recordedRole = launch?.role ?? launch?.requestedRole;
     const requestedRole = parseAttachRole(opts.role);
-    const roleUnchanged = !requestedRole || requestedRole === recordedRole;
+    // A launch records the role the operator ASKED for (`requestedRole`) beside the
+    // one it mapped to (`role`). Naming either the same role, or any name the map
+    // resolves to that role, is the same launch — otherwise `--fresh --role
+    // senior-engineer` would drop the recorded model/thinking of the `worker`
+    // launch it re-creates (review finding 3).
+    const roleUnchanged = !requestedRole
+        || requestedRole === recordedRole
+        || requestedRole === launch?.requestedRole
+        || (launch?.role != null
+            && resolveAgentRole(requestedRole, loadRoleMap()) === launch.role);
     const dispatcher = deps.dispatcher ?? attachDispatcherEnv(issue?.ref ?? null, {
         bindingId: issue?.bindingId ?? null,
         workspace: target.path,
@@ -685,6 +704,29 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             const restoredName = launch?.displayName;
             const restoredPrompt = resumedRole && resumedRole.systemPrompt.trim().length > 0 ? resumedRole.systemPrompt : null;
 
+            // The launcher refuses to start a role session on the operator
+            // identity (worktree-session.ts preflight). A resume restarts the
+            // runtime, so it must refuse too: otherwise the pane is labelled
+            // @agent_role=reviewer, the reviewer prompt is applied, and the
+            // session silently holds the operator's credentials (review
+            // finding 2). Resolved once, and the same result builds the env.
+            const restoredRoleIdentity = effectiveRole && runtime !== 'codex'
+                ? resolveLaunchIdentity({
+                    holder: holderFromWorktreePath(target.path) ?? '',
+                    roleName: effectiveRole,
+                    cwd: target.path,
+                    env: attachLaunchEnv(process.env),
+                    forwardInherited: true,
+                })
+                : null;
+            if (restoredRoleIdentity?.refused) {
+                console.error(kleur.red(`\n  \u2717 ${restoredRoleIdentity.refused}\n`));
+                process.exit(1);
+            }
+            if (restoredRoleIdentity?.note) {
+                console.error(kleur.dim(`  ${restoredRoleIdentity.note}`));
+            }
+
             let resumeArgs: string[];
             if (runtime === 'codex') {
                 const session = readCodexWorktreeSession(target.path);
@@ -767,6 +809,11 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                 worktreePath: target.path,
                 branch,
                 bead: issue?.ref ?? record?.bead ?? null,
+                // XTRM-1069: a resumed pane's parent session is the session it now
+                // runs in; the record only has the launch's own (older) one.
+                currentSessionId: process.env.TMUX
+                    ? resolveCurrentTmuxSessionIdentity().sessionId
+                    : null,
             });
             const paneId = currentPaneId();
             if (paneId) {
@@ -795,7 +842,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             const result = spawnSync(runtime, resumeArgs, {
                 cwd: target.path,
                 stdio: 'inherit',
-                env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path, restoredOptions),
+                env: buildAttachEnv(process.env, runtime, restoredDispatcher, holderFromWorktreePath(target.path), target.path, restoredOptions, restoredRoleIdentity),
             });
 
             process.exit(result.status ?? 0);
