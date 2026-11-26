@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
@@ -61,9 +61,9 @@ function sleep(ms: number): void {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/** A message the operator sees in the status line, and a line in the log for later. */
+/** A message the operator sees in the status line. The log is written by the caller,
+ *  which knows whether the outcome was a refusal, a nudge or a release. */
 export function notify(text: string, paneId?: string): void {
-    logEvent({ action: 'refused', pane: paneId, detail: text });
     if (!process.env.TMUX) {
         console.error(text);
         return;
@@ -196,17 +196,27 @@ export type ConfirmFn = (input: { client: string; prompt: string }) => ConfirmVe
  * that went away), so the answer comes back to THIS process: no ticket, no second
  * invocation, nothing on disk that could be written by hand.
  */
-export const confirmRelease: ConfirmFn = ({ client, prompt }) => {
-    const result = spawnSync('tmux', [
-        'confirm-before', '-t', client, '-p', prompt,
-        'display-message', '-p', CONFIRM_MARKER,
-    ], { encoding: 'utf8', stdio: 'pipe', timeout: CONFIRM_TIMEOUT_MS });
+export function confirmWith(
+    spawn: typeof spawnSync,
+    { client, prompt }: { client: string; prompt: string },
+): ConfirmVerdict {
+    // `confirm-before` takes ONE command argument: passing the command as separate argv
+    // elements fails with "too many arguments" and the prompt never appears — every press
+    // then reads as a decline. spawnSync also blocks this process while the prompt is open,
+    // so the prompt must be shown by the xt process itself, never inside a loop that has
+    // other work to do.
+    const command = `display-message -p ${CONFIRM_MARKER}`;
+    const result = spawn('tmux', ['confirm-before', '-t', client, '-p', prompt, command], {
+        encoding: 'utf8', stdio: 'pipe', timeout: CONFIRM_TIMEOUT_MS,
+    });
 
     if (result.error || result.status !== 0) return 'declined';
     // rc alone distinguishes y from n; the marker also proves the confirmed command ran,
     // so a tmux that returns 0 for another reason cannot pass as a confirmation.
     return (result.stdout ?? '').includes(CONFIRM_MARKER) ? 'confirmed' : 'declined';
-};
+}
+
+export const confirmRelease: ConfirmFn = input => confirmWith(spawnSync, input);
 
 export interface ReleaseOptions {
     paneId: string;
@@ -427,10 +437,14 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     // looks after a failed removal must know the tree is no longer wired to the main
     // checkout's skills.
     const links = launcherLinks(pane.worktree, repoRoot);
+    const unlinked: Array<{ linkPath: string; target: string }> = [];
     for (const name of links) {
         const linkPath = join(pane.worktree, '.specialists', name);
         try {
+            // Remembered so a failed removal can put the tree back the way it was.
+            const target = readlinkSync(linkPath);
             unlinkSync(linkPath);
+            unlinked.push({ linkPath, target });
             logEvent({ action: 'released', pane: opts.paneId, worktree: pane.worktree, head, detail: `unlinked ${linkPath}` });
         } catch (error) {
             logEvent({
@@ -448,11 +462,26 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     if (remove.status !== 0) {
         const reason = (remove.stderr ?? '').trim() || 'unknown error';
         const detail = `git worktree remove refused: ${reason}`;
-        const linksNote = links.size > 0 ? '; the launch links were already removed' : '';
+        // Put the launch links back: the tree stays, so it must stay wired to the
+        // main checkout's skills exactly as it was.
+        let restored = 0;
+        for (const { linkPath, target } of unlinked) {
+            try {
+                if (!existsSync(linkPath) && lstatSync(join(linkPath, '..')).isDirectory()) {
+                    symlinkSync(target, linkPath);
+                    restored += 1;
+                }
+            } catch {
+                // A link that cannot be restored is named below; the tree itself is intact.
+            }
+        }
+        const linksNote = unlinked.length > 0
+            ? `; ${restored}/${unlinked.length} launch links restored`
+            : '';
         notify(`release failed: ${reason.split('\n')[0]} — nothing was forced${linksNote}`, opts.paneId);
         logEvent({
             action: 'failed', pane: opts.paneId, worktree: pane.worktree, branch: check.facts.branch, head,
-            detail: `${reason}; exact command: git -C ${repoRoot} worktree remove ${pane.worktree}`,
+            detail: `${reason}; exact command: git -C ${repoRoot} worktree remove ${pane.worktree}${linksNote}`,
         });
         return { ...base, action: 'refused', detail };
     }

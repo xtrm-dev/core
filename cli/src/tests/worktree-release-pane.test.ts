@@ -7,7 +7,7 @@
  * a pass.
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,13 +59,15 @@ function makeRepoWithWorktree(): { repoRoot: string; worktree: string } {
 const originalTmux = process.env.TMUX;
 const originalHome = process.env.HOME;
 
-// The release log and the tickets live under HOME. Point it at a throwaway directory so
-// the suite never writes into the operator's cache, and so the temp-dir leak guard sees
-// nothing outside its own scope.
+// The release log and the launcher links live under HOME (and XDG_STATE_HOME when set).
+// Point both at a throwaway directory so the suite never writes into the operator's
+// state, and the temp-dir leak guard sees nothing outside its own scope.
+const originalStateHome = process.env.XDG_STATE_HOME;
 beforeAll(() => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-release-pane-home-'));
     created.push(home);
     process.env.HOME = home;
+    process.env.XDG_STATE_HOME = path.join(home, '.local', 'state');
 });
 
 afterAll(() => {
@@ -121,6 +123,54 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
             expect((option.stdout ?? '').trim()).toBe('');
             expect(git(['rev-parse', '--verify', 'xt/pane'], repoRoot)).toBe(head);
         } finally {
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 120_000);
+
+    it('releases through the real CLI and a real prompt', async () => {
+        // The in-process path cannot be tested here: confirmRelease uses spawnSync and
+        // blocks the event loop, so nothing in this process could type the answer. Driving
+        // the built CLI from a child process exercises the whole chain — argv, prompt,
+        // answer, removal — which is the chain round 3 broke.
+        const cliEntry = path.resolve(process.cwd(), 'dist/index.cjs');
+        if (!fs.existsSync(cliEntry) || spawnSync('script', ['--version'], { stdio: 'pipe' }).status !== 0) return;
+
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        const socket = `xt-release-test-cli-${process.pid}`;
+
+        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, 'sleep 300']);
+        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+
+        const client = spawn('script', ['-qfc', `tmux -L ${socket} attach -t t`, '/dev/null'], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        try {
+            let clientName = '';
+            for (let attempt = 0; attempt < 40 && !clientName; attempt += 1) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const listed = spawnSync('tmux', ['-L', socket, 'list-clients', '-F', '#{client_name}'], { encoding: 'utf8' });
+                clientName = (listed.stdout ?? '').trim().split('\n')[0] ?? '';
+            }
+            expect(clientName).not.toBe('');
+
+            const child = spawn(process.execPath, [cliEntry, 'worktree', 'release', '--pane', paneId, '--client', clientName], {
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            let settled = false;
+            child.on('exit', () => { settled = true; });
+            const deadline = Date.now() + 25_000;
+            while (!settled && Date.now() < deadline) {
+                client.stdin?.write('y\n');
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+            expect(settled).toBe(true);
+            expect(child.exitCode).toBe(0);
+            expect(fs.existsSync(worktree)).toBe(false);
+        } finally {
+            client.kill();
             spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
         }
     }, 120_000);

@@ -18,7 +18,7 @@ import {
     validatePaneId,
     sourceLine,
 } from '../core/worktree-release.js';
-import { escapePromptText } from '../core/worktree-release-pane.js';
+import { confirmWith, escapePromptText } from '../core/worktree-release-pane.js';
 import type { ClassifyContext, ReleaseCheckOptions } from '../core/worktree-release.js';
 
 const created: string[] = [];
@@ -472,6 +472,44 @@ exit 1`);
 
         const result = checkRelease({ worktree, repoRoot, allowedPids: [] });
         expect(kinds(result)).toContain('unpushed');
+    });
+});
+
+describe('confirmation command shape', () => {
+    // tmux confirm-before takes ONE command argument. Passing the confirmed command as
+    // separate argv elements makes tmux exit 1 with "too many arguments", the prompt
+    // never appears, and every press reads as a decline — a bug no injected-confirm test
+    // could see, because the prompt is exactly what those tests stub out.
+    function fakeSpawn(result: { status: number | null; stdout?: string; stderr?: string }) {
+        const calls: Array<{ file: string; args: string[] }> = [];
+        const spawn = ((file: string, args: string[]) => {
+            calls.push({ file, args });
+            return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+        }) as unknown as typeof import('node:child_process').spawnSync;
+        return { spawn, calls };
+    }
+
+    it('passes the confirmed command as one argument and reads the marker', () => {
+        const { spawn, calls } = fakeSpawn({ status: 0, stdout: 'xt-release-confirmed\n' });
+        const verdict = confirmWith(spawn, { client: '/dev/pts/9', prompt: 'release xt/a? y/n' });
+        expect(verdict).toBe('confirmed');
+        expect(calls).toHaveLength(1);
+        expect(calls[0].file).toBe('tmux');
+        expect(calls[0].args).toEqual([
+            'confirm-before', '-t', '/dev/pts/9', '-p', 'release xt/a? y/n',
+            'display-message -p xt-release-confirmed',
+        ]);
+        // One argument carrying the whole command, not three: that is the shape tmux needs.
+        expect(calls[0].args).toHaveLength(6);
+    });
+
+    it('treats n, Esc and a failed spawn as a decline', () => {
+        const declined = fakeSpawn({ status: 1, stderr: '' });
+        expect(confirmWith(declined.spawn, { client: '/dev/pts/9', prompt: 'x' })).toBe('declined');
+
+        // rc 0 without the marker is not a confirmation.
+        const silent = fakeSpawn({ status: 0, stdout: '' });
+        expect(confirmWith(silent.spawn, { client: '/dev/pts/9', prompt: 'x' })).toBe('declined');
     });
 });
 

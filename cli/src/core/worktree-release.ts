@@ -95,9 +95,7 @@ function appendLog(line: string): void {
     }
 }
 
-export function logRelease(line: string): void {
-    appendLog(line);
-}
+
 
 function git(args: string[], cwd: string, timeoutMs = 30_000): { ok: boolean; out: string; err: string } {
     const r = spawnSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe', timeout: timeoutMs });
