@@ -42,7 +42,7 @@ import {
 } from './worktree-session.js';
 import { canonicalWorktreePath, removeLaunchLedger, taskForRole, writeLaunchLedger } from '../core/session-launch.js';
 import type { ExistingWorktree } from './worktree-session.js';
-import { relationshipPaneOptions } from './worktree-session.js';
+import { applyPaneOptions, relationshipPaneOptions } from './worktree-session.js';
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
@@ -516,9 +516,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
             stdio: 'pipe', encoding: 'utf8',
         }).stdout ?? '').trim().split(/\r?\n/, 1)[0] ?? '';
     if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail('Could not resolve Codex pane id');
-    for (const { key, value } of paneOptions) {
-        spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
-    }
+    applyPaneOptions(paneId, paneOptions);
 
     // Codex only writes a rollout record once a thread opens, which does not
     // happen until the first turn. A bare launch therefore has nothing to

@@ -46,7 +46,7 @@ tmux send-keys -t "$PANE" \
   "cd $MAIN && xt claude --issue $BEAD --prompt 'Read /tmp/.../brief.md and execute it exactly.'" Enter
 ```
 
-(`--issue` here is the legacy alias for the bound Issue; prefer `--issue`.)
+(`--issue` binds the Issue to the launched session; `--bead` is a deprecated alias.)
 
 For `xt pi`, replace `xt claude` with `xt pi --model <name>`; skill loading uses `/skill:<name>` in the prompt.
 

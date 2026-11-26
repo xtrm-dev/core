@@ -16,6 +16,18 @@ Substrate replaced Beads. The identity schema uses Substrate terms:
 | `XTRM_BEADS_CACHE_ROOT` | `XTRM_ISSUE_CACHE_ROOT` (the old name is read when the new one is unset) |
 | `@agent_prompt_file`, `XTMUX_AGENT_PROMPT_FILE` | removed; no writer, no reader |
 
+## Retained wire names
+
+These names belong to versioned contracts or to files other tools read. They keep the Beads spelling and are not pane options. A change needs a contract version.
+
+| Name | Where | Reason |
+|---|---|---|
+| `bead=` | xtmux event `agent.role.launched` and `agent.state` | xtmux event schema |
+| `bead_id`, `bead` | `xt topology --json` (`xtrm.topology.projection.v1`) | Published contract consumed by xtmux and the console |
+| `LaunchOptions.bead` | Agent-host launch API (`xtrm.agent-host-api.v1`) | Published contract. The launcher maps it to `--issue`. |
+| `SessionMeta.bead` | `.xtrm/session-meta.json`, Codex session record | Persisted by earlier launches. New records write `issue`. Readers accept both. |
+| `bead_id`, `--bead` | `sp` / `specialists` CLI and tools | Permanent compatibility aliases owned by Specialists |
+
 ## Pane options
 
 The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher derives it from the option, except `@agent_state` and `@agent_instance_id`, which have no variable.
@@ -27,8 +39,8 @@ The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher de
 | `@agent_role` | Launcher | Launcher | Launch, `xt attach` | Role of the pane's agent. A child launch writes its own role. |
 | `@agent_task` | Launcher | Launcher | Launch, `xt attach` | Task label (`role:<name>` or free text). |
 | `@agent_parent_session` | Launcher | Launcher | Launch, `xt attach` | tmux session id (`$N`) of the dispatcher. The only authoritative parent source. |
-| `@agent_parent_pane` | Launcher | Launcher | Launch, `xt attach` | tmux pane id (`%N`) of the dispatcher. |
-| `@agent_dispatcher` | Launcher | Launcher | Launch, `xt attach` | `SUBSTRATE_HOLDER` of the dispatching session (the Substrate participant). |
+| `@agent_parent_pane` | Launcher | Launcher | Launch only | tmux pane id (`%N`) of the dispatcher. `xt attach` does not restore it: a pane id does not survive the loss of the pane, so a resumed pane has none. |
+| `@agent_dispatcher` | Launcher | Launcher | Launch, `xt attach` | Substrate participant of the dispatching session (`XTRM_DISPATCHER_PARTICIPANT`). Absent when the participant is unknown; the display name is never used. |
 | `@agent_worktree` | `agent-state.sh` after launch | Launcher (seed); `agent-state.sh` | Every state transition | Git worktree root of the pane's working directory. |
 | `@agent_branch` | `agent-state.sh` after launch | Launcher (seed); `agent-state.sh` | Every state transition | Checked-out branch of that worktree. |
 | `@agent_state` | `agent-state.sh` | Runtime hooks through `agent-state.sh` | Every state transition | `idle`, `running`, `needs-input`, `done`, `off`. |
@@ -67,7 +79,7 @@ Representation: `sb` unsets the option, so none means absent. `agent-state.sh of
 
 ### Child launch
 
-A child launched by an agent gets its own `@agent_role`, `@agent_issue` and `@agent_holder`. The launcher never forwards the parent's `XTMUX_AGENT_ROLE`, `XTMUX_AGENT_ISSUE` or `XTMUX_AGENT_HOLDER` to a child. A child without `--role` or `--issue` has those options empty.
+A launch unsets every identity key it does not write (`@agent_issue`, `@agent_bead`, `@agent_role`, `@agent_holder`, `@agent_dispatcher`, `@agent_parent_pane`), so a reused pane keeps nothing from its previous occupant. A child launched by an agent gets its own `@agent_role`, `@agent_issue` and `@agent_holder`. The launcher never forwards the parent's `XTMUX_AGENT_ROLE`, `XTMUX_AGENT_ISSUE` or `XTMUX_AGENT_HOLDER` to a child. A child without `--role` or `--issue` has those options empty.
 
 ### Specialists and inherited environment
 

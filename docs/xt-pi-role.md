@@ -9,7 +9,7 @@ The same flag surface works for both runtimes; differences are called out explic
 ## Quick start
 
 ```bash
-# Case (i): launch pi tracked to a bead — sp render-task fills the initial prompt
+# Case (i): launch pi tracked to an Issue — sp render-task fills the initial prompt
 xt pi --role chain-coordinator --issue xyz-1
 
 # Case (ii): launch claude with a literal initial prompt, reviewer's skills auto-loaded
@@ -21,7 +21,7 @@ xt pi --role researcher
 
 Inside `$TMUX`, both commands **run in the current pane** by default — no nested-tmux warning, no new session in `tmux ls`. Outside `$TMUX`, both create a new tmux session and attach.
 
-`--bead` and `--prompt` are mutually exclusive; pass one or neither.
+`--issue` and `--prompt` are mutually exclusive; pass one or neither.
 
 ---
 
@@ -30,12 +30,12 @@ Inside `$TMUX`, both commands **run in the current pane** by default — no nest
 The launcher composes exactly one initial user message from three pieces:
 
 1. **skill prefix** — an sp-owned `/skill:name` (pi) or newline-separated `/<name>` commands (claude) that force-load the specialist's declared skills at turn 1
-2. **body** — either the rendered tracked task (`--bead`), your literal text (`--prompt`), or empty (neither)
-3. **byte guard** — literal `--prompt` payloads stay under 50 KB; rendered beads may use the runtime's safe per-argument limit (131071 bytes)
+2. **body** — either the rendered tracked task (`--issue`), your literal text (`--prompt`), or empty (neither)
+3. **byte guard** — literal `--prompt` payloads stay under 50 KB; rendered Issues may use the runtime's safe per-argument limit (131071 bytes)
 
 | Invocation | Body source | Composition |
 | --- | --- | --- |
-| `--bead <id>` | `sp render-task <role> --bead <id>` output (already prefixed by sp — Option A) | `<render-task output>` verbatim |
+| `--issue <id>` | `sp render-task <role> --issue-ref <id>` output (already prefixed by sp — Option A) | `<render-task output>` verbatim |
 | `--prompt "text"` | `"text"` verbatim | `sp render-skill-prefix` + `"text"` |
 | neither | empty | `sp render-skill-prefix` alone (pane primes skills and idles) |
 
@@ -48,8 +48,8 @@ No prompt/task file is created. Current-pane launches pass the exact positional 
 | Flag | Meaning | Notes |
 | --- | --- | --- |
 | `--role <name>` | Resolve `<name>` via `sp view <name> --raw --surface <runtime>` and boot the runtime with the specialist's system prompt, skills, model, and thinking level. | The Specialists resolver selects model defaults for the target surface; CLI flags override. Pi falls back to legacy `sp view` only for older Specialists releases. Claude fails clearly instead of accepting an unscoped provider default. |
-| `--bead <id>` | Render the tracked task as the initial user prompt via `sp render-task`, and attach `<id>` to the pane via `@agent_issue`. | Mutually exclusive with `--prompt`. Included in the session name slug (`role-<runtime>-<slug>-<bead>`). |
-| `--prompt <text>` | Use `<text>` as the initial user prompt. Combines with the sp-owned skill prefix. | Mutually exclusive with `--bead`. For anything larger than a paragraph, prefer `--bead` — a beads issue is a better container than a shell argv. |
+| `--issue <id>` | Render the tracked task as the initial user prompt via `sp render-task`, and attach `<id>` to the pane via `@agent_issue`. | Mutually exclusive with `--prompt`. Included in the session name slug (`role-<runtime>-<slug>-<issue>`). |
+| `--prompt <text>` | Use `<text>` as the initial user prompt. Combines with the sp-owned skill prefix. | Mutually exclusive with `--issue`. For anything larger than a paragraph, prefer `--issue` — a beads issue is a better container than a shell argv. |
 | `--no-attach` | New-session mode only. Print `session_name:pane_id` on stdout and exit — orchestrator-capture pattern. | Inside `$TMUX` without `--new-session`, `--no-attach` **errors** with a clear hint. |
 | `--model <name>` | Forward `--model <name>` to the runtime; overrides `specialist.execution.model`. | Both pi and claude accept `--model`. |
 | `--thinking <level>` | pi only. Forward `--thinking <level>`; overrides `specialist.execution.thinking_level`. | claude has no `--thinking` flag — `xt claude --thinking X` warns loudly and drops. |
@@ -70,7 +70,7 @@ Run `xt pi --help` or `xt claude --help` for the canonical (auto-generated) flag
 | Context | Flags | Result |
 | --- | --- | --- |
 | inside `$TMUX` | (none) | Runtime runs in the **current pane**; pane options + `XTMUX_AGENT_*` env set on this pane. `tmux ls` unchanged. |
-| inside `$TMUX` | `--new-session` | New session (`role-<runtime>-<slug>-<bead>`); `switch-client` moves the current client to it. |
+| inside `$TMUX` | `--new-session` | New session (`role-<runtime>-<slug>-<issue>`); `switch-client` moves the current client to it. |
 | inside `$TMUX` | `--new-session --no-attach` | New session detached; prints `session_name:pane_id` on stdout. Exit 0. |
 | inside `$TMUX` | `--no-attach` alone | **Error** — `--no-attach requires --new-session (or exit tmux first)`. |
 | outside `$TMUX` | (any) | New session; `attach-session` attaches. `--no-attach` still valid. |
@@ -116,7 +116,7 @@ long-form command as remediation.
 | Condition | Message |
 | --- | --- |
 | no `--role` | `--subordinate is a coordinator launch and requires --role` |
-| no `--bead` | `--subordinate scopes a coordinator to one epic and requires --bead` |
+| no `--issue` | `--subordinate scopes a coordinator to one epic and requires --issue` |
 | outside `$TMUX` with no `--parent` | `subordinate coordinator requires a parent session` |
 | role declares `execution.interactive: false` | `role '<name>' declares execution.interactive=false — it is a background job, not a session` |
 | launching pane already runs the same role | `nested coordinator: this pane is already running role '<name>'` |
@@ -133,8 +133,8 @@ The audit's remaining two preconditions are already covered without new code:
 required coordination skills resolve (`resolveRequestedSkills` throws on a
 missing path, before worktree creation), and a dedicated worktree and branch can
 be created (the existing-path refusal plus create-or-fail). "The target scope is
-one epic or task-group" is **not enforceable in Core** — telling an epic bead
-from a task bead would mean owning beads semantics; the coordinator establishes
+one epic or task-group" is **not enforceable in Core** — telling an epic Issue
+from a task Issue would mean owning Beads semantics; the coordinator establishes
 that itself on its first turn via `bd show`.
 
 ### Merge authority
@@ -164,10 +164,10 @@ for interactive role launch, and none should be added.
 The relationship is published as pane options and env vars so downstream tools
 can observe it — see the two tables below.
 
-**Session-name collision.** When the resolved session name (`role-<runtime>-<slug>[-<bead>]`, e.g. `role-pi-chain-coordinator-xyz-1` vs `role-claude-chain-coordinator-xyz-1`) is already in use, the launcher does one of two things:
+**Session-name collision.** When the resolved session name (`role-<runtime>-<slug>[-<issue>]`, e.g. `role-pi-chain-coordinator-xyz-1` vs `role-claude-chain-coordinator-xyz-1`) is already in use, the launcher does one of two things:
 
 - `--reuse` passed → attach to the existing session (or print `session:pane` with `--no-attach`) and exit. Skips the pane-option write + `agent.role.launched` emission since the pane is not fresh.
-- otherwise → auto-suffix a 4-char hex slug and retry up to 10 times (`role-<runtime>-<slug>[-<bead>]-<hex>`). If all 10 candidates collide, errors with a hint to pass `--reuse` or free some session names.
+- otherwise → auto-suffix a 4-char hex slug and retry up to 10 times (`role-<runtime>-<slug>[-<issue>]-<hex>`). If all 10 candidates collide, errors with a hint to pass `--reuse` or free some session names.
 
 ---
 
@@ -176,8 +176,8 @@ can observe it — see the two tables below.
 Session names encode both the runtime and the specialist role so `xt pi --role X` and `xt claude --role X` produce distinguishable sessions:
 
 ```
-role-pi-<role-slug>[-<bead-slug>]
-role-claude-<role-slug>[-<bead-slug>]
+role-pi-<role-slug>[-<issue-slug>]
+role-claude-<role-slug>[-<issue-slug>]
 ```
 
 Example: `xt pi --role chain-coordinator --issue xyz-1` → `role-pi-chain-coordinator-xyz-1`; `xt claude --role chain-coordinator --issue xyz-1` → `role-claude-chain-coordinator-xyz-1`. Both coexist without `--reuse` or auto-suffix.
@@ -193,7 +193,7 @@ The launcher writes these on the target pane (current pane by default, new sessi
 | `@agent_state` | `idle` — set at spawn so the picker sees the pane immediately (before the runtime's own agent-state hook fires) |
 | `@agent_worktree` | Absolute path of the worktree this session owns |
 | `@agent_branch` | Branch checked out in that worktree — the integration branch a coordinator's specialist chains derive from (audit P1-03) |
-| `@agent_issue` | Only set when `--bead <id>` was passed |
+| `@agent_issue` | Only set when `--issue <id>` was passed |
 | `@agent_role` | Role name. Role launches only — a bare session has no role |
 
 `@agent_prompt_file` was retired in xtrm-8zsi1 — the launcher no longer materializes a prompt file. Downstream skills already read the option absence-safely.
@@ -215,7 +215,7 @@ Redundant with pane options on purpose — env survives re-execs the way pane op
 | `XTMUX_AGENT_PARENT_SESSION` | Same value as `@agent_parent_session` |
 | `XTMUX_AGENT_WORKTREE` | Same value as `@agent_worktree` |
 | `XTMUX_AGENT_BRANCH` | Same value as `@agent_branch` |
-| `XTMUX_AGENT_ISSUE` | Only set when `--bead <id>` was passed |
+| `XTMUX_AGENT_ISSUE` | Only set when `--issue <id>` was passed |
 | `XTMUX_AGENT_ROLE` | Same value as `@agent_role`; role launches only |
 
 The env set is **derived from the pane options** (`buildAgentEnv`), one entry per
@@ -268,15 +268,15 @@ The launcher no longer emits `--no-extensions -e <name>`. `pi -e` takes a filesy
 sp's `/skill:name` block sits at literal byte 0 of the turn-1 body so the runtime's slash-command parser fires it. The launcher enforces this as a hard invariant:
 
 - When `--prompt "/foo"` is passed and the specialist declares no skills (prefix is empty), the launcher rejects the launch with a message asking you to rename or repurpose. A bare `/foo` at position 0 would collide with the slash-command parser.
-- When a `--bead` starts with `/`, it is accepted only when byte zero exactly matches the independently rendered sp prefix for the role. A skill-looking bead title cannot impersonate `/skill:` (pi) or a Claude `/<name>` command, including when the role declares no skills.
+- When a `--issue` starts with `/`, it is accepted only when byte zero exactly matches the independently rendered sp prefix for the role. A skill-looking Issue title cannot impersonate `/skill:` (pi) or a Claude `/<name>` command, including when the role declares no skills.
 
 ---
 
 ## Byte guard
 
-Literal `--prompt` keeps the 50 KB combined system/body ceiling. `--bead` does not inherit that policy: the full `sp render-task` output is preserved up to 131071 bytes per runtime argument, the portable Linux argv boundary used by the launcher. NUL bytes and larger arguments fail before worktree creation.
+Literal `--prompt` keeps the 50 KB combined system/body ceiling. `--issue` does not inherit that policy: the full `sp render-task` output is preserved up to 131071 bytes per runtime argument, the portable Linux argv boundary used by the launcher. NUL bytes and larger arguments fail before worktree creation.
 
-A compact `read bead <id>` pointer is intentionally not substituted: it omits `sp render-task`'s dependency context, boundary instructions, mandatory rules, and rendered first-turn contract. New-session mode instead uses a bounded, cryptographically named tmux buffer so large rendered tasks stay out of the `tmux new-session` command without restoring prompt files. Buffer deletion is best-effort on consume, wrapper failure, launch failure, and handled signals; it does not provide secrecy from trusted same-server tmux peers.
+A compact `read Issue <id>` pointer is intentionally not substituted: it omits `sp render-task`'s dependency context, boundary instructions, mandatory rules, and rendered first-turn contract. New-session mode instead uses a bounded, cryptographically named tmux buffer so large rendered tasks stay out of the `tmux new-session` command without restoring prompt files. Buffer deletion is best-effort on consume, wrapper failure, launch failure, and handled signals; it does not provide secrecy from trusted same-server tmux peers.
 
 ---
 
@@ -285,7 +285,7 @@ A compact `read bead <id>` pointer is intentionally not substituted: it omits `s
 | Component | Interactive role behavior |
 | --- | --- |
 | Effective specialist + system prompt | Same `sp view` resolution; role-only system prompt remains separate from the task. |
-| Task template, bead/dependency context, boundary rules | Same specialists-owned `renderTaskPrompt` seam through `sp render-task`. |
+| Task template, Issue/dependency context, boundary rules | Same specialists-owned `renderTaskPrompt` seam through `sp render-task`. |
 | Mandatory rules | Same ordering and token limit; renderer failure is fatal for tracked interactive launch. |
 | Pre-script output | Deliberately omitted: executing pre-scripts is job-runtime behavior. |
 | Reviewer git-diff context | Deliberately omitted: execution-only and unavailable before the interactive session starts. |
@@ -307,7 +307,7 @@ CHILD_TARGET=$(cat /tmp/child.addr)
 # Route a task to the child
 tmux-session-picker message-send \
   --to "$CHILD_TARGET" \
-  --bead xyz-1 \
+  --issue xyz-1 \
   --text "Please summarize the ~/notes/design.md brief."
 
 # Later, poll the parent's inbox for the child's turn-done reply

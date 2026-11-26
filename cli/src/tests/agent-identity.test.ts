@@ -1,7 +1,7 @@
 // CORE-2801: the agent identity schema (docs/agent-identity.md) — ownership options,
 // legacy fallbacks, child launch identity and the exited-agent state.
 import { describe, expect, it } from 'vitest';
-import { buildAgentEnv, relationshipPaneOptions, stripLauncherModelVar } from '../utils/worktree-session.js';
+import { applyPaneOptions, buildAgentEnv, relationshipPaneOptions, stripInheritedLaunchEnv } from '../utils/worktree-session.js';
 import { restoredAttachPaneOptions, RESTORED_PANE_KEYS } from '../commands/attach.js';
 import { issueFromPaneListing } from '../utils/worktree-pane-issue.js';
 import { effectiveAgentState, parsePanes } from '../core/topology-projection.js';
@@ -27,9 +27,26 @@ describe('relationshipPaneOptions', () => {
     });
 });
 
+describe('relationshipPaneOptions dispatcher', () => {
+    it('writes only the Substrate participant, never the display name', () => {
+        expect(relationshipPaneOptions({ holder: 'w1', dispatcherEnv: { XTRM_DISPATCHER_NAME: 'Lead A' } }))
+            .toEqual([{ key: '@agent_holder', value: 'w1' }]);
+    });
+});
+
+describe('applyPaneOptions', () => {
+    it('unsets every identity key the launch does not write, legacy included', () => {
+        const calls: string[][] = [];
+        applyPaneOptions('%5', [{ key: '@agent_issue', value: 'CORE-1' }, { key: '@agent_role', value: 'worker' }], (_c, args) => { calls.push(args); });
+        const unset = calls.filter(a => a.includes('-u')).map(a => a[a.length - 1]);
+        expect(unset.sort()).toEqual(['@agent_bead', '@agent_dispatcher', '@agent_holder', '@agent_parent_pane']);
+        expect(calls.filter(a => !a.includes('-u')).map(a => a.slice(-2))).toEqual([['@agent_issue', 'CORE-1'], ['@agent_role', 'worker']]);
+    });
+});
+
 describe('child launch identity', () => {
     it('drops the parent agent identity from the inherited environment', () => {
-        const env = stripLauncherModelVar({
+        const env = stripInheritedLaunchEnv({
             XTMUX_AGENT_ROLE: 'lead', XTMUX_AGENT_ISSUE: 'CORE-1', XTMUX_AGENT_BEAD: 'CORE-1', XTMUX_AGENT_HOLDER: 'lead-a',
             XTMUX_AGENT_PARENT_PANE: '%1', XTMUX_AGENT_RUNTIME: 'claude', PATH: '/bin',
         });
@@ -38,17 +55,17 @@ describe('child launch identity', () => {
 });
 
 describe('attach restore', () => {
-    it('restores holder and dispatcher, and clears the legacy option', () => {
+    it('restores holder and dispatcher, never a parent pane, and clears the legacy option', () => {
         const options = restoredAttachPaneOptions({
             launch: null, worktreePath: '/r/.xtrm/worktrees/r-xt-claude-w1', branch: 'xt/w1', issue: 'CORE-1',
-            holder: 'w1', dispatcher: 'lead-a', parentPane: '%3',
+            holder: 'w1', dispatcher: 'lead-a',
         });
         expect(options).toEqual(expect.arrayContaining([
             { key: '@agent_issue', value: 'CORE-1' },
             { key: '@agent_holder', value: 'w1' },
             { key: '@agent_dispatcher', value: 'lead-a' },
-            { key: '@agent_parent_pane', value: '%3' },
         ]));
+        expect(options.some(option => option.key === '@agent_parent_pane')).toBe(false);
         expect(options.some(option => option.key === '@agent_bead')).toBe(false);
         expect(RESTORED_PANE_KEYS).toContain('@agent_bead');
     });

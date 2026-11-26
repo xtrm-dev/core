@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, XTRM_DISPATCHER_NAME_VAR, XTRM_DISPATCHER_PARTICIPANT_VAR, XTRM_PARENT_PANE_ID_VAR, XTRM_PARENT_SESSION_ID_VAR, recordDispatcherBinding, stripDispatcherEnv, withRestoredDispatcher, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, XTRM_DISPATCHER_PARTICIPANT_VAR, XTRM_PARENT_PANE_ID_VAR, XTRM_PARENT_SESSION_ID_VAR, recordDispatcherBinding, stripDispatcherEnv, withRestoredDispatcher, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -585,7 +585,7 @@ const INHERITED_AGENT_IDENTITY = /^XTMUX_AGENT_(?:ROLE|ISSUE|BEAD|HOLDER|TASK|DI
  * sees, and the parent agent's identity variables, so a child never reports the
  * parent's role or issue.
  */
-export function stripLauncherModelVar(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function stripInheritedLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const out = { ...env };
     delete out[LAUNCH_MODEL_VAR];
     for (const key of Object.keys(out)) if (INHERITED_AGENT_IDENTITY.test(key)) delete out[key];
@@ -2637,6 +2637,49 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
 }
 
 /**
+ * Identity keys a launch owns. A launch that does not write one must still clear it:
+ * setting an option never removes a value a previous occupant left in a reused pane
+ * (CORE-2801). `@agent_bead` is the legacy name, cleared and never written.
+ */
+export const LAUNCH_IDENTITY_KEYS = [
+    '@agent_issue', '@agent_bead', '@agent_role', '@agent_holder', '@agent_dispatcher', '@agent_parent_pane',
+] as const;
+
+/** Write a launch's pane options onto `paneId`, first unsetting every identity key the launch does not write. */
+export function applyPaneOptions(
+    paneId: string,
+    options: ReadonlyArray<{ key: string; value: string }>,
+    run: (command: string, args: string[]) => unknown = (command, args) => spawnSync(command, args, { stdio: 'pipe' }),
+): void {
+    const written = new Set(options.map(option => option.key));
+    for (const key of LAUNCH_IDENTITY_KEYS) {
+        if (!written.has(key)) run('tmux', ['set-option', '-p', '-u', '-t', paneId, key]);
+    }
+    for (const { key, value } of options) {
+        run('tmux', ['set-option', '-p', '-t', paneId, key, value]);
+    }
+}
+
+/**
+ * The ownership and relationship options written at launch (CORE-2801): the holder
+ * that owns the pane (claim sync compares against it), the dispatcher's Substrate
+ * participant, and the dispatcher's pane. A value that is unknown stays absent.
+ */
+export function relationshipPaneOptions(input: {
+    holder: string;
+    dispatcherEnv: Record<string, string>;
+}): Array<{ key: string; value: string }> {
+    const out: Array<{ key: string; value: string }> = [];
+    if (input.holder) out.push({ key: '@agent_holder', value: input.holder });
+    // Only the Substrate participant: the display name is not an identity, so an absent participant leaves the option absent.
+    const dispatcher = input.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR];
+    if (dispatcher) out.push({ key: '@agent_dispatcher', value: dispatcher });
+    const parentPane = input.dispatcherEnv[XTRM_PARENT_PANE_ID_VAR];
+    if (parentPane) out.push({ key: '@agent_parent_pane', value: parentPane });
+    return out;
+}
+
+/**
  * Environment variables exported to the pi/claude child process so scripts/
  * agent-state.sh (and the picker's own reads) can find the metadata without
  * an extra tmux query. Redundant with paneOptions on purpose — the launcher
@@ -2654,24 +2697,6 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
  * XTMUX_AGENT_PROMPT_FILE dropped in xtrm-8zsi1 — turn 1 has no file path,
  * and downstream consumers read the variable absence-safely.
  */
-/**
- * The ownership and relationship options written at launch (CORE-2801): the holder
- * that owns the pane (claim sync compares against it), the dispatcher's Substrate
- * participant, and the dispatcher's pane. A value that is unknown stays absent.
- */
-export function relationshipPaneOptions(input: {
-    holder: string;
-    dispatcherEnv: Record<string, string>;
-}): Array<{ key: string; value: string }> {
-    const out: Array<{ key: string; value: string }> = [];
-    if (input.holder) out.push({ key: '@agent_holder', value: input.holder });
-    const dispatcher = input.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR] || input.dispatcherEnv[XTRM_DISPATCHER_NAME_VAR];
-    if (dispatcher) out.push({ key: '@agent_dispatcher', value: dispatcher });
-    const parentPane = input.dispatcherEnv[XTRM_PARENT_PANE_ID_VAR];
-    if (parentPane) out.push({ key: '@agent_parent_pane', value: parentPane });
-    return out;
-}
-
 export function buildAgentEnv(
     paneOptions: ReadonlyArray<{ key: string; value: string }>,
 ): Record<string, string> {
@@ -3959,7 +3984,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripLauncherModelVar(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -4173,7 +4198,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // supervisor keys); deriving the base from it means the attacher's identity
     // cannot reach the worker even when the worker's role has no App of its own,
     // which is the case identityEnv alone did not cover.
-    const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
+    const launchEnv = stripInheritedLaunchEnv(args.identityEnv ?? process.env);
 
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     // CORE-2728: the same resolution is persisted on the launch binding, so
@@ -4267,9 +4292,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
                 encoding: 'utf8', stdio: 'pipe',
             }).stdout ?? '').trim()
             : '';
-        for (const { key, value } of plan.paneOptions) {
-            spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
-        }
+        applyPaneOptions(paneId, plan.paneOptions);
 
         if (args.mode === 'role') {
             emitAgentRoleLaunched({
@@ -4539,9 +4562,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     process.off('SIGTERM', cleanupOnSignal);
     process.off('SIGHUP', cleanupOnSignal);
 
-    for (const { key, value } of plan.paneOptions) {
-        spawnSync('tmux', ['set-option', '-p', '-t', paneId, key, value], { stdio: 'pipe' });
-    }
+    applyPaneOptions(paneId, plan.paneOptions);
     if (effectiveWindow || placementTargeted) {
         spawnSync('tmux', ['select-pane', '-t', paneId, '-T', sessionDisplayName], { stdio: 'pipe' });
     }

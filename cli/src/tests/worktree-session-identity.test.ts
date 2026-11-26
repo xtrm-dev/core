@@ -415,6 +415,40 @@ describe('xt/tmux launcher session-identity propagation', () => {
       expect(h.piSpawnEnv?.['XTRM_PARENT_SESSION_ID']).toBe('$7');
     });
 
+    it('a child spawn carries no XTMUX_AGENT_* inherited from its parent agent (CORE-2801)', async () => {
+      armDispatcher();
+      process.env.XTMUX_AGENT_ROLE = 'lead';
+      process.env.XTMUX_AGENT_ISSUE = 'PARENT-1';
+      process.env.XTMUX_AGENT_BEAD = 'PARENT-1';
+      process.env.XTMUX_AGENT_HOLDER = 'parent-holder';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      try {
+        await expect(launchWorktreeSession({ runtime: 'pi', name: 'child1', prompt: 'hi' })).rejects.toThrow('exit:0');
+      } finally {
+        for (const key of ['XTMUX_AGENT_ROLE', 'XTMUX_AGENT_ISSUE', 'XTMUX_AGENT_BEAD', 'XTMUX_AGENT_HOLDER']) delete process.env[key];
+      }
+      for (const key of ['XTMUX_AGENT_ROLE', 'XTMUX_AGENT_ISSUE', 'XTMUX_AGENT_BEAD', 'XTMUX_AGENT_HOLDER']) {
+        expect(h.piSpawnEnv?.[key], key).toBeUndefined();
+      }
+    });
+
+    it('a role launch writes its own holder and dispatcher participant, never the parent\'s issue (CORE-2801)', async () => {
+      armDispatcher();
+      process.env.XTMUX_AGENT_ISSUE = 'PARENT-1';
+      installMock(h);
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      try {
+        await expect(launchWorktreeSession({ runtime: 'claude', name: 'child2', role: 'testrole', attach: false })).rejects.toThrow('exit:0');
+      } finally {
+        delete process.env.XTMUX_AGENT_ISSUE;
+      }
+      const env = envPairs(h.newSessionArgs);
+      expect(env['XTMUX_AGENT_HOLDER']).toBe('child2');
+      expect(env['XTMUX_AGENT_DISPATCHER']).toBe(env['XTRM_DISPATCHER_PARTICIPANT']);
+      expect(env['XTMUX_AGENT_ISSUE']).toBeUndefined();
+    });
+
     it('direct spawn carries the git author identity of the launched holder (CORE-2525)', async () => {
       armDispatcher();
       installMock(h);

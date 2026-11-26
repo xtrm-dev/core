@@ -76,7 +76,7 @@ function install(repoRoot: string, cap: Capture): void {
       }
       if (args[0] === 'list-panes') return ok('%17\n');
       if (args[0] === 'list-windows') return ok('@1\tworkers\t1\n');
-      if (args[0] === 'set-option') { cap.paneOptions[args[4]] = args[5]; return ok(); }
+      if (args[0] === 'set-option') { if (!args.includes('-u')) cap.paneOptions[args[4]] = args[5]; return ok(); }
       if (args[0] === 'load-buffer') {
         const input = (mo as { input?: string }).input;
         if (typeof input === 'string') cap.payload = JSON.parse(input);

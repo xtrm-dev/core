@@ -23,7 +23,7 @@ import {
     launcherModelResolution,
     strayProjectSettingsModel,
     resolveLauncherModel,
-    stripLauncherModelVar,
+    stripInheritedLaunchEnv,
     ensureClaudePackSkillLinks,
     claudeExplicitSkillLines,
     guardRolePassthrough,
@@ -1254,11 +1254,11 @@ describe('the two spawn paths read one settings root (CORE-2761)', () => {
     });
 });
 
-describe('stripLauncherModelVar', () => {
+describe('stripInheritedLaunchEnv', () => {
     // A seat launched from inside another seat must not inherit the parent's
     // model: a wrong value passes the cross-check against the wrong answer.
     it('removes only the model variable', () => {
-        expect(stripLauncherModelVar({ PI_MODEL: 'opus', PATH: '/bin' })).toEqual({ PATH: '/bin' });
+        expect(stripInheritedLaunchEnv({ PI_MODEL: 'opus', PATH: '/bin' })).toEqual({ PATH: '/bin' });
     });
 });
 

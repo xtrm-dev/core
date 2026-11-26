@@ -257,11 +257,14 @@ export function restoredAttachPaneOptions(input: {
     currentSessionId?: string | null;
     /** CORE-2801: the worker's Substrate holder (launch slug), which owns claim sync for the pane. */
     holder?: string | null;
-    /** CORE-2801: the restored dispatcher's Substrate participant and pane. */
+    /**
+     * CORE-2801: the restored dispatcher's Substrate participant. `@agent_parent_pane` is NOT
+     * restored: a pane id does not survive the loss of the pane, so a resumed pane has none
+     * (the key is unset with the other launch keys) rather than a stale or invented one.
+     */
     dispatcher?: string | null;
-    parentPane?: string | null;
 }): Array<{ key: string; value: string }> {
-    const { launch, worktreePath, branch, issue, currentSessionId, holder, dispatcher, parentPane } = input;
+    const { launch, worktreePath, branch, issue, currentSessionId, holder, dispatcher } = input;
     const options: Array<{ key: string; value: string }> = [];
     const parentSession = (launch?.parentSession ?? '').trim() || (currentSessionId ?? '').trim();
     if (parentSession) options.push({ key: '@agent_parent_session', value: parentSession });
@@ -275,7 +278,6 @@ export function restoredAttachPaneOptions(input: {
     if (launch?.role) options.push({ key: '@agent_role', value: launch.role });
     if (holder) options.push({ key: '@agent_holder', value: holder });
     if (dispatcher) options.push({ key: '@agent_dispatcher', value: dispatcher });
-    if (parentPane) options.push({ key: '@agent_parent_pane', value: parentPane });
     return options;
 }
 
@@ -826,8 +828,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                 branch,
                 issue: issue?.ref ?? (record?.issue ?? (record as { bead?: string } | null)?.bead) ?? null,
                 holder: holderFromWorktreePath(target.path),
-                dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? restoredDispatcher.XTRM_DISPATCHER_NAME ?? null,
-                parentPane: restoredDispatcher.XTRM_PARENT_PANE_ID ?? null,
+                dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? null,
                 // XTRM-1069: a resumed pane's parent session is the session it now
                 // runs in; the record only has the launch's own (older) one.
                 currentSessionId: process.env.TMUX

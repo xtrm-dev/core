@@ -67553,7 +67553,7 @@ function strayProjectSettingsModel(opts = { worktreePath: "" }) {
   return model ? { file: file2, model } : void 0;
 }
 var INHERITED_AGENT_IDENTITY = /^XTMUX_AGENT_(?:ROLE|ISSUE|BEAD|HOLDER|TASK|DISPATCHER|PARENT_SESSION|PARENT_PANE|WORKTREE|BRANCH|PROMPT_FILE)$/;
-function stripLauncherModelVar(env3) {
+function stripInheritedLaunchEnv(env3) {
   const out = { ...env3 };
   delete out[LAUNCH_MODEL_VAR];
   for (const key of Object.keys(out)) if (INHERITED_AGENT_IDENTITY.test(key)) delete out[key];
@@ -68762,10 +68762,27 @@ function buildBareTmuxPlan(args) {
     channels
   });
 }
+var LAUNCH_IDENTITY_KEYS = [
+  "@agent_issue",
+  "@agent_bead",
+  "@agent_role",
+  "@agent_holder",
+  "@agent_dispatcher",
+  "@agent_parent_pane"
+];
+function applyPaneOptions(paneId, options, run5 = (command, args) => (0, import_node_child_process11.spawnSync)(command, args, { stdio: "pipe" })) {
+  const written = new Set(options.map((option) => option.key));
+  for (const key of LAUNCH_IDENTITY_KEYS) {
+    if (!written.has(key)) run5("tmux", ["set-option", "-p", "-u", "-t", paneId, key]);
+  }
+  for (const { key, value } of options) {
+    run5("tmux", ["set-option", "-p", "-t", paneId, key, value]);
+  }
+}
 function relationshipPaneOptions(input2) {
   const out = [];
   if (input2.holder) out.push({ key: "@agent_holder", value: input2.holder });
-  const dispatcher = input2.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR] || input2.dispatcherEnv[XTRM_DISPATCHER_NAME_VAR];
+  const dispatcher = input2.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR];
   if (dispatcher) out.push({ key: "@agent_dispatcher", value: dispatcher });
   const parentPane = input2.dispatcherEnv[XTRM_PARENT_PANE_ID_VAR];
   if (parentPane) out.push({ key: "@agent_parent_pane", value: parentPane });
@@ -69554,7 +69571,7 @@ async function launchWorktreeSession(opts) {
   const launchResult2 = (0, import_node_child_process11.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripLauncherModelVar(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -69681,7 +69698,7 @@ async function launchTmuxSession(args) {
       branchCreatedByLauncher: args.branchCreatedByLauncher ?? false
     })
   });
-  const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
+  const launchEnv = stripInheritedLaunchEnv(args.identityEnv ?? process.env);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) });
   const dispatcherEnv = args.restoredDispatcher ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher) : dispatcher.env;
   if (!parent && dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR]) {
@@ -69743,9 +69760,7 @@ async function launchTmuxSession(args) {
       encoding: "utf8",
       stdio: "pipe"
     }).stdout ?? "").trim() : "";
-    for (const { key, value } of plan.paneOptions) {
-      (0, import_node_child_process11.spawnSync)("tmux", ["set-option", "-p", "-t", paneId2, key, value], { stdio: "pipe" });
-    }
+    applyPaneOptions(paneId2, plan.paneOptions);
     if (args.mode === "role") {
       emitAgentRoleLaunched({
         pane: paneId2,
@@ -69944,9 +69959,7 @@ async function launchTmuxSession(args) {
   process.off("SIGINT", cleanupOnSignal);
   process.off("SIGTERM", cleanupOnSignal);
   process.off("SIGHUP", cleanupOnSignal);
-  for (const { key, value } of plan.paneOptions) {
-    (0, import_node_child_process11.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
-  }
+  applyPaneOptions(paneId, plan.paneOptions);
   if (effectiveWindow || placementTargeted) {
     (0, import_node_child_process11.spawnSync)("tmux", ["select-pane", "-t", paneId, "-T", sessionDisplayName], { stdio: "pipe" });
   }
@@ -73030,9 +73043,7 @@ async function launchCodexWorktreeSession(opts) {
     encoding: "utf8"
   }).stdout ?? "").trim().split(/\r?\n/, 1)[0] ?? "";
   if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail("Could not resolve Codex pane id");
-  for (const { key, value } of paneOptions) {
-    (0, import_node_child_process17.spawnSync)("tmux", ["set-option", "-p", "-t", paneId, key, value], { stdio: "pipe" });
-  }
+  applyPaneOptions(paneId, paneOptions);
   const session = await waitForCodexSession(import_node_path32.default.join(codexHome, "sessions"), worktreePath, launchedAfterMs);
   const launchedAt = new Date(launchedAfterMs).toISOString();
   const launchRecord = compactLaunchMeta({
@@ -80102,7 +80113,7 @@ function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
   return { launch: merged, conflictRole, ignoredRecordRole };
 }
 function restoredAttachPaneOptions(input2) {
-  const { launch, worktreePath, branch, issue: issue2, currentSessionId, holder, dispatcher, parentPane } = input2;
+  const { launch, worktreePath, branch, issue: issue2, currentSessionId, holder, dispatcher } = input2;
   const options = [];
   const parentSession = (launch?.parentSession ?? "").trim() || (currentSessionId ?? "").trim();
   if (parentSession) options.push({ key: "@agent_parent_session", value: parentSession });
@@ -80114,7 +80125,6 @@ function restoredAttachPaneOptions(input2) {
   if (launch?.role) options.push({ key: "@agent_role", value: launch.role });
   if (holder) options.push({ key: "@agent_holder", value: holder });
   if (dispatcher) options.push({ key: "@agent_dispatcher", value: dispatcher });
-  if (parentPane) options.push({ key: "@agent_parent_pane", value: parentPane });
   return options;
 }
 var PANE_ID = /^%[0-9]+$/;
@@ -80454,8 +80464,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       branch,
       issue: issue2?.ref ?? (record2?.issue ?? record2?.bead) ?? null,
       holder: holderFromWorktreePath(target.path),
-      dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? restoredDispatcher.XTRM_DISPATCHER_NAME ?? null,
-      parentPane: restoredDispatcher.XTRM_PARENT_PANE_ID ?? null,
+      dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? null,
       // XTRM-1069: a resumed pane's parent session is the session it now
       // runs in; the record only has the launch's own (older) one.
       currentSessionId: process.env.TMUX ? resolveCurrentTmuxSessionIdentity().sessionId : null
