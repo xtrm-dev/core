@@ -13,9 +13,12 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
+    AGENT_PANE_COMMANDS,
     checkRelease,
     keybindingPaths,
     keybindingProbes,
@@ -128,11 +131,13 @@ export interface NudgeResult {
 export function nudgePane(pane: PaneInfo, text: string): NudgeResult {
     if (pane.dead) return { ok: false, detail: 'pane is dead' };
     if (pane.inMode) return { ok: false, detail: 'pane is in copy mode' };
-    if (!['node', 'claude', 'codex', 'pi'].includes(pane.command)) {
+    if (!AGENT_PANE_COMMANDS.includes(pane.command)) {
         return { ok: false, detail: `pane foreground is '${pane.command || 'unknown'}', not an agent` };
     }
 
-    const buffer = `xt-release-${pane.paneId.replace('%', '')}-${Date.now()}`;
+    // The buffer name is ours alone: nothing here is derived from pane input, so there is
+    // no sanitisation step that could be bypassed by a crafted name.
+    const buffer = `xt-release-${process.pid}-${Date.now()}`;
     const set = tmux(['set-buffer', '-b', buffer, '--', text]);
     if (!set.ok) return { ok: false, detail: `set-buffer failed: ${set.err}` };
 
@@ -167,23 +172,96 @@ function headOf(worktree: string): string | null {
     return r.status === 0 ? (r.stdout ?? '').trim() || null : null;
 }
 
-/** The command the confirmation re-runs: the whole check again, with a pinned head. */
-function rerunCommand(opts: { paneId: string; client: string; head: string }): string {
+/** The command the confirmation re-runs: the whole check again, pinned to this head. */
+function rerunCommand(opts: { paneId: string; client: string; head: string; ticket: string }): string {
     const which = spawnSync('which', ['xt'], { encoding: 'utf8', stdio: 'pipe' });
     const binary = which.status === 0 && which.stdout.trim()
         ? which.stdout.trim()
         : `${process.execPath} ${process.argv[1] ?? 'xt'}`;
-    return `run-shell -b '${binary} worktree release --pane ${opts.paneId} --client ${opts.client} --yes --expect-head ${opts.head}'`;
+    // Every token here is validated before it is used: %<digits>, a client name of
+    // [A-Za-z0-9/_.-], a 32-hex ticket and a 40-hex head. shellQuote is still applied so
+    // the /bin/sh run-shell layer sees one token per argument.
+    return [binary, 'worktree', 'release', '--pane', opts.paneId, '--client', opts.client, '--ticket', opts.ticket, '--expect-head', opts.head]
+        .map(shellQuote)
+        .join(' ');
+}
+
+function shellQuote(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+const TICKET_TTL_MS = 120_000;
+const TICKET_ID = /^[0-9a-f]{32}$/;
+
+interface ReleaseTicket {
+    paneId: string;
+    client: string;
+    head: string;
+    createdAt: number;
+}
+
+function ticketDir(): string {
+    return join(homedir(), '.cache', 'xt', 'worktree-release');
+}
+
+/**
+ * A one-shot ticket is what makes the confirmation unbypassable. There is no `--yes`:
+ * the removal path runs only when it presents a ticket that this machine wrote moments
+ * ago and that names the same pane and the same head. Deleting the tree needs an
+ * operator keypress, not a flag anyone can add to a command line.
+ */
+export function createTicket(input: { paneId: string; client: string; head: string }): string | null {
+    try {
+        const dir = ticketDir();
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const id = randomBytes(16).toString('hex');
+        const body: ReleaseTicket = { ...input, createdAt: Date.now() };
+        writeFileSync(join(dir, `${id}.json`), JSON.stringify(body), { encoding: 'utf8', mode: 0o600 });
+        return id;
+    } catch (error) {
+        logRelease(`could not write the confirmation ticket: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
+    }
+}
+
+export function consumeTicket(id: string, input: { paneId: string; head: string }): { ok: true } | { ok: false; detail: string } {
+    if (!TICKET_ID.test(id)) return { ok: false, detail: 'confirmation ticket is malformed' };
+    const file = join(ticketDir(), `${id}.json`);
+    let raw: string;
+    try {
+        raw = readFileSync(file, 'utf8');
+    } catch {
+        return { ok: false, detail: 'confirmation ticket not found — nothing removed' };
+    }
+    // Single use, before any other decision: a replayed ticket cannot remove a second tree.
+    try {
+        unlinkSync(file);
+    } catch {
+        return { ok: false, detail: 'confirmation ticket could not be consumed — nothing removed' };
+    }
+    let ticket: ReleaseTicket;
+    try {
+        ticket = JSON.parse(raw) as ReleaseTicket;
+    } catch {
+        return { ok: false, detail: 'confirmation ticket is unreadable — nothing removed' };
+    }
+    if (ticket.paneId !== input.paneId) return { ok: false, detail: 'confirmation ticket belongs to another pane' };
+    if (Date.now() - ticket.createdAt > TICKET_TTL_MS) return { ok: false, detail: 'confirmation ticket expired — press prefix+X again' };
+    if (ticket.head !== input.head) return { ok: false, detail: 'HEAD moved since the prompt — press prefix+X again' };
+    return { ok: true };
 }
 
 export interface ReleaseOptions {
     paneId: string;
     client?: string;
-    yes: boolean;
+    ticket?: string;
     dryRun: boolean;
     expectHead?: string;
     procRoot?: string;
 }
+
+/** Blocker kinds a nagging agent can resolve; everything else is a refusal. */
+const NUDGEABLE_KINDS = new Set<string>(['dirty', 'ignored-work', 'skip-worktree', 'unpushed', 'detached-head', 'held-by-process']);
 
 /**
  * The press. Every early return is deliberate: the removal is the last statement, and
@@ -202,7 +280,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
             return { action: 'refused', paneId: opts.paneId, blockers: [], detail: clientError };
         }
     }
-    if (!process.env.TMUX) {
+    if (!process.env.TMUX && !opts.ticket) {
         const detail = 'not inside tmux — release acts on the pane that pressed the key';
         notify(detail);
         return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
@@ -259,7 +337,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     };
 
     if (!check.ok) {
-        const workBlockers = check.blockers.filter(blocker => blocker.paths.length > 0);
+        const workBlockers = check.blockers.filter(blocker => NUDGEABLE_KINDS.has(blocker.kind));
         if (workBlockers.length > 0) {
             const nudge = nudgePane(pane, renderNudge({ branch: check.facts.branch, blockers: workBlockers }));
             const summary = check.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ');
@@ -297,21 +375,46 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         return { ...base, action: 'checked', detail: `ready at ${head.slice(0, 12)}` };
     }
 
-    if (!opts.yes) {
+    // --- confirmation ---------------------------------------------------------
+    // Two paths reach the removal below: a ticket this machine issued for this pane and
+    // head moments ago, or nothing. There is no flag that skips the prompt.
+    let ticketHead = head;
+    if (opts.ticket) {
+        const consumed = consumeTicket(opts.ticket, { paneId: opts.paneId, head });
+        if (!consumed.ok) {
+            notify(`release refused: ${consumed.detail}`, opts.paneId);
+            logRelease(`release refused for pane ${opts.paneId} in ${pane.worktree}: ${consumed.detail}`);
+            return { ...base, action: 'refused', detail: consumed.detail };
+        }
+        ticketHead = head;
+    } else {
         if (!opts.client) {
-            const detail = 'needs confirmation: rerun with --client <name>, or --yes';
+            const detail = 'needs confirmation: press prefix+X from the tmux client (or pass --client)';
             notify(`release-ready: ${check.facts.branch ?? 'detached'} — ${detail}`, opts.paneId);
             return { ...base, action: 'checked', detail };
+        }
+
+        const ticket = createTicket({ paneId: opts.paneId, client: opts.client, head });
+        if (!ticket) {
+            const detail = 'could not write a confirmation ticket — nothing removed';
+            notify(`release not confirmed: ${detail}`, opts.paneId);
+            return { ...base, action: 'refused', detail };
         }
 
         const confirm = tmux([
             'confirm-before', '-t', opts.client,
             '-p', `release ${check.facts.branch ?? 'detached'} and move this pane to the main checkout? y/n`,
-            rerunCommand({ paneId: opts.paneId, client: opts.client, head }),
+            'run-shell', '-b', rerunCommand({ paneId: opts.paneId, client: opts.client, head, ticket }),
         ]);
 
         if (!confirm.ok) {
-            // Fail closed: no prompt, no removal.
+            // Fail closed: no prompt, no removal, and the ticket cannot outlive a prompt
+            // that was never shown.
+            try {
+                rmSync(join(ticketDir(), `${ticket}.json`), { force: true });
+            } catch {
+                // best effort
+            }
             const detail = `confirmation could not be shown (${confirm.err || 'tmux refused'}); nothing removed`;
             notify(`release not confirmed: ${confirm.err || 'tmux refused'} — nothing removed`, opts.paneId);
             logRelease(`release not confirmed for pane ${opts.paneId} in ${pane.worktree}: ${detail}`);
@@ -334,10 +437,10 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     // The respawned shell starts in the main checkout; anything still inside the tree is a
     // user. Wait briefly for the old process tree to disappear.
     const deadline = Date.now() + 5_000;
-    let verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: head, procRoot: opts.procRoot });
+    let verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: ticketHead, procRoot: opts.procRoot });
     while (!verify.ok && Date.now() < deadline && verify.blockers.every(blocker => blocker.kind === 'held-by-process')) {
         sleep(250);
-        verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: head, procRoot: opts.procRoot });
+        verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: ticketHead, procRoot: opts.procRoot });
     }
 
     if (!verify.ok) {
@@ -348,7 +451,9 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         return { ...base, blockers: verify.blockers, action: 'refused', detail };
     }
 
-    // Unlink only the launcher's own links, re-verified now. A link that changed is left.
+    // Unlink only the launcher's own links, re-verified now, and say so: an operator who
+    // looks after a failed removal must know the tree is no longer wired to the main
+    // checkout's skills.
     const links = launcherLinks(pane.worktree, repoRoot);
     for (const name of links) {
         const linkPath = join(pane.worktree, '.specialists', name);
@@ -377,7 +482,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         tmux(['set-option', '-p', '-u', '-t', opts.paneId, option]);
     }
 
-    notify(`released ${pane.worktree} (${check.facts.branch ?? 'detached'}); branch kept`, opts.paneId);
+    notify(`released ${pane.worktree} (${check.facts.branch ?? 'detached'}); launch links removed, branch kept`, opts.paneId);
     logRelease(`released ${pane.worktree} for pane ${opts.paneId} at ${head.slice(0, 12)}; branch kept`);
     return { ...base, action: 'released', detail: `removed ${pane.worktree}; branch ${check.facts.branch ?? '(detached)'} kept` };
 }
@@ -461,27 +566,34 @@ export async function installKeybinding(opts: { dryRun: boolean; yes: boolean })
 
 /** Probe whether `xt` resolves inside tmux's own environment. */
 function xtOnTmuxPath(): boolean | null {
-    const probe = join('/tmp', `.xt-tmux-path-${process.pid}`);
+    let dir: string;
     try {
-        unlinkSync(probe);
+        dir = mkdtempSync(join(tmpdir(), 'xt-tmux-path-'));
     } catch {
-        // absent
+        return null;
     }
-    const run = tmux(['run-shell', '-b', `command -v xt > ${probe} 2>/dev/null || echo MISSING > ${probe}`]);
+    const probe = join(dir, 'value');
+    const run = tmux(['run-shell', '-b', `command -v xt > ${shellQuote(probe)} 2>/dev/null || echo MISSING > ${shellQuote(probe)}`]);
     if (!run.ok) return null;
 
     const deadline = Date.now() + 1_500;
     while (Date.now() < deadline) {
         if (existsSync(probe)) {
             const value = (readTextIfExists(probe) ?? '').trim();
+            const found = value.length > 0 && value !== 'MISSING';
             try {
-                unlinkSync(probe);
+                rmSync(dir, { recursive: true, force: true });
             } catch {
                 // best effort
             }
-            return value.length > 0 && value !== 'MISSING';
+            return found;
         }
         sleep(100);
+    }
+    try {
+        rmSync(dir, { recursive: true, force: true });
+    } catch {
+        // best effort
     }
     return null;
 }
@@ -502,8 +614,3 @@ export function gatherKeybindingProbes(): KeybindingProbe[] {
     });
 }
 
-/** Whether the snippet file exists and carries the binding (used by the doctor line). */
-export function snippetInstalled(): boolean {
-    const snippet = readTextIfExists(keybindingPaths().snippetPath);
-    return Boolean(snippet && snippet.includes('bind X') && snippet.includes('worktree release'));
-}

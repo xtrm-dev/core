@@ -160,10 +160,16 @@ The binding is `bind X run-shell -b 'xt worktree release --pane #{pane_id} --cli
 | Pane state | What happens |
 |---|---|
 | not an agent worktree | refused; nothing changes |
-| tracked changes, untracked work, ignored data, unpushed commits, or another process inside the tree | one nudge is typed into the agent pane naming every blocking path; press again when it is done |
+| tracked changes, untracked work, ignored data, unpushed commits, a detached HEAD, or another process inside the tree | one nudge is typed into the agent pane naming every blocking path; press again when it is done. A pane whose foreground is not an agent (a shell, an editor) is never typed into |
 | clean and pushed | one confirmation in the pressing client; on `y` the pane respawns in the main checkout and the tree is removed |
 
-What the removal never does: it never passes `--force` to `git worktree remove`, never deletes the branch, and never follows the launcher's `.specialists/{default,user}` symlinks. A tree that fails the re-check after the respawn stays on disk. `git worktree branch-gc` deletes branches whose PRs are closed, so do not run it on a released branch whose work was never merged.
+There is no flag that skips the confirmation. On `y` the prompt runs a second `xt worktree release` that presents a one-shot ticket: the check runs again in full (HEAD pinned), the ticket is consumed before anything is removed, and it expires after two minutes. A tree that fails the re-check after the respawn stays on disk.
+
+Order inside the confirmed run, so a failure is diagnosable: re-check → `respawn-pane -k -c <main checkout>` → wait up to five seconds for processes still inside → re-check with the pinned HEAD → unlink only the launcher's own `.specialists/{default,user}` links (logged, because the tree is no longer wired to the main checkout's skills) → `git worktree remove` without `--force` → unset `@agent_worktree`, `@agent_branch`, `@agent_bead`.
+
+What the removal never does: it never passes `--force` to `git worktree remove`, never deletes the branch, and never follows the launcher's `.specialists/{default,user}` symlinks. `git worktree branch-gc` deletes branches whose PRs are closed, so do not run it on a released branch whose work was never merged.
+
+`xt worktree doctor` reports the binding in four probes. Outside a tmux server the `prefix X bound` and `xt on tmux PATH` probes report "not checked" and do not fail the doctor.
 
 `--dry-run` prints the verdict without removing anything:
 

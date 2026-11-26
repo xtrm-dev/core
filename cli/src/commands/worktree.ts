@@ -2000,10 +2000,10 @@ export function createWorktreeCommand(): Command {
         .description('Release the worktree of an agent pane: remove it when git state allows, otherwise nudge the agent')
         .option('--pane <id>', 'tmux pane id (the binding passes #{pane_id})')
         .option('--client <name>', 'tmux client that must answer the confirmation (the binding passes #{client_name})')
-        .option('--yes', 'Skip the confirmation; only the confirmed re-run sets this', false)
+        .option('--ticket <id>', 'Confirmation ticket issued by the prompt; the only path to removal (set by the confirmed re-run)')
         .option('--dry-run', 'Check the worktree and print the verdict without removing anything', false)
         .option('--expect-head <sha>', 'Refuse unless HEAD is still this commit (set by the confirmed re-run)')
-        .action(async (opts: { pane?: string; client?: string; yes: boolean; dryRun: boolean; expectHead?: string }) => {
+        .action(async (opts: { pane?: string; client?: string; ticket?: string; dryRun: boolean; expectHead?: string }) => {
             if (!opts.pane) {
                 console.error(kleur.red('\n  ✗ --pane is required (the tmux binding passes #{pane_id})\n'));
                 process.exit(1);
@@ -2012,14 +2012,14 @@ export function createWorktreeCommand(): Command {
             const outcome = await releasePane({
                 paneId: opts.pane,
                 client: opts.client,
-                yes: opts.yes,
+                ticket: opts.ticket,
                 dryRun: opts.dryRun,
                 expectHead: opts.expectHead,
             });
 
             // Inside tmux the operator sees the verdict in the status line; this JSON is for
             // --dry-run, scripts, and a run outside tmux.
-            if (opts.dryRun || !process.env.TMUX) {
+            if (opts.dryRun || !process.env.TMUX || opts.ticket) {
                 console.log(JSON.stringify({
                     action: outcome.action,
                     detail: outcome.detail,

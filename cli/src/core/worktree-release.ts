@@ -487,8 +487,11 @@ export function checkRelease(opts: ReleaseCheckOptions): ReleaseCheck {
             const assume = flag >= 'a' && flag <= 'z';
             if (!skip && !assume) continue;
             // The launcher sets skip-worktree on its own links so checkpoints do not
-            // capture phantom deletions; that is expected, not hidden work.
-            if (path.startsWith('.specialists/default/') || path.startsWith('.specialists/user/')) continue;
+            // capture phantom deletions; that is expected, not hidden work. Exempt only
+            // a path under a link this checkout actually has as a launcher symlink — the
+            // same test `isScaffoldPath` uses. A tracked file a user hid with
+            // skip-worktree under a real `.specialists/user` directory must still block.
+            if (isScaffoldPath(path, ctx)) continue;
             facts.skipWorktree.push(path);
         }
     }
@@ -556,13 +559,23 @@ export interface NudgeInput {
  * and an agent acting on "remove .specialists/user/" with a trailing slash would
  * follow the launcher link into the main checkout.
  */
+/**
+ * One line, no control characters. A branch name, a path or a git message can carry a
+ * newline; the nudge is pasted into an agent's prompt, so a newline inside a file name
+ * would read as a second instruction.
+ */
+function sanitizeInline(value: string): string {
+    const flat = value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return flat.length > 200 ? `${flat.slice(0, 197)}...` : flat;
+}
+
 export function renderNudge(input: NudgeInput): string {
     const lines = [
-        `XTRM release check: this worktree (branch ${input.branch ?? 'detached'}) is not ready to be removed.`,
+        `XTRM release check: this worktree (branch ${sanitizeInline(input.branch ?? 'detached')}) is not ready to be removed.`,
     ];
 
     for (const blocker of input.blockers) {
-        for (const path of blocker.paths.slice(0, MAX_NAMED_PATHS)) lines.push(`- ${path} (${blocker.kind})`);
+        for (const path of blocker.paths.slice(0, MAX_NAMED_PATHS)) lines.push(`- ${sanitizeInline(path)} (${blocker.kind})`);
         // A blocker without paths (an unpushed commit, a detached HEAD) still needs its
         // reason: "commit and push" is useless when the work is already committed.
         if (blocker.paths.length === 0) lines.push(`- ${blocker.detail}`);
@@ -655,7 +668,9 @@ export function keybindingProbes(input: {
         },
         {
             label: 'prefix X bound',
-            ok: input.binding !== null && input.binding.includes('worktree release'),
+            // Not checked is not a failure: the doctor line must not report a broken
+            // binding on a host where no tmux server is running.
+            ok: input.binding === null || input.binding.includes('worktree release'),
             detail: input.binding === null
                 ? 'tmux not running — not checked'
                 : (input.binding.includes('worktree release') ? 'bound to xt worktree release' : (input.binding.trim() ? 'bound to something else' : 'unbound')),
@@ -679,7 +694,3 @@ export function readTextIfExists(path: string): string | null {
     }
 }
 
-/** Human name of a worktree directory, for messages. */
-export function worktreeLabel(path: string): string {
-    return basename(path);
-}
