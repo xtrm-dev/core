@@ -15,7 +15,7 @@ describe('xt codex command', () => {
         await createCodexCommand().parseAsync([
             'node', 'xt', 'demo',
             '--role', 'reviewer',
-            '--bead', 'xtrm-123',
+            '--issue', 'xtrm-123',
             '--model', 'gpt-5.6-codex',
             '--skill', 'multiplexing',
             '--no-attach',
@@ -26,7 +26,7 @@ describe('xt codex command', () => {
         expect(mocked.launchCodexWorktreeSession).toHaveBeenCalledWith({
             name: 'demo',
             role: 'reviewer',
-            bead: 'xtrm-123',
+            issue: 'xtrm-123',
             prompt: undefined,
             model: 'gpt-5.6-codex',
             skills: ['multiplexing'],

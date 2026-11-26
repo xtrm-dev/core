@@ -2,7 +2,7 @@
  * The Substrate Issue a live agent pane records for a worktree (CORE-2728).
  *
  * `xt attach` resolves the worker's Issue after a pause: the launcher's session
- * record is the primary source, and a live pane's `@agent_bead` is the fallback.
+ * record is the primary source, and a live pane's `@agent_issue` is the fallback.
  * The probe lives in this module, not in the attach command, because a resumed
  * session is pane-free by contract — cli/test/codex-k1-failure-residue asserts
  * that attach does not transport a session through the multiplexer, and this is
@@ -14,8 +14,8 @@
 
 import { spawnSync } from 'node:child_process';
 
-/** The tmux format: pane cwd, the worktree the launcher recorded, the bead. */
-export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_bead}';
+/** The tmux format: pane cwd, the worktree the launcher recorded, the issue. */
+export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_issue}\t#{@agent_bead}';
 
 /**
  * Hard ceiling for the pane probe (CORE-2740 F3). `xt attach` waits on this
@@ -26,7 +26,7 @@ export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{
 export const PANE_PROBE_TIMEOUT_MS = 2_000;
 
 /**
- * Every pane's `path<TAB>worktree<TAB>bead` row, or '' when tmux cannot answer
+ * Every pane's `path<TAB>worktree<TAB>issue` row, or '' when tmux cannot answer
  * (no server, no binary, or no answer within `timeoutMs`). Never throws.
  */
 export function listAgentPanes(timeoutMs: number = PANE_PROBE_TIMEOUT_MS): string {
@@ -46,32 +46,34 @@ export function listAgentPanes(timeoutMs: number = PANE_PROBE_TIMEOUT_MS): strin
 }
 
 /**
- * The bead of the pane(s) that sit in `worktreePath`. A pane matches on an
+ * The issue of the pane(s) that sit in `worktreePath`. A pane matches on an
  * EXACT path: its current cwd or the worktree the launcher recorded for it, never
  * a suffix or a basename. Several panes naming different beads are ambiguous, so
  * the answer is absent rather than whichever row came first.
  */
-export function beadFromPaneListing(listing: string, worktreePath: string): string | null {
+export function issueFromPaneListing(listing: string, worktreePath: string): string | null {
     const beads = new Set<string>();
     for (const line of String(listing ?? '').split(/\r?\n/)) {
-        const [currentPath = '', agentWorktree = '', bead = ''] = line.split('\t');
+        const [currentPath = '', agentWorktree = '', issueOption = '', legacyBead = ''] = line.split('\t');
+        // `@agent_bead` is the read-only fallback for panes launched before CORE-2801.
+        const issue = issueOption.trim() ? issueOption : legacyBead;
         if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
-        const candidate = bead.trim();
+        const candidate = issue.trim();
         if (candidate) beads.add(candidate);
     }
     return beads.size === 1 ? [...beads][0] ?? null : null;
 }
 
 /**
- * Resolve the pane bead for one worktree. `probe` is the listing seam: tests
+ * Resolve the pane issue for one worktree. `probe` is the listing seam: tests
  * inject a listing, production runs `listAgentPanes`. Never throws.
  */
-export function resolveWorktreePaneBead(
+export function resolveWorktreePaneIssue(
     worktreePath: string,
     probe: () => string = listAgentPanes,
 ): string | null {
     try {
-        return beadFromPaneListing(probe(), worktreePath);
+        return issueFromPaneListing(probe(), worktreePath);
     } catch {
         return null;
     }

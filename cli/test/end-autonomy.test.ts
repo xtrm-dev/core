@@ -25,7 +25,7 @@ function git(args: string[], cwd: string): string {
 }
 
 describe('xt end dry-run autonomy heuristics', () => {
-    it('synthesizes a non-generic title from changed files when no bead metadata is available', () => {
+    it('synthesizes a non-generic title from changed files when no issue metadata is available', () => {
         const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-end-autonomy-'));
         const remote = path.join(tmpBase, 'remote.git');
         const mainRepo = path.join(tmpBase, 'repo');

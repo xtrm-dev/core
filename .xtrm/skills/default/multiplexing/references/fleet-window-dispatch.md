@@ -43,10 +43,10 @@ SLUG=worker-slug                  # short kebab-case; becomes window name
 tmux new-window -t "${SESSION}:" -n "$SLUG" -d
 PANE=$(tmux list-panes -t "${SESSION}:${SLUG}" -F '#{pane_id}' | head -1)
 tmux send-keys -t "$PANE" \
-  "cd $MAIN && xt claude --bead $BEAD --prompt 'Read /tmp/.../brief.md and execute it exactly.'" Enter
+  "cd $MAIN && xt claude --issue $BEAD --prompt 'Read /tmp/.../brief.md and execute it exactly.'" Enter
 ```
 
-(`--bead` here is the legacy alias for the bound Issue; prefer `--issue`.)
+(`--issue` here is the legacy alias for the bound Issue; prefer `--issue`.)
 
 For `xt pi`, replace `xt claude` with `xt pi --model <name>`; skill loading uses `/skill:<name>` in the prompt.
 

@@ -776,7 +776,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     let tmuxSession: string | undefined;
     let tmuxWindow: string | undefined;
     let role = bounded(env.XTMUX_AGENT_ROLE);
-    let bead = bounded(env.XTMUX_AGENT_BEAD);
+    // The live pane option wins over the frozen launch env; XTMUX_AGENT_BEAD / @agent_bead are read-only legacy fallbacks (CORE-2801).
+    let bead = bounded(env.XTMUX_AGENT_ISSUE) ?? bounded(env.XTMUX_AGENT_BEAD);
     let parentTmux: string | undefined;
     let worktree: string | undefined;
     let branch: string | undefined;
@@ -786,7 +787,7 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     const tmuxInfo = pane
       ? exec("tmux", [
           "display-message", "-p", "-t", pane,
-          "#{session_name}\t#{@agent_role}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}",
+          "#{session_name}\t#{@agent_role}\t#{@agent_issue}\t#{@agent_bead}\t#{@agent_parent_session}\t#{@agent_worktree}\t#{@agent_branch}\t#{window_name}",
         ])
       : Promise.resolve("");
     const gitInfo = exec("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]);
@@ -797,11 +798,11 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
     const [tmuxOut, gitOut, branchOut, remoteOut] = await Promise.all([tmuxInfo, gitInfo, branchInfo, remoteInfo]);
     if (tmuxOut) {
-      const [name, paneRole, paneBead, parent, observedWorktree, observedBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
+      const [name, paneRole, paneIssue, paneBead, parent, observedWorktree, observedBranch, windowName] = tmuxOut.replace(/\n$/, "").split("\t");
       tmuxSession = bounded(name);
       tmuxWindow = bounded(windowName, SESSION_NAME_MAX);
       role = resolveSessionRole(role, paneRole);
-      bead = bounded(paneBead) ?? bead;
+      bead = bounded(paneIssue) ?? bounded(paneBead) ?? bead;
       parentTmux = bounded(parent);
       paneWorktree = bounded(observedWorktree, 4096);
       paneBranch = bounded(observedBranch);

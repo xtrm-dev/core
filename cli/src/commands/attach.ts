@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import kleur from 'kleur';
 import prompts from 'prompts';
 import { spawnSync } from 'node:child_process';
@@ -10,7 +10,7 @@ import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { listXtWorktrees, getRepoRoot } from './worktree.js';
 import { readCodexWorktreeSession } from '../core/codex-session.js';
 import { buildCodexResumeArgs } from '../core/codex-runtime.js';
-import { resolveWorktreePaneBead } from '../utils/worktree-pane-bead.js';
+import { resolveWorktreePaneIssue } from '../utils/worktree-pane-issue.js';
 import { SPECIALISTS_CHANNEL_ENTRY, buildAgentEnv, claudeMcpEnv, resolveRequestedSkills, resolveRole, specialistsPluginInstalled, readSessionMeta, readSessionLaunch, launchWorktreeSession, type ResolvedRole, type SessionLaunchMeta, type SessionMeta, type WorktreeSessionOptions } from '../utils/worktree-session.js';
 import { launchCodexWorktreeSession } from '../utils/codex-worktree-session.js';
 import {
@@ -160,9 +160,9 @@ export function attachLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * The six pane options a role launch writes and a resume owns (CORE-2792). attach
+ * The pane options a role launch writes and a resume owns (CORE-2792). attach
  * unsets every one of them before it restores the record's values: a pane that
- * hosted a coordinator keeps `@agent_role=lead` and the old bead otherwise,
+ * hosted a coordinator keeps `@agent_role=lead` and the old issue otherwise,
  * because setting an option never clears a stale one (review finding 2).
  */
 export const RESTORED_PANE_KEYS = [
@@ -170,8 +170,13 @@ export const RESTORED_PANE_KEYS = [
     '@agent_task',
     '@agent_worktree',
     '@agent_branch',
-    '@agent_bead',
+    '@agent_issue',
     '@agent_role',
+    '@agent_holder',
+    '@agent_dispatcher',
+    '@agent_parent_pane',
+    // Legacy name: never written again, cleared so a pre-CORE-2801 pane cannot show a stale value.
+    '@agent_bead',
 ] as const;
 
 /**
@@ -242,7 +247,7 @@ export function restoredAttachPaneOptions(input: {
     launch: SessionLaunchMeta | null;
     worktreePath: string;
     branch: string;
-    bead: string | null;
+    issue: string | null;
     /**
      * The tmux session hosting the resumed pane. A resumed pane always has a
      * parent session — the one it now runs in — so `@agent_parent_session` is
@@ -250,8 +255,13 @@ export function restoredAttachPaneOptions(input: {
      * showed it empty while a fresh launch showed its session id).
      */
     currentSessionId?: string | null;
+    /** CORE-2801: the worker's Substrate holder (launch slug), which owns claim sync for the pane. */
+    holder?: string | null;
+    /** CORE-2801: the restored dispatcher's Substrate participant and pane. */
+    dispatcher?: string | null;
+    parentPane?: string | null;
 }): Array<{ key: string; value: string }> {
-    const { launch, worktreePath, branch, bead, currentSessionId } = input;
+    const { launch, worktreePath, branch, issue, currentSessionId, holder, dispatcher, parentPane } = input;
     const options: Array<{ key: string; value: string }> = [];
     const parentSession = (launch?.parentSession ?? '').trim() || (currentSessionId ?? '').trim();
     if (parentSession) options.push({ key: '@agent_parent_session', value: parentSession });
@@ -261,8 +271,11 @@ export function restoredAttachPaneOptions(input: {
     // worktree that moved must not advertise the path it used to have.
     options.push({ key: '@agent_worktree', value: worktreePath });
     options.push({ key: '@agent_branch', value: launch?.branch ?? branch });
-    if (bead) options.push({ key: '@agent_bead', value: bead });
+    if (issue) options.push({ key: '@agent_issue', value: issue });
     if (launch?.role) options.push({ key: '@agent_role', value: launch.role });
+    if (holder) options.push({ key: '@agent_holder', value: holder });
+    if (dispatcher) options.push({ key: '@agent_dispatcher', value: dispatcher });
+    if (parentPane) options.push({ key: '@agent_parent_pane', value: parentPane });
     return options;
 }
 
@@ -301,8 +314,8 @@ const SAFE_ISSUE_REF = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** What the issue lookup may read; every seam is injectable for tests. */
 export interface WorkerIssueDeps {
     readMeta?: (worktreePath: string) => SessionMeta | null;
-    /** The bead a live pane records for this worktree; null when none or ambiguous. */
-    paneBead?: (worktreePath: string) => string | null;
+    /** The issue a live pane records for this worktree; null when none or ambiguous. */
+    paneIssue?: (worktreePath: string) => string | null;
 }
 
 /** The Issue a resumed worktree was launched for, and how sure we are of it. */
@@ -310,7 +323,7 @@ export interface WorkerIssue {
     ref: string;
     /**
      * 'meta' = the worker's own session record; 'pane' = a live pane's
-     * `@agent_bead` (CORE-2740 F2). A pane's metadata is written by whoever can
+     * `@agent_issue` (CORE-2740 F2). A pane's metadata is written by whoever can
      * reach the live pane, so the caller must not let it choose a foreign
      * dispatcher binding.
      */
@@ -324,8 +337,8 @@ const SAFE_BINDING_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 /**
  * The session record a resumed worktree wrote. A Codex record is validated by its
- * own reader (CORE-2728 S1 carries the bead there), so a damaged Codex file cannot
- * hand the attach a bead the reader would reject; anything else is the plain
+ * own reader (CORE-2728 S1 carries the issue there), so a damaged Codex file cannot
+ * hand the attach a issue the reader would reject; anything else is the plain
  * launcher record.
  */
 function readSessionRecord(worktreePath: string): SessionMeta | null {
@@ -334,7 +347,7 @@ function readSessionRecord(worktreePath: string): SessionMeta | null {
         return {
             runtime: 'codex',
             launchedAt: codex.launchedAt,
-            ...(codex.bead ? { bead: codex.bead } : {}),
+            ...(codex.issue ? { issue: codex.issue } : {}),
             ...(codex.launch ? { launch: codex.launch } : {}),
         };
     }
@@ -351,21 +364,22 @@ function readSessionRecord(worktreePath: string): SessionMeta | null {
 /**
  * The Substrate Issue a resumed worktree was launched for (CORE-2728), with its
  * provenance and the launch binding the record names (CORE-2740). The launcher's
- * session record persists it; a live pane's recorded bead is the fallback. A
+ * session record persists it; a live pane's recorded issue is the fallback. A
  * non-string, malformed or ambiguous value is ABSENT — never a guess and never a
  * TypeError.
  */
 export function resolveWorkerIssue(worktreePath: string, deps: WorkerIssueDeps = {}): WorkerIssue | null {
     const meta = (deps.readMeta ?? readSessionRecord)(worktreePath);
-    const raw = meta ? meta.bead : undefined;
+    // Records written before CORE-2801 name the field `bead`; read-only fallback.
+    const raw = meta ? (meta.issue ?? (meta as { bead?: unknown }).bead) : undefined;
     const fromMeta = typeof raw === 'string' ? raw.trim() : '';
     if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) {
         return { ref: fromMeta, source: 'meta', bindingId: bindingIdFromMeta(meta) };
     }
-    const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
+    const paneIssue = deps.paneIssue ?? resolveWorktreePaneIssue;
     let fromPane: unknown;
     try {
-        fromPane = paneBead(worktreePath);
+        fromPane = paneIssue(worktreePath);
     } catch {
         return null;
     }
@@ -400,6 +414,7 @@ export interface FreshAttachOptions {
     thinking?: string;
     /** Text, or `@<file>` to read it from a file. */
     prompt?: string;
+    issue?: string;
     bead?: string;
     attach?: boolean;
     window?: boolean;
@@ -419,7 +434,7 @@ export function freshOnlyOptions(opts: FreshAttachOptions & { yolo?: boolean }):
     const given: string[] = [];
     if (opts.model !== undefined) given.push('--model');
     if (opts.prompt !== undefined) given.push('--prompt');
-    if (opts.bead !== undefined) given.push('--bead');
+    if (opts.issue !== undefined || opts.bead !== undefined) given.push('--issue');
     if (opts.window) given.push('--window');
     if (opts.newSession) given.push('--new-session');
     if (opts.pane !== undefined) given.push('--pane');
@@ -473,7 +488,7 @@ export function buildFreshLaunchOptions(
     // CORE-2792: a restart is the same launch identity, not a bare one. The role,
     // model and thinking the original launch carried are restored from the
     // worktree record unless the operator gives them explicitly; nothing else is
-    // inferred (no prompt, no bead beyond the recorded Issue).
+    // inferred (no prompt, no issue beyond the recorded Issue).
     const trusted = trustedLaunchMeta(
         readSessionLaunch(readSessionRecord(target.path)),
         readLaunchLedger(deps.home ?? homedir(), target.path),
@@ -507,7 +522,7 @@ export function buildFreshLaunchOptions(
     return {
         runtime: target.runtime === 'pi' ? 'pi' : 'claude',
         role: requestedRole ?? recordedRole,
-        bead: opts.bead ?? issue?.ref,
+        issue: opts.issue ?? opts.bead ?? issue?.ref,
         prompt: readFreshPrompt(opts.prompt),
         model: opts.model ?? (roleUnchanged ? launch?.model : undefined),
         thinking: opts.thinking ?? (roleUnchanged ? launch?.thinking : undefined),
@@ -540,7 +555,8 @@ export function createAttachCommand(): Command {
         .option('--role <name>', 'Resume as this specialist role, or with --fresh launch as it (default: the role the launch ledger records; a role only the worktree record names is never restored)')
         .option('--model <name>', 'With --fresh: forward --model <name> to the runtime')
         .option('--prompt <text|@file>', 'With --fresh: the initial user prompt, or @<file> to read it from a file')
-        .option('--bead <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
+        .option('--issue <id>', 'With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours')
+        .addOption(new Option('--bead <id>', 'Deprecated alias of --issue').hideHelp())
         .option('--window', 'With --fresh, open a detached window in the current session; prints <session>:<pane_id>')
 
         .option('--new-session', 'With --fresh: force a new session')
@@ -643,7 +659,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
                     }
                     // --new-session is implied: the Codex launcher always creates its own session.
                     await launchCodexWorktreeSession({
-                        role: launch.role, bead: launch.bead, prompt: launch.prompt, model: launch.model,
+                        role: launch.role, issue: launch.issue, prompt: launch.prompt, model: launch.model,
                         attach: launch.attach, window: launch.window, yolo: opts.yolo !== false,
                         passthrough: extra, existingWorktree: launch.existingWorktree,
                         identityEnv: launch.identityEnv,
@@ -791,7 +807,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             // dispatcher back, read from the binding this worker's launch wrote. No
             // binding leaves the dispatcher absent — the attacher is never adopted.
             // CORE-2740 F2: only the binding THIS worker recorded (or one made in
-            // this worktree) may answer; a bead taken from a pane cannot elect a
+            // this worktree) may answer; a issue taken from a pane cannot elect a
             // foreign dispatcher.
             const issue = resolveWorkerIssue(target.path);
             const restoredDispatcher = attachDispatcherEnv(issue?.ref ?? null, {
@@ -801,14 +817,17 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
 
             // CORE-2792: the launcher's pane options die with the pane, so a
             // resumed pane came back with an empty @agent_role and no worktree,
-            // branch or bead. Restore every one of them that the worktree record
+            // branch or issue. Restore every one of them that the worktree record
             // still answers, onto the pane this command runs in, before the
             // runtime starts — the runtime's own hook then owns @agent_state.
             const restoredOptions = restoredAttachPaneOptions({
                 launch: launchForRestore,
                 worktreePath: target.path,
                 branch,
-                bead: issue?.ref ?? record?.bead ?? null,
+                issue: issue?.ref ?? (record?.issue ?? (record as { bead?: string } | null)?.bead) ?? null,
+                holder: holderFromWorktreePath(target.path),
+                dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? restoredDispatcher.XTRM_DISPATCHER_NAME ?? null,
+                parentPane: restoredDispatcher.XTRM_PARENT_PANE_ID ?? null,
                 // XTRM-1069: a resumed pane's parent session is the session it now
                 // runs in; the record only has the launch's own (older) one.
                 currentSessionId: process.env.TMUX
@@ -818,7 +837,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             const paneId = currentPaneId();
             if (paneId) {
                 // Review finding 2: a pane that hosted a coordinator keeps
-                // @agent_role=lead and the old bead, because setting an option never
+                // @agent_role=lead and the old issue, because setting an option never
                 // clears a stale one. Unset the six keys first, so a value the record
                 // does not name ends up ABSENT. They are not unset on exit: they
                 // describe the pane that hosts the worker while it runs, and a pane

@@ -7,7 +7,7 @@
       "install_scope": "global",
       "files": {
         "agent-host-reporter.mjs": {
-          "hash": "a6b6698633cc429bb66740b31051676bae506d36838d28c05256a10cce643471",
+          "hash": "961d1f45a8123bb7233c9fb72b7e4f66569e2029890d1e995d0bd0524967e1c1",
           "version": "0.15.3"
         },
         "claude-receipt-ack.mjs": {
@@ -51,7 +51,7 @@
           "version": "0.15.3"
         },
         "statusline.mjs": {
-          "hash": "48c5488902bf25c3e8d4cc858f51471421cdb5bba60fec84da52d5b141cad59b",
+          "hash": "332050bfb9332360be0ddcd010b2002d8556440821c7b882431d953e141094b3",
           "version": "0.15.3"
         },
         "statusline.test.mjs": {
@@ -210,7 +210,7 @@
           "version": "0.15.3"
         },
         "multiplexing/references/fleet-window-dispatch.md": {
-          "hash": "ca830af7b1f7c607cc874e3e35e7dbbd18ddca4a2666f5f1a3cd9f51bb36dd38",
+          "hash": "bd7d2f3027275beb118f1c0bb7c30f810732d1c2c78c68554d3ed4f6ea354f82",
           "version": "0.15.3"
         },
         "multiplexing/references/handoff.md": {
@@ -670,7 +670,7 @@
           "version": "0.15.3"
         },
         "using-xtrm/references/surfaces.md": {
-          "hash": "6eedd768c531c1d850ce6fcd97ce09d86ea9018bc04b4691ccd8bca0b8126cd7",
+          "hash": "987ef72427642626281e5b1a3bb3dd09a0b56a84e8e0f78f215a9b91d7d0013d",
           "version": "0.15.3"
         },
         "using-xtrm/SKILL.md": {
@@ -1029,15 +1029,15 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/continuity.md": {
-          "hash": "7de7eeff67a627fc13eb1b6a325a2bb630bf790f08ff9d09a22d09643a5ae064",
+          "hash": "a6361a893ecc45542e2d2b6c10577daa76aa65d499634ac226795685d4b030df",
           "version": "0.15.3"
         },
         "project-management/project-management/references/handover.md": {
-          "hash": "b9503d1a03bfd1441d7ea24fca8452316924f78657e34441a24e43ad20e3395b",
+          "hash": "e3be7d2b309208a7ad3019d5884e27ecaf384a2372aa57c0098a5729aa5a554b",
           "version": "0.15.3"
         },
         "project-management/project-management/references/instructions.md": {
-          "hash": "090d3e7077f1ab6dc3dda0812aeffd643327bdd44c42652d032c037fe2a22942",
+          "hash": "fd02233447aa501fba946f76dd4e605f7eefcb73d1e692cd7dede3b15a8cd698",
           "version": "0.15.3"
         },
         "project-management/project-management/references/jira.md": {
@@ -1045,11 +1045,11 @@
           "version": "0.15.3"
         },
         "project-management/project-management/references/launching.md": {
-          "hash": "005e7e331e18d4c052816563cdfa94d36a3cd4a56854fd60099e70901bba81ee",
+          "hash": "e5a30121e967290f01687435e4d4d4946b387f71aa33cd709565593c001297ce",
           "version": "0.15.3"
         },
         "project-management/project-management/references/lead.md": {
-          "hash": "53f757ebbe86dfa5d394568469a0ded861fe00d20941b4edae6c34029a5a73a6",
+          "hash": "8b096ebd1e680f42b8b99f36df53b1a5779b825954962f383502af5dde697595",
           "version": "0.15.3"
         },
         "project-management/project-management/references/manager.md": {
@@ -1089,7 +1089,7 @@
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_park.py": {
-          "hash": "cf0215119391c1c4e820731f952ba3f4f96eb303be2c92de0d332d08519bc483",
+          "hash": "a30777fe847579e21413a1aa31f9c7d5fd55146367f339e587452b851a884a98",
           "version": "0.15.3"
         },
         "project-management/project-management/scripts/pm_question.py": {

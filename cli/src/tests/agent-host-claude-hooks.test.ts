@@ -65,7 +65,7 @@ function runHook(socketPath: string, input: Record<string, unknown>, nodeArgs: s
         XTRM_SESSION_NAME: 'claude-test',
         CLAUDE_PROJECT_DIR: cwd,
     };
-    for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_BEAD', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH', 'SUBSTRATE_HOLDER']) {
+    for (const key of ['TMUX', 'TMUX_PANE', 'XTMUX_AGENT_ROLE', 'XTMUX_AGENT_ISSUE', 'XTRM_AGENT_HOST', 'XTRM_AGENT_LAUNCH', 'SUBSTRATE_HOLDER']) {
         delete env[key];
     }
     Object.assign(env, extraEnv);

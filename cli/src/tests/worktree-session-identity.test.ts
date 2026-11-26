@@ -353,7 +353,7 @@ describe('xt/tmux launcher session-identity propagation', () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
-    // No prompt/bead/override: the plain `pi --name` direct-spawn path.
+    // No prompt/issue/override: the plain `pi --name` direct-spawn path.
     await expect(launchWorktreeSession({ runtime: 'pi', name: 'plain1' })).rejects.toThrow('exit:0');
 
     expect(h.newSessionArgs).toBeNull();

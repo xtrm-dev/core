@@ -66,8 +66,8 @@ describe('Codex thread persistence', () => {
         expect(fs.readJsonSync(path.join(worktree, '.xtrm', 'session-meta.json'))).toEqual(session);
     });
 
-    it('CORE-2728 M6c: the record carries exactly one bead — string kept, junk dropped', () => {
-        const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-bead-'));
+    it('CORE-2728 M6c: the record carries exactly one issue — string kept, junk dropped', () => {
+        const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-issue-'));
         roots.push(worktree);
         const base = {
             runtime: 'codex' as const,
@@ -81,15 +81,15 @@ describe('Codex thread persistence', () => {
         const write = (extra: Record<string, unknown>): void => {
             fs.writeJsonSync(path.join(worktree, '.xtrm', 'session-meta.json'), { ...base, ...extra });
         };
-        write({ bead: ' CORE-2728 ' });
-        expect(readCodexWorktreeSession(worktree)).toMatchObject({ bead: 'CORE-2728' });
+        write({ issue: ' CORE-2728 ' });
+        expect(readCodexWorktreeSession(worktree)).toMatchObject({ issue: 'CORE-2728' });
         // A non-string, an empty and a null value are all ABSENT, never carried.
         // The ref SHAPE is enforced by the attach-side reader before `sb` runs.
         for (const junk of [2728, '', '   ', null]) {
-            write({ bead: junk });
+            write({ issue: junk });
             const read = readCodexWorktreeSession(worktree);
             expect(read).not.toBeNull();
-            expect(read).not.toHaveProperty('bead');
+            expect(read).not.toHaveProperty('issue');
             // No unrelated field from the file survives the validated read either.
             expect(read).not.toHaveProperty('extra');
         }

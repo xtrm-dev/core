@@ -10,7 +10,7 @@ The same flag surface works for both runtimes; differences are called out explic
 
 ```bash
 # Case (i): launch pi tracked to a bead — sp render-task fills the initial prompt
-xt pi --role chain-coordinator --bead xyz-1
+xt pi --role chain-coordinator --issue xyz-1
 
 # Case (ii): launch claude with a literal initial prompt, reviewer's skills auto-loaded
 xt claude --role reviewer --prompt 'review the auth changes in cli/src/auth/'
@@ -48,7 +48,7 @@ No prompt/task file is created. Current-pane launches pass the exact positional 
 | Flag | Meaning | Notes |
 | --- | --- | --- |
 | `--role <name>` | Resolve `<name>` via `sp view <name> --raw --surface <runtime>` and boot the runtime with the specialist's system prompt, skills, model, and thinking level. | The Specialists resolver selects model defaults for the target surface; CLI flags override. Pi falls back to legacy `sp view` only for older Specialists releases. Claude fails clearly instead of accepting an unscoped provider default. |
-| `--bead <id>` | Render the tracked task as the initial user prompt via `sp render-task`, and attach `<id>` to the pane via `@agent_bead`. | Mutually exclusive with `--prompt`. Included in the session name slug (`role-<runtime>-<slug>-<bead>`). |
+| `--bead <id>` | Render the tracked task as the initial user prompt via `sp render-task`, and attach `<id>` to the pane via `@agent_issue`. | Mutually exclusive with `--prompt`. Included in the session name slug (`role-<runtime>-<slug>-<bead>`). |
 | `--prompt <text>` | Use `<text>` as the initial user prompt. Combines with the sp-owned skill prefix. | Mutually exclusive with `--bead`. For anything larger than a paragraph, prefer `--bead` — a beads issue is a better container than a shell argv. |
 | `--no-attach` | New-session mode only. Print `session_name:pane_id` on stdout and exit — orchestrator-capture pattern. | Inside `$TMUX` without `--new-session`, `--no-attach` **errors** with a clear hint. |
 | `--model <name>` | Forward `--model <name>` to the runtime; overrides `specialist.execution.model`. | Both pi and claude accept `--model`. |
@@ -88,13 +88,13 @@ metadata and replaces the orchestrator process.
 `--subordinate` is one verb for the safe shape:
 
 ```bash
-xt pi coord --role chain-coordinator --bead <epic> --subordinate
+xt pi coord --role chain-coordinator --issue <epic> --subordinate
 ```
 
 is equivalent to
 
 ```bash
-xt pi coord --role chain-coordinator --bead <epic> \
+xt pi coord --role chain-coordinator --issue <epic> \
   --new-session --no-attach --parent "$(tmux display-message -p '#{session_id}')"
 ```
 
@@ -180,7 +180,7 @@ role-pi-<role-slug>[-<bead-slug>]
 role-claude-<role-slug>[-<bead-slug>]
 ```
 
-Example: `xt pi --role chain-coordinator --bead xyz-1` → `role-pi-chain-coordinator-xyz-1`; `xt claude --role chain-coordinator --bead xyz-1` → `role-claude-chain-coordinator-xyz-1`. Both coexist without `--reuse` or auto-suffix.
+Example: `xt pi --role chain-coordinator --issue xyz-1` → `role-pi-chain-coordinator-xyz-1`; `xt claude --role chain-coordinator --issue xyz-1` → `role-claude-chain-coordinator-xyz-1`. Both coexist without `--reuse` or auto-suffix.
 
 ## Pane options set at launch
 
@@ -193,7 +193,7 @@ The launcher writes these on the target pane (current pane by default, new sessi
 | `@agent_state` | `idle` — set at spawn so the picker sees the pane immediately (before the runtime's own agent-state hook fires) |
 | `@agent_worktree` | Absolute path of the worktree this session owns |
 | `@agent_branch` | Branch checked out in that worktree — the integration branch a coordinator's specialist chains derive from (audit P1-03) |
-| `@agent_bead` | Only set when `--bead <id>` was passed |
+| `@agent_issue` | Only set when `--bead <id>` was passed |
 | `@agent_role` | Role name. Role launches only — a bare session has no role |
 
 `@agent_prompt_file` was retired in xtrm-8zsi1 — the launcher no longer materializes a prompt file. Downstream skills already read the option absence-safely.
@@ -215,7 +215,7 @@ Redundant with pane options on purpose — env survives re-execs the way pane op
 | `XTMUX_AGENT_PARENT_SESSION` | Same value as `@agent_parent_session` |
 | `XTMUX_AGENT_WORKTREE` | Same value as `@agent_worktree` |
 | `XTMUX_AGENT_BRANCH` | Same value as `@agent_branch` |
-| `XTMUX_AGENT_BEAD` | Only set when `--bead <id>` was passed |
+| `XTMUX_AGENT_ISSUE` | Only set when `--bead <id>` was passed |
 | `XTMUX_AGENT_ROLE` | Same value as `@agent_role`; role launches only |
 
 The env set is **derived from the pane options** (`buildAgentEnv`), one entry per
@@ -300,7 +300,7 @@ A parent Claude Code / pi orchestrator spawns a child role session, drives it vi
 
 ```bash
 # Parent orchestrator, from inside its own tmux session
-xt pi --role researcher --bead xyz-1 --no-attach --new-session > /tmp/child.addr
+xt pi --role researcher --issue xyz-1 --no-attach --new-session > /tmp/child.addr
 # child.addr contains "role-pi-researcher-xyz-1:%42"
 CHILD_TARGET=$(cat /tmp/child.addr)
 

@@ -25,15 +25,15 @@ export interface CodexWorktreeSession {
     profileName: string;
     profilePath: string;
     /**
-     * CORE-2728: the Substrate Issue this session was launched for (`--bead`).
+     * CORE-2728: the Substrate Issue this session was launched for (`--issue`).
      * Recorded so `xt attach` can find the launch binding — and the original
-     * dispatcher — after the pane (and its @agent_bead) is gone. Absent when the
-     * launch carried no bead; a record without it stays valid.
+     * dispatcher — after the pane (and its @agent_issue) is gone. Absent when the
+     * launch carried no issue; a record without it stays valid.
      */
-    bead?: string;
+    issue?: string;
     /**
      * CORE-2792: the launch identity (role, task, model, …) the pane options and
-     * pane environment carried. Read back defensively, like the bead.
+     * pane environment carried. Read back defensively, like the issue.
      */
     launch?: SessionLaunchMeta;
 }
@@ -179,14 +179,15 @@ export function readCodexWorktreeSession(worktreePath: string): CodexWorktreeSes
             || path.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
             return null;
         }
-        // Only the fields above are trusted: the bead is read explicitly, so an
+        // Only the fields above are trusted: the issue is read explicitly, so an
         // absent one is a valid record and a non-string/empty one is dropped rather
         // than carried. A damaged file can then never name an Issue, and the ref
         // shape is still validated by the attach-side reader before it reaches `sb`.
-        const { bead: rawBead, launch: rawLaunch, ...validated } = parsed;
+        const { issue: rawIssueNew, bead: rawBead, launch: rawLaunch, ...validated } = parsed;
+        const rawIssue = rawIssueNew ?? rawBead;
         const session = validated as unknown as CodexWorktreeSession;
-        const bead = typeof rawBead === 'string' ? rawBead.trim() : '';
-        if (bead) session.bead = bead;
+        const issue = typeof rawIssue === 'string' ? rawIssue.trim() : '';
+        if (issue) session.issue = issue;
         const launch = readSessionLaunch({ launch: rawLaunch });
         if (launch) session.launch = launch;
         return session;

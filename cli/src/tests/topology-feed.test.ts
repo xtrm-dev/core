@@ -17,7 +17,7 @@ import { agentSessionsByPane } from '../core/agent-host.js';
 
 const SEP = '\t';
 const line = (pane: string, session: string, window = 'zsh', state = '', command = 'zsh') =>
-    [pane, '$1', session, '@1', command, '/home/op', state, '', '', '', '', '', '', '', '', '0', '0', '1', '1', window].join(SEP);
+    [pane, '$1', session, '@1', command, '/home/op', state, '', '', '', '', '', '', '', '', '', '0', '0', '1', '1', window].join(SEP);
 
 class FakeTmux {
     /** Six panes: a diff of one pane is then well under half of a snapshot, as in a real fleet. */

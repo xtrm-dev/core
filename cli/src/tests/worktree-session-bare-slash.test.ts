@@ -121,9 +121,9 @@ describe('worktree session bare-mode slash guard', () => {
     expect(errorOutput).not.toMatch(/starts with '\/'/);
   });
 
-  // xtrm-3xgs5: --bead and `--` passthrough used to be refused outright
+  // xtrm-3xgs5: --issue and `--` passthrough used to be refused outright
   // without --role. Both are legal in bare mode now.
-  it('accepts bare-mode --bead without --role', async () => {
+  it('accepts bare-mode --issue without --role', async () => {
     const repoRoot = path.join(tempRoot, 'repo');
     process.env.HOME = path.join(tempRoot, 'home');
     await fs.ensureDir(repoRoot);
@@ -135,14 +135,14 @@ describe('worktree session bare-mode slash guard', () => {
 
     await expect(launchWorktreeSession({
       runtime: 'claude',
-      name: 'bare-bead',
-      bead: 'xtrm-3xgs5',
-      prompt: 'work the bead',
+      name: 'bare-issue',
+      issue: 'xtrm-3xgs5',
+      prompt: 'work the issue',
     })).rejects.toThrow(/exit:/);
 
     const errorOutput = errorSpy.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
     expect(errorOutput).not.toMatch(/require --role/);
-    // Bare --bead is metadata only, so it does not conflict with --prompt.
+    // Bare --issue is metadata only, so it does not conflict with --prompt.
     expect(errorOutput).not.toMatch(/mutually exclusive/);
     // ...and it must not reach the roleless-impossible sp render-task.
     expect(mocked.spawnSync).not.toHaveBeenCalledWith(

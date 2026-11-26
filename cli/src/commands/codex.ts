@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 
 import { launchCodexWorktreeSession } from '../utils/codex-worktree-session.js';
 
@@ -7,7 +7,8 @@ export function createCodexCommand(): Command {
         .description('EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust')
         .argument('[name]', 'Optional session name — used as xt/<name> branch (random if omitted)')
         .option('--role <name>', 'Launch Codex with a Specialists role')
-        .option('--bead <id>', 'Bind a bead to the session; with --role, render it as the initial task')
+        .option('--issue <id>', 'Bind an issue to the session; with --role, render it as the initial task')
+        .addOption(new Option('--bead <id>', 'Deprecated alias of --issue').hideHelp())
         .option('--prompt <text>', 'Use text as the initial user prompt')
         .option('--model <name>', 'Forward --model to Codex')
         .option('--skill <name-or-path>', 'Invoke an additional $skill-name at startup (repeatable)', (value: string, previous: string[]) => [...previous, value], [])
@@ -30,6 +31,7 @@ Status:
 `)
         .action(async (name: string | undefined, opts: {
             role?: string;
+            issue?: string;
             bead?: string;
             prompt?: string;
             model?: string;
@@ -44,7 +46,7 @@ Status:
             await launchCodexWorktreeSession({
                 name,
                 role: opts.role,
-                bead: opts.bead,
+                issue: opts.issue ?? opts.bead,
                 prompt: opts.prompt,
                 model: opts.model,
                 skills: opts.skill,

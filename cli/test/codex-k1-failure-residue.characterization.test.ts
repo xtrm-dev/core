@@ -235,13 +235,13 @@ describe('K1 positive control — pre-worktree rejections are clean (xtrm-ozknq.
     // rejections are clean BY CONSTRUCTION (comment at worktree-session.ts:1522-1524),
     // not by any cleanup code.
 
-    it('rejects --bead with --prompt in role mode without creating anything', () => {
+    it('rejects --issue with --prompt in role mode without creating anything', () => {
         const before = worktreeEntries();
-        const r = run(['claude', 'clean1', '--role', 'reviewer', '--bead', 'xtrm-fake1', '--prompt', 'hello', '--no-attach']);
+        const r = run(['claude', 'clean1', '--role', 'reviewer', '--issue', 'xtrm-fake1', '--prompt', 'hello', '--no-attach']);
 
         // worktree-session.ts:1503
         expect(r.status).toBe(1);
-        expect(r.stderr).toMatch(/--bead and --prompt are mutually exclusive/);
+        expect(r.stderr).toMatch(/--issue and --prompt are mutually exclusive/);
         expect(r.stdout).not.toMatch(CONTRACT_LINE);
         // The launcher never even reached the "Launching <runtime> session" banner.
         expect(r.stdout).not.toMatch(/Launching claude session/);
@@ -282,7 +282,7 @@ describe('K1 positive control — pre-worktree rejections are clean (xtrm-ozknq.
         // channel; this test pins the current binary 0/1 surface so the
         // widening is provable.
         const codes = [
-            run(['claude', 'clean4', '--role', 'reviewer', '--bead', 'b', '--prompt', 'p', '--no-attach']).status,
+            run(['claude', 'clean4', '--role', 'reviewer', '--issue', 'b', '--prompt', 'p', '--no-attach']).status,
             run(['claude', 'clean5', '--model', 'openai/gpt-5', '--no-attach']).status,
             run(['claude', 'residue3', '--no-attach']).status, // post-creation tmux failure
         ];

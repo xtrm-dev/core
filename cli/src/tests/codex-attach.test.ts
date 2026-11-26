@@ -126,17 +126,17 @@ describe('xt attach Codex resume', () => {
         }
     });
 
-    it('CORE-2728 F2b: the recorded bead names the issue, never the attacher\'s XTRM_AGENT_BEAD', async () => {
-        const worktree = codexWorktree({ bead: 'CORE-2728' });
+    it('CORE-2728 F2b: the recorded issue names the issue, never the attacher\'s XTRM_AGENT_ISSUE', async () => {
+        const worktree = codexWorktree({ issue: 'CORE-2728' });
         // A different work item in the attacher's environment must not win: the record
         // of THIS worktree is the only source of its issue.
-        const savedBead = process.env.XTRM_AGENT_BEAD;
-        process.env.XTRM_AGENT_BEAD = 'OTHER-1';
+        const savedIssue = process.env.XTRM_AGENT_ISSUE;
+        process.env.XTRM_AGENT_ISSUE = 'OTHER-1';
         try {
             await attach();
         } finally {
-            if (savedBead === undefined) delete process.env.XTRM_AGENT_BEAD;
-            else process.env.XTRM_AGENT_BEAD = savedBead;
+            if (savedIssue === undefined) delete process.env.XTRM_AGENT_ISSUE;
+            else process.env.XTRM_AGENT_ISSUE = savedIssue;
         }
         expect(mocked.attachDispatcherEnv).toHaveBeenCalledTimes(1);
         // CORE-2740: the ref travels with its provenance and the worker's worktree.
@@ -146,15 +146,15 @@ describe('xt attach Codex resume', () => {
         });
     });
 
-    it('CORE-2728 F2b: no bead in the record and no bead in the environment leaves the issue absent', async () => {
+    it('CORE-2728 F2b: no issue in the record and no issue in the environment leaves the issue absent', async () => {
         codexWorktree();
-        const savedBead = process.env.XTRM_AGENT_BEAD;
-        process.env.XTRM_AGENT_BEAD = 'OTHER-1';
+        const savedIssue = process.env.XTRM_AGENT_ISSUE;
+        process.env.XTRM_AGENT_ISSUE = 'OTHER-1';
         try {
             await attach();
         } finally {
-            if (savedBead === undefined) delete process.env.XTRM_AGENT_BEAD;
-            else process.env.XTRM_AGENT_BEAD = savedBead;
+            if (savedIssue === undefined) delete process.env.XTRM_AGENT_ISSUE;
+            else process.env.XTRM_AGENT_ISSUE = savedIssue;
         }
         expect(mocked.attachDispatcherEnv).toHaveBeenCalledWith(null, expect.objectContaining({
             bindingId: null,

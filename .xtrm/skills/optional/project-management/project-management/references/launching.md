@@ -25,11 +25,11 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 | **Worker (default)** | `specialist_dispatch {specialist: "worker", issue_ref}`; next issue of its role: `specialist_reply` / `specialist_resume` | Kept alive and reused (SKILL.md rule 1); no pane. Stop with `specialist_stop_activation` when its role has no queued work. |
 | **PR review (default)** | `specialist_dispatch {specialist: "pr-reviewer", issue_ref[, model_override]}`; next PR: `specialist_reply` | Through `claude-bridge`; keep one alive per lead and give it each new PR (rule 44). |
 | `xt claude` worker | `xt claude <name> --window --model sonnet\|opus --prompt '/<skill> ... /goal ...' -- --effort low\|medium\|high\|xhigh\|max` | Effort goes after `--`. `--thinking` is dropped with a warning. |
-| worker role (`xt`) | `xt claude\|pi <name> --window --role worker --bead <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--bead` is the prompt. |
+| worker role (`xt`) | `xt claude\|pi <name> --window --role worker --issue <ref> [--model sonnet\|opus] [-- --effort high]` | `~/.specialists/user/worker.specialist.json` (MMD-3200). Loads this skill and using-specialists at turn 1; Claude default `sonnet`, pi default DeepSeek V4.1 Flash. `--issue` is the prompt. |
 | `xt pi` worker | `xt pi <name> --window --model <provider/id> --thinking off\|minimal\|low\|medium\|high\|xhigh --prompt '/skill:<name> ... /goal ...'` | Default `deepseek/deepseek-v4.1-flash` (provider `commandcode`), thinking high; never Muse Spark (it stops mid-task, operator 2026-10-30). `--skill <name>` repeats. |
-| Role session | `xt claude\|pi --role <role> [--bead <id>] [--model ...]` | `--model` overrides the role's; `--bead` and `--prompt` exclude each other. |
-| Manager | `xt claude <name> --window --role manager --bead <ref> --model opus -- --effort high` | The launch role gives the role; any name. Then the session kit ("Session kit" below). |
-| Lead | `xt claude <name> --window --role lead --bead <epic-ref> --model sonnet -- --effort high` | One per workstream; any name. |
+| Role session | `xt claude\|pi --role <role> [--issue <id>] [--model ...]` | `--model` overrides the role's; `--issue` and `--prompt` exclude each other. |
+| Manager | `xt claude <name> --window --role manager --issue <ref> --model opus -- --effort high` | The launch role gives the role; any name. Then the session kit ("Session kit" below). |
+| Lead | `xt claude <name> --window --role lead --issue <epic-ref> --model sonnet -- --effort high` | One per workstream; any name. |
 | Board helper | `xt pi board-helper --window --role board-helper` | The only Jira writer; one per project; the launch role gives `board_helper`. |
 | Resume, hotfix base | `xt attach <slug\|dir\|branch>` (name only); `--base origin/stable` | Default base is fresh `origin/<default>`. |
 | Specialist | `specialist_list` -> `specialist_dispatch {specialist, issue_ref}` (optional `model_override`, `thinking_override`, `epic_context_depth` 1-2) -> `specialist_status {wait_for_change: true, timeout_s: 60}` -> `specialist_reply {message_id, body}` -> `specialist_result {activation_id}` -> `specialist_stop_activation {activation_id, reason}` | One of `issue_ref` or `contract`; the issue must be READY. An inline `contract` needs `parent_ref`. |
@@ -47,7 +47,7 @@ Run the budget preflight first (SKILL.md rule 2) and record its line in the laun
 ### Session kit
 
 The launch role is the session's role: `--role manager`, `--role lead`, `--role worker`, `--role board-helper` (mapped by the
-`launch_roles` setting; `references/setup.md`, "Routing roles"). `--bead <ref>` binds the issue. Right after the launch command, before any message
+`launch_roles` setting; `references/setup.md`, "Routing roles"). `--issue <ref>` binds the issue. Right after the launch command, before any message
 to the session, the launcher checks the kit and adds what the launch did not give:
 
 ```
@@ -69,12 +69,12 @@ launched under the shared `project-manager` role, or a running session from befo
 display name such as `g04z-lead`, and `XTRM_DISPATCHER_ADDRESS` is its `uds:` socket when it publishes one. `SUBSTRATE_HOLDER=<name>` beside
 them is the worker's OWN holder. Unknown values are absent; nothing is defaulted from the environment.
 
-Every launch with `--bead` also records the dispatcher on the Issue's ExecutionBinding (`sb provenance dispatch
+Every launch with `--issue` also records the dispatcher on the Issue's ExecutionBinding (`sb provenance dispatch
 --dispatcher-participant/--dispatcher-session`) and writes that binding's id into the worktree's `.xtrm/session-meta.json`. After a pause,
 `xt attach` restores the dispatcher from THAT binding, refreshed against the live sessions by participant — so a restarted lead is found again,
 an absent one leaves the keys absent, and the attacher's own dispatcher is never adopted. A bead read from a live pane may only restore a binding
 made in the worker's own worktree: two workers on one issue keep their own dispatchers, and no one can elect a dispatcher by writing
-`@agent_bead`.
+`@agent_issue`.
 
 These values are advisory. They tell a worker and the record WHO dispatched it; they never authorize a claim, a merge, a release or a production
 change. Check a worker's first journal entry after launch rather than trusting the pane (`references/worker.md`).
@@ -109,7 +109,7 @@ consult the advisor.
    `ready`, `dispatchable` `true`.
 3. **Launch** (after the rule 2.2 preflight): by default a `worker` specialist, `specialist_dispatch {specialist: "worker", issue_ref: <ref>}`,
    or the next issue to a kept-alive one with `specialist_reply`. Only for what SKILL.md rule 1 lists, from the main checkout:
-   `xt claude <name> --window --role worker --bead <ref> --model sonnet|opus -- --effort high` or `xt pi <name> --window --role worker --bead <ref>`.
+   `xt claude <name> --window --role worker --issue <ref> --model sonnet|opus -- --effort high` or `xt pi <name> --window --role worker --issue <ref>`.
    Effort defaults to medium: pass high for builders (Opus for maths and data meaning). Pi or Sonnet builder: choose per task (SKILL.md rule 40); a
    pi builder needs a tight contract and a first-diff check. Refuse or queue when a cap or
    gate fails; a new builder launch waits for the operator's word when the operator has ruled so. A start-up line "could not read <ref>" is harmless.

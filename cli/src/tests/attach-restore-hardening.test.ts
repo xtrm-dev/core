@@ -1,6 +1,6 @@
 // CORE-2740: restore hardening after the PR #963 (CORE-2728) audit, F1-F3.
 // Everything `xt attach` reads back — a binding's participant, a registry name,
-// a pane's bead — is DATA written by another process, so a restored identity
+// a pane's issue — is DATA written by another process, so a restored identity
 // must be validated, must be this worker's OWN binding, and a tmux probe that
 // never answers must not hang the attach.
 
@@ -19,7 +19,7 @@ import {
     type DispatcherIdentityDeps,
 } from '../core/dispatcher-identity.js';
 import { resolveWorkerIssue } from '../commands/attach.js';
-import { PANE_PROBE_TIMEOUT_MS, listAgentPanes } from '../utils/worktree-pane-bead.js';
+import { PANE_PROBE_TIMEOUT_MS, listAgentPanes } from '../utils/worktree-pane-issue.js';
 import { readSessionMeta, writeSessionBindingId, writeSessionMeta } from '../utils/worktree-session.js';
 
 const roots: string[] = [];
@@ -148,7 +148,7 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
         expect(envB[XTRM_DISPATCHER_PARTICIPANT_VAR]).toBe('lead-b');
     });
 
-    it('a bead taken from a pane may only read a binding made in this worktree', () => {
+    it('a issue taken from a pane may only read a binding made in this worktree', () => {
         const stdout = twoWorkersOneIssue();
         const run = () => ({ ok: true, stdout });
         // No binding id (the pane has none) and the newest binding belongs to another
@@ -266,11 +266,11 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
         expect(writeSessionBindingId(worktree, 'exb_01a1ee88-6881-7068-b9de-784b3011f71a')).toBe(true);
         expect(readSessionMeta(worktree)).toMatchObject({
             runtime: 'pi',
-            bead: 'CORE-2740',
+            issue: 'CORE-2740',
             bindingId: 'exb_01a1ee88-6881-7068-b9de-784b3011f71a',
         });
         // The issue lookup reports the record as its source and hands the id along.
-        expect(resolveWorkerIssue(worktree, { paneBead: () => null })).toEqual({
+        expect(resolveWorkerIssue(worktree, { paneIssue: () => null })).toEqual({
             ref: 'CORE-2740',
             source: 'meta',
             bindingId: 'exb_01a1ee88-6881-7068-b9de-784b3011f71a',
@@ -279,12 +279,12 @@ describe('CORE-2740 F2: attach restores the worker\'s own binding', () => {
         // restore then falls back to the worktree match only.
         fsWriteBindingId(worktree, 'exb_1; rm -rf /tmp/x');
         expect(readSessionMeta(worktree)?.bindingId).toBe('exb_1; rm -rf /tmp/x');
-        expect(resolveWorkerIssue(worktree, { paneBead: () => null })?.bindingId).toBeNull();
+        expect(resolveWorkerIssue(worktree, { paneIssue: () => null })?.bindingId).toBeNull();
         // Writing no id at all is a no-op, never a record rewrite.
         expect(writeSessionBindingId(worktree, '   ')).toBe(false);
         // CORE-2740 F2: a pane-derived ref carries no binding and says so.
         const paneless = tmp('xtrm-2740-wt-');
-        expect(resolveWorkerIssue(paneless, { readMeta: () => null, paneBead: () => 'CORE-2740' })).toEqual({
+        expect(resolveWorkerIssue(paneless, { readMeta: () => null, paneIssue: () => 'CORE-2740' })).toEqual({
             ref: 'CORE-2740',
             source: 'pane',
             bindingId: null,

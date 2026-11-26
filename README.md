@@ -121,8 +121,8 @@ xt pi feature-name
 xt claude feature-name
 xt codex feature-name
 
-xt pi --role executor --bead <id>
-xt claude --role reviewer --bead <id>
+xt pi --role executor --issue <id>
+xt claude --role reviewer --issue <id>
 ```
 
 The normal choice is the smallest execution shape that fits the job:
@@ -346,8 +346,8 @@ xt claude feature-name
 xt codex feature-name
 
 # tracked role-shaped work
-xt pi --role executor --bead <id>
-xt claude --role reviewer --bead <id>
+xt pi --role executor --issue <id>
+xt claude --role reviewer --issue <id>
 
 # resume / finish
 xt attach

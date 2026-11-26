@@ -67303,7 +67303,7 @@ function runtimeAssigneeFromOrigin(runtime, runtimeOriginId) {
   const slug = tail?.slice(0, RUNTIME_ORIGIN_SLUG_LENGTH).toLowerCase();
   return slug && /^[a-z0-9]{5}$/.test(slug) ? `${runtime}/${slug}` : null;
 }
-function shouldAutoAssignBead(assignee) {
+function shouldAutoAssignIssue(assignee) {
   return !assignee || AUTO_ASSIGNEE_RE.test(assignee);
 }
 function readyInstanceId(paneId, sinceMs, previousInstanceId) {
@@ -67338,24 +67338,24 @@ function readyInstanceId(paneId, sinceMs, previousInstanceId) {
   }
   return latest;
 }
-async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
+async function assignIssueToRuntime(issue2, runtime, paneId, cwd, options = {}) {
   const {
     previousInstanceId = "",
     readyAfterMs = Date.now(),
     readyTimeoutMs = RUNTIME_READY_TIMEOUT_MS
   } = options;
-  const warn2 = (message) => console.error(kleur_default.yellow(`  \u26A0 bead assignee: ${message}`));
-  const show = (0, import_node_child_process11.spawnSync)("bd", ["show", bead, "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
+  const warn2 = (message) => console.error(kleur_default.yellow(`  \u26A0 issue assignee: ${message}`));
+  const show = (0, import_node_child_process11.spawnSync)("bd", ["show", issue2, "--json"], { cwd, encoding: "utf8", stdio: "pipe" });
   if (show.status !== 0) {
-    warn2(`could not read ${bead}; session launch continues`);
+    warn2(`could not read ${issue2}; session launch continues`);
     return;
   }
   try {
-    const beadData = JSON.parse(show.stdout ?? "");
-    const current = Array.isArray(beadData) ? beadData[0]?.assignee : beadData.assignee;
-    if (!shouldAutoAssignBead(current)) return;
+    const issueData = JSON.parse(show.stdout ?? "");
+    const current = Array.isArray(issueData) ? issueData[0]?.assignee : issueData.assignee;
+    if (!shouldAutoAssignIssue(current)) return;
   } catch {
-    warn2(`invalid bd show output for ${bead}; session launch continues`);
+    warn2(`invalid bd show output for ${issue2}; session launch continues`);
     return;
   }
   const deadline = Date.now() + readyTimeoutMs;
@@ -67363,7 +67363,7 @@ async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
   for (; ; ) {
     instanceId = readyInstanceId(paneId, readyAfterMs, previousInstanceId);
     if (instanceId === null) {
-      warn2(`xtmux unavailable, cannot resolve runtime-origin for ${bead}; session launch continues`);
+      warn2(`xtmux unavailable, cannot resolve runtime-origin for ${issue2}; session launch continues`);
       return;
     }
     if (instanceId || Date.now() >= deadline) break;
@@ -67371,15 +67371,15 @@ async function assignBeadToRuntime(bead, runtime, paneId, cwd, options = {}) {
   }
   const assignee = instanceId ? runtimeAssigneeFromOrigin(runtime, instanceId) : null;
   if (!assignee) {
-    warn2(instanceId ? `unusable runtime-origin '${instanceId}' for ${bead}; session launch continues` : `${runtime} did not signal readiness for ${bead} within ${Math.round(readyTimeoutMs / 1e3)}s; session launch continues`);
+    warn2(instanceId ? `unusable runtime-origin '${instanceId}' for ${issue2}; session launch continues` : `${runtime} did not signal readiness for ${issue2} within ${Math.round(readyTimeoutMs / 1e3)}s; session launch continues`);
     return;
   }
-  const update = (0, import_node_child_process11.spawnSync)("bd", ["update", bead, `--assignee=${assignee}`, "--json"], {
+  const update = (0, import_node_child_process11.spawnSync)("bd", ["update", issue2, `--assignee=${assignee}`, "--json"], {
     cwd,
     encoding: "utf8",
     stdio: "pipe"
   });
-  if (update.status !== 0) warn2(`could not set ${bead} to ${assignee}; session launch continues`);
+  if (update.status !== 0) warn2(`could not set ${issue2} to ${assignee}; session launch continues`);
 }
 function worktreeHasProjectUserPacks(worktreePath) {
   const userPacksRoot = import_node_path24.default.join(worktreePath, ".xtrm", "skills", "user", "packs");
@@ -67552,9 +67552,11 @@ function strayProjectSettingsModel(opts = { worktreePath: "" }) {
   const model = settingsFileModel(file2);
   return model ? { file: file2, model } : void 0;
 }
+var INHERITED_AGENT_IDENTITY = /^XTMUX_AGENT_(?:ROLE|ISSUE|BEAD|HOLDER|TASK|DISPATCHER|PARENT_SESSION|PARENT_PANE|WORKTREE|BRANCH|PROMPT_FILE)$/;
 function stripLauncherModelVar(env3) {
   const out = { ...env3 };
   delete out[LAUNCH_MODEL_VAR];
+  for (const key of Object.keys(out)) if (INHERITED_AGENT_IDENTITY.test(key)) delete out[key];
   return out;
 }
 function launcherModelEnv(runtime, runtimeArgs, env3, settingsModel, refuse = (message) => {
@@ -68348,8 +68350,8 @@ function renderRoleTask(args) {
   const result = (0, import_node_child_process11.spawnSync)("sp", [
     "render-task",
     args.role,
-    "--bead",
-    args.bead,
+    "--issue-ref",
+    args.issue,
     "--cwd",
     args.cwd,
     "--context-depth",
@@ -68519,7 +68521,7 @@ function checkPositionZeroSlash(body, runtime, trustedPrefix) {
   return {
     ok: false,
     error: `turn-1 body starts with '/' but sp declared no '${expectedPrefix}' prefix: the runtime would parse untrusted text as a slash-command.
-Rename the bead title or adjust --prompt so the first character is not '/'.`
+Rename the issue title or adjust --prompt so the first character is not '/'.`
   };
 }
 function claudeExplicitLinesFor(mainRepoRoot, paths, entries) {
@@ -68573,7 +68575,7 @@ function checkByteCeiling(parts) {
     return {
       ok: false,
       error: `literal turn-1 payload is ${total} bytes (systemPrompt + body); ceiling is ${LITERAL_TURN1_BYTE_CEILING}.
-Move large task context into a --bead or trim the literal prompt.`
+Move large task context into a --issue or trim the literal prompt.`
     };
   }
   if (systemBytes > RUNTIME_ARG_BYTE_CEILING || bodyBytes > RUNTIME_ARG_BYTE_CEILING) {
@@ -68629,7 +68631,7 @@ function finalizeTmuxPlan(args) {
     runtimeArgs,
     sessionDisplayName,
     agentTask,
-    bead,
+    issue: issue2,
     role,
     parentSessionId,
     worktreePath,
@@ -68661,7 +68663,7 @@ function finalizeTmuxPlan(args) {
     { key: "@agent_worktree", value: worktreePath },
     { key: "@agent_branch", value: branchName }
   ];
-  if (bead) paneOptions.push({ key: "@agent_bead", value: bead });
+  if (issue2) paneOptions.push({ key: "@agent_issue", value: issue2 });
   if (role) paneOptions.push({ key: "@agent_role", value: role });
   return { sessionName, runtimeCmd: runtime, runtimeArgs, runtimeCmdString, paneOptions };
 }
@@ -68670,7 +68672,7 @@ function buildRoleTmuxPlan(args) {
     runtime,
     sessionDisplayName,
     role,
-    bead,
+    issue: issue2,
     parentSessionId,
     worktreePath,
     branchName,
@@ -68682,7 +68684,7 @@ function buildRoleTmuxPlan(args) {
     channels
   } = args;
   const roleSlug = slugifyForSession(role.name);
-  const sessionName = bead ? `role-${runtime}-${roleSlug}-${slugifyForSession(bead)}` : `role-${runtime}-${roleSlug}`;
+  const sessionName = issue2 ? `role-${runtime}-${roleSlug}-${slugifyForSession(issue2)}` : `role-${runtime}-${roleSlug}`;
   const runtimeArgs = ["--append-system-prompt", role.systemPrompt];
   if (runtime === "pi") {
     runtimeArgs.push("--no-skills");
@@ -68709,7 +68711,7 @@ function buildRoleTmuxPlan(args) {
     sessionName,
     runtimeArgs,
     agentTask: taskForRole(role.name),
-    bead,
+    issue: issue2,
     role: role.name,
     parentSessionId,
     worktreePath,
@@ -68726,7 +68728,7 @@ function buildBareTmuxPlan(args) {
     runtime,
     sessionDisplayName,
     sessionSlug,
-    bead,
+    issue: issue2,
     parentSessionId,
     worktreePath,
     branchName,
@@ -68749,7 +68751,7 @@ function buildBareTmuxPlan(args) {
     sessionName: `${runtime}-${slugifyForSession(sessionSlug)}`,
     runtimeArgs,
     agentTask: `session:${sessionSlug}`,
-    bead,
+    issue: issue2,
     parentSessionId,
     worktreePath,
     branchName,
@@ -68759,6 +68761,15 @@ function buildBareTmuxPlan(args) {
     passthrough,
     channels
   });
+}
+function relationshipPaneOptions(input2) {
+  const out = [];
+  if (input2.holder) out.push({ key: "@agent_holder", value: input2.holder });
+  const dispatcher = input2.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR] || input2.dispatcherEnv[XTRM_DISPATCHER_NAME_VAR];
+  if (dispatcher) out.push({ key: "@agent_dispatcher", value: dispatcher });
+  const parentPane = input2.dispatcherEnv[XTRM_PARENT_PANE_ID_VAR];
+  if (parentPane) out.push({ key: "@agent_parent_pane", value: parentPane });
+  return out;
 }
 function buildAgentEnv(paneOptions) {
   const env3 = {};
@@ -68770,7 +68781,7 @@ function buildAgentEnv(paneOptions) {
 }
 var INITIAL_PROMPT_ENV = "XTRM_INITIAL_PROMPT";
 function hasInitialPromptForLaunch(opts) {
-  return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
+  return Boolean(opts.prompt) || Boolean(opts.role && opts.issue);
 }
 function piInitialPromptEnv(runtime, hasInitialPrompt) {
   return runtime === "pi" ? { [INITIAL_PROMPT_ENV]: hasInitialPrompt ? "1" : "0" } : {};
@@ -68932,11 +68943,11 @@ function markPathSkipWorktree(worktreePath, pathspec) {
 function sessionMetaPath(worktreePath) {
   return import_node_path24.default.join(worktreePath, ".xtrm", "session-meta.json");
 }
-function writeSessionMeta(worktreePath, runtime, bead) {
+function writeSessionMeta(worktreePath, runtime, issue2) {
   try {
     const meta3 = { runtime, launchedAt: (/* @__PURE__ */ new Date()).toISOString() };
-    const issueRef = (bead ?? "").trim();
-    if (issueRef) meta3.bead = issueRef;
+    const issueRef = (issue2 ?? "").trim();
+    if (issueRef) meta3.issue = issueRef;
     return writeJsonAtomic2(sessionMetaPath(worktreePath), meta3);
   } catch {
     return false;
@@ -68987,7 +68998,7 @@ function subordinateRejection(runtime, because) {
   const canonical2 = [
     `  xt ${runtime} <name> \\`,
     "    --role chain-coordinator \\",
-    "    --bead <id> \\",
+    "    --issue <id> \\",
     "    --new-session \\",
     "    --no-attach \\",
     "    --parent <session-id>"
@@ -68999,7 +69010,7 @@ Use:
 ${canonical2}`;
 }
 function resolveSubordinateLaunch(args) {
-  const { runtime, role, bead, parent, insideTmux } = args;
+  const { runtime, role, issue: issue2, parent, insideTmux } = args;
   const reject = (because) => ({
     ok: false,
     error: subordinateRejection(runtime, because)
@@ -69007,8 +69018,8 @@ function resolveSubordinateLaunch(args) {
   if (!role) {
     return reject("--subordinate is a coordinator launch and requires --role");
   }
-  if (!bead) {
-    return reject("--subordinate scopes a coordinator to one epic and requires --bead");
+  if (!issue2) {
+    return reject("--subordinate scopes a coordinator to one epic and requires --issue");
   }
   if (!insideTmux && !parent) {
     return reject("subordinate coordinator requires a parent session");
@@ -69052,7 +69063,7 @@ function currentPaneRole() {
   return (option.stdout ?? "").trim();
 }
 async function launchWorktreeSession(opts) {
-  const { runtime, name, role: roleName, bead, prompt, model, thinking } = opts;
+  const { runtime, name, role: roleName, issue: issue2, prompt, model, thinking } = opts;
   const cwd = process.cwd();
   const compatError = runtimeCompatibilityError();
   if (compatError) {
@@ -69074,7 +69085,7 @@ async function launchWorktreeSession(opts) {
     const subordinate = resolveSubordinateLaunch({
       runtime,
       role: roleName,
-      bead,
+      issue: issue2,
       parent: opts.parent,
       insideTmux: Boolean(process.env.TMUX)
     });
@@ -69113,8 +69124,8 @@ async function launchWorktreeSession(opts) {
 `));
     process.exit(1);
   }
-  if (roleName && bead && prompt && !opts.existingWorktree) {
-    console.error(kleur_default.red("\n  \u2717 --bead and --prompt are mutually exclusive; pick one\n"));
+  if (roleName && issue2 && prompt && !opts.existingWorktree) {
+    console.error(kleur_default.red("\n  \u2717 --issue and --prompt are mutually exclusive; pick one\n"));
     process.exit(1);
   }
   const selectedModel = effectiveModel(model, opts.passthrough ?? []);
@@ -69162,7 +69173,7 @@ async function launchWorktreeSession(opts) {
   let composedTurn1Body = "";
   let explicitSkillPaths = [];
   let claudePackEntries = [];
-  const renderBead = Boolean(bead) && !opts.existingWorktree;
+  const renderIssue = Boolean(issue2) && !opts.existingWorktree;
   if (roleName) {
     try {
       resolvedRole = resolveRole2(roleName, mainRepoRoot, runtime, Boolean(model));
@@ -69226,15 +69237,15 @@ async function launchWorktreeSession(opts) {
         const roleCommandNames = new Set(trustedSkillPrefix.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("/")).map((line) => line.slice(1)));
         claudeExplicitLines = composeClaudeExplicitLines(mainRepoRoot, explicitSkillPaths, claudePackEntries, roleCommandNames);
       }
-      const rawBody = renderBead && bead ? (renderedTask = renderRoleTask({ role: roleName, bead, cwd: mainRepoRoot, runtime })).initialPrompt : prompt ?? "";
+      const rawBody = renderIssue && issue2 ? (renderedTask = renderRoleTask({ role: roleName, issue: issue2, cwd: mainRepoRoot, runtime })).initialPrompt : prompt ?? "";
       let untrustedBody = rawBody;
-      if (renderBead && probe2.ok && trustedSkillPrefix) {
+      if (renderIssue && probe2.ok && trustedSkillPrefix) {
         if (!rawBody.startsWith(trustedSkillPrefix)) {
           throw new Error("render-task output does not start with the exact trusted sp skill prefix.");
         }
         untrustedBody = rawBody.slice(trustedSkillPrefix.length);
       }
-      if (renderBead) {
+      if (renderIssue) {
         const rawSlashCheck = checkPositionZeroSlash(untrustedBody, runtime, "");
         if (!rawSlashCheck.ok) throw new Error(rawSlashCheck.error);
       }
@@ -69244,14 +69255,14 @@ async function launchWorktreeSession(opts) {
         composedTurn1Body = explicitPrefix + composedTurn1Body;
         trustedPrefix = explicitPrefix + trustedPrefix;
       }
-      if (trustedPrefix || renderBead) {
+      if (trustedPrefix || renderIssue) {
         const slashCheck = checkPositionZeroSlash(composedTurn1Body, runtime, trustedPrefix);
         if (!slashCheck.ok) throw new Error(slashCheck.error);
       }
       const byteCheck = checkByteCeiling({
         systemPrompt: resolvedRole.systemPrompt,
         body: composedTurn1Body,
-        source: renderBead ? "bead" : "prompt"
+        source: renderIssue ? "issue" : "prompt"
       });
       if (!byteCheck.ok) throw new Error(byteCheck.error);
     } catch (err) {
@@ -69308,7 +69319,7 @@ async function launchWorktreeSession(opts) {
   const reuseRequested = Boolean(opts.reuse) && (Boolean(newSession) || !process.env.TMUX);
   if (reuseRequested) {
     const roleSlug = resolvedRole ? slugifyForSession(resolvedRole.name) : null;
-    const sessionName = roleSlug ? `role-${runtime}-${roleSlug}${bead ? `-${slugifyForSession(bead)}` : ""}` : `${runtime}-${slugifyForSession(slug)}`;
+    const sessionName = roleSlug ? `role-${runtime}-${roleSlug}${issue2 ? `-${slugifyForSession(issue2)}` : ""}` : `${runtime}-${slugifyForSession(slug)}`;
     const sessionExists = (0, import_node_child_process11.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0;
     if (sessionExists) {
       const paneQuery = (0, import_node_child_process11.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
@@ -69447,7 +69458,7 @@ async function launchWorktreeSession(opts) {
       markPathSkipWorktree(worktreePath, ".beads");
     } catch {
     }
-    metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
+    metadataPersisted = writeSessionMeta(worktreePath, runtime, issue2);
     if (!structuredOutput) {
       console.log(kleur_default.green(`
   \u2713 Worktree ready \u2014 launching ${runtime}...
@@ -69487,13 +69498,13 @@ async function launchWorktreeSession(opts) {
     if (!existing) rollbackLauncherWorktree(mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher);
     throw error62;
   }
-  const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, bead });
+  const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, issue: issue2 });
   const common = {
     runtime,
     runtimeExecutable,
     sessionDisplayName: worktreeName,
     sessionSlug: slug,
-    bead,
+    issue: issue2,
     attach,
     worktreePath,
     branchName,
@@ -69525,7 +69536,7 @@ async function launchWorktreeSession(opts) {
     await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "role", role: resolvedRole, renderedTask, requestedRole: roleName });
     return;
   }
-  const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model) || Boolean(thinking) || explicitSkillPaths.length > 0 || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window) || Boolean(existing) || Boolean(opts.pane) || Boolean(opts.workers) || Boolean(opts.session) || Boolean(opts.windowName) || Boolean(opts.layout);
+  const carriesLaunchState = Boolean(prompt) || Boolean(issue2) || Boolean(model) || Boolean(thinking) || explicitSkillPaths.length > 0 || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window) || Boolean(existing) || Boolean(opts.pane) || Boolean(opts.workers) || Boolean(opts.session) || Boolean(opts.windowName) || Boolean(opts.layout);
   if (carriesLaunchState) {
     await launchTmuxSession({ ...common, repoRoot: mainRepoRoot, mode: "bare" });
     return;
@@ -69585,7 +69596,7 @@ async function launchTmuxSession(args) {
     runtimeExecutable,
     sessionDisplayName,
     sessionSlug,
-    bead,
+    issue: issue2,
     attach,
     worktreePath,
     branchName,
@@ -69644,7 +69655,7 @@ async function launchTmuxSession(args) {
   const planCommon = {
     runtime,
     sessionDisplayName,
-    bead,
+    issue: issue2,
     parentSessionId,
     worktreePath,
     branchName,
@@ -69671,19 +69682,27 @@ async function launchTmuxSession(args) {
     })
   });
   const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
-  const agentEnv = buildAgentEnv(plan.paneOptions);
   const dispatcher = buildDispatcherEnvWithResolution(sessionSlug, { ...args.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) });
   const dispatcherEnv = args.restoredDispatcher ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher) : dispatcher.env;
-  if (bead && !args.restoredDispatcher) {
+  if (!parent && dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR]) {
+    parentSessionId = dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR];
+    const entry = plan.paneOptions.find((option) => option.key === "@agent_parent_session");
+    if (entry) entry.value = parentSessionId;
+  } else if (/^\$\d+$/.test(parentSessionId)) {
+    dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR] = parentSessionId;
+  }
+  plan.paneOptions.push(...relationshipPaneOptions({ holder: sessionSlug, dispatcherEnv }));
+  const agentEnv = buildAgentEnv(plan.paneOptions);
+  if (issue2 && !args.restoredDispatcher) {
     const dispatchStartedMs = Date.now();
     const recorded = recordDispatcherBinding({
-      ref: bead,
+      ref: issue2,
       resolution: dispatcher.resolution,
       workspace: worktreePath
     });
     if (recorded.warning) process.stderr.write(recorded.warning);
     if (recorded.written) {
-      const bindingId = findLaunchBindingId(bead, {
+      const bindingId = findLaunchBindingId(issue2, {
         workspace: worktreePath,
         sinceMs: dispatchStartedMs,
         participant: dispatcher.resolution.participant
@@ -69720,7 +69739,7 @@ async function launchTmuxSession(args) {
       process.stderr.write(kleur_default.red("\n  \u2717 Could not resolve current pane id\n"));
       process.exit(1);
     }
-    const previousInstanceId = bead ? ((0, import_node_child_process11.spawnSync)("tmux", ["show-options", "-p", "-t", paneId2, "-qv", "@agent_instance_id"], {
+    const previousInstanceId = issue2 ? ((0, import_node_child_process11.spawnSync)("tmux", ["show-options", "-p", "-t", paneId2, "-qv", "@agent_instance_id"], {
       encoding: "utf8",
       stdio: "pipe"
     }).stdout ?? "").trim() : "";
@@ -69731,7 +69750,7 @@ async function launchTmuxSession(args) {
       emitAgentRoleLaunched({
         pane: paneId2,
         session: currentTmuxSessionId(),
-        bead: bead ?? "",
+        bead: issue2 ?? "",
         role: args.role.name,
         parent: parentSessionId,
         worktree: worktreePath,
@@ -69741,7 +69760,7 @@ async function launchTmuxSession(args) {
         task_prompt_components: args.renderedTask ? JSON.stringify(args.renderedTask.components) : ""
       });
     }
-    if (!bead) {
+    if (!issue2) {
       const runtimeResult = (0, import_node_child_process11.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
@@ -69759,7 +69778,7 @@ async function launchTmuxSession(args) {
       runtimeProcess.once("error", () => resolve8(1));
       runtimeProcess.once("exit", (code) => resolve8(code ?? 1));
     });
-    await assignBeadToRuntime(bead, runtime, paneId2, worktreePath, { previousInstanceId, readyAfterMs: readyAfterMs2 });
+    await assignIssueToRuntime(issue2, runtime, paneId2, worktreePath, { previousInstanceId, readyAfterMs: readyAfterMs2 });
     process.exit(await runtimeExit);
   }
   const sessionExists = (name) => {
@@ -69931,12 +69950,12 @@ async function launchTmuxSession(args) {
   if (effectiveWindow || placementTargeted) {
     (0, import_node_child_process11.spawnSync)("tmux", ["select-pane", "-t", paneId, "-T", sessionDisplayName], { stdio: "pipe" });
   }
-  if (bead) await assignBeadToRuntime(bead, runtime, paneId, worktreePath, { readyAfterMs });
+  if (issue2) await assignIssueToRuntime(issue2, runtime, paneId, worktreePath, { readyAfterMs });
   if (args.mode === "role") {
     emitAgentRoleLaunched({
       pane: paneId,
       session: plan.sessionName,
-      bead: bead ?? "",
+      bead: issue2 ?? "",
       role: args.role.name,
       parent: parentSessionId,
       worktree: worktreePath,
@@ -70409,7 +70428,7 @@ function hasXtrmHookWiring(settingsPath) {
   }
 }
 function createClaudeCommand() {
-  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the claude runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -70424,10 +70443,10 @@ Explicit --pane, --workers, --window, --new-session and --session options win.
 Examples:
   $ xt claude demo --no-attach --prompt 'inspect the failing build' --model claude-opus-4-8
   $ xt claude worker --no-attach --prompt '/multiplexing leggi /tmp/brief.txt e seguilo'
-  $ xt claude worker --no-attach --bead xyz --prompt 'work this bead'   # bead as pane metadata
+  $ xt claude worker --no-attach --issue xyz --prompt 'work this issue'   # issue as pane metadata
   $ xt claude worker --prompt 'audit the auth flow' -- --add-dir ~/notes
-  $ xt claude coord --role chain-coordinator --bead xyz --subordinate   # subordinate coordinator (P0-05)
-  $ xt claude --role reviewer --bead xyz -- --add-dir ~/notes
+  $ xt claude coord --role chain-coordinator --issue xyz --subordinate   # subordinate coordinator (P0-05)
+  $ xt claude --role reviewer --issue xyz -- --add-dir ~/notes
   $ xt claude --role chain-coordinator --model claude-opus-4-8
   $ xt claude --role reviewer --prompt 'review the auth changes in cli/src/auth/'
   $ xt claude --role planner                          # skills-only prime; pane idles
@@ -70443,7 +70462,7 @@ Examples:
       runtime: "claude",
       name,
       role: opts.role,
-      bead: opts.bead,
+      issue: opts.issue ?? opts.bead,
       prompt: opts.prompt,
       attach: opts.attach,
       json: Boolean(opts.json),
@@ -72106,7 +72125,7 @@ async function getPiProjectPointer(projectRoot) {
   }
 }
 function createPiCommand() {
-  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--bead <id>", "Bind a bead to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_bead pane option + XTMUX_AGENT_BEAD \u2014 and combines freely with --prompt").option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<bead>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the pi runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -72121,9 +72140,9 @@ Explicit --pane, --workers, --window, --new-session and --session options win.
 Examples:
   $ xt pi demo --no-attach --prompt 'inspect the failing build' --model openai-codex/gpt-5.6-luna
   $ xt pi worker --no-attach --skill multiplexing --prompt 'leggi /tmp/brief.txt e seguilo'
-  $ xt pi worker --no-attach --bead xyz --prompt 'work this bead'   # bead as pane metadata
-  $ xt pi coord --role chain-coordinator --bead xyz --subordinate   # subordinate coordinator (P0-05)
-  $ xt pi --role researcher --bead xyz -- --gitnexus-cmd 'foo bar'
+  $ xt pi worker --no-attach --issue xyz --prompt 'work this issue'   # issue as pane metadata
+  $ xt pi coord --role chain-coordinator --issue xyz --subordinate   # subordinate coordinator (P0-05)
+  $ xt pi --role researcher --issue xyz -- --gitnexus-cmd 'foo bar'
   $ xt pi --role chain-coordinator --model openai-codex/gpt-5.4 -- --thinking medium
   $ xt pi --role reviewer --prompt 'review the auth changes in cli/src/auth/'
   $ xt pi --role planner                          # skills-only prime; pane idles
@@ -72134,7 +72153,7 @@ Examples:
       runtime: "pi",
       name,
       role: opts.role,
-      bead: opts.bead,
+      issue: opts.issue ?? opts.bead,
       prompt: opts.prompt,
       attach: opts.attach,
       json: Boolean(opts.json),
@@ -72621,10 +72640,11 @@ function readCodexWorktreeSession(worktreePath) {
     if (parsed.runtime !== "codex" || typeof parsed.launchedAt !== "string" || !Number.isFinite(Date.parse(parsed.launchedAt)) || typeof parsed.threadId !== "string" || !UUID2.test(parsed.threadId) || parsed.safetyProfile !== "codex-yolo" && parsed.safetyProfile !== "codex-workspace-write" || typeof parsed.profileName !== "string" || !PROFILE_NAME.test(parsed.profileName) || typeof parsed.profilePath !== "string" || !import_node_path31.default.isAbsolute(parsed.profilePath) || import_node_path31.default.basename(parsed.profilePath) !== `${parsed.profileName}.config.toml`) {
       return null;
     }
-    const { bead: rawBead, launch: rawLaunch, ...validated } = parsed;
+    const { issue: rawIssueNew, bead: rawBead, launch: rawLaunch, ...validated } = parsed;
+    const rawIssue = rawIssueNew ?? rawBead;
     const session = validated;
-    const bead = typeof rawBead === "string" ? rawBead.trim() : "";
-    if (bead) session.bead = bead;
+    const issue2 = typeof rawIssue === "string" ? rawIssue.trim() : "";
+    if (issue2) session.issue = issue2;
     const launch = readSessionLaunch({ launch: rawLaunch });
     if (launch) session.launch = launch;
     return session;
@@ -72689,12 +72709,12 @@ function skillNames(paths) {
     return name;
   });
 }
-function renderCodexTask(role, bead, cwd) {
+function renderCodexTask(role, issue2, cwd) {
   const result = (0, import_node_child_process17.spawnSync)("sp", [
     "render-task",
     role,
-    "--bead",
-    bead,
+    "--issue-ref",
+    issue2,
     "--cwd",
     cwd,
     "--context-depth",
@@ -72754,7 +72774,7 @@ async function launchCodexWorktreeSession(opts) {
     sessionSlug: opts.name
   });
   if (!optionCheck.ok) fail(optionCheck.error);
-  if (opts.role && opts.bead && opts.prompt) fail("--bead and --prompt are mutually exclusive with --role");
+  if (opts.role && opts.issue && opts.prompt) fail("--issue and --prompt are mutually exclusive with --role");
   const window = Boolean(opts.window);
   if (window && !process.env.TMUX) fail("--window requires running inside tmux");
   if (window && structured) fail("--window cannot combine with --json");
@@ -72812,8 +72832,8 @@ async function launchCodexWorktreeSession(opts) {
       developerInstructions = role.systemPrompt;
       selectedModel ??= role.model;
       roleSkillPaths = role.skillPaths;
-      if (opts.bead && !existing) {
-        prompt = renderCodexTask(opts.role, opts.bead, mainRoot);
+      if (opts.issue && !existing) {
+        prompt = renderCodexTask(opts.role, opts.issue, mainRoot);
       } else {
         requestedSkills = [...roleSkillPaths, ...requestedSkills];
       }
@@ -72839,7 +72859,7 @@ async function launchCodexWorktreeSession(opts) {
     skillNames: skillNames(requestedSkills),
     passthrough: passthrough.argv
   });
-  const sessionName = roleName ? `role-codex-${slugify2(roleName)}${opts.bead ? `-${slugify2(opts.bead)}` : ""}` : `codex-${slugify2(slug)}`;
+  const sessionName = roleName ? `role-codex-${slugify2(roleName)}${opts.issue ? `-${slugify2(opts.issue)}` : ""}` : `codex-${slugify2(slug)}`;
   if (!window && (0, import_node_child_process17.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0) {
     fail(`tmux session already exists: ${sessionName}`);
   }
@@ -72923,21 +72943,27 @@ async function launchCodexWorktreeSession(opts) {
     { key: "@agent_state", value: "idle" },
     { key: "@agent_worktree", value: worktreePath },
     { key: "@agent_branch", value: branchName },
-    ...opts.bead ? [{ key: "@agent_bead", value: opts.bead }] : [],
+    ...opts.issue ? [{ key: "@agent_issue", value: opts.issue }] : [],
     ...roleName ? [{ key: "@agent_role", value: roleName }] : []
   ];
   const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
   const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });
   const dispatcher = buildDispatcherEnvWithResolution(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path32.default.basename(worktreePath) });
   const dispatcherEnv = existing ? withRestoredDispatcher(dispatcher.env, existing.dispatcher) : dispatcher.env;
-  if (opts.bead && !existing) {
+  if (opts.issue && !existing) {
     const recorded = recordDispatcherBinding({
-      ref: opts.bead,
+      ref: opts.issue,
       resolution: dispatcher.resolution,
       workspace: worktreePath
     });
     if (recorded.warning) process.stderr.write(recorded.warning);
   }
+  const parentFromDispatcher = dispatcherEnv.XTRM_PARENT_SESSION_ID;
+  if (parentFromDispatcher) {
+    const entry = paneOptions.find((option) => option.key === "@agent_parent_session");
+    if (entry) entry.value = parentFromDispatcher;
+  }
+  paneOptions.push(...relationshipPaneOptions({ holder: slug, dispatcherEnv }));
   const agentEnv = {
     ...buildAgentEnv(paneOptions),
     XTMUX_AGENT_RUNTIME: "codex",
@@ -73028,7 +73054,7 @@ async function launchCodexWorktreeSession(opts) {
     profilePath: trustProfile.path,
     // CORE-2728: the Issue travels with the session record, so attach can
     // restore the original dispatcher without a live pane.
-    ...opts.bead ? { bead: opts.bead } : {},
+    ...opts.issue ? { issue: opts.issue } : {},
     launch: launchRecord
   })) cleanupAndFail("Could not persist Codex worktree session metadata");
   writeLaunchLedger(import_node_os19.default.homedir(), worktreePath, "codex", launchRecord);
@@ -73080,7 +73106,7 @@ async function launchCodexWorktreeSession(opts) {
 
 // src/commands/codex.ts
 function createCodexCommand() {
-  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--bead <id>", "Bind a bead to the session; with --role, render it as the initial task").option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--issue <id>", "Bind an issue to the session; with --role, render it as the initial task").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Safety:
   The default --yolo profile emits --dangerously-bypass-approvals-and-sandbox.
   --no-yolo emits --sandbox workspace-write --ask-for-approval on-request.
@@ -73093,7 +73119,7 @@ Status:
     await launchCodexWorktreeSession({
       name,
       role: opts.role,
-      bead: opts.bead,
+      issue: opts.issue ?? opts.bead,
       prompt: opts.prompt,
       model: opts.model,
       skills: opts.skill,
@@ -79955,9 +79981,9 @@ var import_node_path47 = require("path");
 init_theme();
 init_pi_runtime();
 
-// src/utils/worktree-pane-bead.ts
+// src/utils/worktree-pane-issue.ts
 var import_node_child_process24 = require("child_process");
-var PANE_LISTING_FORMAT = "#{pane_current_path}	#{@agent_worktree}	#{@agent_bead}";
+var PANE_LISTING_FORMAT = "#{pane_current_path}	#{@agent_worktree}	#{@agent_issue}	#{@agent_bead}";
 var PANE_PROBE_TIMEOUT_MS = 2e3;
 function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
   try {
@@ -79972,19 +79998,20 @@ function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
     return "";
   }
 }
-function beadFromPaneListing(listing, worktreePath) {
+function issueFromPaneListing(listing, worktreePath) {
   const beads = /* @__PURE__ */ new Set();
   for (const line of String(listing ?? "").split(/\r?\n/)) {
-    const [currentPath = "", agentWorktree = "", bead = ""] = line.split("	");
+    const [currentPath = "", agentWorktree = "", issueOption = "", legacyBead = ""] = line.split("	");
+    const issue2 = issueOption.trim() ? issueOption : legacyBead;
     if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
-    const candidate = bead.trim();
+    const candidate = issue2.trim();
     if (candidate) beads.add(candidate);
   }
   return beads.size === 1 ? [...beads][0] ?? null : null;
 }
-function resolveWorktreePaneBead(worktreePath, probe2 = listAgentPanes) {
+function resolveWorktreePaneIssue(worktreePath, probe2 = listAgentPanes) {
   try {
-    return beadFromPaneListing(probe2(), worktreePath);
+    return issueFromPaneListing(probe2(), worktreePath);
   } catch {
     return null;
   }
@@ -80049,8 +80076,13 @@ var RESTORED_PANE_KEYS = [
   "@agent_task",
   "@agent_worktree",
   "@agent_branch",
-  "@agent_bead",
-  "@agent_role"
+  "@agent_issue",
+  "@agent_role",
+  "@agent_holder",
+  "@agent_dispatcher",
+  "@agent_parent_pane",
+  // Legacy name: never written again, cleared so a pre-CORE-2801 pane cannot show a stale value.
+  "@agent_bead"
 ];
 function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
   if (!ledgerLaunch && !recordLaunch)
@@ -80070,7 +80102,7 @@ function trustedLaunchMeta(recordLaunch, ledgerLaunch) {
   return { launch: merged, conflictRole, ignoredRecordRole };
 }
 function restoredAttachPaneOptions(input2) {
-  const { launch, worktreePath, branch, bead, currentSessionId } = input2;
+  const { launch, worktreePath, branch, issue: issue2, currentSessionId, holder, dispatcher, parentPane } = input2;
   const options = [];
   const parentSession = (launch?.parentSession ?? "").trim() || (currentSessionId ?? "").trim();
   if (parentSession) options.push({ key: "@agent_parent_session", value: parentSession });
@@ -80078,8 +80110,11 @@ function restoredAttachPaneOptions(input2) {
   if (task) options.push({ key: "@agent_task", value: task });
   options.push({ key: "@agent_worktree", value: worktreePath });
   options.push({ key: "@agent_branch", value: launch?.branch ?? branch });
-  if (bead) options.push({ key: "@agent_bead", value: bead });
+  if (issue2) options.push({ key: "@agent_issue", value: issue2 });
   if (launch?.role) options.push({ key: "@agent_role", value: launch.role });
+  if (holder) options.push({ key: "@agent_holder", value: holder });
+  if (dispatcher) options.push({ key: "@agent_dispatcher", value: dispatcher });
+  if (parentPane) options.push({ key: "@agent_parent_pane", value: parentPane });
   return options;
 }
 var PANE_ID = /^%[0-9]+$/;
@@ -80103,7 +80138,7 @@ function readSessionRecord(worktreePath) {
     return {
       runtime: "codex",
       launchedAt: codex.launchedAt,
-      ...codex.bead ? { bead: codex.bead } : {},
+      ...codex.issue ? { issue: codex.issue } : {},
       ...codex.launch ? { launch: codex.launch } : {}
     };
   }
@@ -80115,15 +80150,15 @@ function readSessionRecord(worktreePath) {
 }
 function resolveWorkerIssue(worktreePath, deps = {}) {
   const meta3 = (deps.readMeta ?? readSessionRecord)(worktreePath);
-  const raw = meta3 ? meta3.bead : void 0;
+  const raw = meta3 ? meta3.issue ?? meta3.bead : void 0;
   const fromMeta = typeof raw === "string" ? raw.trim() : "";
   if (fromMeta && SAFE_ISSUE_REF.test(fromMeta)) {
     return { ref: fromMeta, source: "meta", bindingId: bindingIdFromMeta(meta3) };
   }
-  const paneBead = deps.paneBead ?? resolveWorktreePaneBead;
+  const paneIssue = deps.paneIssue ?? resolveWorktreePaneIssue;
   let fromPane;
   try {
-    fromPane = paneBead(worktreePath);
+    fromPane = paneIssue(worktreePath);
   } catch {
     return null;
   }
@@ -80141,7 +80176,7 @@ function freshOnlyOptions(opts) {
   const given = [];
   if (opts.model !== void 0) given.push("--model");
   if (opts.prompt !== void 0) given.push("--prompt");
-  if (opts.bead !== void 0) given.push("--bead");
+  if (opts.issue !== void 0 || opts.bead !== void 0) given.push("--issue");
   if (opts.window) given.push("--window");
   if (opts.newSession) given.push("--new-session");
   if (opts.pane !== void 0) given.push("--pane");
@@ -80195,7 +80230,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   return {
     runtime: target.runtime === "pi" ? "pi" : "claude",
     role: requestedRole ?? recordedRole,
-    bead: opts.bead ?? issue2?.ref,
+    issue: opts.issue ?? opts.bead ?? issue2?.ref,
     prompt: readFreshPrompt(opts.prompt),
     model: opts.model ?? (roleUnchanged ? launch?.model : void 0),
     thinking: opts.thinking ?? (roleUnchanged ? launch?.thinking : void 0),
@@ -80220,7 +80255,7 @@ function buildFreshLaunchOptions(target, opts, deps = {}) {
   };
 }
 function createAttachCommand() {
-  return addPlacementOptions(new Command("attach")).description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "Resume as this specialist role, or with --fresh launch as it (default: the role the launch ledger records; a role only the worktree record names is never restored)").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--bead <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").addHelpText("after", `
+  return addPlacementOptions(new Command("attach")).description("Re-attach to an existing xt worktree and resume its Claude, Pi, or Codex session").argument("[name]", 'Worktree slug, directory name, or branch to attach to (e.g. "7trm", "core-xt-pi-7trm", or "fix/my-branch")').option("--fresh", "Start a NEW session in the existing worktree (not --continue), through the same launcher as xt claude|pi: same env, runtime args and pane options; identity restores from the worktree binding").option("--role <name>", "Resume as this specialist role, or with --fresh launch as it (default: the role the launch ledger records; a role only the worktree record names is never restored)").option("--model <name>", "With --fresh: forward --model <name> to the runtime").option("--prompt <text|@file>", "With --fresh: the initial user prompt, or @<file> to read it from a file").option("--issue <id>", "With --fresh: the Issue to bind (default: the one the worktree was launched for); metadata only, the prompt is yours").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--window", "With --fresh, open a detached window in the current session; prints <session>:<pane_id>").option("--new-session", "With --fresh: force a new session").option("--no-attach", "With --fresh: create the session detached and print session:pane").option("--parent <target>", "With --fresh: @agent_parent_session of the pane (session name or id)").addHelpText("after", `
 Without --fresh, xt attach resumes the worktree's previous conversation; with --fresh it
 starts a new one with the same launch settings. Example: xt attach worker-name --fresh --workers --no-attach
 `).option("--yolo", "With --fresh on a Codex worktree: disable sandboxing and approval prompts (default)").option("--no-yolo", "With --fresh on a Codex worktree: workspace-write sandbox with on-request approval").allowExcessArguments(true).action(async (name, opts, command) => {
@@ -80305,7 +80340,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
         }
         await launchCodexWorktreeSession({
           role: launch2.role,
-          bead: launch2.bead,
+          issue: launch2.issue,
           prompt: launch2.prompt,
           model: launch2.model,
           attach: launch2.attach,
@@ -80417,7 +80452,10 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
       launch: launchForRestore,
       worktreePath: target.path,
       branch,
-      bead: issue2?.ref ?? record2?.bead ?? null,
+      issue: issue2?.ref ?? (record2?.issue ?? record2?.bead) ?? null,
+      holder: holderFromWorktreePath(target.path),
+      dispatcher: restoredDispatcher.XTRM_DISPATCHER_PARTICIPANT ?? restoredDispatcher.XTRM_DISPATCHER_NAME ?? null,
+      parentPane: restoredDispatcher.XTRM_PARENT_PANE_ID ?? null,
       // XTRM-1069: a resumed pane's parent session is the session it now
       // runs in; the record only has the launch's own (older) one.
       currentSessionId: process.env.TMUX ? resolveCurrentTmuxSessionIdentity().sessionId : null
@@ -89562,6 +89600,8 @@ var PANE_FIELDS = [
   "@agent_state",
   "@agent_role",
   "@agent_task",
+  "@agent_issue",
+  // Read-only fallback for panes launched before CORE-2801; nothing writes it any more.
   "@agent_bead",
   "@agent_worktree",
   "@agent_branch",
@@ -89649,6 +89689,13 @@ async function readSource(name, parse6, opts) {
     return { entry: { name, status: "error", reason: firstLine(reason), duration_ms }, data: null };
   }
 }
+var LOGIN_SHELLS = /* @__PURE__ */ new Set(["zsh", "bash", "sh", "fish", "dash"]);
+var LIVE_STATES = /* @__PURE__ */ new Set(["idle", "running", "needs-input"]);
+function effectiveAgentState(state, currentCommand) {
+  const value = (state ?? "").trim();
+  if (!value) return null;
+  return LIVE_STATES.has(value) && LOGIN_SHELLS.has((currentCommand ?? "").trim()) ? "exited" : value;
+}
 function parsePanes(stdout) {
   const panes = [];
   for (const line of stdout.split("\n")) {
@@ -89665,7 +89712,8 @@ function parsePanes(stdout) {
       state,
       role,
       task,
-      bead_id,
+      issue_id,
+      legacy_bead_id,
       worktree,
       branch,
       parent_session_id,
@@ -89677,9 +89725,10 @@ function parsePanes(stdout) {
       pane_active
     ] = cols;
     const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP2);
+    const bead_id = issue_id?.trim() ? issue_id : legacy_bead_id;
     const lineage = [state, role, task, bead_id, worktree, branch, parent_session_id];
     const agent = lineage.some(Boolean) ? {
-      state: blankToNull(state),
+      state: effectiveAgentState(state, current_command),
       role: blankToNull(role),
       task: blankToNull(task),
       bead_id: blankToNull(bead_id),
@@ -93019,7 +93068,7 @@ function buildXtPiArgs(options, parentTmuxSessionId) {
   if (options.name) args.push(options.name);
   args.push("--no-attach", "--json", "--new-session");
   if (options.role) args.push(`--role=${options.role}`);
-  if (options.bead) args.push(`--bead=${options.bead}`);
+  if (options.bead) args.push(`--issue=${options.bead}`);
   if (options.model) args.push(`--model=${options.model}`);
   if (options.thinking) args.push(`--thinking=${options.thinking}`);
   for (const skill of options.skills ?? []) args.push(`--skill=${skill}`);

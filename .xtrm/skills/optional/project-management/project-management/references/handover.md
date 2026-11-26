@@ -42,7 +42,7 @@ Record each lesson as a `finding` or `decision` on the epic; draft as scratch un
 ## 4. Launch the successor (outgoing)
 
 From the manager's pane, so the window joins the same tmux session (never a raw `tmux new-window`; it keeps dispatcher identity):
-`xt claude <name> --window --role manager --bead <manager_issue> --model opus -- --effort high` (any name). When `--window` refuses, restore
+`xt claude <name> --window --role manager --issue <manager_issue> --model opus -- --effort high` (any name). When `--window` refuses, restore
 `TMUX` first (`references/launching.md`, "When --window refuses"). Then check its kit: `pm_session.py show --dir <successor worktree>`
 (`references/launching.md`, "Session kit"); the launch role gives `manager`, no role file is needed.
 

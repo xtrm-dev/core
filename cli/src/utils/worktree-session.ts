@@ -12,7 +12,7 @@ import { isSafeRuntimeLinkName } from '../core/skills-state.js';
 import { RESERVED_PACK_NAMES, resolveSkillsRoot, SKILL_FILE_NAME } from '../core/skills-layout.js';
 import { runPiLaunchPreflight } from '../core/pi-runtime.js';
 import { runtimeCompatibilityError } from '../core/runtime-compat.js';
-import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, recordDispatcherBinding, stripDispatcherEnv, withRestoredDispatcher, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
+import { absentDispatcherEnvKeys, buildDispatcherEnv, buildDispatcherEnvWithResolution, findLaunchBindingId, XTRM_DISPATCHER_NAME_VAR, XTRM_DISPATCHER_PARTICIPANT_VAR, XTRM_PARENT_PANE_ID_VAR, XTRM_PARENT_SESSION_ID_VAR, recordDispatcherBinding, stripDispatcherEnv, withRestoredDispatcher, type DispatcherIdentityDeps } from '../core/dispatcher-identity.js';
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
@@ -44,7 +44,7 @@ const TMUX_CONSUMER_READY_TIMEOUT_MS = 5_000;
 const TMUX_PAYLOAD_READY_TIMEOUT_MS = 5_000;
 const RUNTIME_ORIGIN_SLUG_LENGTH = 5;
 /**
- * Ceiling on the readiness handshake in assignBeadToRuntime — pi was measured
+ * Ceiling on the readiness handshake in assignIssueToRuntime — pi was measured
  * at ~11s from `tmux new-session` to `agent.ready`, so this is headroom around
  * a real signal, not the synchronization itself.
  */
@@ -59,7 +59,7 @@ export function runtimeAssigneeFromOrigin(runtime: 'pi' | 'claude', runtimeOrigi
     return slug && /^[a-z0-9]{5}$/.test(slug) ? `${runtime}/${slug}` : null;
 }
 
-export function shouldAutoAssignBead(assignee: string | undefined): boolean {
+export function shouldAutoAssignIssue(assignee: string | undefined): boolean {
     return !assignee || AUTO_ASSIGNEE_RE.test(assignee);
 }
 
@@ -109,7 +109,7 @@ function readyInstanceId(
     return latest;
 }
 
-export interface AssignBeadOptions {
+export interface AssignIssueOptions {
     /** Instance id the pane carried before this launch; its `agent.ready` row must not win. */
     previousInstanceId?: string;
     /**
@@ -126,31 +126,31 @@ export interface AssignBeadOptions {
     readyTimeoutMs?: number;
 }
 
-export async function assignBeadToRuntime(
-    bead: string,
+export async function assignIssueToRuntime(
+    issue: string,
     runtime: 'pi' | 'claude',
     paneId: string,
     cwd: string,
-    options: AssignBeadOptions = {},
+    options: AssignIssueOptions = {},
 ): Promise<void> {
     const {
         previousInstanceId = '',
         readyAfterMs = Date.now(),
         readyTimeoutMs = RUNTIME_READY_TIMEOUT_MS,
     } = options;
-    const warn = (message: string): void => console.error(kleur.yellow(`  ⚠ bead assignee: ${message}`));
-    const show = spawnSync('bd', ['show', bead, '--json'], { cwd, encoding: 'utf8', stdio: 'pipe' });
+    const warn = (message: string): void => console.error(kleur.yellow(`  ⚠ issue assignee: ${message}`));
+    const show = spawnSync('bd', ['show', issue, '--json'], { cwd, encoding: 'utf8', stdio: 'pipe' });
     if (show.status !== 0) {
-        warn(`could not read ${bead}; session launch continues`);
+        warn(`could not read ${issue}; session launch continues`);
         return;
     }
 
     try {
-        const beadData = JSON.parse(show.stdout ?? '') as Array<{ assignee?: string }> | { assignee?: string };
-        const current = Array.isArray(beadData) ? beadData[0]?.assignee : beadData.assignee;
-        if (!shouldAutoAssignBead(current)) return;
+        const issueData = JSON.parse(show.stdout ?? '') as Array<{ assignee?: string }> | { assignee?: string };
+        const current = Array.isArray(issueData) ? issueData[0]?.assignee : issueData.assignee;
+        if (!shouldAutoAssignIssue(current)) return;
     } catch {
-        warn(`invalid bd show output for ${bead}; session launch continues`);
+        warn(`invalid bd show output for ${issue}; session launch continues`);
         return;
     }
 
@@ -160,7 +160,7 @@ export async function assignBeadToRuntime(
     // That option is written by xtmux's scripts/agent-state.sh from the runtime's
     // SessionStart hook, which for pi lands ~11s after `tmux new-session`. So
     // core#508's 5s poll of the bare option could never observe it and the
-    // assignment silently never happened on `--role --bead` (xtrm-wiy5n.4.18).
+    // assignment silently never happened on `--role --issue` (xtrm-wiy5n.4.18).
     //
     // `agent.ready` is the handshake: agent-state.sh emits it exactly once per
     // agent occupation, only after the runtime has finished init and installed its
@@ -173,7 +173,7 @@ export async function assignBeadToRuntime(
     for (;;) {
         instanceId = readyInstanceId(paneId, readyAfterMs, previousInstanceId);
         if (instanceId === null) {
-            warn(`xtmux unavailable, cannot resolve runtime-origin for ${bead}; session launch continues`);
+            warn(`xtmux unavailable, cannot resolve runtime-origin for ${issue}; session launch continues`);
             return;
         }
         if (instanceId || Date.now() >= deadline) break;
@@ -186,23 +186,23 @@ export async function assignBeadToRuntime(
         // from this warning's text, and "never readied" is a different bug from
         // "readied with an id we cannot slug".
         warn(instanceId
-            ? `unusable runtime-origin '${instanceId}' for ${bead}; session launch continues`
-            : `${runtime} did not signal readiness for ${bead} within ${Math.round(readyTimeoutMs / 1000)}s; session launch continues`);
+            ? `unusable runtime-origin '${instanceId}' for ${issue}; session launch continues`
+            : `${runtime} did not signal readiness for ${issue} within ${Math.round(readyTimeoutMs / 1000)}s; session launch continues`);
         return;
     }
 
-    const update = spawnSync('bd', ['update', bead, `--assignee=${assignee}`, '--json'], {
+    const update = spawnSync('bd', ['update', issue, `--assignee=${assignee}`, '--json'], {
         cwd, encoding: 'utf8', stdio: 'pipe',
     });
-    if (update.status !== 0) warn(`could not set ${bead} to ${assignee}; session launch continues`);
+    if (update.status !== 0) warn(`could not set ${issue} to ${assignee}; session launch continues`);
 }
 
 export interface WorktreeSessionOptions {
     runtime: 'claude' | 'pi';
     name?: string;
     role?: string;
-    bead?: string;
-    /** Explicit turn-1 body text (case ii). Mutually exclusive with --bead. */
+    issue?: string;
+    /** Explicit turn-1 body text (case ii). Mutually exclusive with --issue. */
     prompt?: string;
     attach?: boolean;
     /** Emit one xtrm.command-outcome.v1 object. Valid only with detached, non-reuse launches. */
@@ -573,10 +573,22 @@ export function strayProjectSettingsModel(
     return model ? { file, model } : undefined;
 }
 
-/** Drop any inherited model variable, so a resolved value is the only one a seat sees. */
+/**
+ * Agent identity a child must never inherit (CORE-2801). A launch writes its own
+ * `XTMUX_AGENT_*` values from its pane options; a key it does not write is absent,
+ * not the parent's.
+ */
+const INHERITED_AGENT_IDENTITY = /^XTMUX_AGENT_(?:ROLE|ISSUE|BEAD|HOLDER|TASK|DISPATCHER|PARENT_SESSION|PARENT_PANE|WORKTREE|BRANCH|PROMPT_FILE)$/;
+
+/**
+ * Drop any inherited model variable, so a resolved value is the only one a seat
+ * sees, and the parent agent's identity variables, so a child never reports the
+ * parent's role or issue.
+ */
 export function stripLauncherModelVar(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const out = { ...env };
     delete out[LAUNCH_MODEL_VAR];
+    for (const key of Object.keys(out)) if (INHERITED_AGENT_IDENTITY.test(key)) delete out[key];
     return out;
 }
 
@@ -1863,13 +1875,13 @@ export interface RenderedRoleTask {
 
 export function renderRoleTask(args: {
     role: string;
-    bead: string;
+    issue: string;
     cwd: string;
     runtime: 'pi' | 'claude';
 }): RenderedRoleTask {
     const result = spawnSync('sp', [
         'render-task', args.role,
-        '--bead', args.bead,
+        '--issue-ref', args.issue,
         '--cwd', args.cwd,
         '--context-depth', '3',
         '--surface', args.runtime,
@@ -2109,7 +2121,7 @@ export function renderSkillPrefix(args: {
  * Position-0 '/' safety check on the composed turn-1 body. A '/' at literal
  * byte 0 is only safe when it's the sp-owned /skill:name (pi) or /<name>
  * (claude) prefix. Otherwise the runtime's slash-command parser would try to
- * interpret an operator-provided prompt or a bead title starting with '/' as
+ * interpret an operator-provided prompt or a issue title starting with '/' as
  * a command. xtrm-8zsi1.
  */
 export function checkPositionZeroSlash(
@@ -2133,7 +2145,7 @@ export function checkPositionZeroSlash(
     return {
         ok: false,
         error: `turn-1 body starts with '/' but sp declared no '${expectedPrefix}' prefix: the runtime would parse untrusted text as a slash-command.\n`
-            + `Rename the bead title or adjust --prompt so the first character is not '/'.`,
+            + `Rename the issue title or adjust --prompt so the first character is not '/'.`,
     };
 }
 
@@ -2217,7 +2229,7 @@ function realpathSyncSafe(p: string): string {
 export function checkByteCeiling(parts: {
     systemPrompt: string;
     body: string;
-    source: 'prompt' | 'bead';
+    source: 'prompt' | 'issue';
 }): { ok: true } | { ok: false; error: string } {
     if (parts.systemPrompt.includes('\0') || parts.body.includes('\0')) {
         return { ok: false, error: 'turn-1 payload contains a NUL byte and cannot be passed to the runtime.' };
@@ -2230,7 +2242,7 @@ export function checkByteCeiling(parts: {
         return {
             ok: false,
             error: `literal turn-1 payload is ${total} bytes (systemPrompt + body); ceiling is ${LITERAL_TURN1_BYTE_CEILING}.\n`
-                + 'Move large task context into a --bead or trim the literal prompt.',
+                + 'Move large task context into a --issue or trim the literal prompt.',
         };
     }
     if (systemBytes > RUNTIME_ARG_BYTE_CEILING || bodyBytes > RUNTIME_ARG_BYTE_CEILING) {
@@ -2267,7 +2279,7 @@ interface CommonTmuxPlanArgs {
     runtime: 'pi' | 'claude';
     /** Session display name passed to the runtime via --name (worktree slug). */
     sessionDisplayName: string;
-    bead?: string;
+    issue?: string;
     parentSessionId: string;
     /** Absolute path of the worktree this session owns. Required, not optional:
      * "every interactive xt runtime owns a distinct worktree and branch" is an
@@ -2395,7 +2407,7 @@ function finalizeTmuxPlan(args: {
     runtimeArgs: string[];
     sessionDisplayName: string;
     agentTask: string;
-    bead?: string;
+    issue?: string;
     /** Role name in role mode; absent in bare mode (a bare session has no role). */
     role?: string;
     parentSessionId: string;
@@ -2408,7 +2420,7 @@ function finalizeTmuxPlan(args: {
     channels?: boolean;
 }): TmuxLaunchPlan {
     const {
-        runtime, sessionName, runtimeArgs, sessionDisplayName, agentTask, bead, role,
+        runtime, sessionName, runtimeArgs, sessionDisplayName, agentTask, issue, role,
         parentSessionId, worktreePath, branchName, turn1Body, model, thinking, passthrough,
         channels,
     } = args;
@@ -2444,7 +2456,7 @@ function finalizeTmuxPlan(args: {
         runtimeArgs.push(...passthrough);
     }
 
-    // Turn-1 body: trusted skill prefix + operator/bead body, already
+    // Turn-1 body: trusted skill prefix + operator/issue body, already
     // concatenated by the caller. Claude needs `--` to protect the positional
     // from variadic options (--model etc. can consume it otherwise); pi's
     // positional prompt convention is delimiter-free. Empty body means "no
@@ -2478,7 +2490,7 @@ function finalizeTmuxPlan(args: {
         { key: '@agent_worktree', value: worktreePath },
         { key: '@agent_branch', value: branchName },
     ];
-    if (bead) paneOptions.push({ key: '@agent_bead', value: bead });
+    if (issue) paneOptions.push({ key: '@agent_issue', value: issue });
     if (role) paneOptions.push({ key: '@agent_role', value: role });
 
     return { sessionName, runtimeCmd: runtime, runtimeArgs, runtimeCmdString, paneOptions };
@@ -2488,19 +2500,19 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
     role: ResolvedRole;
 }): TmuxLaunchPlan {
     const {
-        runtime, sessionDisplayName, role, bead, parentSessionId, worktreePath, branchName,
+        runtime, sessionDisplayName, role, issue, parentSessionId, worktreePath, branchName,
         turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough, channels,
     } = args;
 
-    // Include runtime in the session name so xt pi --role X --bead Y and
-    // xt claude --role X --bead Y produce distinguishable sessions
+    // Include runtime in the session name so xt pi --role X --issue Y and
+    // xt claude --role X --issue Y produce distinguishable sessions
     // (role-pi-X-Y vs role-claude-X-Y) instead of colliding on role-X-Y and
     // relying on xtmux-1lb.6's auto-suffix. Operator's mental model is one
     // pi + one claude flavor of the same specialist, not "the second one
     // gets a random hex". See xtmux-3h8.
     const roleSlug = slugifyForSession(role.name);
-    const sessionName = bead
-        ? `role-${runtime}-${roleSlug}-${slugifyForSession(bead)}`
+    const sessionName = issue
+        ? `role-${runtime}-${roleSlug}-${slugifyForSession(issue)}`
         : `role-${runtime}-${roleSlug}`;
 
     // Inline system prompt on both runtimes (xtrm-8zsi1). The xtrm-osipt
@@ -2565,7 +2577,7 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
         sessionName,
         runtimeArgs,
         agentTask: taskForRole(role.name),
-        bead,
+        issue,
         role: role.name,
         parentSessionId,
         worktreePath,
@@ -2581,8 +2593,8 @@ export function buildRoleTmuxPlan(args: CommonTmuxPlanArgs & {
 /**
  * Plan for a launch with no specialist behind it: `xt claude <name>
  * --prompt ...`. No system prompt, no skill-pool isolation policy, and no
- * bead in the session name — a bare session is identified by its worktree
- * slug alone (`<runtime>-<slug>`), with any --bead carried as pane/env
+ * issue in the session name — a bare session is identified by its worktree
+ * slug alone (`<runtime>-<slug>`), with any --issue carried as pane/env
  * metadata only. xtrm-3xgs5 (was a nullable `role?` through the role
  * builder, PR #433).
  */
@@ -2591,7 +2603,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
     sessionSlug: string;
 }): TmuxLaunchPlan {
     const {
-        runtime, sessionDisplayName, sessionSlug, bead, parentSessionId, worktreePath,
+        runtime, sessionDisplayName, sessionSlug, issue, parentSessionId, worktreePath,
         branchName, turn1Body, modelOverride, thinkingOverride, explicitSkillPaths = [], passthrough,
         channels,
     } = args;
@@ -2612,7 +2624,7 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
         sessionName: `${runtime}-${slugifyForSession(sessionSlug)}`,
         runtimeArgs,
         agentTask: `session:${sessionSlug}`,
-        bead,
+        issue,
         parentSessionId,
         worktreePath,
         branchName,
@@ -2642,6 +2654,24 @@ export function buildBareTmuxPlan(args: CommonTmuxPlanArgs & {
  * XTMUX_AGENT_PROMPT_FILE dropped in xtrm-8zsi1 — turn 1 has no file path,
  * and downstream consumers read the variable absence-safely.
  */
+/**
+ * The ownership and relationship options written at launch (CORE-2801): the holder
+ * that owns the pane (claim sync compares against it), the dispatcher's Substrate
+ * participant, and the dispatcher's pane. A value that is unknown stays absent.
+ */
+export function relationshipPaneOptions(input: {
+    holder: string;
+    dispatcherEnv: Record<string, string>;
+}): Array<{ key: string; value: string }> {
+    const out: Array<{ key: string; value: string }> = [];
+    if (input.holder) out.push({ key: '@agent_holder', value: input.holder });
+    const dispatcher = input.dispatcherEnv[XTRM_DISPATCHER_PARTICIPANT_VAR] || input.dispatcherEnv[XTRM_DISPATCHER_NAME_VAR];
+    if (dispatcher) out.push({ key: '@agent_dispatcher', value: dispatcher });
+    const parentPane = input.dispatcherEnv[XTRM_PARENT_PANE_ID_VAR];
+    if (parentPane) out.push({ key: '@agent_parent_pane', value: parentPane });
+    return out;
+}
+
 export function buildAgentEnv(
     paneOptions: ReadonlyArray<{ key: string; value: string }>,
 ): Record<string, string> {
@@ -2659,7 +2689,7 @@ export function buildAgentEnv(
  * before the first turn when argv carries -p/--print or this env is present.
  * `xt pi` launches an interactive worker with an initial prompt but never
  * passes -p/--print, so the launcher exports XTRM_INITIAL_PROMPT=1 to the
- * Pi process exactly when it supplies one (--prompt, or --bead with --role).
+ * Pi process exactly when it supplies one (--prompt, or --issue with --role).
  * Pi launches without one get XTRM_INITIAL_PROMPT=0, which the reader treats
  * as an explicit "no initial prompt".
  */
@@ -2668,9 +2698,9 @@ export const INITIAL_PROMPT_ENV = 'XTRM_INITIAL_PROMPT';
 export function hasInitialPromptForLaunch(opts: {
     prompt?: string;
     role?: string;
-    bead?: string;
+    issue?: string;
 }): boolean {
-    return Boolean(opts.prompt) || Boolean(opts.role && opts.bead);
+    return Boolean(opts.prompt) || Boolean(opts.role && opts.issue);
 }
 
 export function piInitialPromptEnv(
@@ -2947,11 +2977,11 @@ export interface SessionMeta {
     runtime: 'claude' | 'pi' | 'codex';
     launchedAt: string;
     /**
-     * CORE-2728: the Substrate Issue this session was launched for (`--bead`).
+     * CORE-2728: the Substrate Issue this session was launched for (`--issue`).
      * Persisted so `xt attach` can find the launch binding — and the original
-     * dispatcher — after the tmux pane (and its @agent_bead) is gone.
+     * dispatcher — after the tmux pane (and its @agent_issue) is gone.
      */
-    bead?: string;
+    issue?: string;
     /**
      * CORE-2740 F2: the ExecutionBinding this launch wrote. Written right after
      * the binding exists, so `xt attach` restores THIS worker's dispatcher
@@ -2979,11 +3009,11 @@ function sessionMetaPath(worktreePath: string): string {
     return path.join(worktreePath, '.xtrm', 'session-meta.json');
 }
 
-export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi', bead?: string | null): boolean {
+export function writeSessionMeta(worktreePath: string, runtime: 'claude' | 'pi', issue?: string | null): boolean {
     try {
         const meta: SessionMeta = { runtime, launchedAt: new Date().toISOString() };
-        const issueRef = (bead ?? '').trim();
-        if (issueRef) meta.bead = issueRef;
+        const issueRef = (issue ?? '').trim();
+        if (issueRef) meta.issue = issueRef;
         return writeJsonAtomic(sessionMetaPath(worktreePath), meta);
     } catch {
         return false;
@@ -3020,7 +3050,7 @@ export function writeSessionBindingId(worktreePath: string, bindingId: string | 
 
 /**
  * CORE-2792: persist the launch identity next to the session record, amending an
- * existing one (bead, bindingId and launchedAt survive). Creates the record when
+ * existing one (issue, bindingId and launchedAt survive). Creates the record when
  * the worktree has none, so an EXISTING worktree gains the record on its next
  * launch too. Fail-soft like the other record writes: a launch never fails on it.
  */
@@ -3092,7 +3122,7 @@ export function subordinateRejection(runtime: 'pi' | 'claude', because: string):
     const canonical = [
         `  xt ${runtime} <name> \\`,
         '    --role chain-coordinator \\',
-        '    --bead <id> \\',
+        '    --issue <id> \\',
         '    --new-session \\',
         '    --no-attach \\',
         '    --parent <session-id>',
@@ -3104,11 +3134,11 @@ export function subordinateRejection(runtime: 'pi' | 'claude', because: string):
 export function resolveSubordinateLaunch(args: {
     runtime: 'pi' | 'claude';
     role?: string;
-    bead?: string;
+    issue?: string;
     parent?: string;
     insideTmux: boolean;
 }): SubordinateResolution {
-    const { runtime, role, bead, parent, insideTmux } = args;
+    const { runtime, role, issue, parent, insideTmux } = args;
     const reject = (because: string): SubordinateResolution => ({
         ok: false,
         error: subordinateRejection(runtime, because),
@@ -3117,12 +3147,12 @@ export function resolveSubordinateLaunch(args: {
     if (!role) {
         return reject('--subordinate is a coordinator launch and requires --role');
     }
-    // Audit P1-05, "a bead is supplied". A coordinator's whole contract is "own
-    // exactly one epic or task-group"; without a bead it has no scope to own and
+    // Audit P1-05, "a issue is supplied". A coordinator's whole contract is "own
+    // exactly one epic or task-group"; without a issue it has no scope to own and
     // nothing to report against. Only enforced for --subordinate — a plain
     // `--role` launch is an operator priming a pane and may legitimately idle.
-    if (!bead) {
-        return reject('--subordinate scopes a coordinator to one epic and requires --bead');
+    if (!issue) {
+        return reject('--subordinate scopes a coordinator to one epic and requires --issue');
     }
     // A subordinate is defined by having a parent. Inside tmux the current
     // session supplies it; outside tmux there is nothing to infer from, so an
@@ -3204,7 +3234,7 @@ function currentPaneRole(): string {
 }
 
 export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promise<void> {
-    const { runtime, name, role: roleName, bead, prompt, model, thinking } = opts;
+    const { runtime, name, role: roleName, issue, prompt, model, thinking } = opts;
     const cwd = process.cwd();
 
     // Runtime compatibility preflight (audit P1-06). First thing in the
@@ -3235,7 +3265,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         const subordinate = resolveSubordinateLaunch({
             runtime,
             role: roleName,
-            bead,
+            issue,
             parent: opts.parent,
             insideTmux: Boolean(process.env.TMUX),
         });
@@ -3277,16 +3307,16 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         process.exit(1);
     }
 
-    // Mutual exclusion: in role mode --bead renders a tracked task and
+    // Mutual exclusion: in role mode --issue renders a tracked task and
     // --prompt supplies a literal turn-1 body; the two contract different
     // composition paths and can't stack. Rejected at the launcher rather than
     // each CLI so both xt pi and xt claude enforce the same rule from one
     // place. Bare mode is exempt: `sp render-task` takes the specialist name
-    // as a required positional, so there is no roleless render and --bead is
+    // as a required positional, so there is no roleless render and --issue is
     // metadata only (pane option + env + picker preview). A tag and a body
     // don't conflict. xtrm-3xgs5.
-    if (roleName && bead && prompt && !opts.existingWorktree) {
-        console.error(kleur.red('\n  ✗ --bead and --prompt are mutually exclusive; pick one\n'));
+    if (roleName && issue && prompt && !opts.existingWorktree) {
+        console.error(kleur.red('\n  ✗ --issue and --prompt are mutually exclusive; pick one\n'));
         process.exit(1);
     }
 
@@ -3356,8 +3386,8 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // computed preflight and consumed by gates and worktree materialization.
     let claudePackEntries: ClaudePackSkillEntry[] = [];
     // CORE-2775: a fresh session in an existing worktree is told what to do by --prompt;
-    // its bead is metadata (pane option, env), as in a bare launch, never a task to render.
-    const renderBead = Boolean(bead) && !opts.existingWorktree;
+    // its issue is metadata (pane option, env), as in a bare launch, never a task to render.
+    const renderIssue = Boolean(issue) && !opts.existingWorktree;
     if (roleName) {
         try {
             resolvedRole = resolveRole(roleName, mainRepoRoot, runtime, Boolean(model));
@@ -3469,17 +3499,17 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 claudeExplicitLines = composeClaudeExplicitLines(mainRepoRoot, explicitSkillPaths, claudePackEntries, roleCommandNames);
             }
 
-            const rawBody = renderBead && bead
-                ? (renderedTask = renderRoleTask({ role: roleName, bead, cwd: mainRepoRoot, runtime })).initialPrompt
+            const rawBody = renderIssue && issue
+                ? (renderedTask = renderRoleTask({ role: roleName, issue, cwd: mainRepoRoot, runtime })).initialPrompt
                 : (prompt ?? '');
             let untrustedBody = rawBody;
-            if (renderBead && probe.ok && trustedSkillPrefix) {
+            if (renderIssue && probe.ok && trustedSkillPrefix) {
                 if (!rawBody.startsWith(trustedSkillPrefix)) {
                     throw new Error('render-task output does not start with the exact trusted sp skill prefix.');
                 }
                 untrustedBody = rawBody.slice(trustedSkillPrefix.length);
             }
-            // Provenance, not path. A bead-derived body carries a bead title
+            // Provenance, not path. A issue-derived body carries a issue title
             // that any writer to the beads store can set, so a leading '/'
             // there is an impersonation attempt and stays rejected. An
             // operator-typed --prompt is the same trust level whether or not
@@ -3487,7 +3517,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // terminal — so it is exempt here exactly as it is in bare mode.
             // This replaces the uniform check with the rule it was always
             // reaching for. xtrm-3xgs5 (see PR #439 for the bare half).
-            if (renderBead) {
+            if (renderIssue) {
                 const rawSlashCheck = checkPositionZeroSlash(untrustedBody, runtime, '');
                 if (!rawSlashCheck.ok) throw new Error(rawSlashCheck.error);
             }
@@ -3506,9 +3536,9 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // composed body must start with exactly it — that assertion is
             // worth making whatever the body's provenance. With no trusted
             // prefix the check degenerates to the leading-'/' rule, which
-            // only an untrusted bead-derived body needs. Both fire before
+            // only an untrusted issue-derived body needs. Both fire before
             // worktree creation.
-            if (trustedPrefix || renderBead) {
+            if (trustedPrefix || renderIssue) {
                 const slashCheck = checkPositionZeroSlash(composedTurn1Body, runtime, trustedPrefix);
                 if (!slashCheck.ok) throw new Error(slashCheck.error);
             }
@@ -3519,7 +3549,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             const byteCheck = checkByteCeiling({
                 systemPrompt: resolvedRole.systemPrompt,
                 body: composedTurn1Body,
-                source: renderBead ? 'bead' : 'prompt',
+                source: renderIssue ? 'issue' : 'prompt',
             });
             if (!byteCheck.ok) throw new Error(byteCheck.error);
         } catch (err) {
@@ -3551,12 +3581,12 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // Bare-mode turn-1 body is entirely trusted at composition:
             // opts.prompt is operator-typed argv on their own terminal, and
             // trustedPrefix is launcher-generated from validated, discoverable
-            // --skill args. --bead does not compose anything here (no roleless
+            // --skill args. --issue does not compose anything here (no roleless
             // `sp render-task`), so bare has no untrusted body source *by
             // construction* rather than by accident — which is what makes the
             // absent slash guard safe. A leading '/' in --prompt (e.g.
             // '/multiplexing ...') is the sanctioned way to load a skill on
-            // turn 1. The role path keeps the guard on bead-derived bodies.
+            // turn 1. The role path keeps the guard on issue-derived bodies.
             // xtrm-8zsi1 follow-up; provenance rule finished in xtrm-3xgs5.
             const byteCheck = checkByteCeiling({
                 systemPrompt: '',
@@ -3601,7 +3631,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     if (reuseRequested) {
         const roleSlug = resolvedRole ? slugifyForSession(resolvedRole.name) : null;
         const sessionName = roleSlug
-            ? `role-${runtime}-${roleSlug}${bead ? `-${slugifyForSession(bead)}` : ''}`
+            ? `role-${runtime}-${roleSlug}${issue ? `-${slugifyForSession(issue)}` : ''}`
             : `${runtime}-${slugifyForSession(slug)}`;
         const sessionExists = spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0;
         if (sessionExists) {
@@ -3671,7 +3701,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             process.exit(1);
         }
         // The session record is the worktree's own: kept as it is, so attach still finds
-        // the bead and the binding id it names.
+        // the issue and the binding id it names.
         metadataPersisted = readSessionMeta(worktreePath) !== null;
         if (!structuredOutput) {
             console.log(kleur.green(`\n  ✓ Existing worktree — starting a fresh ${runtime} session...\n`));
@@ -3682,7 +3712,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         // attempted as a FALLBACK for its canonical .beads/redirect setup
         // only if git itself failed; observable behavior is identical and the
         // post-create .beads removal below is shared by both paths.
-        // Flag surface untouched in this lane (XTRM-93 owns --bead).
+        // Flag surface untouched in this lane (XTRM-93 owns --issue).
         if (existsSync(worktreePath)) {
             console.error(kleur.red('\n  ✗ Worktree path already exists. Refusing to reuse stale directory.\n'));
             console.error(kleur.dim(`  path: ${worktreePath}`));
@@ -3780,7 +3810,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
             // Non-fatal: bd will recover via git common-dir resolution regardless.
         }
 
-        metadataPersisted = writeSessionMeta(worktreePath, runtime, bead);
+        metadataPersisted = writeSessionMeta(worktreePath, runtime, issue);
         if (!structuredOutput) {
             console.log(kleur.green(`\n  ✓ Worktree ready — launching ${runtime}...\n`));
             console.log(kleur.dim('  note: clean git worktrees do not include ignored dependency dirs like node_modules/ or .venv/'));
@@ -3849,18 +3879,18 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // One decision, taken once: a role launch always needs the tmux path
     // (metadata, telemetry, buffered transport for the system prompt). A bare
     // launch needs it only when something has to be carried into the pane —
-    // a turn-1 body, a runtime override, bead metadata, passthrough argv, or
+    // a turn-1 body, a runtime override, issue metadata, passthrough argv, or
     // a detached/forced-new session. A plain `xt claude <name>` with none of
     // those still gets a plain runtime in the current terminal. xtrm-3xgs5.
-    // CORE-2454: --prompt, or --bead with --role, is an initial prompt and
+    // CORE-2454: --prompt, or --issue with --role, is an initial prompt and
     // exports XTRM_INITIAL_PROMPT=1 to the Pi process; anything else does not.
-    const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, bead });
+    const hasInitialPrompt = hasInitialPromptForLaunch({ prompt, role: roleName, issue });
     const common = {
         runtime,
         runtimeExecutable,
         sessionDisplayName: worktreeName,
         sessionSlug: slug,
-        bead,
+        issue,
         attach,
         worktreePath,
         branchName,
@@ -3894,7 +3924,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         return; // launchTmuxSession never returns (calls process.exit)
     }
 
-    const carriesLaunchState = Boolean(prompt) || Boolean(bead) || Boolean(model)
+    const carriesLaunchState = Boolean(prompt) || Boolean(issue) || Boolean(model)
         || Boolean(thinking) || explicitSkillPaths.length > 0
         || guardedPassthrough.length > 0 || !attach || Boolean(newSession) || Boolean(opts.window) || Boolean(existing)
         || Boolean(opts.pane) || Boolean(opts.workers) || Boolean(opts.session) || Boolean(opts.windowName) || Boolean(opts.layout);
@@ -3989,7 +4019,7 @@ type TmuxLaunchArgs = {
     runtimeExecutable: string;
     sessionDisplayName: string;
     sessionSlug: string;
-    bead?: string;
+    issue?: string;
     attach: boolean;
     worktreePath: string;
     branchName: string;
@@ -4024,7 +4054,7 @@ type TmuxLaunchArgs = {
     workers?: boolean;
     session?: string;
     layout?: string;
-    /** True when the launch carries an initial user prompt (--prompt, or --bead with --role). */
+    /** True when the launch carries an initial user prompt (--prompt, or --issue with --role). */
     hasInitialPrompt?: boolean;
     /** CORE-2726: dispatcher-identity probing seam, forwarded from WorktreeSessionOptions. */
     dispatcherDeps?: DispatcherIdentityDeps;
@@ -4047,7 +4077,7 @@ type TmuxLaunchArgs = {
 
 async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const {
-        runtime, runtimeExecutable, sessionDisplayName, sessionSlug, bead, attach, worktreePath, branchName, metadataPersisted, modelOverride, thinkingOverride, turn1Body, explicitSkillPaths = [], passthrough,
+        runtime, runtimeExecutable, sessionDisplayName, sessionSlug, issue, attach, worktreePath, branchName, metadataPersisted, modelOverride, thinkingOverride, turn1Body, explicitSkillPaths = [], passthrough,
         newSession, parent, child, reuse, json: structuredOutput = false, window = false, windowName, pane, workers, session, layout, hasInitialPrompt = false,
     } = args;
 
@@ -4102,7 +4132,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // trusted to inspect or control the session.
 
     const planCommon = {
-        runtime, sessionDisplayName, bead, parentSessionId, worktreePath, branchName,
+        runtime, sessionDisplayName, issue, parentSessionId, worktreePath, branchName,
         turn1Body, modelOverride, thinkingOverride, explicitSkillPaths, passthrough,
         // Filesystem-dependent, so it is resolved here and handed to the plan
         // builders rather than probed inside them. XTRM-249.
@@ -4145,7 +4175,6 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // which is the case identityEnv alone did not cover.
     const launchEnv = stripLauncherModelVar(args.identityEnv ?? process.env);
 
-    const agentEnv = buildAgentEnv(plan.paneOptions);
     // CORE-2390: who dispatched this worker and its Substrate participant name.
     // CORE-2728: the same resolution is persisted on the launch binding, so
     // `xt attach` can restore the ORIGINAL dispatcher later.
@@ -4155,12 +4184,24 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const dispatcherEnv = args.restoredDispatcher
         ? withRestoredDispatcher(dispatcher.env, args.restoredDispatcher)
         : dispatcher.env;
-    if (bead && !args.restoredDispatcher) {
+    // CORE-2801: one parent source. `@agent_parent_session` (resolved above, honouring
+    // --parent) is authoritative; the exported XTRM_PARENT_SESSION_ID carries the same value.
+    if (!parent && dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR]) {
+        // No explicit --parent: the dispatcher's own pane names its session, and the option follows it.
+        parentSessionId = dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR]!;
+        const entry = plan.paneOptions.find(option => option.key === '@agent_parent_session');
+        if (entry) entry.value = parentSessionId;
+    } else if (/^\$\d+$/.test(parentSessionId)) {
+        dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR] = parentSessionId;
+    }
+    plan.paneOptions.push(...relationshipPaneOptions({ holder: sessionSlug, dispatcherEnv }));
+    const agentEnv = buildAgentEnv(plan.paneOptions);
+    if (issue && !args.restoredDispatcher) {
         // Before the runtime starts, so the binding precedes the work. A failed or
         // old sb is one warning; the launch itself never fails on it.
         const dispatchStartedMs = Date.now();
         const recorded = recordDispatcherBinding({
-            ref: bead,
+            ref: issue,
             resolution: dispatcher.resolution,
             workspace: worktreePath,
         });
@@ -4170,7 +4211,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             // restores this worker's dispatcher, not the newest binding on the
             // Issue. Fail-soft: without the id attach falls back to the binding
             // made in this worktree, which still cannot name a foreign one.
-            const bindingId = findLaunchBindingId(bead, {
+            const bindingId = findLaunchBindingId(issue, {
                 workspace: worktreePath,
                 sinceMs: dispatchStartedMs,
                 participant: dispatcher.resolution.participant,
@@ -4221,7 +4262,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             process.exit(1);
         }
 
-        const previousInstanceId = bead
+        const previousInstanceId = issue
             ? (spawnSync('tmux', ['show-options', '-p', '-t', paneId, '-qv', '@agent_instance_id'], {
                 encoding: 'utf8', stdio: 'pipe',
             }).stdout ?? '').trim()
@@ -4234,7 +4275,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             emitAgentRoleLaunched({
                 pane: paneId,
                 session: currentTmuxSessionId(),
-                bead: bead ?? '',
+                bead: issue ?? '',
                 role: args.role.name,
                 parent: parentSessionId,
                 worktree: worktreePath,
@@ -4245,7 +4286,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             });
         }
 
-        if (!bead) {
+        if (!issue) {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
@@ -4255,7 +4296,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         }
 
         // Before spawn, not after: the runtime's agent.ready fires once, and a
-        // watermark taken later could reject it. See AssignBeadOptions.readyAfterMs.
+        // watermark taken later could reject it. See AssignIssueOptions.readyAfterMs.
         const readyAfterMs = Date.now();
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
@@ -4266,7 +4307,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             runtimeProcess.once('error', () => resolve(1));
             runtimeProcess.once('exit', code => resolve(code ?? 1));
         });
-        await assignBeadToRuntime(bead, runtime, paneId, worktreePath, { previousInstanceId, readyAfterMs });
+        await assignIssueToRuntime(issue, runtime, paneId, worktreePath, { previousInstanceId, readyAfterMs });
         process.exit(await runtimeExit);
     }
 
@@ -4415,7 +4456,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const createdSessionId = (): string | null => (effectiveWindow || placementTargeted ? null : resolveTmuxSessionId(plan.sessionName));
 
     // Before the pane exists, so it strictly precedes any runtime start on either
-    // transport. See AssignBeadOptions.readyAfterMs.
+    // transport. See AssignIssueOptions.readyAfterMs.
     const readyAfterMs = Date.now();
 
     if (args.mode === 'bare') {
@@ -4504,13 +4545,13 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     if (effectiveWindow || placementTargeted) {
         spawnSync('tmux', ['select-pane', '-t', paneId, '-T', sessionDisplayName], { stdio: 'pipe' });
     }
-    if (bead) await assignBeadToRuntime(bead, runtime, paneId, worktreePath, { readyAfterMs });
+    if (issue) await assignIssueToRuntime(issue, runtime, paneId, worktreePath, { readyAfterMs });
 
     if (args.mode === 'role') {
         emitAgentRoleLaunched({
             pane: paneId,
             session: plan.sessionName,
-            bead: bead ?? '',
+            bead: issue ?? '',
             role: args.role.name,
             parent: parentSessionId,
             worktree: worktreePath,

@@ -418,21 +418,21 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
         return dir;
     }
 
-    it('reads the bead the launch persisted in session metadata', () => {
+    it('reads the issue the launch persisted in session metadata', () => {
         const dir = worktree();
         fs.ensureDirSync(path.join(dir, '.xtrm'));
         fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), {
             runtime: 'pi',
             launchedAt: '2026-11-18T00:00:00.000Z',
-            bead: 'CORE-2728',
+            issue: 'CORE-2728',
         });
-        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBe('CORE-2728');
+        expect(resolveWorkerIssueRef(dir, { paneIssue: () => null })).toBe('CORE-2728');
     });
 
-    it('a Codex record carries the bead, so attach restores the dispatcher with NO pane', () => {
+    it('a Codex record carries the issue, so attach restores the dispatcher with NO pane', () => {
         const dir = worktree();
         fs.ensureDirSync(path.join(dir, '.xtrm'));
-        // The shape writeCodexWorktreeSession writes (CORE-2728 added `bead`).
+        // The shape writeCodexWorktreeSession writes (CORE-2728 added `issue`).
         fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), {
             runtime: 'codex',
             launchedAt: '2026-11-18T00:00:00.000Z',
@@ -440,13 +440,13 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
             safetyProfile: 'codex-yolo',
             profileName: 'xtrm-0123456789abcdef',
             profilePath: path.join(os.homedir(), '.codex', 'xtrm-0123456789abcdef.config.toml'),
-            bead: 'CORE-2728',
+            issue: 'CORE-2728',
         });
         // No live pane at all: the record is the only source.
-        const ref = resolveWorkerIssueRef(dir, { paneBead: () => null });
+        const ref = resolveWorkerIssueRef(dir, { paneIssue: () => null });
         expect(ref).toBe('CORE-2728');
-        // CORE-2728 M6c: with the Codex reader dropping the bead, this would be null.
-        expect(readCodexWorktreeSession(dir)?.bead).toBe('CORE-2728');
+        // CORE-2728 M6c: with the Codex reader dropping the issue, this would be null.
+        expect(readCodexWorktreeSession(dir)?.issue).toBe('CORE-2728');
         const identity = liveDispatcher('g04z', { name: 'g04z-lead' });
         const env = attachDispatcherEnv(ref, {
             env: {},
@@ -462,25 +462,25 @@ describe('the worker issue an attach resolves (CORE-2728)', () => {
 
     it('unknown stays absent: no metadata, no pane and an unsafe value all return null', () => {
         const dir = worktree();
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneBead: () => null })).toBeNull();
-        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneBead: () => '--project' })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneIssue: () => null })).toBeNull();
+        expect(resolveWorkerIssueRef(dir, { readMeta: () => null, paneIssue: () => '--project' })).toBeNull();
         fs.ensureDirSync(path.join(dir, '.xtrm'));
-        fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), { runtime: 'pi', launchedAt: 'x', bead: 'not a ref' });
-        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBeNull();
+        fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), { runtime: 'pi', launchedAt: 'x', issue: 'not a ref' });
+        expect(resolveWorkerIssueRef(dir, { paneIssue: () => null })).toBeNull();
     });
 
-    it('CORE-2728 F5: a non-string bead is absent, not a TypeError', () => {
+    it('CORE-2728 F5: a non-string issue is absent, not a TypeError', () => {
         const dir = worktree();
         fs.ensureDirSync(path.join(dir, '.xtrm'));
         fs.writeJsonSync(path.join(dir, '.xtrm', 'session-meta.json'), {
             runtime: 'pi',
             launchedAt: '2026-11-18T00:00:00.000Z',
-            bead: 2728,
+            issue: 2728,
         });
         // A damaged record must answer "unknown", never throw while attach runs.
-        expect(() => resolveWorkerIssueRef(dir, { paneBead: () => null })).not.toThrow();
-        expect(resolveWorkerIssueRef(dir, { paneBead: () => null })).toBeNull();
+        expect(() => resolveWorkerIssueRef(dir, { paneIssue: () => null })).not.toThrow();
+        expect(resolveWorkerIssueRef(dir, { paneIssue: () => null })).toBeNull();
         // The pane fallback still answers when the record cannot.
-        expect(resolveWorkerIssueRef(dir, { paneBead: () => 'CORE-2728' })).toBe('CORE-2728');
+        expect(resolveWorkerIssueRef(dir, { paneIssue: () => 'CORE-2728' })).toBe('CORE-2728');
     });
 });

@@ -1,6 +1,6 @@
 # `xt attach` launch parity (CORE-2792)
 
-What a launcher (`xt claude|pi|codex [--role …] [--bead …]`) writes onto a pane, into
+What a launcher (`xt claude|pi|codex [--role …] [--issue …]`) writes onto a pane, into
 the pane's environment and into the runtime argv, versus what `xt attach` and
 `xt attach --fresh` restore after those pieces are gone.
 
@@ -9,7 +9,7 @@ the pane's environment and into the runtime argv, versus what `xt attach` and
 A tmux pane option and the environment of the process that ran in it die with the
 pane. After a power loss, a reopened terminal or a tmux server restart, `xt attach`
 brought the runtime and its conversation back but not its identity: the local
-incidents left panes with an empty `@agent_role`, no `@agent_bead`, `@agent_branch`,
+incidents left panes with an empty `@agent_role`, no `@agent_issue`, `@agent_branch`,
 `@agent_worktree` or `@agent_task`, no `XTMUX_AGENT_*` environment, and a runtime
 argv (`pi -c`, `claude --continue`) that had lost the role's system prompt.
 Worse, because nothing stripped the attacher's own metadata, the resumed pane could
@@ -85,7 +85,7 @@ are unchanged from the base commit.
 | P3 | `@agent_state` | `worktree-session.ts:2435` (`idle`) | **MISSING** (by design) | RESTORED (launcher seeds `idle`) | runtime-owned; see §8.1 |
 | P4 | `@agent_worktree` | `worktree-session.ts:2436` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | the live worktree path, never the recorded one |
 | P5 | `@agent_branch` | `worktree-session.ts:2437` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | `launch.branch`, else the live branch |
-| P6 | `@agent_bead` | `worktree-session.ts:2439` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | Issue ref from `sb` binding, else `record.bead` |
+| P6 | `@agent_issue` | `worktree-session.ts:2439` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | Issue ref from `sb` binding, else `record.bead` |
 | P7 | `@agent_role` | `worktree-session.ts:2440` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | `launch.role` |
 | T1 | pane title (`select-pane -T`) | `worktree-session.ts:4459` | **RESTORED** `attach.ts:608-611` | RESTORED (launcher) | `launch.displayName` |
 
@@ -116,7 +116,7 @@ The launcher exports `XTMUX_AGENT_<X>` for every `@agent_<x>` option except
 | E2 | `XTMUX_AGENT_TASK` | same | **RESTORED** | RESTORED | |
 | E3 | `XTMUX_AGENT_WORKTREE` | same | **RESTORED** | RESTORED | |
 | E4 | `XTMUX_AGENT_BRANCH` | same | **RESTORED** | RESTORED | |
-| E5 | `XTMUX_AGENT_BEAD` | same | **RESTORED** | RESTORED | |
+| E5 | `XTMUX_AGENT_ISSUE` | same | **RESTORED** | RESTORED | |
 | E6 | `XTMUX_AGENT_PARENT_SESSION` | same | **RESTORED** | RESTORED | |
 | E7 | `XTRM_SESSION_ID` | `worktree-session.ts:4299-4304` (`buildSessionIdentityEnv`) | **RESTORED** `attach.ts:56-108` | RESTORED | the tmux session the pane runs in |
 | E8 | `XTRM_SESSION_NAME` | same | **RESTORED** | RESTORED | |
@@ -331,7 +331,7 @@ A record without a `launch` block cannot answer the role, the task or the parent
 session: no other durable source holds them (the xtmux event log carries no
 `agent.role.launched` rows, the Substrate binding records only the dispatcher, and
 the role map is global). Such a record restores the three items that survive
-independently — `@agent_bead` (Substrate binding or `record.bead`), `@agent_branch`
+independently — `@agent_issue` (Substrate binding or `record.bead`), `@agent_branch`
 (recorded, else live) and `@agent_worktree` (the live path) — and nothing else.
 
 The rule is: never invent a parent, a role or a task the record does not name. For a
@@ -345,14 +345,14 @@ All runs use a throwaway tmux server (`tmux -L xtrm629-demo-*`); the operator's
 server is never addressed. Harness: `/tmp/parity-demo.sh` (scratch) creates a sandbox
 repo with a stub `sp`/`sb`/`bd` and a stub `pi` that records `cwd`, `argv` and the
 `XTMUX_AGENT_*`/`XTRM_SESSION_*` environment, launches
-`xt pi demo --role worker --bead CORE-2792 --window`, kills the server (power loss),
+`xt pi demo --role worker --issue CORE-2792 --window`, kills the server (power loss),
 then runs `xt attach demo` in a new pane of a new server.
 
 ### 6.1 Before (installed build 0.15.3 of 2026-11-23, pre-fix)
 
 ```
 == pre-fix: launch pane options ==
-@agent_bead CORE-2792
+@agent_issue CORE-2792
 @agent_branch xt/demo
 @agent_parent_session "$0"
 @agent_role worker
@@ -372,7 +372,7 @@ XTMUX_AGENT_WORKTREE=/home/dawid/dev/core/.xtrm/worktrees/core-xt-pi-attach-pari
 
 ```
 == final-keep: launch pane options ==          == final-keep: pane options after xt attach ==
-@agent_bead CORE-2792                          @agent_bead CORE-2792
+@agent_issue CORE-2792                          @agent_issue CORE-2792
 @agent_branch xt/demo                           @agent_branch xt/demo
 @agent_parent_session "$0"                      @agent_parent_session "$0"
 @agent_role worker                              @agent_role worker
@@ -383,7 +383,7 @@ XTMUX_AGENT_WORKTREE=/home/dawid/dev/core/.xtrm/worktrees/core-xt-pi-attach-pari
 == final-keep: launch env ==                    == final-keep: attach env ==
 argv=--name repo-xt-pi-demo --append-system-prompt You are the demo worker. --no-skills
                                                argv=-c --name repo-xt-pi-demo --append-system-prompt You are the demo worker. --no-skills
-XTMUX_AGENT_BEAD=CORE-2792                     XTMUX_AGENT_BEAD=CORE-2792
+XTMUX_AGENT_ISSUE=CORE-2792                     XTMUX_AGENT_ISSUE=CORE-2792
 XTMUX_AGENT_BRANCH=xt/demo                     XTMUX_AGENT_BRANCH=xt/demo
 XTMUX_AGENT_PARENT_SESSION=$0                  XTMUX_AGENT_PARENT_SESSION=$0
 XTMUX_AGENT_ROLE=worker                        XTMUX_AGENT_ROLE=worker
@@ -400,12 +400,12 @@ attacher's `xt/attach-parity` identity is gone.
 
 ```
 == final-legacy: pane options after xt attach ==
-@agent_bead CORE-2792
+@agent_issue CORE-2792
 @agent_branch xt/demo
 @agent_worktree /tmp/…/repo-xt-pi-demo
 == final-legacy: attach env ==
 argv=-c
-XTMUX_AGENT_BEAD=CORE-2792
+XTMUX_AGENT_ISSUE=CORE-2792
 XTMUX_AGENT_BRANCH=xt/demo
 XTMUX_AGENT_WORKTREE=/tmp/…/repo-xt-pi-demo
 XTRM_SESSION_ID=$0
@@ -418,7 +418,7 @@ XTRM_SESSION_NAME=xx
 == final-fresh: pane options after xt attach ==   (7 of 7, @agent_state included)
 == final-fresh: attach env ==
 argv=--name repo-xt-pi-demo --append-system-prompt You are the demo worker. --no-skills
-XTMUX_AGENT_BEAD=CORE-2792 … XTRM_SESSION_NAME=xx   (identical to the launch)
+XTMUX_AGENT_ISSUE=CORE-2792 … XTRM_SESSION_NAME=xx   (identical to the launch)
 ```
 
 `--fresh` re-derives role, model and thinking from the record (`attach.ts:353-357`),
@@ -452,18 +452,18 @@ ledger deleted). Throwaway socket only.
 
 ```
 == stale: pane options BEFORE xt attach (stale, hand-set) ==
-@agent_bead OLD-9
+@agent_issue OLD-9
 @agent_role lead
 @agent_task role:lead
 == stale: pane options after xt attach ==
-@agent_bead CORE-2792
+@agent_issue CORE-2792
 @agent_branch xt/demo
 @agent_worktree /tmp/xtrm-parity-demo-stale-LDDknl/repo/.xtrm/worktrees/repo-xt-pi-demo
 == attach: restored line ==
-  restored: @agent_worktree=… @agent_branch=xt/demo @agent_bead=CORE-2792
+  restored: @agent_worktree=… @agent_branch=xt/demo @agent_issue=CORE-2792
 == attach env ==
 argv=-c
-XTMUX_AGENT_BEAD=CORE-2792 XTMUX_AGENT_BRANCH=xt/demo XTMUX_AGENT_WORKTREE=…
+XTMUX_AGENT_ISSUE=CORE-2792 XTMUX_AGENT_BRANCH=xt/demo XTMUX_AGENT_WORKTREE=…
 ```
 
 `@agent_role=lead`, `@agent_task=role:lead` and the stale bead are gone; the three the

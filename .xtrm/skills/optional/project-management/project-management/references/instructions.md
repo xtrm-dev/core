@@ -68,10 +68,10 @@ A session has exactly one role: `manager`, `lead`, `board_helper` or `worker`. O
 Launch each role like this (full syntax and checks: `references/launching.md`):
 
 ```
-xt claude <name> --window --role manager --bead <manager_issue> --model opus -- --effort high
-xt claude <epic>-<area>-lead --window --role lead --bead <workstream ref> --model sonnet -- --effort high
+xt claude <name> --window --role manager --issue <manager_issue> --model opus -- --effort high
+xt claude <epic>-<area>-lead --window --role lead --issue <workstream ref> --model sonnet -- --effort high
 specialist_dispatch {specialist: "worker", issue_ref}        # default; the next issue goes by specialist_reply
-xt claude|pi <story>-<slug> --window --role worker --bead <issue ref> [--model sonnet|opus -- --effort high]   # only by rule 1
+xt claude|pi <story>-<slug> --window --role worker --issue <issue ref> [--model sonnet|opus -- --effort high]   # only by rule 1
 xt pi board-helper --window --role board-helper
 ```
 
@@ -233,7 +233,7 @@ Common problems:
 | Symptom | Cause | Fix |
 |---|---|---|
 | A session reports the wrong role | a stray `.pm-role`, or a launch without `--role` | check with `pm_session.py show --dir <worktree>`; remove the stray file or relaunch with the role |
-| `KIT: no bound issue` | the launch had no `--bead` and no `.substrate-issue` | `pm_session.py init --issue <ref>` |
+| `KIT: no bound issue` | the launch had no `--issue` and no `.substrate-issue` | `pm_session.py init --issue <ref>` |
 | A gated command is denied | the references were not read in full this session, or a message is pending | read the listed files; read the pending items, then retry |
 | `ALARM ROUTE-TARGET manager` in the lane | zero or two live managers | check `route_target.py --team`; during a handover the claim decides |
 | Operator comments do not arrive | the router or the delivery stopped | `route-backlog.py` lists undelivered items; check `events.log` for `ALARM` lines |
