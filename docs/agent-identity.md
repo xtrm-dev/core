@@ -44,13 +44,26 @@ The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher de
 
 ### Claim sync
 
-`sb issue claim`, `release` and `close` update `@agent_issue` as follows:
+The `sb` client updates `@agent_issue` after a successful operation. The hook sits in `runCli`, the dispatch that the shipped bin (`cli/sb-ux.ts`) and `cli/sb.ts` share. It runs in the client, so it does not need the Substrate remote.
 
-1. `sb` reads `$TMUX_PANE`. Without it, `sb` does nothing.
-2. `sb` reads `@agent_holder` of that pane. `sb` continues only when it equals the holder of the Substrate operation. An in-process specialist or another holder has a different holder and never changes the parent pane.
-3. After `claim`, `sb` sets `@agent_issue` to the claimed ref.
-4. After `release` or `close`, `sb` sets `@agent_issue` to empty only when the option equals the released ref.
-5. A failure is logged and never changes the exit status of the Substrate operation. Claim sync does not need the Substrate remote.
+Taking a hold (`sb issue claim`):
+
+1. `sb` reads `$TMUX_PANE` to locate the pane. Without `$TMUX` and a pane id, `sb` does nothing.
+2. `sb` reads `@agent_holder` of that pane. `sb` continues only when it equals the holder of the operation. An in-process specialist or another holder has a different holder and never changes the parent pane.
+3. `sb` sets `@agent_issue` to the claimed ref.
+
+Ending a hold (`release`, `close`, `cancel`, and `state <ref> done|cancelled`):
+
+1. `sb` lists the panes of the tmux server and unsets `@agent_issue` on every pane whose value equals the ref (case-insensitive).
+2. The holder gate does not apply. A lead that closes a worker's Issue clears the worker's pane.
+3. Each unset is logged.
+
+Failures:
+
+1. A failure is logged to `$XDG_STATE_HOME/xtrm/pane-sync.log` and never changes the exit status of the Substrate operation.
+2. A caller that injects a scratch store (`runCli` with `dbPath`) never touches panes.
+
+Representation: `sb` unsets the option, so none means absent. `agent-state.sh off` sets the option to an empty string. Readers treat an absent option and an empty option as none.
 
 ### Child launch
 
