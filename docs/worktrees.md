@@ -163,13 +163,13 @@ The binding is `bind X run-shell -b 'xt worktree release --pane #{pane_id} --cli
 | tracked changes, untracked work, ignored data, unpushed commits, a detached HEAD, or another process inside the tree | one nudge is typed into the agent pane naming every blocking path; press again when it is done. A pane whose foreground is not an agent (a shell, an editor) is never typed into |
 | clean and pushed | one confirmation in the pressing client; on `y` the pane respawns in the main checkout and the tree is removed |
 
-There is no flag that skips the confirmation. On `y` the prompt runs a second `xt worktree release` that presents a one-shot ticket: the check runs again in full (HEAD pinned), the ticket is consumed before anything is removed, and it expires after two minutes. A tree that fails the re-check after the respawn stays on disk.
+There is no flag that skips the confirmation, and no second invocation: `tmux confirm-before` blocks the `xt` process that showed the prompt and returns only when the operator answers, so the same process removes the tree on `y` and removes nothing on `n`, Esc, or a closed client. The confirmation prompt is a deliberate keystroke gate, not an authentication boundary — a same-UID process can run `git worktree remove` or `tmux kill-pane` directly, and `--client` is supplied by the binding, so the prompt proves that a tmux client answered, not that a human did. Each press records one tab-separated line in `$XDG_STATE_HOME/xt/worktree-release.log` (`~/.local/state/xt/` by default); the `prompted` line is written before the prompt blocks.
 
-Order inside the confirmed run, so a failure is diagnosable: re-check → `respawn-pane -k -c <main checkout>` → wait up to five seconds for processes still inside → re-check with the pinned HEAD → unlink only the launcher's own `.specialists/{default,user}` links (logged, because the tree is no longer wired to the main checkout's skills) → `git worktree remove` without `--force` → unset `@agent_worktree`, `@agent_branch`, `@agent_bead`.
+Order after `y`, so a failure is diagnosable: full re-check with the HEAD pinned to the value the prompt named (a file that appeared while the prompt was open refuses the release) → `respawn-pane -k -c <main checkout>` → wait up to five seconds for processes still inside → re-check with the pinned HEAD → unlink only the launcher's own `.specialists/{default,user}` links (logged, because the tree is no longer wired to the main checkout's skills) → `git worktree remove` without `--force` → unset `@agent_worktree`, `@agent_branch`, `@agent_bead`.
 
 What the removal never does: it never passes `--force` to `git worktree remove`, never deletes the branch, and never follows the launcher's `.specialists/{default,user}` symlinks. `git worktree branch-gc` deletes branches whose PRs are closed, so do not run it on a released branch whose work was never merged.
 
-`xt worktree doctor` reports the binding in four probes. Outside a tmux server the `prefix X bound` and `xt on tmux PATH` probes report "not checked" and do not fail the doctor.
+The prompt itself lives for at most two minutes: while it is open, that client's keyboard belongs to the prompt. Outside a tmux server the `prefix X bound` and `xt on tmux PATH` probes report "not checked" and do not fail the doctor.
 
 `--dry-run` prints the verdict without removing anything:
 

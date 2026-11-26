@@ -13,17 +13,17 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
     AGENT_PANE_COMMANDS,
     checkRelease,
     keybindingPaths,
     keybindingProbes,
-    logRelease,
     launcherLinks,
+    logEvent,
+    NUDGEABLE_KINDS,
     processTree,
     readPpidMap,
     readTextIfExists,
@@ -63,7 +63,7 @@ function sleep(ms: number): void {
 
 /** A message the operator sees in the status line, and a line in the log for later. */
 export function notify(text: string, paneId?: string): void {
-    logRelease(text);
+    logEvent({ action: 'refused', pane: paneId, detail: text });
     if (!process.env.TMUX) {
         console.error(text);
         return;
@@ -172,96 +172,50 @@ function headOf(worktree: string): string | null {
     return r.status === 0 ? (r.stdout ?? '').trim() || null : null;
 }
 
-/** The command the confirmation re-runs: the whole check again, pinned to this head. */
-function rerunCommand(opts: { paneId: string; client: string; head: string; ticket: string }): string {
-    const which = spawnSync('which', ['xt'], { encoding: 'utf8', stdio: 'pipe' });
-    const binary = which.status === 0 && which.stdout.trim()
-        ? which.stdout.trim()
-        : `${process.execPath} ${process.argv[1] ?? 'xt'}`;
-    // Every token here is validated before it is used: %<digits>, a client name of
-    // [A-Za-z0-9/_.-], a 32-hex ticket and a 40-hex head. shellQuote is still applied so
-    // the /bin/sh run-shell layer sees one token per argument.
-    return [binary, 'worktree', 'release', '--pane', opts.paneId, '--client', opts.client, '--ticket', opts.ticket, '--expect-head', opts.head]
-        .map(shellQuote)
-        .join(' ');
+const CONFIRM_TIMEOUT_MS = 120_000;
+const CONFIRM_MARKER = 'xt-release-confirmed';
+
+/**
+ * `-p` is a tmux FORMAT: `#(cmd)` in the prompt text runs a shell command at draw time.
+ * So every `#` in caller-supplied text is doubled and newlines collapse to spaces.
+ */
+export function escapePromptText(value: string): string {
+    return value.replace(/[\r\n]+/g, ' ').replace(/#/g, '##');
 }
 
 function shellQuote(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-const TICKET_TTL_MS = 120_000;
-const TICKET_ID = /^[0-9a-f]{32}$/;
-
-interface ReleaseTicket {
-    paneId: string;
-    client: string;
-    head: string;
-    createdAt: number;
-}
-
-function ticketDir(): string {
-    return join(homedir(), '.cache', 'xt', 'worktree-release');
-}
+export type ConfirmVerdict = 'confirmed' | 'declined';
+export type ConfirmFn = (input: { client: string; prompt: string }) => ConfirmVerdict;
 
 /**
- * A one-shot ticket is what makes the confirmation unbypassable. There is no `--yes`:
- * the removal path runs only when it presents a ticket that this machine wrote moments
- * ago and that names the same pane and the same head. Deleting the tree needs an
- * operator keypress, not a flag anyone can add to a command line.
+ * Show the prompt and wait for the answer. `confirm-before` without `-b` blocks the
+ * invoking client and exits 0 only when the operator confirms (1 for n, Esc, or a client
+ * that went away), so the answer comes back to THIS process: no ticket, no second
+ * invocation, nothing on disk that could be written by hand.
  */
-export function createTicket(input: { paneId: string; client: string; head: string }): string | null {
-    try {
-        const dir = ticketDir();
-        mkdirSync(dir, { recursive: true, mode: 0o700 });
-        const id = randomBytes(16).toString('hex');
-        const body: ReleaseTicket = { ...input, createdAt: Date.now() };
-        writeFileSync(join(dir, `${id}.json`), JSON.stringify(body), { encoding: 'utf8', mode: 0o600 });
-        return id;
-    } catch (error) {
-        logRelease(`could not write the confirmation ticket: ${error instanceof Error ? error.message : String(error)}`);
-        return null;
-    }
-}
+export const confirmRelease: ConfirmFn = ({ client, prompt }) => {
+    const result = spawnSync('tmux', [
+        'confirm-before', '-t', client, '-p', prompt,
+        'display-message', '-p', CONFIRM_MARKER,
+    ], { encoding: 'utf8', stdio: 'pipe', timeout: CONFIRM_TIMEOUT_MS });
 
-export function consumeTicket(id: string, input: { paneId: string; head: string }): { ok: true } | { ok: false; detail: string } {
-    if (!TICKET_ID.test(id)) return { ok: false, detail: 'confirmation ticket is malformed' };
-    const file = join(ticketDir(), `${id}.json`);
-    let raw: string;
-    try {
-        raw = readFileSync(file, 'utf8');
-    } catch {
-        return { ok: false, detail: 'confirmation ticket not found — nothing removed' };
-    }
-    // Single use, before any other decision: a replayed ticket cannot remove a second tree.
-    try {
-        unlinkSync(file);
-    } catch {
-        return { ok: false, detail: 'confirmation ticket could not be consumed — nothing removed' };
-    }
-    let ticket: ReleaseTicket;
-    try {
-        ticket = JSON.parse(raw) as ReleaseTicket;
-    } catch {
-        return { ok: false, detail: 'confirmation ticket is unreadable — nothing removed' };
-    }
-    if (ticket.paneId !== input.paneId) return { ok: false, detail: 'confirmation ticket belongs to another pane' };
-    if (Date.now() - ticket.createdAt > TICKET_TTL_MS) return { ok: false, detail: 'confirmation ticket expired — press prefix+X again' };
-    if (ticket.head !== input.head) return { ok: false, detail: 'HEAD moved since the prompt — press prefix+X again' };
-    return { ok: true };
-}
+    if (result.error || result.status !== 0) return 'declined';
+    // rc alone distinguishes y from n; the marker also proves the confirmed command ran,
+    // so a tmux that returns 0 for another reason cannot pass as a confirmation.
+    return (result.stdout ?? '').includes(CONFIRM_MARKER) ? 'confirmed' : 'declined';
+};
 
 export interface ReleaseOptions {
     paneId: string;
     client?: string;
-    ticket?: string;
     dryRun: boolean;
-    expectHead?: string;
     procRoot?: string;
+    /** Test seam: the prompt is otherwise shown with `tmux confirm-before`. */
+    confirm?: ConfirmFn;
 }
-
-/** Blocker kinds a nagging agent can resolve; everything else is a refusal. */
-const NUDGEABLE_KINDS = new Set<string>(['dirty', 'ignored-work', 'skip-worktree', 'unpushed', 'detached-head', 'held-by-process']);
 
 /**
  * The press. Every early return is deliberate: the removal is the last statement, and
@@ -280,7 +234,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
             return { action: 'refused', paneId: opts.paneId, blockers: [], detail: clientError };
         }
     }
-    if (!process.env.TMUX && !opts.ticket) {
+    if (!process.env.TMUX) {
         const detail = 'not inside tmux — release acts on the pane that pressed the key';
         notify(detail);
         return { action: 'refused', paneId: opts.paneId, blockers: [], detail };
@@ -324,7 +278,6 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     const check = checkRelease({
         worktree: pane.worktree,
         repoRoot,
-        expectHead: opts.expectHead,
         allowedPids: allowed,
         procRoot: opts.procRoot,
     });
@@ -343,11 +296,18 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
             const summary = check.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ');
             if (nudge.ok) {
                 notify(`release blocked (${check.blockers.length}): nudge sent — press prefix+X again when the agent is done`, opts.paneId);
-                logRelease(`nudged pane ${opts.paneId} in ${pane.worktree}: ${summary}`);
+                logEvent({
+                    action: 'nudged', pane: opts.paneId, worktree: pane.worktree,
+                    branch: check.facts.branch, head: check.facts.head, detail: summary,
+                });
                 return { ...base, action: 'nudged', detail: summary };
             }
             notify(`release blocked: ${summary} (nudge not sent: ${nudge.detail})`, opts.paneId);
-            logRelease(`release refused for pane ${opts.paneId} in ${pane.worktree}: ${summary}; nudge skipped: ${nudge.detail}`);
+            logEvent({
+                action: 'refused', pane: opts.paneId, worktree: pane.worktree,
+                branch: check.facts.branch, head: check.facts.head,
+                detail: `${summary}; nudge skipped: ${nudge.detail}`,
+            });
             return { ...base, action: 'refused', detail: `${summary}; nudge skipped: ${nudge.detail}` };
         }
 
@@ -359,7 +319,10 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
 
         const summary = check.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ');
         notify(`release refused: ${summary}`, opts.paneId);
-        logRelease(`release refused for pane ${opts.paneId} in ${pane.worktree}: ${summary}`);
+        logEvent({
+            action: 'refused', pane: opts.paneId, worktree: pane.worktree,
+            branch: check.facts.branch, head: check.facts.head, detail: summary,
+        });
         return { ...base, action: 'refused', detail: summary };
     }
 
@@ -376,53 +339,59 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     }
 
     // --- confirmation ---------------------------------------------------------
-    // Two paths reach the removal below: a ticket this machine issued for this pane and
-    // head moments ago, or nothing. There is no flag that skips the prompt.
-    let ticketHead = head;
-    if (opts.ticket) {
-        const consumed = consumeTicket(opts.ticket, { paneId: opts.paneId, head });
-        if (!consumed.ok) {
-            notify(`release refused: ${consumed.detail}`, opts.paneId);
-            logRelease(`release refused for pane ${opts.paneId} in ${pane.worktree}: ${consumed.detail}`);
-            return { ...base, action: 'refused', detail: consumed.detail };
-        }
-        ticketHead = head;
-    } else {
-        if (!opts.client) {
-            const detail = 'needs confirmation: press prefix+X from the tmux client (or pass --client)';
-            notify(`release-ready: ${check.facts.branch ?? 'detached'} — ${detail}`, opts.paneId);
-            return { ...base, action: 'checked', detail };
-        }
+    // One phase. The prompt is shown by THIS process and blocks it until the operator
+    // answers, so nothing downstream needs a receipt: there is no flag, no ticket and no
+    // second invocation that could start the removal.
+    if (!opts.client) {
+        const detail = 'needs confirmation: press prefix+X from the tmux client (or pass --client)';
+        notify(`release-ready: ${check.facts.branch ?? 'detached'} — ${detail}`, opts.paneId);
+        logEvent({
+            action: 'refused', pane: opts.paneId, worktree: pane.worktree,
+            branch: check.facts.branch, head, detail,
+        });
+        return { ...base, action: 'checked', detail };
+    }
 
-        const ticket = createTicket({ paneId: opts.paneId, client: opts.client, head });
-        if (!ticket) {
-            const detail = 'could not write a confirmation ticket — nothing removed';
-            notify(`release not confirmed: ${detail}`, opts.paneId);
-            return { ...base, action: 'refused', detail };
-        }
+    const prompt = `release ${escapePromptText(check.facts.branch ?? 'detached')} and move this pane to the main checkout? y/n`;
+    logEvent({
+        action: 'prompted', pane: opts.paneId, client: opts.client, worktree: pane.worktree,
+        branch: check.facts.branch, head, detail: 'prompt shown to the pressing client',
+    });
 
-        const confirm = tmux([
-            'confirm-before', '-t', opts.client,
-            '-p', `release ${check.facts.branch ?? 'detached'} and move this pane to the main checkout? y/n`,
-            'run-shell', '-b', rerunCommand({ paneId: opts.paneId, client: opts.client, head, ticket }),
-        ]);
+    const verdict = (opts.confirm ?? confirmRelease)({ client: opts.client, prompt });
+    if (verdict === 'declined') {
+        const detail = 'not confirmed — nothing removed';
+        notify(`release ${detail}`, opts.paneId);
+        logEvent({
+            action: 'declined', pane: opts.paneId, client: opts.client, worktree: pane.worktree,
+            branch: check.facts.branch, head, detail,
+        });
+        return { ...base, action: 'refused', detail };
+    }
 
-        if (!confirm.ok) {
-            // Fail closed: no prompt, no removal, and the ticket cannot outlive a prompt
-            // that was never shown.
-            try {
-                rmSync(join(ticketDir(), `${ticket}.json`), { force: true });
-            } catch {
-                // best effort
-            }
-            const detail = `confirmation could not be shown (${confirm.err || 'tmux refused'}); nothing removed`;
-            notify(`release not confirmed: ${confirm.err || 'tmux refused'} — nothing removed`, opts.paneId);
-            logRelease(`release not confirmed for pane ${opts.paneId} in ${pane.worktree}: ${detail}`);
-            return { ...base, action: 'refused', detail };
-        }
+    logEvent({
+        action: 'confirmed', pane: opts.paneId, client: opts.client, worktree: pane.worktree,
+        branch: check.facts.branch, head, detail: 'operator answered y',
+    });
 
-        logRelease(`confirmation shown for pane ${opts.paneId} in ${pane.worktree} at ${head.slice(0, 12)}`);
-        return { ...base, action: 'confirmed', detail: 'awaiting y/n in the pressing client' };
+    // The tree could have changed while the prompt was open: the whole predicate runs
+    // again, with HEAD pinned, before anything is touched.
+    const reconfirm = checkRelease({
+        worktree: pane.worktree,
+        repoRoot,
+        expectHead: head,
+        allowedPids: allowed,
+        procRoot: opts.procRoot,
+    });
+    if (!reconfirm.ok) {
+        const summary = reconfirm.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ');
+        const detail = `state changed while the prompt was open (${summary}); nothing removed`;
+        notify(`release refused: ${detail}`, opts.paneId);
+        logEvent({
+            action: 'refused', pane: opts.paneId, client: opts.client, worktree: pane.worktree,
+            branch: check.facts.branch, head, detail,
+        });
+        return { ...base, blockers: reconfirm.blockers, action: 'refused', detail };
     }
 
     // --- confirmed path -------------------------------------------------------
@@ -430,24 +399,27 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     if (!respawn.ok) {
         const detail = `respawn-pane failed: ${respawn.err || 'unknown error'}; nothing removed`;
         notify(`release failed: ${detail}`, opts.paneId);
-        logRelease(`release failed for pane ${opts.paneId}: ${detail}`);
+        logEvent({ action: 'failed', pane: opts.paneId, worktree: pane.worktree, head, detail });
         return { ...base, action: 'refused', detail };
     }
 
     // The respawned shell starts in the main checkout; anything still inside the tree is a
     // user. Wait briefly for the old process tree to disappear.
     const deadline = Date.now() + 5_000;
-    let verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: ticketHead, procRoot: opts.procRoot });
+    let verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: head, procRoot: opts.procRoot });
     while (!verify.ok && Date.now() < deadline && verify.blockers.every(blocker => blocker.kind === 'held-by-process')) {
         sleep(250);
-        verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: ticketHead, procRoot: opts.procRoot });
+        verify = checkRelease({ worktree: pane.worktree, repoRoot, expectHead: head, procRoot: opts.procRoot });
     }
 
     if (!verify.ok) {
         const summary = verify.blockers.map(blocker => `${blocker.kind}: ${blocker.detail}`).join('; ');
         const detail = `re-check after respawn failed: ${summary}; nothing removed`;
         notify(`release failed: ${detail}`, opts.paneId);
-        logRelease(`release failed for pane ${opts.paneId} in ${pane.worktree}: ${detail}`);
+        logEvent({
+            action: 'failed', pane: opts.paneId, worktree: pane.worktree,
+            branch: check.facts.branch, head, detail,
+        });
         return { ...base, blockers: verify.blockers, action: 'refused', detail };
     }
 
@@ -459,9 +431,12 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         const linkPath = join(pane.worktree, '.specialists', name);
         try {
             unlinkSync(linkPath);
-            logRelease(`unlinked ${linkPath}`);
+            logEvent({ action: 'released', pane: opts.paneId, worktree: pane.worktree, head, detail: `unlinked ${linkPath}` });
         } catch (error) {
-            logRelease(`could not unlink ${linkPath}: ${error instanceof Error ? error.message : String(error)}`);
+            logEvent({
+                action: 'failed', pane: opts.paneId, worktree: pane.worktree, head,
+                detail: `could not unlink ${linkPath}: ${error instanceof Error ? error.message : String(error)}`,
+            });
         }
     }
 
@@ -473,8 +448,12 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     if (remove.status !== 0) {
         const reason = (remove.stderr ?? '').trim() || 'unknown error';
         const detail = `git worktree remove refused: ${reason}`;
-        notify(`release failed: ${reason.split('\n')[0]} — nothing was forced`, opts.paneId);
-        logRelease(`release failed for ${pane.worktree}: ${reason}; exact command: git -C ${repoRoot} worktree remove ${pane.worktree}`);
+        const linksNote = links.size > 0 ? '; the launch links were already removed' : '';
+        notify(`release failed: ${reason.split('\n')[0]} — nothing was forced${linksNote}`, opts.paneId);
+        logEvent({
+            action: 'failed', pane: opts.paneId, worktree: pane.worktree, branch: check.facts.branch, head,
+            detail: `${reason}; exact command: git -C ${repoRoot} worktree remove ${pane.worktree}`,
+        });
         return { ...base, action: 'refused', detail };
     }
 
@@ -483,7 +462,10 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     }
 
     notify(`released ${pane.worktree} (${check.facts.branch ?? 'detached'}); launch links removed, branch kept`, opts.paneId);
-    logRelease(`released ${pane.worktree} for pane ${opts.paneId} at ${head.slice(0, 12)}; branch kept`);
+    logEvent({
+        action: 'released', pane: opts.paneId, worktree: pane.worktree,
+        branch: check.facts.branch, head, detail: 'removed; branch kept',
+    });
     return { ...base, action: 'released', detail: `removed ${pane.worktree}; branch ${check.facts.branch ?? '(detached)'} kept` };
 }
 

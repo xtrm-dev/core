@@ -13,15 +13,34 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { livePidsFor, readProcessCwds } from './worktree-reap.js';
 
-/** Every decision, refusal and failure lands here — a keystroke leaves a trace. */
-export const RELEASE_LOG_PATH = '/tmp/xt-worktree-release.log';
+/**
+ * Every decision, refusal and failure lands here — a keystroke leaves a trace.
+ *
+ * The log lives with the rest of xt's runtime state, not in the temp directory: a
+ * temp-dir log is swept by the host and its mere creation is a test-suite leak
+ * (CORE-2612). The path is resolved per call so a test that moves HOME sees it.
+ */
+export function releaseLogPath(): string {
+    const state = process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
+    return join(state, 'xt', 'worktree-release.log');
+}
 
 /** Bounded nudge: a pane message has room for a handful of names, not a manifest. */
 export const MAX_NAMED_PATHS = 20;
+
+/**
+ * Blocker kinds an agent can clear itself. The nudge is typed only for these; every
+ * other blocker is a refusal the operator reads. One list, so the pane path and the
+ * predicate cannot drift apart.
+ */
+export const NUDGEABLE_KINDS: ReadonlySet<string> = new Set([
+    'dirty', 'ignored-work', 'skip-worktree', 'unpushed', 'detached-head', 'held-by-process',
+]);
 
 /**
  * Foreground commands an agent pane may run. A shell is not an agent: typing into it
@@ -68,7 +87,9 @@ export function validateClientName(value: string): string | null {
 
 function appendLog(line: string): void {
     try {
-        appendFileSync(RELEASE_LOG_PATH, `${new Date().toISOString()} ${line}\n`, 'utf8');
+        const target = releaseLogPath();
+        mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+        appendFileSync(target, `${new Date().toISOString()} ${line}\n`, 'utf8');
     } catch {
         // A log that cannot be written must not change a decision.
     }
@@ -539,13 +560,31 @@ export function checkRelease(opts: ReleaseCheckOptions): ReleaseCheck {
     return { worktree, repoRoot, ok: blockers.length === 0, blockers, facts };
 }
 
-/** True when a blocker is about work a human must resolve, so a nudge helps. */
-export function isWorkBlocker(blocker: ReleaseBlocker): boolean {
-    return blocker.kind === 'dirty'
-        || blocker.kind === 'ignored-work'
-        || blocker.kind === 'skip-worktree'
-        || blocker.kind === 'unpushed'
-        || blocker.kind === 'detached-head';
+export interface ReleaseLogFields {
+    action: 'prompted' | 'confirmed' | 'declined' | 'released' | 'refused' | 'nudged' | 'failed';
+    pane?: string;
+    client?: string;
+    worktree?: string;
+    branch?: string | null;
+    head?: string | null;
+    detail?: string;
+}
+
+/**
+ * One tab-separated line per keystroke: a destructive action must be answerable after the
+ * fact. `prompted` is written before the prompt blocks, so a killed process still leaves
+ * a trace of the question that was asked.
+ */
+export function logEvent(fields: ReleaseLogFields): void {
+    appendLog([
+        fields.action,
+        fields.pane ?? '',
+        fields.client ?? '',
+        fields.worktree ?? '',
+        fields.branch ?? '',
+        (fields.head ?? '').slice(0, 12),
+        sanitizeInline(fields.detail ?? ''),
+    ].join('\t'));
 }
 
 export interface NudgeInput {
@@ -578,7 +617,7 @@ export function renderNudge(input: NudgeInput): string {
         for (const path of blocker.paths.slice(0, MAX_NAMED_PATHS)) lines.push(`- ${sanitizeInline(path)} (${blocker.kind})`);
         // A blocker without paths (an unpushed commit, a detached HEAD) still needs its
         // reason: "commit and push" is useless when the work is already committed.
-        if (blocker.paths.length === 0) lines.push(`- ${blocker.detail}`);
+        if (blocker.paths.length === 0) lines.push(`- ${sanitizeInline(blocker.detail)}`);
     }
 
     lines.push(

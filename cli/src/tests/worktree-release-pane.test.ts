@@ -11,9 +11,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { createTicket, releasePane } from '../core/worktree-release-pane.js';
+import { escapePromptText, releasePane } from '../core/worktree-release-pane.js';
 
 function hasTmux(): boolean {
     return spawnSync('tmux', ['-V'], { encoding: 'utf8', stdio: 'pipe' }).status === 0;
@@ -57,12 +57,36 @@ function makeRepoWithWorktree(): { repoRoot: string; worktree: string } {
 }
 
 const originalTmux = process.env.TMUX;
+const originalHome = process.env.HOME;
+
+// The release log and the tickets live under HOME. Point it at a throwaway directory so
+// the suite never writes into the operator's cache, and so the temp-dir leak guard sees
+// nothing outside its own scope.
+beforeAll(() => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-release-pane-home-'));
+    created.push(home);
+    process.env.HOME = home;
+});
 
 afterAll(() => {
     if (originalTmux === undefined) delete process.env.TMUX;
     else process.env.TMUX = originalTmux;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
 });
+
+/**
+ * A pane whose foreground command is `node` — the guard accepts it — that echoes what it
+ * receives and does nothing else. A shebang script would report `sh`, not `node`.
+ */
+function fakeAgentArgv(): string[] {
+    return [
+        process.execPath,
+        '-e',
+        'process.stdin.on("data", d => process.stdout.write("read:" + String(d))); setInterval(() => {}, 1000);',
+    ];
+}
 
 describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
     it('removes a clean tree, moves the pane to the main checkout and keeps the branch', async () => {
@@ -77,10 +101,15 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
 
         try {
             const head = git(['rev-parse', 'HEAD'], worktree);
-            const ticket = createTicket({ paneId, client: '/dev/pts/0', head });
-            expect(ticket).toMatch(/^[0-9a-f]{32}$/);
-
-            const outcome = await releasePane({ paneId, ticket: ticket as string, dryRun: false });
+            const prompts: string[] = [];
+            const outcome = await releasePane({
+                paneId,
+                client: '/dev/pts/0',
+                dryRun: false,
+                confirm: input => { prompts.push(input.prompt); return 'confirmed'; },
+            });
+            expect(prompts).toHaveLength(1);
+            expect(prompts[0]).toContain('release xt/pane');
             expect(outcome.action).toBe('released');
 
             expect(fs.existsSync(worktree)).toBe(false);
@@ -96,13 +125,99 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
         }
     }, 120_000);
 
-    it('refuses a dirty tree and nudges the agent instead of removing anything', async () => {
+    it('does not remove the tree when the operator declines', async () => {
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        const socket = `xt-release-test-decline-${process.pid}`;
+
+        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, 'sleep 300']);
+        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+
+        try {
+            const outcome = await releasePane({
+                paneId, client: '/dev/pts/0', dryRun: false, confirm: () => 'declined',
+            });
+            expect(outcome.action).toBe('refused');
+            expect(outcome.detail).toContain('not confirmed');
+            expect(fs.existsSync(worktree)).toBe(true);
+            expect(git(['worktree', 'list', '--porcelain'], repoRoot)).toContain(worktree);
+            expect(tmuxBin(socket, ['display-message', '-p', '-t', paneId, '#{@agent_worktree}'])).toBe(worktree);
+        } finally {
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 120_000);
+
+    it('re-checks the tree after the prompt and refuses when it changed', async () => {
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        const socket = `xt-release-test-toctou-${process.pid}`;
+
+        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, 'sleep 300']);
+        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+
+        try {
+            // An ignored, non-regenerable file appearing while the prompt is up is work
+            // the removal must not destroy: the second check has to catch it.
+            const outcome = await releasePane({
+                paneId,
+                client: '/dev/pts/0',
+                dryRun: false,
+                confirm: () => {
+                    fs.writeFileSync(path.join(worktree, '.env'), 'SECRET=1\n', 'utf8');
+                    return 'confirmed';
+                },
+            });
+            expect(outcome.action).toBe('refused');
+            expect(outcome.detail).toContain('state changed');
+            expect(fs.existsSync(path.join(worktree, '.env'))).toBe(true);
+            expect(git(['worktree', 'list', '--porcelain'], repoRoot)).toContain(worktree);
+        } finally {
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 120_000);
+
+    it('refuses when HEAD moved while the prompt was open', async () => {
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        const socket = `xt-release-test-head-${process.pid}`;
+
+        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, 'sleep 300']);
+        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+
+        try {
+            // A commit made while the prompt is up is work the prompt never named: the
+            // pinned HEAD is what refuses it, not the dirty check.
+            const outcome = await releasePane({
+                paneId,
+                client: '/dev/pts/0',
+                dryRun: false,
+                confirm: () => {
+                    fs.writeFileSync(path.join(worktree, 'late.ts'), 'export const late = 1;\n', 'utf8');
+                    git(['add', 'late.ts'], worktree);
+                    git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-m', 'late'], worktree);
+                    return 'confirmed';
+                },
+            });
+            expect(outcome.action).toBe('refused');
+            expect(outcome.detail).toContain('expected-head');
+            expect(fs.existsSync(worktree)).toBe(true);
+        } finally {
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 120_000);
+
+    it('refuses a dirty tree and leaves a non-agent pane untouched', async () => {
         const { repoRoot, worktree } = makeRepoWithWorktree();
         const socket = `xt-release-test-dirty-${process.pid}`;
 
-        // A long-lived agent-shaped foreground command: the nudge guard accepts `sleep`?
-        // No — it does not, and that refusal is the point of this test: a pane whose
-        // foreground is not an agent is never typed into.
+        // `sleep` is not an agent: this case proves a pane whose foreground is a shell or
+        // an ordinary process is never typed into.
         tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, 'sleep 300']);
         const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
         tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
@@ -110,14 +225,44 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
 
         try {
             fs.writeFileSync(path.join(worktree, 'work.ts'), 'export const x = 1;\n', 'utf8');
-            const head = git(['rev-parse', 'HEAD'], worktree);
-            const ticket = createTicket({ paneId, client: '/dev/pts/0', head });
 
-            const outcome = await releasePane({ paneId, ticket: ticket as string, dryRun: false });
+            const outcome = await releasePane({ paneId, client: '/dev/pts/0', dryRun: false });
             expect(outcome.action).toBe('refused');
-            expect(outcome.detail).toContain('nudge');
+            expect(outcome.detail).toContain('not an agent');
             expect(fs.existsSync(worktree)).toBe(true);
             expect(fs.existsSync(path.join(worktree, 'work.ts'))).toBe(true);
+        } finally {
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 120_000);
+
+    it('types the nudge into an agent pane and names the dirty file', async () => {
+        const { repoRoot, worktree } = makeRepoWithWorktree();
+        const socket = `xt-release-test-nudge-${process.pid}`;
+
+        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', worktree, ...fakeAgentArgv()]);
+        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+
+        try {
+            fs.writeFileSync(path.join(worktree, 'work.ts'), 'export const x = 1;\n', 'utf8');
+            const outcome = await releasePane({ paneId, dryRun: false });
+            expect(outcome.action).toBe('nudged');
+            expect(fs.existsSync(worktree)).toBe(true);
+
+            // The text must actually arrive in the pane, which the previous version of this
+            // suite never checked: it asserted a refusal and called it a nudge.
+            // A long nudge line wraps at the pane width, so assert on the parts that cannot
+            // be split: the header, the named path, and the pane's own echo of the paste.
+            let screen = '';
+            for (let i = 0; i < 30 && !screen.includes('read:XTRM'); i += 1) {
+                spawnSync('sleep', ['0.1']);
+                screen = tmuxBin(socket, ['capture-pane', '-p', '-t', paneId]);
+            }
+            expect(screen).toContain('read:XTRM');
+            expect(screen).toContain('work.ts');
+            expect(screen).toContain('Commit and push');
         } finally {
             spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
         }

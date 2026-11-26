@@ -18,7 +18,7 @@ import {
     validatePaneId,
     sourceLine,
 } from '../core/worktree-release.js';
-import { consumeTicket, createTicket } from '../core/worktree-release-pane.js';
+import { escapePromptText } from '../core/worktree-release-pane.js';
 import type { ClassifyContext, ReleaseCheckOptions } from '../core/worktree-release.js';
 
 const created: string[] = [];
@@ -475,59 +475,12 @@ exit 1`);
     });
 });
 
-describe('confirmation ticket', () => {
-    const originalHome = process.env.HOME;
-    let home: string;
-
-    beforeEach(() => {
-        home = fs.mkdtempSync(path.join(os.tmpdir(), 'xt-release-home-'));
-        created.push(home);
-        process.env.HOME = home;
-    });
-
-    afterEach(() => {
-        process.env.HOME = originalHome;
-    });
-
-    it('accepts one ticket for the same pane and head, then refuses the replay', () => {
-        const head = 'a'.repeat(40);
-        const id = createTicket({ paneId: '%12', client: '/dev/pts/3', head });
-        expect(id).toMatch(/^[0-9a-f]{32}$/);
-        expect(consumeTicket(id as string, { paneId: '%12', head })).toEqual({ ok: true });
-        const replay = consumeTicket(id as string, { paneId: '%12', head });
-        expect(replay.ok).toBe(false);
-        if (!replay.ok) expect(replay.detail).toContain('not found');
-    });
-
-    it('refuses a ticket issued for another pane', () => {
-        const head = 'b'.repeat(40);
-        const id = createTicket({ paneId: '%12', client: '/dev/pts/3', head });
-        const result = consumeTicket(id as string, { paneId: '%13', head });
-        expect(result.ok).toBe(false);
-    });
-
-    it('refuses a ticket after HEAD moved', () => {
-        const id = createTicket({ paneId: '%12', client: '/dev/pts/3', head: 'c'.repeat(40) });
-        const result = consumeTicket(id as string, { paneId: '%12', head: 'd'.repeat(40) });
-        expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.detail).toContain('HEAD moved');
-    });
-
-    it('refuses an expired ticket', () => {
-        const id = 'e'.repeat(32);
-        const dir = path.join(home, '.cache', 'xt', 'worktree-release');
-        fs.mkdirSync(dir, { recursive: true });
-        const head = 'f'.repeat(40);
-        fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({
-            paneId: '%12', client: '/dev/pts/3', head, createdAt: Date.now() - 10 * 60_000,
-        }), 'utf8');
-        const result = consumeTicket(id, { paneId: '%12', head });
-        expect(result.ok).toBe(false);
-        if (!result.ok) expect(result.detail).toContain('expired');
-    });
-
-    it('refuses a malformed id and a missing ticket', () => {
-        expect(consumeTicket('not-a-ticket', { paneId: '%12', head: 'a'.repeat(40) }).ok).toBe(false);
-        expect(consumeTicket('a'.repeat(32), { paneId: '%12', head: 'a'.repeat(40) }).ok).toBe(false);
+describe('prompt text', () => {
+    // -p is a tmux format: an unescaped #(cmd) in the prompt would run a command at
+    // draw time, with the branch name as the injection vector.
+    it('doubles # and flattens newlines', () => {
+        expect(escapePromptText('#(touch /tmp/p)')).toBe('##(touch /tmp/p)');
+        expect(escapePromptText('a\nb\r\nc')).toBe('a b c');
+        expect(escapePromptText('release xt/plain and move this pane')).toBe('release xt/plain and move this pane');
     });
 });
