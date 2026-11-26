@@ -14,7 +14,7 @@ Substrate replaced Beads. The identity schema uses Substrate terms:
 | `XTMUX_AGENT_BEAD` | `XTMUX_AGENT_ISSUE` |
 | `xt claude\|pi\|codex --bead <ref>` | `--issue <ref>` (`--bead` remains a hidden, deprecated alias that maps to `--issue`) |
 | `XTRM_BEADS_CACHE_ROOT` | `XTRM_ISSUE_CACHE_ROOT` (the old name is read when the new one is unset) |
-| `@agent_prompt_file`, `XTMUX_AGENT_PROMPT_FILE` | removed; no writer, no reader |
+| `XTMUX_AGENT_PROMPT_FILE` | removed from the identity schema; the launcher and `agent-state.sh` write no prompt file. `@agent_prompt_file` stays a handoff option (see below). |
 
 ## Retained wire names
 
@@ -43,6 +43,7 @@ The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher de
 | `@agent_dispatcher` | Launcher | Launcher | Launch, `xt attach` | Substrate participant of the dispatching session (`XTRM_DISPATCHER_PARTICIPANT`). Absent when the participant is unknown; the display name is never used. |
 | `@agent_worktree` | `agent-state.sh` after launch | Launcher (seed); `agent-state.sh` | Every state transition | Git worktree root of the pane's working directory. |
 | `@agent_branch` | `agent-state.sh` after launch | Launcher (seed); `agent-state.sh` | Every state transition | Checked-out branch of that worktree. |
+| `@agent_prompt_file` | xtmux picker handoff | Picker handoff only | `handoff` | Pointer to the prompt file of a handoff. Not identity: nothing else writes it. `agent-state.sh` clears it on `off`. |
 | `@agent_state` | `agent-state.sh` | Runtime hooks through `agent-state.sh` | Every state transition | `idle`, `running`, `needs-input`, `done`, `off`. |
 | `@agent_instance_id` | `agent-state.sh` | `agent-state.sh` | `--new-instance` | Identity of one agent occupation of the pane. |
 
