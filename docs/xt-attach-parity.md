@@ -89,9 +89,9 @@ are unchanged from the base commit.
 | P7 | `@agent_role` | `worktree-session.ts:2440` | **RESTORED** `attach.ts:133-153` | RESTORED (launcher) | `launch.role` |
 | T1 | pane title (`select-pane -T`) | `worktree-session.ts:4459` | **RESTORED** `attach.ts:608-611` | RESTORED (launcher) | `launch.displayName` |
 
-`@agent_parent_pane` is read by `cli/src/core/topology-projection.ts:84` and described
-in `packages/contracts/dist/index.js:2138`, but no launcher writes it. It is a dead
-field, not a parity gap (see §8.5).
+`@agent_parent_pane` is read by `cli/src/core/topology-projection.ts` and, since CORE-2801,
+written by the launcher at launch. `xt attach` does not restore it: a pane id does not
+survive the loss of the pane (see §8.5 and `docs/agent-identity.md`).
 
 **Unset before set.** Setting a pane option never clears a stale one, so a pane that
 previously hosted a coordinator would keep `@agent_role=lead` and the old bead
@@ -544,11 +544,11 @@ does not emit one, so xtmux history shows the pane as unlaunched. Proposal: emit
 row with a `source=attach` field after a successful restore, once the picker's schema
 has a place for it — it is a telemetry sink, not a source.
 
-### 8.5 `@agent_parent_pane` (dead field)
+### 8.5 `@agent_parent_pane`
 
-Read by `topology-projection.ts:84`, written by nothing. Proposal: either write it at
-launch (the pane id of the dispatching pane) and restore it on resume, or remove the
-read. Out of scope here.
+CORE-2801: the launcher writes it at launch (the pane id of the dispatching pane). A
+resume does not restore it, because a pane id does not survive the loss of the pane;
+the key is unset with the other launch keys and the parent session carries the lineage.
 
 ### 8.6 Placement, window name and layout
 

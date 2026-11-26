@@ -839,7 +839,7 @@ starts a new one with the same launch settings. Example: xt attach worker-name -
             if (paneId) {
                 // Review finding 2: a pane that hosted a coordinator keeps
                 // @agent_role=lead and the old issue, because setting an option never
-                // clears a stale one. Unset the six keys first, so a value the record
+                // clears a stale one. Unset the launch keys first (RESTORED_PANE_KEYS), so a value the record
                 // does not name ends up ABSENT. They are not unset on exit: they
                 // describe the pane that hosts the worker while it runs, and a pane
                 // still showing its output must not lose the identity it ran under.

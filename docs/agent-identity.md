@@ -22,7 +22,7 @@ These names belong to versioned contracts or to files other tools read. They kee
 
 | Name | Where | Reason |
 |---|---|---|
-| `bead=` | xtmux event `agent.role.launched` and `agent.state` | xtmux event schema |
+| `bead=` | Events `agent.role.launched` and `agent.role.task-rendered` (core), `agent.state` (xtmux) | xtmux event schema |
 | `bead_id`, `bead` | `xt topology --json` (`xtrm.topology.projection.v1`) | Published contract consumed by xtmux and the console |
 | `LaunchOptions.bead` | Agent-host launch API (`xtrm.agent-host-api.v1`) | Published contract. The launcher maps it to `--issue`. |
 | `SessionMeta.bead` | `.xtrm/session-meta.json`, Codex session record | Persisted by earlier launches. New records write `issue`. Readers accept both. |
@@ -81,7 +81,7 @@ Representation: `sb` unsets the option, so none means absent. `agent-state.sh of
 
 ### Child launch
 
-A launch unsets every identity key it does not write (`@agent_issue`, `@agent_bead`, `@agent_role`, `@agent_holder`, `@agent_dispatcher`, `@agent_parent_pane`), so a reused pane keeps nothing from its previous occupant. A child launched by an agent gets its own `@agent_role`, `@agent_issue` and `@agent_holder`. The launcher never forwards the parent's `XTMUX_AGENT_ROLE`, `XTMUX_AGENT_ISSUE` or `XTMUX_AGENT_HOLDER` to a child. A child without `--role` or `--issue` has those options empty.
+A launch unsets every identity key it does not write (`@agent_issue`, `@agent_bead`, `@agent_role`, `@agent_holder`, `@agent_dispatcher`, `@agent_parent_pane`), so a reused pane keeps none of those keys from its previous occupant. Other options (`@agent_task`, `@agent_worktree`, `@agent_branch`, `@agent_state`, `@agent_instance_id`) follow their own owners. A child launched by an agent gets its own `@agent_role`, `@agent_issue` and `@agent_holder`. The launcher never forwards the parent's `XTMUX_AGENT_ROLE`, `XTMUX_AGENT_ISSUE` or `XTMUX_AGENT_HOLDER` to a child. A child without `--role` or `--issue` has those options empty.
 
 ### Specialists and inherited environment
 
