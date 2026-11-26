@@ -56,6 +56,15 @@ The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher de
 
 A child launched by an agent gets its own `@agent_role`, `@agent_issue` and `@agent_holder`. The launcher never forwards the parent's `XTMUX_AGENT_ROLE`, `XTMUX_AGENT_ISSUE` or `XTMUX_AGENT_HOLDER` to a child. A child without `--role` or `--issue` has those options empty.
 
+### Specialists and inherited environment
+
+An in-process specialist has its own role, claim and participant in Substrate. That identity is correct and this schema does not change it. A specialist process can still inherit `XTMUX_AGENT_*` and the pane variables of its launcher. Decisions:
+
+1. Claim sync never trusts `$TMUX_PANE` or the inherited environment for ownership. `$TMUX_PANE` only locates the pane. Ownership is the equality of the operation's holder and the pane's `@agent_holder`.
+2. A claim made under another holder (a specialist, or `--holder <other>`) does not change the pane.
+3. This change adds no reader that takes identity from an inherited `XTMUX_AGENT_ROLE`. Existing readers keep their precedence: live pane option, then environment. The `pm_role.py` workaround by `-sp-` worktree name stays.
+4. The launcher strips the parent's `XTMUX_AGENT_*` only for children it launches (`xt claude|pi|codex`). It does not rewrite the environment of an in-process specialist. Removing that inheritance is not done here: the host that spawns specialists owns that environment.
+
 ### Exited agent
 
 A pane whose agent process exited is not live. A reader derives the state: when `@agent_state` is `idle`, `running` or `needs-input` and `#{pane_current_command}` is a login shell (`zsh`, `bash`, `sh`, `fish`), the effective state is `exited`. Readers do not rewrite the option.
