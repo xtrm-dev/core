@@ -449,6 +449,100 @@ describe("xtprompt", () => {
     expect(options.apiKey).toBeUndefined();
   });
 
+  test("gives a reasoning model the full answer budget instead of the old 1600 cap", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => ({
+      content: [{ type: "text", text: "<xtprompt>done</xtprompt>" }],
+      stopReason: "stop",
+    });
+
+    let editorText = "Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts";
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!("", {
+      hasUI: true,
+      mode: "tui",
+      model: { maxTokens: 100_000 },
+      ui: {
+        notify() {},
+        getEditorText: () => editorText,
+        setEditorText: (value: string) => {
+          editorText = value;
+        },
+        custom: async (render: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) =>
+          await new Promise<string | null>((resolve) => {
+            render({}, {}, {}, resolve);
+          }),
+      },
+      modelRegistry: {
+        streamSimple: registryStreamSimple,
+        getApiKeyAndHeaders: async () => ({
+          ok: true,
+          apiKey: "key-1",
+          headers: { authorization: "Bearer x" },
+          env: { RESOLVED_AUTH: "yes" },
+        }),
+      },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+    });
+
+    const [, , options] = streamCalls[0] as [unknown, unknown, Record<string, unknown>];
+    // Thinking shares maxTokens with the answer; 1600 truncated a 1.7k draft in
+    // every measured run, so the cap must leave room for both.
+    expect(options.maxTokens).toBe(8192);
+    expect(options.reasoning).toBe("low");
+  });
+
+  test("reports a length stop as truncation instead of retrying the same capped call", async () => {
+    streamCalls.length = 0;
+    streamImpl = async () => ({
+      content: [{ type: "text", text: "<xtprompt>half a rewrite" }],
+      stopReason: "length",
+    });
+
+    const notices: Array<{ message: string; level: string }> = [];
+    const originalDraft = "Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts";
+    let editorText = originalDraft;
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!("", {
+      hasUI: true,
+      mode: "tui",
+      model: { maxTokens: 100_000 },
+      ui: {
+        notify(message: string, level: string) {
+          notices.push({ message, level });
+        },
+        getEditorText: () => editorText,
+        setEditorText: (value: string) => {
+          editorText = value;
+        },
+        custom: async (render: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) =>
+          await new Promise<string | null>((resolve) => {
+            render({}, {}, {}, resolve);
+          }),
+      },
+      modelRegistry: {
+        streamSimple: registryStreamSimple,
+        getApiKeyAndHeaders: async () => ({
+          ok: true,
+          apiKey: "key-1",
+          headers: { authorization: "Bearer x" },
+          env: { RESOLVED_AUTH: "yes" },
+        }),
+      },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+    });
+
+    // One call, not two: the identical retry would be cut off in the same place.
+    expect(streamCalls.length).toBe(1);
+    expect(editorText).toBe(originalDraft);
+    const error = notices.at(-1);
+    expect(error?.level).toBe("error");
+    expect(error?.message).toContain("stopReason: length");
+    expect(error?.message).toContain("8192-token limit");
+  });
+
   test("auth rejection leaves editor unchanged and skips model call", async () => {
     streamCalls.length = 0;
     streamImpl = async () => {

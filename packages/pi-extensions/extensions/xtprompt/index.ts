@@ -19,7 +19,14 @@ const COMMAND = "xtprompt";
 const DEFAULT_SHORTCUT = "alt+m";
 const SENTINEL_OPEN = "<xtprompt>";
 const SENTINEL_CLOSE = "</xtprompt>";
-const ENHANCER_MAX_OUTPUT_TOKENS = 1600;
+// Thinking shares this budget with the answer on reasoning-by-default models.
+// Measured against opencode-go/deepseek-v4.1-flash with a 1.7k-character draft:
+// a complete rewrite needs 1.35k-2.1k output tokens, and 1600 stopped on
+// "length" in every run, several times with no text at all. Asking for
+// `reasoning: "off"` or `"minimal"` does not suppress the thinking block on
+// that model and costs more (off 2099, minimal 3070, low 1668 output tokens for
+// the same request), so the level stays "low" and the budget carries the rest.
+const ENHANCER_MAX_OUTPUT_TOKENS = 8192;
 const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_CONTEXT_ITEMS = 3;
 const MAX_CONTEXT_CHARS = 480;
@@ -198,13 +205,15 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
         if (primary === null) return null;
         const parsed = parseSentinel(extractText(primary));
         if (parsed !== undefined) return parsed;
+        // A "length" stop is a budget failure, not a compliance failure: the
+        // identical retry below would be cut off at the same place for the same
+        // reason, after another full timeout.
+        if (primary.stopReason === "length") throw truncatedBlockError();
         const retried = await callModel(ctx, model, retryRequest(request), signal);
         if (retried === null) return null;
         const retriedParsed = parseSentinel(extractText(retried));
         if (retriedParsed !== undefined) return retriedParsed;
-        throw new Error(
-          `${EXTENSION}: model did not return ${SENTINEL_OPEN} block. Leaving editor unchanged.`,
-        );
+        throw missingBlockError(retried);
       },
     ).catch((error: unknown) => {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
@@ -536,10 +545,11 @@ function escapeXml(text: string): string {
 // takes the provider-neutral SimpleStreamOptions shape (per-API `complete` has
 // no portable reasoning level) and resolves request-time auth (key, headers,
 // env). `reasoning: "low"` bounds thinking-by-default models, where reasoning
-// shares maxTokens with the answer: a XTRM-588 run with opencode-go/
-// deepseek-v4.1-flash truncated at 1600 output tokens on a thinking block
-// alone. Non-reasoning models clamp the level to "off" (no parameter sent),
-// so cost is unchanged for them.
+// shares maxTokens with the answer: XTRM-588 truncated at 1600 output tokens on
+// a thinking block alone. "low" is also the cheapest level this model honours:
+// "off" and "minimal" do not suppress the block (see the budget constant above).
+// Non-reasoning models clamp the level to "off" (no parameter sent), so cost is
+// unchanged for them.
 async function callModel(
   ctx: ExtensionContext,
   model: Model<Api>,
@@ -601,6 +611,18 @@ export function parseSentinel(text: string): string | undefined {
   if (start === -1 || end === -1 || end <= start) return undefined;
   const inner = text.slice(start + SENTINEL_OPEN.length, end).trim();
   return inner || undefined;
+}
+
+function truncatedBlockError(): Error {
+  return new Error(
+    `${EXTENSION}: model output hit the ${ENHANCER_MAX_OUTPUT_TOKENS}-token limit (stopReason: length) before the ${SENTINEL_OPEN} block closed. Leaving editor unchanged.`,
+  );
+}
+
+function missingBlockError(message: AssistantMessage): Error {
+  return new Error(
+    `${EXTENSION}: model did not return ${SENTINEL_OPEN} block (stopReason: ${message.stopReason ?? "unknown"}). Leaving editor unchanged.`,
+  );
 }
 
 async function runWithLoader(
