@@ -44,6 +44,8 @@ async function launch(existing: boolean, dispatcher: Record<string, string> = {}
     if (existing) fs.ensureDirSync(worktreePath);
     const cap: Cap = { env: {}, args: [], pane: {}, calls: [] };
     mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: { input?: string } = {}) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+        if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
         const joined = args.join(' ');
         cap.calls.push(`${command} ${joined}`);
         const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });

@@ -187,6 +187,8 @@ describe('codex K1 launch contract (characterization)', () => {
   }): void {
     const ok: SpawnResult = { status: 0, stdout: '', stderr: '' };
     mocked.spawnSync.mockImplementation((command: string, args: string[], options?: { input?: string }) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+        if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
       const injected = cfg.handler?.(command, args, options);
       if (injected) return injected;
 

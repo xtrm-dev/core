@@ -135,7 +135,29 @@ const savedEnv: Record<string, string | undefined> = {
   npm_config_cache: process.env.npm_config_cache,
   NPM_CONFIG_CACHE: process.env.NPM_CONFIG_CACHE,
   TMUX_TMPDIR: process.env.TMUX_TMPDIR,
+  // CORE-2802: the placement rule resolves the caller's session from the environment, so a
+  // developer shell that exports a tmux identity (or a test runner started from inside a
+  // pane) would decide where a launch goes. CI inherits none of these, so CI alone cannot
+  // catch it; the scrub happens for every run.
+  TMUX: process.env.TMUX,
+  TMUX_PANE: process.env.TMUX_PANE,
+  XTRM_SESSION_ID: process.env.XTRM_SESSION_ID,
+  XTRM_SESSION_NAME: process.env.XTRM_SESSION_NAME,
+  XTRM_SESSION_SOCKET: process.env.XTRM_SESSION_SOCKET,
+  XTRM_PARENT_SESSION_ID: process.env.XTRM_PARENT_SESSION_ID,
+  XTRM_PARENT_PANE_ID: process.env.XTRM_PARENT_PANE_ID,
 };
+
+const placementIdentityKeys = [
+  'TMUX',
+  'TMUX_PANE',
+  'XTRM_SESSION_ID',
+  'XTRM_SESSION_NAME',
+  'XTRM_SESSION_SOCKET',
+  'XTRM_PARENT_SESSION_ID',
+  'XTRM_PARENT_PANE_ID',
+];
+for (const key of placementIdentityKeys) delete process.env[key];
 
 const sandboxHome = fsSync.mkdtempSync(path.join(tempRoot, 'xtrm-cli-home-'));
 fsSync.mkdirSync(path.join(sandboxHome, '.pi', 'agent'), { recursive: true });
@@ -222,6 +244,8 @@ delete process.env.XTRM_GLOBAL_SKILLS;
 beforeEach(() => {
   delete process.env.XTRM_GLOBAL_HOOKS;
   delete process.env.XTRM_GLOBAL_SKILLS;
+  // A test that sets a placement identity may leak it to the next one: clear it here too.
+  for (const key of placementIdentityKeys) delete process.env[key];
   // Backstop: a test that restores the real HOME (or unsets the sandbox)
   // goes straight back to the sandbox. Per-test temp HOME dirs are left
   // alone — only the real home is forbidden.

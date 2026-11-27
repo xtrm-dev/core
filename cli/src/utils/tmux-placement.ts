@@ -6,6 +6,13 @@
 // stderr. The caller's identity is not only $TMUX: a process without $TMUX (a dispatched
 // agent, an in-process specialist, the app) still names its session through its pane id
 // or the launcher's exports.
+//
+// Every probe is bound to the socket the identity came from (CORE-2802 review). A pane id
+// or a session id is only unique per tmux server, so resolving `%0` against whichever
+// server tmux would pick by default can land a launch in a stranger's session. The socket
+// is `$TMUX`'s first field, else the socket the launcher recorded in
+// `XTRM_SESSION_SOCKET`; when neither is known the identity is not trusted at all and the
+// launcher says so.
 import os from 'node:os';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -57,6 +64,8 @@ export interface PlacementDeps {
 
 const DEFAULT_MAX_PANES = 4;
 const CONFIG_ENV = 'XTRM_LAUNCH_CONFIG';
+/** CORE-2802: the tmux socket the recorded identity belongs to (set by the launcher). */
+export const TMUX_SOCKET_ENV = 'XTRM_SESSION_SOCKET';
 const PLACEMENT_VALUES = new Set(['workers', 'window', 'session', 'current']);
 const LAYOUT_RE = /^[a-z][a-z0-9-]*$/;
 /** An exact tmux session id (`$N`): the only form a probe result is trusted in. */
@@ -113,8 +122,37 @@ export function loadLaunchPlacementConfig(deps: PlacementDeps = {}): LaunchPlace
     return parseLaunchPlacementConfig(parsed, file);
 }
 
+/**
+ * The socket the caller's tmux identity belongs to (CORE-2802 review): `$TMUX` carries it
+ * as its first comma-separated field, and a launch exports it as `XTRM_SESSION_SOCKET` so
+ * a child that lost `$TMUX` still knows which server its ids mean. No socket is inferred
+ * from the uid or the system default: an inferred socket would be exactly the guess that
+ * a private server's `%0` collides with.
+ */
+export function resolveTmuxSocket(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const tmux = (env.TMUX ?? '').trim();
+    if (tmux) {
+        const [socket] = tmux.split(',');
+        if (socket) return socket;
+    }
+    const recorded = (env[TMUX_SOCKET_ENV] ?? '').trim();
+    return recorded || undefined;
+}
+
+/** `-S <socket>` for every tmux call this module and its callers make; empty when unknown. */
+export function tmuxSocketArgs(env: NodeJS.ProcessEnv = process.env): string[] {
+    const socket = resolveTmuxSocket(env);
+    return socket ? ['-S', socket] : [];
+}
+
 function tmuxCall(args: string[], deps: PlacementDeps): string {
-    const run = deps.tmux ?? ((argv: string[]) => spawnSync('tmux', argv, { encoding: 'utf8', stdio: 'pipe' }));
+    const env = deps.env ?? process.env;
+    // The production runner binds every probe to the caller's own server: an unbound probe
+    // can answer for a different one. An injected runner (`deps.tmux`) receives the bare
+    // probe, because the socket is the code's decision and a stub that had to know about
+    // `-S` would be the test supplying the very thing under test.
+    const run = deps.tmux
+        ?? ((argv: string[]) => spawnSync('tmux', [...tmuxSocketArgs(env), ...argv], { encoding: 'utf8', stdio: 'pipe' }));
     let result: { status: number | null; stdout?: string; stderr?: string } | undefined;
     try {
         result = run(args);
@@ -149,8 +187,20 @@ function sessionIdOf(target: string | undefined, deps: PlacementDeps): string | 
  * tmux server the caller talks to, then the identity the launcher exported. Every source
  * is validated against the live server, so a stale variable never places a launch.
  */
-export function resolveCallerSession(deps: PlacementDeps = {}): string | undefined {
+export function resolveCallerSession(deps: PlacementDeps = {}, announce = true): string | undefined {
     const env = deps.env ?? process.env;
+    if (!resolveTmuxSocket(env)) {
+        // A pane id or an exported id names a session on one server only. Without the socket
+        // that id came from, confirming it would confirm whichever server tmux defaults to,
+        // so the identity is not trusted and the reason is announced (CORE-2802 review).
+        const claim = [env.TMUX_PANE, ...CALLER_SESSION_ENV.map(key => env[key])]
+            .map(value => (value ?? '').trim())
+            .find(Boolean);
+        if (claim && announce) {
+            process.stderr.write(`warning: ${claim} names a tmux session, but the server it belongs to is unknown; not placing this launch in it (set $TMUX or ${TMUX_SOCKET_ENV})\n`);
+        }
+        return undefined;
+    }
     const paneId = (env.TMUX_PANE ?? '').trim();
     if (PANE_ID_RE.test(paneId)) {
         const fromPane = sessionIdOf(paneId, deps);
@@ -211,8 +261,10 @@ export function resolvePlacement(options: PlacementOptions, deps: PlacementDeps 
     const maxPanes = config?.workersMaxPanes ?? DEFAULT_MAX_PANES;
     // CORE-2802: one placement-session order. The flag is explicit intent, the caller's own
     // session is where a dispatched agent belongs, and the configured session is the
-    // project default. resolveCallerSession probes only when two of them are missing.
-    const session = options.session ?? resolveCallerSession(deps) ?? config?.session;
+    // project default. resolveCallerSession probes only when two of them are missing, and it
+    // stays silent on the plain path: there a new session is the product, so an untrusted
+    // identity is not worth a warning on a stream scripts scrape (K1 contract).
+    const session = options.session ?? resolveCallerSession(deps, Boolean(selected)) ?? config?.session;
     if (!selected) {
         if (options.insideTmux) return { kind: 'current', session, maxPanes };
         return session
@@ -255,6 +307,8 @@ export interface PlacementCreateArgs {
     worktreePath: string;
     /** Session name that a last-resort `new-session` creates. */
     newSessionName: string;
+    /** `-S <socket>` of the server the session lives on (CORE-2802 review); empty if unknown. */
+    socketArgs?: string[];
 }
 
 /**
@@ -264,13 +318,14 @@ export interface PlacementCreateArgs {
  */
 export function placementCreateArgs(placement: ResolvedPlacement, args: PlacementCreateArgs): string[] {
     const target = placement.target ?? args.targetSession;
+    const socket = args.socketArgs ?? [];
     if (placement.kind === 'pane' || (placement.kind === 'workers' && placement.existingWindow)) {
-        return ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', target, '-c', args.worktreePath];
+        return [...socket, 'split-window', '-d', '-P', '-F', '#{pane_id}', '-t', target, '-c', args.worktreePath];
     }
     if (placement.kind === 'workers' || placement.kind === 'window') {
-        return ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${args.targetSession}:`, '-n', placement.windowName ?? args.windowName, '-c', args.worktreePath];
+        return [...socket, 'new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${args.targetSession}:`, '-n', placement.windowName ?? args.windowName, '-c', args.worktreePath];
     }
-    return ['new-session', '-d', '-s', args.newSessionName, '-c', args.worktreePath];
+    return [...socket, 'new-session', '-d', '-s', args.newSessionName, '-c', args.worktreePath];
 }
 
 export function validateLayout(layout: string | undefined): void {

@@ -30,6 +30,8 @@ function install(repoRoot: string, cap: Capture): void {
     let live = false;
     let sessionName = '';
     mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+        if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
         const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
         const joined = args.join(' ');
         if (command === 'sh') return ok('/usr/bin/codex\n');

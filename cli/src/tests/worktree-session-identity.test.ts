@@ -43,6 +43,8 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
   const { repoRoot } = h;
   const answer = opts.sessionIdAnswer === undefined ? '$7' : opts.sessionIdAnswer;
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+      // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+      if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
     const joined = args.join(' ');
     if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
     if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
@@ -247,12 +249,10 @@ describe('xt/tmux launcher session-identity propagation', () => {
   it('exports XTRM_AGENT_NAME with the full worktree name next to SUBSTRATE_HOLDER (CORE-2606)', async () => {
     // A developer shell that already exports a name must not decide this test.
     process.env.XTRM_AGENT_NAME = 'stale-parent-name';
-    process.env.XTRM_SESSION_NAME = 'xx';
     installMock(h);
-    // CORE-2802: an exported session name is placement identity now, so a launch that keeps
-    // it opens a window in that session instead of a new one. This test measures the
-    // launched env, so the stale name is dropped right before the launch.
-    delete process.env.XTRM_SESSION_NAME;
+    // CORE-2802: an exported session name is placement identity (the launch would open a
+    // window in it instead of a new session). This test measures the launched env, and the
+    // file's beforeEach already clears every identity key, so none is inherited here.
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
     await expect(launchWorktreeSession({ runtime: 'pi', name: 'attr1', attach: false })).rejects.toThrow('exit:0');

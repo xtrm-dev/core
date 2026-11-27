@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     parseLaunchPlacementConfig,
     resolvePlacement,
+    resolveTmuxSocket,
+    tmuxSocketArgs,
     validateLayout,
 } from '../utils/tmux-placement.js';
 import type { PlacementDeps } from '../utils/tmux-placement.js';
@@ -135,16 +137,22 @@ describe('tmux placement', () => {
 
 // The resolution order: explicit --session, the caller's own session (pane id, then $TMUX,
 // then the launcher's exports), the configured session, a new session announced on stderr.
+// Every identity probe carries the socket the identity came from (CORE-2802 review): a pane
+// id or a session id is unique only per server, so an unbound probe can answer for another.
 describe('placement session resolution order (CORE-2802)', () => {
+    const SOCKET = '/tmp/tmux-1000/private';
+    const withSocket = { XTRM_SESSION_SOCKET: SOCKET };
+
+    /** tmux stub: records the raw argv, answers -t from `valid`, ignores the -S binding. */
     const sessionProbe = (valid: string[], answer = '$3') => {
         const calls: string[][] = [];
         const tmux = (args: string[]): { status: number | null; stdout?: string } => {
             calls.push(args);
-            if (args[0] === 'list-windows') return { status: 0, stdout: '@1|workers|1' };
-            const at = args.indexOf('-t');
+            const bare = args[0] === '-S' ? args.slice(2) : args;
+            if (bare[0] === 'list-windows') return { status: 0, stdout: '@1|workers|1' };
+            const at = bare.indexOf('-t');
             if (at === -1) return { status: 0, stdout: answer };
-            const target = args[at + 1];
-            return valid.includes(target) ? { status: 0, stdout: answer } : { status: 1, stdout: '' };
+            return valid.includes(bare[at + 1]) ? { status: 0, stdout: answer } : { status: 1, stdout: '' };
         };
         return { calls, tmux };
     };
@@ -152,7 +160,7 @@ describe('placement session resolution order (CORE-2802)', () => {
     it('places a caller without $TMUX in its pane session, in the workers window of that session', () => {
         const { calls, tmux } = sessionProbe(['%5']);
         const result = resolvePlacement({ role: 'worker', insideTmux: false }, {
-            env: { TMUX_PANE: '%5' },
+            env: { TMUX_PANE: '%5', ...withSocket },
             ...config({ version: 1, session: 'fallback', placement: { worker: 'workers' } }),
             tmux,
         });
@@ -160,9 +168,46 @@ describe('placement session resolution order (CORE-2802)', () => {
         expect(calls[0]).toEqual(['display-message', '-p', '-t', '%5', '#{session_id}']);
     });
 
+    it('binds the probe to the $TMUX socket, which wins over the recorded one', () => {
+        expect(tmuxSocketArgs({ TMUX: '/tmp/tmux-1000/default,1,0', XTRM_SESSION_SOCKET: '/tmp/other/sock' }))
+            .toEqual(['-S', '/tmp/tmux-1000/default']);
+        expect(tmuxSocketArgs({ XTRM_SESSION_SOCKET: '/tmp/other/sock' })).toEqual(['-S', '/tmp/other/sock']);
+        expect(tmuxSocketArgs({})).toEqual([]);
+        expect(resolveTmuxSocket({})).toBeUndefined();
+    });
+
+    it('does not trust a pane id when the server it belongs to is unknown', () => {
+        const written: string[] = [];
+        vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+            written.push(String(chunk));
+            return true;
+        }) as never);
+        const calls: string[][] = [];
+        const result = resolvePlacement({ role: 'worker', insideTmux: false }, {
+            env: { TMUX_PANE: '%0' },
+            ...config({ version: 1, session: 'project', placement: { worker: 'workers' } }),
+            tmux: (args) => {
+                calls.push(args);
+                return { status: 0, stdout: '@1|workers|1' };
+            },
+        });
+        expect(result).toMatchObject({ kind: 'workers', session: 'project' });
+        expect(calls.every(args => args[0] === 'list-windows')).toBe(true);
+        expect(written.join('')).toContain('%0 names a tmux session, but the server it belongs to is unknown');
+    });
+
+    it('does not trust an exported session id without a socket either', () => {
+        vi.spyOn(process.stderr, 'write').mockImplementation((() => true) as never);
+        const result = resolvePlacement({ window: true, insideTmux: false }, {
+            env: { XTRM_SESSION_ID: '$9' },
+            ...config({ version: 1, session: 'project', placement: {} }),
+        });
+        expect(result).toMatchObject({ kind: 'window', session: 'project' });
+    });
+
     it('places a caller without $TMUX in a window of its pane session when no role rule applies', () => {
         const { tmux } = sessionProbe(['%5']);
-        expect(resolvePlacement({ insideTmux: false }, { env: { TMUX_PANE: '%5' }, exists: () => false, tmux }))
+        expect(resolvePlacement({ insideTmux: false }, { env: { TMUX_PANE: '%5', ...withSocket }, exists: () => false, tmux }))
             .toMatchObject({ kind: 'window', session: '$3' });
     });
 
@@ -170,8 +215,9 @@ describe('placement session resolution order (CORE-2802)', () => {
         const calls: string[][] = [];
         const tmux = (args: string[]): { status: number | null; stdout?: string } => {
             calls.push(args);
-            if (args[0] === 'list-windows') return { status: 0, stdout: '@1|workers|1' };
-            const target = args[args.indexOf('-t') + 1];
+            const bare = args[0] === '-S' ? args.slice(2) : args;
+            if (bare[0] === 'list-windows') return { status: 0, stdout: '@1|workers|1' };
+            const target = bare[bare.indexOf('-t') + 1];
             if (target === '%5') return { status: 0, stdout: '$3' };
             if (target === undefined) return { status: 0, stdout: '$4' };
             return { status: 0, stdout: '$9' };
@@ -185,7 +231,7 @@ describe('placement session resolution order (CORE-2802)', () => {
         expect(calls.some(args => args.includes('%5'))).toBe(true);
     });
 
-    it('falls back to $TMUX, then XTRM_SESSION_ID, XTRM_SESSION_NAME and XTRM_PARENT_SESSION_ID', () => {
+    it('falls back to $TMUX, then XTRM_SESSION_ID, XTRM_SESSION_NAME, XTRM_PARENT_SESSION_ID and XTRM_PARENT_PANE_ID', () => {
         const tmuxSession = sessionProbe(['$4'], '$4');
         expect(resolvePlacement({ window: true, insideTmux: false }, {
             env: { TMUX: '/tmp/tmux-1000/default,1,0' },
@@ -195,21 +241,21 @@ describe('placement session resolution order (CORE-2802)', () => {
 
         const fromId = sessionProbe(['$9'], '$9');
         expect(resolvePlacement({ window: true, insideTmux: false }, {
-            env: { XTRM_SESSION_ID: '$9' },
+            env: { XTRM_SESSION_ID: '$9', ...withSocket },
             exists: () => false,
             tmux: fromId.tmux,
         })).toMatchObject({ kind: 'window', session: '$9' });
 
         const fromName = sessionProbe(['lead'], '$4');
         expect(resolvePlacement({ window: true, insideTmux: false }, {
-            env: { XTRM_SESSION_ID: '$9', XTRM_SESSION_NAME: 'lead' },
+            env: { XTRM_SESSION_ID: '$9', XTRM_SESSION_NAME: 'lead', ...withSocket },
             exists: () => false,
             tmux: fromName.tmux,
         })).toMatchObject({ kind: 'window', session: '$4' });
 
         const fromParent = sessionProbe(['$2'], '$2');
         expect(resolvePlacement({ window: true, insideTmux: false }, {
-            env: { XTRM_PARENT_SESSION_ID: '$2' },
+            env: { XTRM_PARENT_SESSION_ID: '$2', ...withSocket },
             exists: () => false,
             tmux: fromParent.tmux,
         })).toMatchObject({ kind: 'window', session: '$2' });
@@ -218,7 +264,7 @@ describe('placement session resolution order (CORE-2802)', () => {
     it('resolves the dispatcher session from the parent pane id a worker shell carries', () => {
         const { calls, tmux } = sessionProbe(['%12']);
         expect(resolvePlacement({ role: 'worker', insideTmux: false }, {
-            env: { XTRM_PARENT_PANE_ID: '%12' },
+            env: { XTRM_PARENT_PANE_ID: '%12', ...withSocket },
             ...config({ version: 1, placement: { worker: 'workers' } }),
             tmux,
         })).toMatchObject({ kind: 'workers', session: '$3' });
@@ -228,12 +274,15 @@ describe('placement session resolution order (CORE-2802)', () => {
     it('ignores a stale identity and uses the configured session instead', () => {
         const { calls, tmux } = sessionProbe(['$9']);
         const result = resolvePlacement({ role: 'worker', insideTmux: false }, {
-            env: { XTRM_SESSION_ID: '$8' },
+            env: { XTRM_SESSION_ID: '$8', ...withSocket },
             ...config({ version: 1, session: 'project', placement: { worker: 'workers' } }),
             tmux,
         });
         expect(result).toMatchObject({ kind: 'workers', session: 'project', target: '@1' });
-        expect(calls).toEqual([['display-message', '-p', '-t', '$8', '#{session_id}'], ['list-windows', '-t', 'project', '-F', '#{window_id}|#{window_name}|#{window_panes}']]);
+        expect(calls).toEqual([
+            ['display-message', '-p', '-t', '$8', '#{session_id}'],
+            ['list-windows', '-t', 'project', '-F', '#{window_id}|#{window_name}|#{window_panes}'],
+        ]);
     });
 
     it('uses the configured session without probing tmux when the caller has no identity', () => {
@@ -252,21 +301,22 @@ describe('placement session resolution order (CORE-2802)', () => {
 
     it('gives the explicit --session flag the last word over the caller identity', () => {
         const calls: string[][] = [];
-        resolvePlacement({ workers: true, session: 'explicit', insideTmux: false }, {
-            env: { TMUX_PANE: '%5' },
+        const result = resolvePlacement({ workers: true, session: 'explicit', insideTmux: false }, {
+            env: { TMUX_PANE: '%5', ...withSocket },
             exists: () => false,
             tmux: (args) => {
                 calls.push(args);
                 return { status: 0, stdout: '@1|workers|1' };
             },
         });
+        expect(result).toMatchObject({ kind: 'workers', session: 'explicit' });
         expect(calls.some(args => args.includes('%5'))).toBe(false);
     });
 
     it('turns the current-pane rule into a window of the caller session when $TMUX is absent', () => {
         const { tmux } = sessionProbe(['%5']);
         expect(resolvePlacement({ role: 'worker', insideTmux: false }, {
-            env: { TMUX_PANE: '%5' },
+            env: { TMUX_PANE: '%5', ...withSocket },
             ...config({ version: 1, placement: { worker: 'current' } }),
             tmux,
         })).toMatchObject({ kind: 'window', session: '$3' });
@@ -281,5 +331,16 @@ describe('placement session resolution order (CORE-2802)', () => {
         const result = resolvePlacement({ workers: true, insideTmux: false }, { env: NO_TMUX, exists: () => false });
         expect(result.kind).toBe('session');
         expect(written.join('')).toContain('no tmux session to place this launch in');
+    });
+
+    it('keeps a plain launch outside tmux silent: there the new session is the product', () => {
+        const written: string[] = [];
+        vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+            written.push(String(chunk));
+            return true;
+        }) as never);
+        const result = resolvePlacement({ insideTmux: false }, { env: NO_TMUX, exists: () => false });
+        expect(result).toMatchObject({ kind: 'session' });
+        expect(written).toEqual([]);
     });
 });

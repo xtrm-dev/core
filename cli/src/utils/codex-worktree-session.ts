@@ -22,7 +22,7 @@ import { buildDispatcherEnvWithResolution, recordDispatcherBinding, type Dispatc
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
-import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity, resolveTmuxSessionId, type TmuxSessionIdentity } from '../core/session-identity.js';
+import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity, type TmuxSessionIdentity } from '../core/session-identity.js';
 import {
     checkStructuredLaunchOptions,
     checkStructuredLaunchPaths,
@@ -46,7 +46,7 @@ import { applyPaneOptions, relationshipPaneOptions } from './worktree-session.js
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
-import { resolveCallerSession } from './tmux-placement.js';
+import { resolveCallerSession, tmuxSocketArgs } from './tmux-placement.js';
 
 export interface CodexWorktreeSessionOptions {
     name?: string;
@@ -115,15 +115,22 @@ function resolveCodexExecutable(): string | null {
  * placement rule resolved from its identity, so the pane is not left anonymous.
  */
 function callerSessionIdentity(session: string | undefined): TmuxSessionIdentity {
+    // The session the launch actually lands in wins over the tmux client's session: with two
+    // clients on different sessions, the pane joins the resolved one, so its identity must be
+    // the exported one (CORE-2802 review). Probes carry the caller's socket, because an
+    // unbound probe can answer for another server.
+    const socket = tmuxSocketArgs();
+    const probe = (args: string[]): string => {
+        const result = spawnSync('tmux', [...socket, ...args], { stdio: 'pipe', encoding: 'utf8' });
+        return result.status === 0 ? (result.stdout ?? '').trim() : '';
+    };
+    if (session) {
+        const sessionId = probe(['display-message', '-p', '-t', session, '-F', '#{session_id}']);
+        const sessionName = probe(['display-message', '-p', '-t', session, '-F', '#{session_name}']);
+        if (sessionId) return { sessionId, sessionName: sessionName || null, socket: socket[1] ?? null };
+    }
     const current = resolveCurrentTmuxSessionIdentity();
-    if (current.sessionId) return current;
-    const sessionId = session ? resolveTmuxSessionId(session) : null;
-    const name = session
-        ? (spawnSync('tmux', ['display-message', '-p', '-t', session, '-F', '#{session_name}'], {
-            stdio: 'pipe', encoding: 'utf8',
-        }).stdout ?? '').trim()
-        : '';
-    return { sessionId, sessionName: name || null };
+    return current.sessionId ? { ...current, socket: socket[1] ?? null } : { sessionId: null, sessionName: null };
 }
 
 function codexBufferCommand(buffer: string): string {
@@ -504,9 +511,10 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     } catch (error) {
         cleanupAndFail(error instanceof Error ? error.message : String(error));
     }
+    const socket = tmuxSocketArgs();
     const createArgs = window
-        ? ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${parentSession}:`, '-n', sessionName, '-c', worktreePath]
-        : ['new-session', '-d', '-s', sessionName, '-c', worktreePath];
+        ? [...socket, 'new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${parentSession}:`, '-n', sessionName, '-c', worktreePath]
+        : [...socket, 'new-session', '-d', '-s', sessionName, '-c', worktreePath];
     // D7 (CORE-2727): `-e` only sets, so every dispatcher key this launch has no
     // value for is cleared in front of the pane command instead of left to
     // whatever the tmux server's environment still holds.

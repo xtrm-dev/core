@@ -36,6 +36,8 @@ interface Capture {
 
 function install(repoRoot: string, cap: Capture): void {
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+      // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+      if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
     const joined = args.join(' ');
     const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
     if (command === 'git') {
@@ -185,7 +187,9 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     vi.resetModules(); mocked.spawnSync.mockReset();
     const dispatcher = Object.fromEntries(['XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_DISPATCHER_PARTICIPANT'].filter((k) => k in normal.env).map((k) => [k, normal.env[k]]));
     const pane = await launch('claude', true, dispatcher, undefined, false, { pane: 'other-sess:workers' });
-    expect(pane.placementArgs.some((args) => args[0] === 'split-window' && args.includes('other-sess:workers'))).toBe(true);
+    // The verb carries the caller's socket binding first (CORE-2802 review), so match the
+    // verb by name rather than by position.
+    expect(pane.placementArgs.some((args) => args.includes('split-window') && args.includes('other-sess:workers'))).toBe(true);
     expect(pane.env.XTRM_SESSION_ID).toBe('$9');
     expect(pane.env.XTRM_SESSION_NAME).toBe('other-sess');
     expect(pane.env).toEqual(expect.objectContaining({ ...normal.env, XTRM_SESSION_ID: '$9', XTRM_SESSION_NAME: 'other-sess' }));
@@ -193,7 +197,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     expect(pane.paneOptions).toEqual(normal.paneOptions);
     vi.resetModules(); mocked.spawnSync.mockReset();
     const paneId = await launch('claude', true, dispatcher, undefined, false, { pane: '%9' });
-    expect(paneId.placementArgs.some((args) => args[0] === 'split-window' && args.includes('%9'))).toBe(true);
+    expect(paneId.placementArgs.some((args) => args.includes('split-window') && args.includes('%9'))).toBe(true);
     expect(paneId.env.XTRM_SESSION_ID).toBe('$9');
     expect(paneId.env.XTRM_SESSION_NAME).toBe('other-sess');
     expect(paneId.args).toEqual(normal.args);

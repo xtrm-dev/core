@@ -30,7 +30,7 @@ import {
     resolveTmuxSessionId,
     XTRM_SESSION_ID_VAR,
 } from '../core/session-identity.js';
-import { placementCreateArgs, resolvePlacement, validateLayout, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
+import { placementCreateArgs, resolvePlacement, resolveTmuxSocket, tmuxSocketArgs, validateLayout, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
 
 /**
  * Hard ceiling for the turn-1 shell command length. tmux new-session refuses
@@ -3304,11 +3304,28 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         child = subordinate.child;
     }
 
-    // --window: a sibling window in the caller's tmux session. It is always
-    // detached (the dispatcher keeps its own view) and is its own transport,
-    // so it cannot combine with a new session or the JSON outcome. CORE-2390.
+    // Validate placement configuration before creating or mutating a worktree. It runs
+    // before the --window option check because that check needs the resolved session
+    // (CORE-2802 review: a caller without $TMUX but with a known session may use --window).
+    validateLayout(opts.layout);
+    const resolvedPlacement = resolvePlacement({
+        role: roleName,
+        pane: opts.pane,
+        workers: opts.workers,
+        window: opts.window,
+        windowName: opts.windowName,
+        session: opts.session,
+        layout: opts.layout,
+        newSession,
+        insideTmux: Boolean(process.env.TMUX),
+    });
+
+    // --window: a sibling window in the caller's session (CORE-2390, CORE-2802). It is
+    // always detached (the dispatcher keeps its own view) and is its own transport, so it
+    // cannot combine with a new session or the JSON outcome. A caller without $TMUX still
+    // has a session when the placement rule resolved one from its identity.
     if (opts.window) {
-        const conflict = !process.env.TMUX ? '--window requires running inside tmux'
+        const conflict = !resolvedPlacement.session ? '--window requires a tmux session: run inside tmux, or launch from an agent whose session is known'
             : newSession ? '--window cannot combine with --new-session or --subordinate'
                 : opts.json ? '--window cannot combine with --json'
                     : null;
@@ -3631,20 +3648,6 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // resolution (SEC-01); the remainder of the launcher uses mainRepoRoot.
 
     const cwdBasename = path.basename(mainRepoRoot);
-
-    // Validate placement configuration before creating or mutating a worktree.
-    validateLayout(opts.layout);
-    const resolvedPlacement = resolvePlacement({
-        role: roleName,
-        pane: opts.pane,
-        workers: opts.workers,
-        window: opts.window,
-        windowName: opts.windowName,
-        session: opts.session,
-        layout: opts.layout,
-        newSession,
-        insideTmux: Boolean(process.env.TMUX),
-    });
 
     // Resolve slug — shared by both branch and worktree path so they're linked
     const existing = opts.existingWorktree;
@@ -4417,9 +4420,10 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const windowIdentity = (effectiveWindow || placement.kind === 'pane')
         ? targetSessionIdentity ?? resolveCurrentTmuxSessionIdentity()
         : null;
+    const launchSocket = resolveTmuxSocket();
     const newSessionIdentityEnv = windowIdentity
-        ? buildSessionIdentityEnv(windowIdentity)
-        : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+        ? buildSessionIdentityEnv({ ...windowIdentity, socket: launchSocket })
+        : buildSessionIdentityEnv({ sessionName: plan.sessionName, socket: launchSocket });
     // One merged record is the single source of truth for the pane environment:
     // every entry becomes `-e`, and (CORE-2727) the D7 unset list is computed from
     // this same record, so a key that IS exported can never also be `env -u`-ed.
@@ -4483,6 +4487,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         windowName: windowName ?? plan.sessionName,
         worktreePath,
         newSessionName: plan.sessionName,
+        socketArgs: tmuxSocketArgs(),
     });
     const createdSessionId = (): string | null => (effectiveWindow || placementTargeted ? null : resolveTmuxSessionId(plan.sessionName));
 

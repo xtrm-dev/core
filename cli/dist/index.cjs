@@ -64480,6 +64480,7 @@ var API_GROUP = "api";
 var import_node_child_process5 = require("child_process");
 var XTRM_SESSION_ID_VAR = "XTRM_SESSION_ID";
 var XTRM_SESSION_NAME_VAR = "XTRM_SESSION_NAME";
+var XTRM_SESSION_SOCKET_VAR = "XTRM_SESSION_SOCKET";
 var WORKER_SESSION_ID_VARS = ["PI_SESSION_ID", "CLAUDE_SESSION_ID", "CODEX_SESSION_ID"];
 var TMUX_SESSION_ID = /^\$\d+$/;
 function resolveWorkerSessionId(env3 = process.env) {
@@ -64502,8 +64503,10 @@ function buildSessionIdentityEnv(identity) {
   const env3 = {};
   const sessionId = clean2(identity.sessionId);
   const sessionName = clean2(identity.sessionName);
+  const socket = clean2(identity.socket);
   if (sessionId) env3[XTRM_SESSION_ID_VAR] = sessionId;
   if (sessionName) env3[XTRM_SESSION_NAME_VAR] = sessionName;
+  if (socket) env3[XTRM_SESSION_SOCKET_VAR] = socket;
   return env3;
 }
 function resolveCurrentTmuxSessionIdentity(probe2 = defaultProbe, env3 = process.env) {
@@ -67104,6 +67107,7 @@ var import_node_fs8 = require("fs");
 var import_node_child_process10 = require("child_process");
 var DEFAULT_MAX_PANES = 4;
 var CONFIG_ENV = "XTRM_LAUNCH_CONFIG";
+var TMUX_SOCKET_ENV = "XTRM_SESSION_SOCKET";
 var PLACEMENT_VALUES = /* @__PURE__ */ new Set(["workers", "window", "session", "current"]);
 var LAYOUT_RE = /^[a-z][a-z0-9-]*$/;
 var SESSION_ID_RE = /^\$\d+$/;
@@ -67147,8 +67151,22 @@ function loadLaunchPlacementConfig(deps = {}) {
   }
   return parseLaunchPlacementConfig(parsed, file2);
 }
+function resolveTmuxSocket(env3 = process.env) {
+  const tmux2 = (env3.TMUX ?? "").trim();
+  if (tmux2) {
+    const [socket] = tmux2.split(",");
+    if (socket) return socket;
+  }
+  const recorded = (env3[TMUX_SOCKET_ENV] ?? "").trim();
+  return recorded || void 0;
+}
+function tmuxSocketArgs(env3 = process.env) {
+  const socket = resolveTmuxSocket(env3);
+  return socket ? ["-S", socket] : [];
+}
 function tmuxCall(args, deps) {
-  const run5 = deps.tmux ?? ((argv) => (0, import_node_child_process10.spawnSync)("tmux", argv, { encoding: "utf8", stdio: "pipe" }));
+  const env3 = deps.env ?? process.env;
+  const run5 = deps.tmux ?? ((argv) => (0, import_node_child_process10.spawnSync)("tmux", [...tmuxSocketArgs(env3), ...argv], { encoding: "utf8", stdio: "pipe" }));
   let result;
   try {
     result = run5(args);
@@ -67164,8 +67182,16 @@ function sessionIdOf(target, deps) {
   const id = tmuxCall(args, deps);
   return SESSION_ID_RE.test(id) ? id : void 0;
 }
-function resolveCallerSession(deps = {}) {
+function resolveCallerSession(deps = {}, announce = true) {
   const env3 = deps.env ?? process.env;
+  if (!resolveTmuxSocket(env3)) {
+    const claim2 = [env3.TMUX_PANE, ...CALLER_SESSION_ENV.map((key) => env3[key])].map((value) => (value ?? "").trim()).find(Boolean);
+    if (claim2 && announce) {
+      process.stderr.write(`warning: ${claim2} names a tmux session, but the server it belongs to is unknown; not placing this launch in it (set $TMUX or ${TMUX_SOCKET_ENV})
+`);
+    }
+    return void 0;
+  }
   const paneId = (env3.TMUX_PANE ?? "").trim();
   if (PANE_ID_RE.test(paneId)) {
     const fromPane = sessionIdOf(paneId, deps);
@@ -67212,7 +67238,7 @@ function resolvePlacement(options, deps = {}) {
   const configured = !explicit && options.role ? config3?.placement[options.role] ?? config3?.placement.default : !explicit ? config3?.placement.default : void 0;
   const selected = explicit ?? configured;
   const maxPanes = config3?.workersMaxPanes ?? DEFAULT_MAX_PANES;
-  const session = options.session ?? resolveCallerSession(deps) ?? config3?.session;
+  const session = options.session ?? resolveCallerSession(deps, Boolean(selected)) ?? config3?.session;
   if (!selected) {
     if (options.insideTmux) return { kind: "current", session, maxPanes };
     return session ? { kind: "window", session, windowName: options.windowName, layout: options.layout, maxPanes } : newSessionPlacement(session, maxPanes, false);
@@ -67238,13 +67264,14 @@ function resolvePlacement(options, deps = {}) {
 }
 function placementCreateArgs(placement, args) {
   const target = placement.target ?? args.targetSession;
+  const socket = args.socketArgs ?? [];
   if (placement.kind === "pane" || placement.kind === "workers" && placement.existingWindow) {
-    return ["split-window", "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", args.worktreePath];
+    return [...socket, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", args.worktreePath];
   }
   if (placement.kind === "workers" || placement.kind === "window") {
-    return ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${args.targetSession}:`, "-n", placement.windowName ?? args.windowName, "-c", args.worktreePath];
+    return [...socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${args.targetSession}:`, "-n", placement.windowName ?? args.windowName, "-c", args.worktreePath];
   }
-  return ["new-session", "-d", "-s", args.newSessionName, "-c", args.worktreePath];
+  return [...socket, "new-session", "-d", "-s", args.newSessionName, "-c", args.worktreePath];
 }
 function validateLayout(layout) {
   if (layout !== void 0 && !LAYOUT_RE.test(layout)) throw new Error(`invalid tmux layout '${layout}'`);
@@ -69201,8 +69228,20 @@ async function launchWorktreeSession(opts) {
     attach = subordinate.attach;
     child = subordinate.child;
   }
+  validateLayout(opts.layout);
+  const resolvedPlacement = resolvePlacement({
+    role: roleName,
+    pane: opts.pane,
+    workers: opts.workers,
+    window: opts.window,
+    windowName: opts.windowName,
+    session: opts.session,
+    layout: opts.layout,
+    newSession,
+    insideTmux: Boolean(process.env.TMUX)
+  });
   if (opts.window) {
-    const conflict = !process.env.TMUX ? "--window requires running inside tmux" : newSession ? "--window cannot combine with --new-session or --subordinate" : opts.json ? "--window cannot combine with --json" : null;
+    const conflict = !resolvedPlacement.session ? "--window requires a tmux session: run inside tmux, or launch from an agent whose session is known" : newSession ? "--window cannot combine with --new-session or --subordinate" : opts.json ? "--window cannot combine with --json" : null;
     if (conflict) {
       console.error(kleur_default.red(`
   \u2717 ${conflict}
@@ -69404,18 +69443,6 @@ async function launchWorktreeSession(opts) {
     }
   }
   const cwdBasename = import_node_path24.default.basename(mainRepoRoot);
-  validateLayout(opts.layout);
-  const resolvedPlacement = resolvePlacement({
-    role: roleName,
-    pane: opts.pane,
-    workers: opts.workers,
-    window: opts.window,
-    windowName: opts.windowName,
-    session: opts.session,
-    layout: opts.layout,
-    newSession,
-    insideTmux: Boolean(process.env.TMUX)
-  });
   const existing = opts.existingWorktree;
   const slug = existing?.slug ?? name ?? randomSlug(4);
   const reuseRequested = Boolean(opts.reuse) && (Boolean(newSession) || !process.env.TMUX);
@@ -69933,7 +69960,8 @@ async function launchTmuxSession(args) {
   const identitySession = placement.kind === "pane" && placement.target ? placement.target.includes(":") ? placement.target.split(":", 1)[0] : void 0 : placement.session;
   const targetSessionIdentity = placement.kind === "pane" && placement.target ? resolveTmuxSessionIdentity(placement.target) : identitySession ? resolveTmuxSessionIdentity(identitySession) : null;
   const windowIdentity = effectiveWindow || placement.kind === "pane" ? targetSessionIdentity ?? resolveCurrentTmuxSessionIdentity() : null;
-  const newSessionIdentityEnv = windowIdentity ? buildSessionIdentityEnv(windowIdentity) : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+  const launchSocket = resolveTmuxSocket();
+  const newSessionIdentityEnv = windowIdentity ? buildSessionIdentityEnv({ ...windowIdentity, socket: launchSocket }) : buildSessionIdentityEnv({ sessionName: plan.sessionName, socket: launchSocket });
   const paneEnv = {
     ...agentEnv,
     ...newSessionIdentityEnv,
@@ -69982,7 +70010,8 @@ async function launchTmuxSession(args) {
     targetSession,
     windowName: windowName ?? plan.sessionName,
     worktreePath,
-    newSessionName: plan.sessionName
+    newSessionName: plan.sessionName,
+    socketArgs: tmuxSocketArgs()
   });
   const createdSessionId = () => effectiveWindow || placementTargeted ? null : resolveTmuxSessionId(plan.sessionName);
   const readyAfterMs = Date.now();
@@ -70514,7 +70543,7 @@ function hasXtrmHookWiring(settingsPath) {
   }
 }
 function createClaudeCommand() {
-  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("claude").description("Launch a Claude session in a sandboxed worktree, or manage Claude hook wiring").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch claude as a specialist role (resolved via `sp view <name>`); mirrors xt pi --role \u2014 creates a tmux session (or runs in current pane inside $TMUX) with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as claude/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /<skill-name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to claude; with --role, overrides specialist.execution.model").option("--thinking <level>", "Warn-and-drop \u2014 claude has no --thinking flag; set thinking on the underlying model config instead").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Open the worker as a detached new window in the caller's tmux session (from $TMUX, or the session the placement rule resolves); prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the claude runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -72213,7 +72242,7 @@ async function getPiProjectPointer(projectRoot) {
   }
 }
 function createPiCommand() {
-  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  const cmd = new Command("pi").description("Launch a Pi session in a sandboxed worktree, or manage the Pi runtime").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch pi as a specialist role (resolved via `sp view <name>`); creates a named tmux session with @agent_task metadata").option("--issue <id>", "Bind an issue to the session and auto-populate its assignee as pi/<slug> from runtime-origin. With --role it renders the tracked task as the initial user prompt (mutually exclusive with --prompt there); without --role it is metadata only \u2014 @agent_issue pane option + XTMUX_AGENT_ISSUE \u2014 and combines freely with --prompt").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use <text> as the initial user prompt. A leading /skill:<name> is the supported way to load a skill on turn 1").option("--no-attach", "Create tmux session detached; print `session_name:pane_id` on stdout and exit (default: attach)").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object instead of human launch output").option("--model <name>", "Forward `--model <name>` to pi; with --role, overrides specialist.execution.model").option("--thinking <level>", "Forward `--thinking <level>` to pi; with --role, overrides specialist.execution.thinking_level").option("--skill <name-or-path>", "Load an additional skill at startup (repeatable)", (value, previous) => [...previous, value], []).option("--new-session", "Inside $TMUX: force a fresh tmux session instead of running in the current pane (default outside $TMUX)").option("--ns", "Alias for --new-session").option("--parent <target>", "With --role: override @agent_parent_session on the target pane (target = tmux session name, id, or #{session_id})").option("--child", "With --role: explicit form of the auto-behavior \u2014 @agent_parent_session = current pane's session_id").option("--reuse", "With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one").option("--subordinate", "Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch").option("--window", "Open the worker as a detached new window in the caller's tmux session (from $TMUX, or the session the placement rule resolves); prints <session>:<pane_id>").option("--window-name <name>", "Name the detached tmux window (with --window)").option("--pane <target>", "Split into an existing tmux window (session:window, window name, or pane id)").option("--workers", "Place in the first workers* window with capacity, or create the next workers window").option("--session <name>", "Tmux session used as the placement target").option("--layout <name>", "Tmux layout for --pane/--workers (default: tiled)").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Passthrough:
   Everything after \`--\` is forwarded verbatim to the pi runtime, with or
   without --role. xt-owned flags (--session-dir, --name, --system-prompt,
@@ -72770,14 +72799,18 @@ function resolveCodexExecutable() {
   return result.status === 0 && import_node_path32.default.basename(absolute) === "codex" ? absolute : null;
 }
 function callerSessionIdentity(session) {
+  const socket = tmuxSocketArgs();
+  const probe2 = (args) => {
+    const result = (0, import_node_child_process17.spawnSync)("tmux", [...socket, ...args], { stdio: "pipe", encoding: "utf8" });
+    return result.status === 0 ? (result.stdout ?? "").trim() : "";
+  };
+  if (session) {
+    const sessionId = probe2(["display-message", "-p", "-t", session, "-F", "#{session_id}"]);
+    const sessionName = probe2(["display-message", "-p", "-t", session, "-F", "#{session_name}"]);
+    if (sessionId) return { sessionId, sessionName: sessionName || null, socket: socket[1] ?? null };
+  }
   const current = resolveCurrentTmuxSessionIdentity();
-  if (current.sessionId) return current;
-  const sessionId = session ? resolveTmuxSessionId(session) : null;
-  const name = session ? ((0, import_node_child_process17.spawnSync)("tmux", ["display-message", "-p", "-t", session, "-F", "#{session_name}"], {
-    stdio: "pipe",
-    encoding: "utf8"
-  }).stdout ?? "").trim() : "";
-  return { sessionId, sessionName: name || null };
+  return current.sessionId ? { ...current, socket: socket[1] ?? null } : { sessionId: null, sessionName: null };
 }
 function codexBufferCommand(buffer) {
   const script = [
@@ -73102,7 +73135,8 @@ async function launchCodexWorktreeSession(opts) {
   } catch (error62) {
     cleanupAndFail(error62 instanceof Error ? error62.message : String(error62));
   }
-  const createArgs = window ? ["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${parentSession}:`, "-n", sessionName, "-c", worktreePath] : ["new-session", "-d", "-s", sessionName, "-c", worktreePath];
+  const socket = tmuxSocketArgs();
+  const createArgs = window ? [...socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", `${parentSession}:`, "-n", sessionName, "-c", worktreePath] : [...socket, "new-session", "-d", "-s", sessionName, "-c", worktreePath];
   const paneCommand = withPaneUnsets(codexBufferCommand(buffer), paneEnv);
   const launched = (0, import_node_child_process17.spawnSync)("tmux", [...createArgs, ...envArgs, paneCommand], { stdio: "pipe", encoding: "utf8" });
   if (launched.status !== 0) cleanupAndFail((launched.stderr ?? "").trim() || `tmux ${createArgs[0]} failed`);
@@ -73200,7 +73234,7 @@ async function launchCodexWorktreeSession(opts) {
 
 // src/commands/codex.ts
 function createCodexCommand() {
-  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--issue <id>", "Bind an issue to the session; with --role, render it as the initial task").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").option("--window", "Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
+  return new Command("codex").description("EXPERIMENTAL: launch Codex in an xt-owned worktree with persisted hook trust").argument("[name]", "Optional session name \u2014 used as xt/<name> branch (random if omitted)").option("--role <name>", "Launch Codex with a Specialists role").option("--issue <id>", "Bind an issue to the session; with --role, render it as the initial task").addOption(new Option("--bead <id>", "Deprecated alias of --issue").hideHelp()).option("--prompt <text>", "Use text as the initial user prompt").option("--model <name>", "Forward --model to Codex").option("--skill <name-or-path>", "Invoke an additional $skill-name at startup (repeatable)", (value, previous) => [...previous, value], []).option("--no-attach", "Create the tmux session detached").option("--json", "With --no-attach: emit one xtrm.command-outcome.v1 JSON object").option("--yolo", "Disable sandboxing and approval prompts (default)", true).option("--no-yolo", "Use workspace-write sandboxing with on-request approval").option("--window", "Open the worker as a detached new window in the caller's tmux session (from $TMUX, or the session the placement rule resolves); prints <session>:<pane_id>").option("--base <ref>", "Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)").allowExcessArguments(true).allowUnknownOption(true).addHelpText("after", `
 Safety:
   The default --yolo profile emits --dangerously-bypass-approvals-and-sandbox.
   --no-yolo emits --sandbox workspace-write --ask-for-approval on-request.

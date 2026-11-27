@@ -46,6 +46,8 @@ describe('Codex worktree launcher', () => {
         fs.writeFileSync(path.join(repoRoot, '.xtrm', 'skills', 'infra', 'service-knowledge', 'SKILL.md'), '# pack');
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') {
@@ -127,6 +129,8 @@ describe('Codex worktree launcher', () => {
         fs.ensureDirSync(path.join(repoRoot, '.beads'));
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') {
@@ -242,6 +246,8 @@ describe('Codex worktree launcher', () => {
 
         let windowArgs: string[] = [];
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -335,6 +341,109 @@ describe('Codex worktree launcher', () => {
         expect(paneCommand).toContain("-u 'XTRM_DISPATCHER_PARTICIPANT'");
     });
 
+    // CORE-2802 (review finding 3): every codex change in this diff is pinned here. The
+    // placement rule resolves the dispatcher's session from an identity the caller carries,
+    // so `--window` no longer needs `$TMUX`; the window, the exported identity and the
+    // printed `<session>:<pane>` all name the RESOLVED session, never the dead client one.
+    function codexWindowHarness(sessionAnswers: { pane?: string; name?: string }) {
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-place-'));
+        roots.push(repoRoot);
+        const codexHome = path.join(repoRoot, 'codex-home');
+        const homeRoot = path.join(repoRoot, 'home');
+        const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', `${path.basename(repoRoot)}-xt-codex-place`);
+        process.env.CODEX_HOME = codexHome;
+        process.env.HOME = homeRoot;
+        fs.mkdirSync(path.join(homeRoot, '.xtrm', 'config'), { recursive: true });
+        process.chdir(repoRoot);
+        const calls: string[][] = [];
+        const printed: string[] = [];
+        mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // Record the RAW argv: the `-S` binding is part of what this test proves.
+            calls.push([command, ...args]);
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+            const joined = args.join(' ');
+            if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+            if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+            if (command === 'git' && joined.includes('remote get-url origin')) return { status: 0, stdout: 'https://github.com/xtrm-dev/core.git\n', stderr: '' };
+            if (command === 'git' && joined.startsWith('show-ref --verify')) return { status: 1, stdout: '', stderr: '' };
+            if (command === 'git' && args[0] === 'config' && args[1] === '--get') return { status: 0, stdout: 'op@example.com\n', stderr: '' };
+            if (command === 'git' && args[0] === 'worktree') { fs.ensureDirSync(worktreePath); return { status: 0, stdout: '', stderr: '' }; }
+            if (command === 'tmux' && args[0] === 'new-window') return { status: 0, stdout: '%21\n', stderr: '' };
+            if (command === 'tmux' && args[0] === 'display-message') {
+                return { status: 0, stdout: `${joined.includes('session_name') ? sessionAnswers.name ?? 'coord-sess' : sessionAnswers.pane ?? '$42'}\n`, stderr: '' };
+            }
+            return { status: 0, stdout: '', stderr: '' };
+        });
+        const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string) => { printed.push(String(chunk)); return true; }) as never);
+        vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        exitByThrow();
+        return {
+            calls,
+            printed,
+            stdoutSpy,
+            launch: async () => {
+                const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+                await expect(launchCodexWorktreeSession({
+                    name: 'place', attach: false, yolo: true, window: true,
+                    dispatcherDeps: { readEnviron: () => null },
+                })).rejects.toThrow('exit:0');
+            },
+        };
+    }
+
+    it('--window places the window in the resolved dispatcher session without $TMUX (CORE-2802)', async () => {
+        const saved = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, XTRM_SESSION_ID: process.env.XTRM_SESSION_ID, XTRM_SESSION_NAME: process.env.XTRM_SESSION_NAME, XTRM_SESSION_SOCKET: process.env.XTRM_SESSION_SOCKET, XTRM_PARENT_PANE_ID: process.env.XTRM_PARENT_PANE_ID, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER };
+        delete process.env.TMUX; // the worker shell of the issue: no client of its own
+        delete process.env.XTRM_SESSION_NAME;
+        delete process.env.XTRM_SESSION_ID;
+        process.env.XTRM_SESSION_SOCKET = '/tmp/tmux-1000/coord';
+        process.env.XTRM_PARENT_PANE_ID = '%5';
+        process.env.SUBSTRATE_HOLDER = 'place';
+        const h = codexWindowHarness({ pane: '$42', name: 'coord-sess' });
+        try {
+            await h.launch();
+        } finally {
+            for (const [k, v] of Object.entries(saved)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+            }
+        }
+        const windowCall = h.calls.find((call) => call.includes('new-window'));
+        const verbAt = windowCall?.indexOf('new-window') ?? -1;
+        expect(windowCall?.slice(verbAt, verbAt + 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$42:']);
+        // Both decisions of the placement rule are bound to the socket the identity came
+        // from: the identity probe and the verb that creates the pane.
+        const bound = h.calls.filter((entry) => entry[0] === 'tmux' && entry[1] === '-S');
+        expect(bound.every((call) => call[2] === '/tmp/tmux-1000/coord')).toBe(true);
+        expect(bound.some((call) => call.includes('display-message') && call.includes('%5'))).toBe(true);
+        expect(windowCall?.slice(1, 3)).toEqual(['-S', '/tmp/tmux-1000/coord']);
+        // The printed handle names the resolved session, not a guessed one.
+        expect(h.printed.join('')).toBe('coord-sess:%21\n');
+    });
+
+    it('--window refuses a caller with no session it can resolve (CORE-2802)', async () => {
+        const saved = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, XTRM_SESSION_ID: process.env.XTRM_SESSION_ID, XTRM_SESSION_NAME: process.env.XTRM_SESSION_NAME, XTRM_SESSION_SOCKET: process.env.XTRM_SESSION_SOCKET, XTRM_PARENT_PANE_ID: process.env.XTRM_PARENT_PANE_ID, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER };
+        for (const key of ['TMUX', 'TMUX_PANE', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME', 'XTRM_SESSION_SOCKET', 'XTRM_PARENT_PANE_ID']) delete process.env[key];
+        const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-nowhere-'));
+        roots.push(repoRoot);
+        const errors: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation(((...msg: string[]) => { errors.push(msg.flat().join(' ')); }) as never);
+        exitByThrow();
+        mocked.spawnSync.mockImplementation(() => ({ status: 0, stdout: '', stderr: '' }));
+        try {
+            const { launchCodexWorktreeSession } = await import('../utils/codex-worktree-session.js');
+            await expect(launchCodexWorktreeSession({ name: 'nowhere', attach: false, yolo: true, window: true }))
+                .rejects.toThrow(/exit:1|--window requires a tmux session/);
+        } finally {
+            for (const [k, v] of Object.entries(saved)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+            }
+        }
+        expect(errors.join(' ')).toContain('--window requires a tmux session');
+    });
+
     it('refuses an invalid role name before creating a worktree (CORE-2528)', async () => {
         const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'xtrm-codex-role-'));
         roots.push(repoRoot);
@@ -343,6 +452,8 @@ describe('Codex worktree launcher', () => {
         process.chdir(repoRoot);
         let worktreeAdds = 0;
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -390,6 +501,8 @@ describe('Codex worktree launcher', () => {
         }));
         process.chdir(repoRoot);
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -432,6 +545,8 @@ describe('Codex worktree launcher', () => {
         process.chdir(repoRoot);
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -479,6 +594,8 @@ describe('Codex worktree launcher', () => {
         process.chdir(repoRoot);
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -517,6 +634,8 @@ describe('Codex worktree launcher', () => {
         let branchChecks = 0;
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -568,6 +687,8 @@ describe('Codex worktree launcher', () => {
         process.chdir(repoRoot);
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -626,6 +747,8 @@ describe('Codex worktree launcher', () => {
 
         const sbCalls: string[][] = [];
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
+            // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
             const joined = args.join(' ');
             if (command === 'sb') {
                 sbCalls.push(args);
