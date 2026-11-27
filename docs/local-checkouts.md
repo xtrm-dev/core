@@ -14,7 +14,7 @@ domain: [install, development, operations]
 | [Where it lives](#where-it-lives) | One surface installs and updates all four checkouts, per the XTRM build order |
 | [Configuration](#configuration) | A machine opts in with a configuration file at `~/ |
 | [Usage](#usage) | Run the check form first on a machine you have not updated recently, then the apply form |
-| [Report](#report) | The report names, for every linked binary, the checkout, commit and package |
+| [Report](#report) | The report names, for every linked binary, the checkout, the commit and the |
 | [Safety rules](#safety-rules) | - Uncommitted work is never discarded: no `git reset`, no `git clean`, no |
 | [A new machine](#a-new-machine) | The shim needs `git`, Node 24 or later and `npm` |
 | [The server over ssh](#the-server-over-ssh) | The phase is machine-local and read-only under `--check`: |
@@ -78,8 +78,11 @@ Without this file the phase is off: `xt update` never touches links, and
 `xt init --from-checkouts`) runs it once with the built-in defaults (`~/dev`,
 the four remotes) and changes nothing in the configuration.
 
-The `core` entry defaults to the **main worktree** of the running CLI, so a run
-from `.xtrm/worktrees/<name>/` never treats the worktree as the checkout.
+The `core` entry defaults to the running project's **main worktree** when that
+project is the core checkout, so a run from `.xtrm/worktrees/<name>/` never
+treats the worktree as the checkout. From anywhere else — `~/dev`, or a foreign
+repository — `core` resolves to `<root>/core`, and the phase never installs or
+links the repository the run happens to stand in.
 
 ## Usage
 
@@ -100,7 +103,8 @@ Flags:
 | `--from-checkouts` | Run the phase even when no `checkouts.json` exists, and apply it |
 | `--apply` (`xt update`) | Apply the phase on a configured machine; without it the phase reports only |
 | `--json` | Machine-readable report (the `checkouts` key of the update payload) |
-| `--dry-run` (`xt init`) | Preview the machine-bootstrap part; the checkout phase is not applied |
+| `--fetch` | Refresh the remote refs before comparing; a report does not fetch by default |
+| `--dry-run` (`xt init`) | Preview: the checkout phase runs in check mode and applies nothing |
 
 Environment: `XTRM_BOOTSTRAP_NPM` selects the npm binary, `XTRM_BOOTSTRAP_ROOT`
 and `XTRM_BOOTSTRAP_CORE_REMOTE` configure the `scripts/bootstrap.sh` shim.
@@ -110,27 +114,31 @@ prefix, `~/.local/bin`, installer state, Pi settings); the tests use it.
 ## Report
 
 ```
-checkouts (read-only)
+checkouts (read-only, no fetch)
   repo         branch  commit   state
   core         main    5bc81a8d ok
   xtrm         main    791a64d1 ok (untracked 3)
   xtmux        main    c8a74384 behind
   specialists  master  c17901a9 ok
 
-  binary               resolves to                                     state
-  xt                   ~/dev/core/cli/dist/index.cjs                   ok
-  sb                   ~/dev/xtrm/packages/substrate/cli/sb-ux.ts      ok
-  tmux                 ~/dev/xtmux/bin/tmux-guard                      ok
+  binary               resolves to                                  commit   state
+  xt                   ~/dev/core/cli/dist/index.cjs                5bc81a8d ok
+  sb                   ~/dev/xtrm/packages/substrate/cli/sb-ux.ts   791a64d1 ok
+  tmux                 ~/dev/xtmux/bin/tmux-guard                   c8a74384 ok
 
 drift (2)
   - xtmux: 1 commit(s) behind origin/main
   - xtmux: ~/.pi/agent/settings.json loads xtmux from the checkout directly (1 entry); the installer would add a second grouped entry
 
-drift found: 2 finding(s), 0 problem(s); run xt update --apply to update
+drift found: 2 finding(s), 0 problem(s); run xt update --from-checkouts to update
+remote refs are the last fetched state; pass --fetch to compare with origin
 ```
 
-The report names, for every linked binary, the checkout, commit and package
-version it resolves to, plus the first entry on `PATH` when that differs.
+The report names, for every linked binary, the checkout, the commit and the
+package version it resolves to, plus the first entry on `PATH` when that
+differs. Every line of the report — a credentialed remote, an installer
+diagnostic, a problem — is redacted: URL userinfo and token-shaped strings are
+removed and long text is capped before it is printed or serialised.
 
 ## Safety rules
 
@@ -149,7 +157,10 @@ version it resolves to, plus the first entry on `PATH` when that differs.
   `git config --unset core.hooksPath` in that checkout.
 - No `tmux kill-server`, no restart of running agents. The `tmux` kill guard is
   installed by xtmux's own installer, not by this phase.
-- A report run (`xt update` without `--apply`, `xt doctor`) writes nothing except the network fetch.
+- A report run (`xt update` without `--apply`, `xt doctor`) writes nothing and
+  does not fetch: it compares against the remote refs from the last fetch, so a
+  commit pushed since then is not seen. `--fetch` opts into the network, which
+  writes objects and remote refs, and never moves a branch.
 
 ## A new machine
 
@@ -187,7 +198,7 @@ Each finding names the repository and the action that resolves it; none of them 
 | `dirty` | tracked files modified or staged | commit, stash or discard in that checkout; nothing was changed |
 | `diverged` / `ahead` | local commits not on the remote | rebase or push deliberately; the phase never rewrites history |
 | `wrong-branch` / `detached` | checkout is not on the default branch | check out the default branch |
-| `fetch-failed` | `git fetch` could not reach the remote | fix credentials or network; other repositories still update |
+| `fetch-failed` | the `--fetch` refresh could not reach the remote | fix credentials or network; other repositories still update |
 | `beads-hooks` | `core.hooksPath` points at the retired Beads hooks | `git config --unset core.hooksPath` in that checkout |
 | `lockfile-rewritten` | committed lockfile out of sync with `package.json` | fix the lockfile in that repository |
 | `installer-refused` | xtmux refused to overwrite a file it does not own | resolve the file by hand; nothing was forced |
@@ -214,4 +225,5 @@ cd cli && npx vitest run src/tests/checkout-bootstrap.test.ts
 The suite owns temporary homes and temporary git origins: no network, no real
 `npm link`, no writes outside its scratch directories. It covers clean, dirty,
 behind, diverged, missing, untracked, Beads-hook, lockfile, installer-refusal,
-Pi-entry-conflict and idempotency behaviour.
+Pi-entry-conflict, redaction, the no-fetch report, a fresh directory outside
+every checkout, a foreign repository, the init dry-run mode and idempotency.

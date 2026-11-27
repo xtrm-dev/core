@@ -752,30 +752,23 @@ function renderClaudeRoute(report: ClaudeRouteDoctorSection): void {
  * CORE-2810: local checkouts, reported read-only. A machine that installs from
  * local checkouts (checkouts.json) gets the drift list here; an unconfigured
  * machine prints nothing, so doctor stays quiet on npm-installed machines.
- * Nothing is fetched from disk beyond `git fetch`; nothing is written.
+ * The report writes nothing and does not fetch: it compares against the remote
+ * refs from the last fetch. `--fetch` refreshes them, which writes objects.
  */
 function renderLocalCheckouts(report: CheckoutReport | null): number {
   if (!report) return 0;
   section('Local checkouts');
-  for (const state of report.repos) {
-    const suffix = state.status === 'ok' && state.dirty.untracked > 0 ? ` (untracked ${state.dirty.untracked})` : '';
-    const line = `${state.name} ${state.branch ?? '-'} ${state.commit ?? '-'} ${state.status}${suffix}`;
-    if (state.status === 'ok') ok(line);
-    else warn(line);
-    if (state.detail) fix(state.detail);
+  // One renderer for every surface: doctor prints the same report `xt update`
+  // prints, so the two can never disagree again.
+  const lines = renderCheckoutReport(report, { allBins: false })
+    .filter((line) => line.trim().length > 0 && !line.startsWith('checkouts'));
+  for (const line of lines) {
+    const text = line.trim();
+    const isFinding = text.startsWith('- ') || text.startsWith('drift (') || text.startsWith('problems (');
+    if (isFinding) warn(text);
+    else if (text.startsWith('no drift') || text.startsWith('drift found') || text.startsWith('incomplete') || text.startsWith('remote refs')) fix(text);
+    else console.log(kleur.dim(line));
   }
-  for (const item of report.drift) {
-    warn(`${item.repo}: ${item.detail}`);
-    if (item.diagnostic) console.log(kleur.dim(item.diagnostic.split('\n').map(l => `      ${l}`).join('\n')));
-  }
-  for (const problem of report.problems) warn(problem);
-  if (report.bins.some(entry => entry.state !== 'ok')) {
-    for (const entry of report.bins.filter(e => e.state !== 'ok')) {
-      warn(`${entry.bin} ${entry.state}: resolves to ${entry.resolved ?? 'nothing'}, expected ${entry.expected}`);
-    }
-  }
-  if (report.ok) ok('checkouts, links and installer state all match');
-  else fix('run: xt install --from-checkouts');
   return report.drift.length + report.problems.length;
 }
 
@@ -785,7 +778,8 @@ export function createDoctorCommand(): Command {
     .option('--cwd <path>', 'Operate on this directory (default: process.cwd())')
     .option('--json', 'Output machine-readable JSON', false)
     .option('--check-drift', 'Exit non-zero on any drift, missing, extra, or duplicate')
-    .action(async (opts: { cwd?: string; json?: boolean; checkDrift?: boolean }) => {
+    .option('--fetch', 'Fetch the local checkouts from origin before reporting (writes remote refs)', false)
+    .action(async (opts: { cwd?: string; json?: boolean; checkDrift?: boolean; fetch?: boolean }) => {
       const cwd = await resolveDoctorCwd(opts.cwd);
       const registry = await loadRegistry(cwd);
       const drift = await checkDrift(path.join(cwd, '.xtrm', 'registry.json'), path.join(cwd, '.xtrm'));
@@ -806,7 +800,7 @@ export function createDoctorCommand(): Command {
       let checkouts: CheckoutReport | null = null;
       let checkoutDrift = 0;
       try {
-        checkouts = runCheckoutPhase({ check: true });
+        checkouts = runCheckoutPhase({ check: true, fetch: Boolean(opts.fetch) });
       } catch (error) {
         warn(`checkouts: ${(error as Error).message}`);
         checkoutDrift = 1;

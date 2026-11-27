@@ -788,6 +788,32 @@ async function resolveInitProjectRoot(yes: boolean): Promise<{ projectRoot: stri
 //   8. Verification       — unified summary of all phase outcomes
 //   9. Next Steps         — guidance based on verification result
 
+export type CheckoutInitMode = 'off' | 'check' | 'apply';
+
+/**
+ * CORE-2810: how `xt init` treats the local-checkout phase. A dry run is a
+ * preview, so it reports drift and writes nothing; only a real run applies.
+ */
+export function checkoutInitMode(opts: Pick<InstallOpts, 'dryRun' | 'fromCheckouts'>): CheckoutInitMode {
+    if (!opts.fromCheckouts) return 'off';
+    return opts.dryRun ? 'check' : 'apply';
+}
+
+async function runInitCheckoutPhase(mode: CheckoutInitMode): Promise<void> {
+    if (mode === 'off') return;
+    const { renderCheckoutReport, runCheckoutPhase } = await import('../core/checkout-bootstrap.js');
+    const report = runCheckoutPhase({
+        fromCheckouts: true,
+        check: mode === 'check',
+        log: (line) => console.log(kleur.dim(`  • ${line}`)),
+    });
+    if (!report) return;
+    console.log('');
+    for (const line of renderCheckoutReport(report)) console.log(line);
+    console.log('');
+    if (mode === 'apply' && !report.ok) process.exitCode = 1;
+}
+
 export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     const { dryRun = false, yes = false } = opts;
     const effectiveYes = yes || process.argv.includes('--yes') || process.argv.includes('-y');
@@ -808,6 +834,9 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
 
     if (dryRun) {
         console.log(kleur.dim('  Dry run — no changes written\n'));
+        // CORE-2810: the checkout phase is part of what init would change, so a
+        // dry run reports its drift in check mode instead of skipping it.
+        await runInitCheckoutPhase(checkoutInitMode(opts));
         return;
     }
 
@@ -886,20 +915,7 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
 
     // CORE-2810: on a machine that installs from local checkouts, `init` is the
     // install verb of the build order — it clones/fast-forwards and links them.
-    if (opts.fromCheckouts) {
-        const { renderCheckoutReport, runCheckoutPhase } = await import('../core/checkout-bootstrap.js');
-        const report = runCheckoutPhase({
-            fromCheckouts: true,
-            check: false,
-            log: (line) => console.log(kleur.dim(`  • ${line}`)),
-        });
-        if (report) {
-            console.log('');
-            for (const line of renderCheckoutReport(report)) console.log(line);
-            console.log('');
-            if (!report.ok) process.exitCode = 1;
-        }
-    }
+    await runInitCheckoutPhase(checkoutInitMode(opts));
 
     // ── Phase 5: Claude Runtime Sync (.xtrm hooks wiring) ───────────────────
     await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });

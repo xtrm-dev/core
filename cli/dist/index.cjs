@@ -42558,6 +42558,8 @@ __export(checkout_bootstrap_exports, {
   inspectCheckoutRepo: () => inspectCheckoutRepo,
   inspectCheckouts: () => inspectCheckouts,
   loadCheckoutConfig: () => loadCheckoutConfig,
+  redactRemote: () => redactRemote,
+  redactText: () => redactText,
   renderCheckoutReport: () => renderCheckoutReport,
   resolveCheckoutRepos: () => resolveCheckoutRepos,
   runCheckoutPhase: () => runCheckoutPhase
@@ -42591,7 +42593,12 @@ function expandHome(value, home) {
   if (value.startsWith("~/")) return import_node_path44.default.join(home, value.slice(2));
   return value;
 }
-function resolveCheckoutRepos(config3, home = import_node_os23.default.homedir()) {
+function isCoreCheckout(dir) {
+  if (!isDirectory(dir)) return false;
+  const pkg = readJson2(import_node_path44.default.join(dir, "package.json"));
+  return pkg?.name === "xtrm-tools" && isDirectory(import_node_path44.default.join(dir, "cli"));
+}
+function resolveCheckoutRepos(config3, home = import_node_os23.default.homedir(), cwd = process.cwd()) {
   const root = import_node_path44.default.resolve(expandHome(config3?.root ?? "~/dev", home));
   return CHECKOUT_REPO_TABLE.map((base) => {
     const override = config3?.repos?.[base.name] ?? {};
@@ -42599,7 +42606,8 @@ function resolveCheckoutRepos(config3, home = import_node_os23.default.homedir()
     if (typeof override.dir === "string" && override.dir.length > 0) {
       merged.dir = import_node_path44.default.resolve(expandHome(override.dir, home));
     } else if (base.name === "core") {
-      merged.dir = resolveMainProjectRoot(process.cwd());
+      const projectRoot = resolveMainProjectRoot(cwd);
+      merged.dir = isCoreCheckout(projectRoot) ? projectRoot : import_node_path44.default.join(root, "core");
     } else {
       merged.dir = import_node_path44.default.join(root, base.name);
     }
@@ -42644,6 +42652,39 @@ function runCommand(cmd, args, options = {}) {
 function tail(text, lines = 12) {
   if (!text) return "";
   return text.split("\n").slice(-lines).join("\n");
+}
+function redactRemote(remote) {
+  return remote.replace(CREDENTIAL_IN_URL, "$1");
+}
+function redactText(text, options = {}) {
+  if (!text) return "";
+  let out = text.replace(CREDENTIAL_IN_URL, "$1");
+  for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, "[redacted]");
+  out = out.replace(SECRET_ASSIGNMENT, (_match, key, separator) => `${key}${separator}[redacted]`);
+  const maxLines = options.maxLines ?? 6;
+  const lines = out.split("\n");
+  if (lines.length > maxLines) {
+    out = [...lines.slice(0, maxLines), `\u2026 ${lines.length - maxLines} more line(s)`].join("\n");
+  }
+  const maxChars = options.maxChars ?? 600;
+  return out.length > maxChars ? `${out.slice(0, maxChars)}\u2026` : out;
+}
+function redactReport(report) {
+  return {
+    ...report,
+    repos: report.repos.map((state) => ({
+      ...state,
+      remote: redactRemote(state.remote),
+      detail: redactText(state.detail, { maxLines: 4 }),
+      dirty: { ...state.dirty, files: state.dirty.files.map((file2) => redactText(file2, { maxLines: 1, maxChars: 200 })) }
+    })),
+    drift: report.drift.map((item) => ({
+      ...item,
+      detail: redactText(item.detail, { maxLines: 4 }),
+      ...item.diagnostic ? { diagnostic: redactText(item.diagnostic) } : {}
+    })),
+    problems: report.problems.map((problem) => redactText(problem, { maxLines: 4 }))
+  };
 }
 function shortError(result) {
   const detail = result.error ?? tail(result.stderr || result.stdout, 6);
@@ -42694,7 +42735,7 @@ function detectDefaultBranch(dir, ctx) {
   }
   return null;
 }
-function inspectCheckoutRepo(repo, ctx) {
+function inspectCheckoutRepo(repo, ctx, options = {}) {
   const state = {
     name: repo.name,
     dir: repo.dir,
@@ -42725,7 +42766,9 @@ function inspectCheckoutRepo(repo, ctx) {
   }
   const pkg = readJson2(import_node_path44.default.join(repo.dir, "package.json"));
   state.version = typeof pkg?.version === "string" ? pkg.version : null;
-  const fetch2 = git2(repo.dir, ["fetch", "--prune", "origin"], ctx);
+  const shouldFetch = options.fetch !== false;
+  state.fetched = shouldFetch;
+  const fetch2 = shouldFetch ? git2(repo.dir, ["fetch", "--prune", "origin"], ctx) : null;
   const branchResult = git2(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"], ctx);
   state.branch = branchResult.status === 0 ? branchResult.stdout : null;
   state.defaultBranch = detectDefaultBranch(repo.dir, ctx);
@@ -42739,7 +42782,7 @@ function inspectCheckoutRepo(repo, ctx) {
       if (state.dirty.files.length < 20) state.dirty.files.push(line);
     }
   }
-  if (fetch2.status !== 0) {
+  if (fetch2 && fetch2.status !== 0) {
     state.status = "unknown";
     state.detail = `git fetch failed${shortError(fetch2)}`;
     return state;
@@ -42966,8 +43009,8 @@ function beadsHooksFinding(state) {
     detail: `core.hooksPath=${state.hooksPath} runs the retired Beads hooks; every pull fails inside post-merge. Fix in that checkout: git config --unset core.hooksPath (reported only, not changed)`
   };
 }
-function inspectCheckouts(repos, ctx) {
-  return repos.map((repo) => inspectCheckoutRepo(repo, ctx));
+function inspectCheckouts(repos, ctx, options = {}) {
+  return repos.map((repo) => inspectCheckoutRepo(repo, ctx, options));
 }
 function runCheckoutPhase(options = {}) {
   const home = options.home ?? import_node_os23.default.homedir();
@@ -42975,19 +43018,20 @@ function runCheckoutPhase(options = {}) {
   const ctx = { home, env: options.home ? { ...env3, XTRM_BOOTSTRAP_HOME_OVERRIDE: "1" } : env3 };
   const config3 = loadCheckoutConfig(home);
   if (!options.fromCheckouts && (!config3 || config3.enabled === false)) return null;
-  const repos = resolveCheckoutRepos(config3, home);
+  const repos = resolveCheckoutRepos(config3, home, options.cwd);
   const npm2 = resolveNpm(ctx);
   const log = options.log;
   const check2 = options.check === true;
+  const fetch2 = !check2 || options.fetch === true;
   const drift = [];
   const problems = [];
   const states = [];
   for (const repo of repos) {
-    let state = inspectCheckoutRepo(repo, ctx);
+    let state = inspectCheckoutRepo(repo, ctx, { fetch: fetch2 });
     if (state.status === "missing" && !check2) {
       try {
         cloneRepo(repo, ctx, log);
-        state = inspectCheckoutRepo(repo, ctx);
+        state = inspectCheckoutRepo(repo, ctx, { fetch: fetch2 });
       } catch (error62) {
         problems.push(`${repo.name}: ${error62.message}`);
         state = { ...state, status: "error", detail: error62.message };
@@ -42996,13 +43040,13 @@ function runCheckoutPhase(options = {}) {
     if (state.status === "behind" && !check2) {
       try {
         fastForward(repo, state, ctx, log);
-        state = inspectCheckoutRepo(repo, ctx);
+        state = inspectCheckoutRepo(repo, ctx, { fetch: fetch2 });
       } catch (error62) {
         problems.push(`${repo.name}: ${error62.message}`);
         state = { ...state, status: "error", detail: error62.message };
       }
     }
-    if (!check2 && BLOCKING.has(state.status) && state.status !== "missing") {
+    if (!check2 && BLOCKING.has(state.status)) {
       problems.push(`${repo.name}: ${state.status} \u2014 ${state.detail}`);
     }
     states.push(state);
@@ -43054,7 +43098,9 @@ function runCheckoutPhase(options = {}) {
               repo: repo.name,
               kind: "installer-refused",
               detail: `${repo.installer} refused to overwrite a file it does not own; nothing was forced`,
-              diagnostic: tail(diagnostic, 12)
+              // The refusal message comes first; keep the head so
+              // the report shows the cause, capped by redactReport.
+              diagnostic: diagnostic.split("\n").slice(0, 12).join("\n")
             });
             log?.("        installer refused; diagnostic follows in the report");
           } else {
@@ -43066,6 +43112,8 @@ function runCheckoutPhase(options = {}) {
     }
   }
   const bins = inspectCheckoutBins(repos, npm2, ctx);
+  const commits = new Map(states.map((state) => [state.name, state.commit]));
+  for (const entry of bins) entry.commit = commits.get(entry.repo) ?? null;
   for (const state of states) {
     const finding = driftFor(state);
     if (finding) drift.push(finding);
@@ -43090,9 +43138,10 @@ function runCheckoutPhase(options = {}) {
   for (const repo of repos) {
     if (repo.installer) drift.push(...checkInstaller(repo, ctx));
   }
-  return {
+  return redactReport({
     command: "xt-checkouts/1",
     check: check2,
+    fetched: fetch2,
     root: import_node_path44.default.dirname(repos[0]?.dir ?? import_node_path44.default.join(home, "dev")),
     home: options.home ?? null,
     npm: npm2,
@@ -43101,13 +43150,14 @@ function runCheckoutPhase(options = {}) {
     drift,
     problems,
     ok: drift.length === 0 && problems.length === 0
-  };
+  });
 }
 function renderCheckoutReport(report, options = {}) {
   const home = options.tildeHome ?? import_node_os23.default.homedir();
   const tilde = (p) => p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p;
   const lines = [];
-  lines.push(report.check ? "checkouts (read-only)" : "checkouts");
+  const mode = report.check ? `checkouts (read-only${report.fetched ? "" : ", no fetch"})` : "checkouts";
+  lines.push(mode);
   lines.push(`  ${"repo".padEnd(12)} ${"branch".padEnd(7)} ${"commit".padEnd(8)} state`);
   for (const state of report.repos) {
     const suffix = state.status === "ok" && state.dirty.untracked > 0 ? ` (untracked ${state.dirty.untracked})` : "";
@@ -43116,10 +43166,11 @@ function renderCheckoutReport(report, options = {}) {
   const bins = options.allBins === false ? report.bins.filter((entry) => entry.state !== "ok" || !entry.pathFirst) : report.bins;
   if (bins.length > 0) {
     lines.push("");
-    lines.push(`  ${"binary".padEnd(20)} ${"resolves to".padEnd(58)} state`);
+    lines.push(`  ${"binary".padEnd(20)} ${"resolves to".padEnd(52)} ${"commit".padEnd(8)} state`);
     for (const entry of bins) {
       const shadow = entry.pathFirst && entry.resolved && (realpathOrNull(entry.pathFirst) ?? entry.pathFirst) !== entry.resolved ? `  PATH first: ${tilde(entry.pathFirst)}` : "";
-      lines.push(`  ${entry.bin.padEnd(20)} ${tilde(entry.resolved ?? "-").padEnd(58)} ${entry.state ?? "-"}${shadow}`);
+      const resolved = tilde(entry.resolved ?? "-");
+      lines.push(`  ${entry.bin.padEnd(20)} ${resolved.padEnd(52)} ${(entry.commit ?? "-").padEnd(8)} ${entry.state ?? "-"}${shadow}`);
     }
   }
   if (report.drift.length > 0) {
@@ -43139,11 +43190,13 @@ function renderCheckoutReport(report, options = {}) {
   }
   lines.push("");
   if (report.ok) lines.push(report.check ? "no drift" : "up to date");
-  else if (report.check) lines.push(`drift found: ${report.drift.length} finding(s), ${report.problems.length} problem(s); run xt install --from-checkouts to update`);
-  else lines.push(`incomplete: ${report.problems.length} problem(s); resolve the checkouts above and re-run`);
+  else if (report.check) {
+    lines.push(`drift found: ${report.drift.length} finding(s), ${report.problems.length} problem(s); run xt update --from-checkouts to update`);
+    if (!report.fetched) lines.push("remote refs are the last fetched state; pass --fetch to compare with origin");
+  } else lines.push(`incomplete: ${report.problems.length} problem(s); resolve the checkouts above and re-run`);
   return lines;
 }
-var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL;
+var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL, CREDENTIAL_IN_URL, TOKEN_PATTERNS, SECRET_ASSIGNMENT;
 var init_checkout_bootstrap = __esm({
   "src/core/checkout-bootstrap.ts"() {
     "use strict";
@@ -43180,6 +43233,17 @@ var init_checkout_bootstrap = __esm({
     BLOCKING = /* @__PURE__ */ new Set(["not-a-git-checkout", "unknown", "detached", "wrong-branch", "dirty", "diverged", "ahead"]);
     LOCKFILES = ["package-lock.json", "bun.lock", "bun.lockb", "yarn.lock", "pnpm-lock.yaml"];
     REFUSAL = /\brefus(e|ed|es|ing|al)\b|not overwrit|already exists and differs|declin/i;
+    CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
+    TOKEN_PATTERNS = [
+      /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
+      /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
+      /\b(glpat-[A-Za-z0-9_-]{16,})\b/g,
+      /\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/g,
+      /\b(sk-[A-Za-z0-9]{20,})\b/g,
+      /\b(AKIA[0-9A-Z]{16})\b/g,
+      /\bBearer\s+[A-Za-z0-9._-]{16,}/gi
+    ];
+    SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|authorization|auth)\b(\s*[:=]\s*)([^\s'"]+)/gi;
   }
 });
 
@@ -77167,6 +77231,24 @@ async function resolveInitProjectRoot(yes) {
 `));
   return { projectRoot: resolvedGitRoot, isGitRepo: true, aborted: true };
 }
+function checkoutInitMode(opts) {
+  if (!opts.fromCheckouts) return "off";
+  return opts.dryRun ? "check" : "apply";
+}
+async function runInitCheckoutPhase(mode) {
+  if (mode === "off") return;
+  const { renderCheckoutReport: renderCheckoutReport2, runCheckoutPhase: runCheckoutPhase2 } = await Promise.resolve().then(() => (init_checkout_bootstrap(), checkout_bootstrap_exports));
+  const report = runCheckoutPhase2({
+    fromCheckouts: true,
+    check: mode === "check",
+    log: (line) => console.log(kleur_default.dim(`  \u2022 ${line}`))
+  });
+  if (!report) return;
+  console.log("");
+  for (const line of renderCheckoutReport2(report)) console.log(line);
+  console.log("");
+  if (mode === "apply" && !report.ok) process.exitCode = 1;
+}
 async function runProjectInit(opts = {}) {
   const { dryRun = false, yes = false } = opts;
   const effectiveYes = yes || process.argv.includes("--yes") || process.argv.includes("-y");
@@ -77180,6 +77262,7 @@ async function runProjectInit(opts = {}) {
   renderInitPlan(inventory);
   if (dryRun) {
     console.log(kleur_default.dim("  Dry run \u2014 no changes written\n"));
+    await runInitCheckoutPhase(checkoutInitMode(opts));
     return;
   }
   const ok2 = await confirmInitPlan(effectiveYes);
@@ -77226,20 +77309,7 @@ async function runProjectInit(opts = {}) {
     console.log(kleur_default.dim(`  \u2713 checkout initialized by sb init (Substrate project ${project.projectId})`));
   }
   await runMachineBootstrapPhase({ dryRun: false });
-  if (opts.fromCheckouts) {
-    const { renderCheckoutReport: renderCheckoutReport3, runCheckoutPhase: runCheckoutPhase2 } = await Promise.resolve().then(() => (init_checkout_bootstrap(), checkout_bootstrap_exports));
-    const report = runCheckoutPhase2({
-      fromCheckouts: true,
-      check: false,
-      log: (line) => console.log(kleur_default.dim(`  \u2022 ${line}`))
-    });
-    if (report) {
-      console.log("");
-      for (const line of renderCheckoutReport3(report)) console.log(line);
-      console.log("");
-      if (!report.ok) process.exitCode = 1;
-    }
-  }
+  await runInitCheckoutPhase(checkoutInitMode(opts));
   await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });
   const packageRoot = getPackageRoot();
   const pkgJson = await import_fs_extra35.default.readJson(import_path15.default.join(packageRoot, "package.json"));
@@ -88145,29 +88215,18 @@ function renderClaudeRoute(report) {
 function renderLocalCheckouts(report) {
   if (!report) return 0;
   section2("Local checkouts");
-  for (const state of report.repos) {
-    const suffix = state.status === "ok" && state.dirty.untracked > 0 ? ` (untracked ${state.dirty.untracked})` : "";
-    const line = `${state.name} ${state.branch ?? "-"} ${state.commit ?? "-"} ${state.status}${suffix}`;
-    if (state.status === "ok") ok(line);
-    else warn(line);
-    if (state.detail) fix(state.detail);
+  const lines = renderCheckoutReport(report, { allBins: false }).filter((line) => line.trim().length > 0 && !line.startsWith("checkouts"));
+  for (const line of lines) {
+    const text = line.trim();
+    const isFinding = text.startsWith("- ") || text.startsWith("drift (") || text.startsWith("problems (");
+    if (isFinding) warn(text);
+    else if (text.startsWith("no drift") || text.startsWith("drift found") || text.startsWith("incomplete") || text.startsWith("remote refs")) fix(text);
+    else console.log(kleur_default.dim(line));
   }
-  for (const item of report.drift) {
-    warn(`${item.repo}: ${item.detail}`);
-    if (item.diagnostic) console.log(kleur_default.dim(item.diagnostic.split("\n").map((l) => `      ${l}`).join("\n")));
-  }
-  for (const problem of report.problems) warn(problem);
-  if (report.bins.some((entry) => entry.state !== "ok")) {
-    for (const entry of report.bins.filter((e) => e.state !== "ok")) {
-      warn(`${entry.bin} ${entry.state}: resolves to ${entry.resolved ?? "nothing"}, expected ${entry.expected}`);
-    }
-  }
-  if (report.ok) ok("checkouts, links and installer state all match");
-  else fix("run: xt install --from-checkouts");
   return report.drift.length + report.problems.length;
 }
 function createDoctorCommand() {
-  const doctor = new Command("doctor").description("Canonical diagnosis for xtrm-managed project and runtime surfaces").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").action(async (opts) => {
+  const doctor = new Command("doctor").description("Canonical diagnosis for xtrm-managed project and runtime surfaces").option("--cwd <path>", "Operate on this directory (default: process.cwd())").option("--json", "Output machine-readable JSON", false).option("--check-drift", "Exit non-zero on any drift, missing, extra, or duplicate").option("--fetch", "Fetch the local checkouts from origin before reporting (writes remote refs)", false).action(async (opts) => {
     const cwd = await resolveDoctorCwd(opts.cwd);
     const registry2 = await loadRegistry(cwd);
     const drift = await checkDrift(import_node_path64.default.join(cwd, ".xtrm", "registry.json"), import_node_path64.default.join(cwd, ".xtrm"));
@@ -88186,7 +88245,7 @@ function createDoctorCommand() {
     let checkouts = null;
     let checkoutDrift = 0;
     try {
-      checkouts = runCheckoutPhase({ check: true });
+      checkouts = runCheckoutPhase({ check: true, fetch: Boolean(opts.fetch) });
     } catch (error62) {
       warn(`checkouts: ${error62.message}`);
       checkoutDrift = 1;
@@ -88883,7 +88942,7 @@ async function preflightFleetMigration(repos) {
   return results;
 }
 function createUpdateCommand() {
-  return new Command("update").description("Routine refresh and repair for xtrm-managed files, runtimes, hooks, skills, and packages").option("--apply", "Write changes with forced registry mode", false).option("--force", "Force global payload refresh; retained for the deprecated xt bootstrap alias", false).option("--strict-registry", "Fail on registry/source mismatch or missing registry source files", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--all-repos", "Sweep ~/dev and ~/projects for xtrm-managed repos (dry-run by default; --apply patches and commits each changed repo)", false).option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).option("--from-checkouts", "Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts", false).action(async (opts) => {
+  return new Command("update").description("Routine refresh and repair for xtrm-managed files, runtimes, hooks, skills, and packages").option("--apply", "Write changes with forced registry mode", false).option("--force", "Force global payload refresh; retained for the deprecated xt bootstrap alias", false).option("--strict-registry", "Fail on registry/source mismatch or missing registry source files", false).option("--root <dir>", "Walk root and update every repo with .xtrm/registry.json").option("--all-repos", "Sweep ~/dev and ~/projects for xtrm-managed repos (dry-run by default; --apply patches and commits each changed repo)", false).option("--repo <path>", "Target one repo path instead of cwd").option("--json", "Print JSON output", false).option("--from-checkouts", "Apply the local-checkout phase (clone or fast-forward, install, link) even when no checkouts.json exists", false).option("--fetch", "Fetch each checkout from origin before comparing; check mode does not fetch by default", false).action(async (opts) => {
     const typedOpts = opts;
     const { targets, incomplete } = await resolveTargetRepos(typedOpts);
     const rows = [];
@@ -88940,16 +88999,19 @@ function createUpdateCommand() {
     }
     const applyCheckouts = Boolean(typedOpts.apply || typedOpts.fromCheckouts);
     let checkouts = null;
+    let checkoutsError = null;
     try {
       checkouts = runCheckoutPhase({
         fromCheckouts: Boolean(typedOpts.fromCheckouts),
         check: !applyCheckouts,
+        fetch: Boolean(typedOpts.fetch),
         log: (line) => {
           if (!opts.json) console.log(kleur_default.dim(`  \u2022 ${line}`));
         }
       });
     } catch (error62) {
-      console.error(kleur_default.red(`  \u2717 checkouts: ${error62.message}`));
+      checkoutsError = error62.message;
+      console.error(kleur_default.red(`  \u2717 checkouts: ${checkoutsError}`));
     }
     if (checkouts && !opts.json) {
       console.log("");
@@ -88963,6 +89025,7 @@ function createUpdateCommand() {
         piStartupSmoke,
         promptSync,
         ...checkouts ? { checkouts } : {},
+        ...checkoutsError ? { checkoutsError } : {},
         ...[...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}
       }, null, 2));
     } else {
@@ -88973,7 +89036,7 @@ function createUpdateCommand() {
       printPiPackages(packageAssurance);
       printGlobalPromptSyncSummary(promptSync);
     }
-    if (rows.some((row) => row.status === "failed" || row.status === "incomplete") || packageAssurance.failed.length > 0 || piStartupSmoke?.status === "failed" || piStartupSmoke?.status === "inconclusive" || checkouts !== null && !checkouts.ok && (applyCheckouts || checkouts.check)) {
+    if (rows.some((row) => row.status === "failed" || row.status === "incomplete") || packageAssurance.failed.length > 0 || piStartupSmoke?.status === "failed" || piStartupSmoke?.status === "inconclusive" || checkoutsError !== null || applyCheckouts && checkouts !== null && !checkouts.ok) {
       process.exitCode = 1;
     }
   });
@@ -98690,7 +98753,7 @@ program2.exitOverride((err) => {
 program2.addCommand(createClaudeCommand());
 program2.addCommand(createPiCommand());
 program2.addCommand(createCodexCommand());
-program2.command("init").description("First-time xtrm bootstrap: machine \u2192 Claude \u2192 Pi \u2192 project").option("--dry-run", "Preview changes without making any modifications", false).option("-y, --yes", "Skip confirmation prompts", false).option("--global", "Install tooling to user-global scope instead of project-local", false).option("--prune", "Remove plugin-era artifacts (Claude plugin cache, stale settings keys)", false).option("--substrate-dir <path>", "Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment").option("--from-checkouts", "Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts", false).action(async (opts) => {
+program2.command("init").description("First-time xtrm bootstrap: machine \u2192 Claude \u2192 Pi \u2192 project").option("--dry-run", "Preview changes without making any modifications", false).option("-y, --yes", "Skip confirmation prompts", false).option("--global", "Install tooling to user-global scope instead of project-local", false).option("--prune", "Remove plugin-era artifacts (Claude plugin cache, stale settings keys)", false).option("--substrate-dir <path>", "Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment").option("--from-checkouts", "Apply the local-checkout phase (clone or fast-forward, install, link) for core, xtrm, xtmux and specialists", false).action(async (opts) => {
   await runProjectInit(opts);
 });
 program2.addCommand(createStatusCommand());

@@ -9,14 +9,14 @@
  * checkout, commit and version.
  *
  * It is opt-in: a machine turns it on with `~/.xtrm/config/checkouts.json`
- * (see `loadCheckoutConfig`) or with `xt install --from-checkouts`. `xt update`
- * applies it once configured; `xt doctor` always reports the drift read-only.
+ * (see `loadCheckoutConfig`) or with `--from-checkouts`. `xt init` and
+ * `xt update` apply it once configured; `xt doctor` reports the drift read-only.
  *
  * Safety rules, enforced here:
  *   - uncommitted work is never discarded (no reset, no clean, no force-pull);
  *   - a dirty, diverged, ahead, detached or non-default-branch checkout stops
  *     the update for that repository and is reported;
- *   - `check` writes nothing except the network `fetch`;
+ *   - `check` writes nothing, and does not even fetch unless `fetch` is set;
  *   - an installer refusal is surfaced with its own diagnostic, never forced;
  *   - git configuration is read, never written.
  */
@@ -63,6 +63,8 @@ export interface CheckoutState {
     dirty: { tracked: number; untracked: number; files: string[] };
     hooksPath?: string;
     beadsHooks?: boolean;
+    /** True when the remote-tracking refs were refreshed for this report. */
+    fetched?: boolean;
     status: string;
     detail: string;
 }
@@ -72,6 +74,8 @@ export interface CheckoutBin {
     repo: string;
     package: string | null;
     version: string | null;
+    /** Commit of the checkout the bin belongs to; the report's link evidence. */
+    commit?: string | null;
     expected: string;
     via: 'npm' | 'local';
     candidates?: string[];
@@ -90,6 +94,8 @@ export interface CheckoutFinding {
 export interface CheckoutReport {
     command: 'xt-checkouts/1';
     check: boolean;
+    /** False when the report was produced without a network fetch. */
+    fetched: boolean;
     root: string;
     home: string | null;
     npm: string;
@@ -103,8 +109,12 @@ export interface CheckoutReport {
 export interface CheckoutPhaseOptions {
     /** Run the phase even when no configuration exists (defaults apply). */
     fromCheckouts?: boolean;
-    /** Report only; write nothing. */
+    /** Report only; write nothing. A check does not fetch unless `fetch` is set. */
     check?: boolean;
+    /** Fetch the remotes before comparing, even in check mode. */
+    fetch?: boolean;
+    /** Directory the run is anchored in (default: process.cwd()). */
+    cwd?: string;
     /** Install against this home instead of the real one (rehearsal, tests). */
     home?: string | null;
     /** Verbose line sink; the phase is silent when omitted. */
@@ -188,12 +198,25 @@ function expandHome(value: string, home: string): string {
     return value;
 }
 
+function isCoreCheckout(dir: string): boolean {
+    if (!isDirectory(dir)) return false;
+    const pkg = readJson(path.join(dir, 'package.json'));
+    return pkg?.name === 'xtrm-tools' && isDirectory(path.join(dir, 'cli'));
+}
+
 /**
  * Resolves the repository table: the built-in four, overridden by the machine
- * configuration. `core` resolves to the main worktree of the running CLI so a
- * run from `.xtrm/worktrees/<name>/` never treats the worktree as the checkout.
+ * configuration. `core` resolves to the main worktree of the running CLI when
+ * that project IS the core checkout (so a run from `.xtrm/worktrees/<name>/`
+ * never treats the worktree as the checkout), and to `<root>/core` otherwise —
+ * a run from `~/dev`, or from any foreign repository, must never install or
+ * link the project it happens to stand in.
  */
-export function resolveCheckoutRepos(config: CheckoutConfig | null, home: string = os.homedir()): CheckoutRepo[] {
+export function resolveCheckoutRepos(
+    config: CheckoutConfig | null,
+    home: string = os.homedir(),
+    cwd: string = process.cwd(),
+): CheckoutRepo[] {
     const root = path.resolve(expandHome(config?.root ?? '~/dev', home));
     return CHECKOUT_REPO_TABLE.map((base) => {
         const override = config?.repos?.[base.name] ?? {};
@@ -201,7 +224,8 @@ export function resolveCheckoutRepos(config: CheckoutConfig | null, home: string
         if (typeof override.dir === 'string' && override.dir.length > 0) {
             merged.dir = path.resolve(expandHome(override.dir, home));
         } else if (base.name === 'core') {
-            merged.dir = resolveMainProjectRoot(process.cwd());
+            const projectRoot = resolveMainProjectRoot(cwd);
+            merged.dir = isCoreCheckout(projectRoot) ? projectRoot : path.join(root, 'core');
         } else {
             merged.dir = path.join(root, base.name);
         }
@@ -255,6 +279,61 @@ function runCommand(
 function tail(text: string, lines = 12): string {
     if (!text) return '';
     return text.split('\n').slice(-lines).join('\n');
+}
+
+const CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
+const TOKEN_PATTERNS: RegExp[] = [
+    /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
+    /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
+    /\b(glpat-[A-Za-z0-9_-]{16,})\b/g,
+    /\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/g,
+    /\b(sk-[A-Za-z0-9]{20,})\b/g,
+    /\b(AKIA[0-9A-Z]{16})\b/g,
+    /\bBearer\s+[A-Za-z0-9._-]{16,}/gi,
+];
+const SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|authorization|auth)\b(\s*[:=]\s*)([^\s'"]+)/gi;
+
+/** Strips userinfo from a URL, keeping scheme, host and path. */
+export function redactRemote(remote: string): string {
+    return remote.replace(CREDENTIAL_IN_URL, '$1');
+}
+
+/**
+ * Makes free text safe to print: credentials in URLs and token-shaped strings
+ * are replaced, and the text is capped. Subprocess output (git stderr with
+ * `GIT_CURL_VERBOSE`, installer traces) reaches the report, so it is scrubbed
+ * once, at report construction, rather than at each print site.
+ */
+export function redactText(text: string, options: { maxLines?: number; maxChars?: number } = {}): string {
+    if (!text) return '';
+    let out = text.replace(CREDENTIAL_IN_URL, '$1');
+    for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, '[redacted]');
+    out = out.replace(SECRET_ASSIGNMENT, (_match, key: string, separator: string) => `${key}${separator}[redacted]`);
+    const maxLines = options.maxLines ?? 6;
+    const lines = out.split('\n');
+    if (lines.length > maxLines) {
+        out = [...lines.slice(0, maxLines), `… ${lines.length - maxLines} more line(s)`].join('\n');
+    }
+    const maxChars = options.maxChars ?? 600;
+    return out.length > maxChars ? `${out.slice(0, maxChars)}…` : out;
+}
+
+function redactReport(report: CheckoutReport): CheckoutReport {
+    return {
+        ...report,
+        repos: report.repos.map((state) => ({
+            ...state,
+            remote: redactRemote(state.remote),
+            detail: redactText(state.detail, { maxLines: 4 }),
+            dirty: { ...state.dirty, files: state.dirty.files.map((file) => redactText(file, { maxLines: 1, maxChars: 200 })) },
+        })),
+        drift: report.drift.map((item) => ({
+            ...item,
+            detail: redactText(item.detail, { maxLines: 4 }),
+            ...(item.diagnostic ? { diagnostic: redactText(item.diagnostic) } : {}),
+        })),
+        problems: report.problems.map((problem) => redactText(problem, { maxLines: 4 })),
+    };
 }
 
 function shortError(result: CommandResult): string {
@@ -321,7 +400,11 @@ function detectDefaultBranch(dir: string, ctx: Context): string | null {
     return null;
 }
 
-export function inspectCheckoutRepo(repo: CheckoutRepo, ctx: Context): CheckoutState {
+export function inspectCheckoutRepo(
+    repo: CheckoutRepo,
+    ctx: Context,
+    options: { fetch?: boolean } = {},
+): CheckoutState {
     const state: CheckoutState = {
         name: repo.name,
         dir: repo.dir,
@@ -357,7 +440,12 @@ export function inspectCheckoutRepo(repo: CheckoutRepo, ctx: Context): CheckoutS
     const pkg = readJson(path.join(repo.dir, 'package.json'));
     state.version = typeof pkg?.version === 'string' ? pkg.version : null;
 
-    const fetch = git(repo.dir, ['fetch', '--prune', 'origin'], ctx);
+    // A read-only report writes nothing, and a fetch writes objects, remote
+    // refs and FETCH_HEAD. Only apply runs and an explicit `fetch` reach the
+    // network.
+    const shouldFetch = options.fetch !== false;
+    state.fetched = shouldFetch;
+    const fetch = shouldFetch ? git(repo.dir, ['fetch', '--prune', 'origin'], ctx) : null;
     const branchResult = git(repo.dir, ['rev-parse', '--abbrev-ref', 'HEAD'], ctx);
     state.branch = branchResult.status === 0 ? branchResult.stdout : null;
     state.defaultBranch = detectDefaultBranch(repo.dir, ctx);
@@ -373,7 +461,7 @@ export function inspectCheckoutRepo(repo: CheckoutRepo, ctx: Context): CheckoutS
         }
     }
 
-    if (fetch.status !== 0) {
+    if (fetch && fetch.status !== 0) {
         state.status = 'unknown';
         state.detail = `git fetch failed${shortError(fetch)}`;
         return state;
@@ -622,9 +710,9 @@ function beadsHooksFinding(state: CheckoutState): CheckoutFinding | null {
     };
 }
 
-/** Inspects every checkout without changing anything except the network fetch. */
-export function inspectCheckouts(repos: CheckoutRepo[], ctx: Context): CheckoutState[] {
-    return repos.map((repo) => inspectCheckoutRepo(repo, ctx));
+/** Inspects every checkout. Writes nothing unless `fetch` is set. */
+export function inspectCheckouts(repos: CheckoutRepo[], ctx: Context, options: { fetch?: boolean } = {}): CheckoutState[] {
+    return repos.map((repo) => inspectCheckoutRepo(repo, ctx, options));
 }
 
 /**
@@ -638,20 +726,22 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
     const config = loadCheckoutConfig(home);
     if (!options.fromCheckouts && (!config || config.enabled === false)) return null;
 
-    const repos = resolveCheckoutRepos(config, home);
+    const repos = resolveCheckoutRepos(config, home, options.cwd);
     const npm = resolveNpm(ctx);
     const log = options.log;
     const check = options.check === true;
+    // Applying must see origin; a report only touches the network on request.
+    const fetch = !check || options.fetch === true;
     const drift: CheckoutFinding[] = [];
     const problems: string[] = [];
 
     const states: CheckoutState[] = [];
     for (const repo of repos) {
-        let state = inspectCheckoutRepo(repo, ctx);
+        let state = inspectCheckoutRepo(repo, ctx, { fetch });
         if (state.status === 'missing' && !check) {
             try {
                 cloneRepo(repo, ctx, log);
-                state = inspectCheckoutRepo(repo, ctx);
+                state = inspectCheckoutRepo(repo, ctx, { fetch });
             } catch (error) {
                 problems.push(`${repo.name}: ${(error as Error).message}`);
                 state = { ...state, status: 'error', detail: (error as Error).message };
@@ -660,13 +750,13 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
         if (state.status === 'behind' && !check) {
             try {
                 fastForward(repo, state, ctx, log);
-                state = inspectCheckoutRepo(repo, ctx);
+                state = inspectCheckoutRepo(repo, ctx, { fetch });
             } catch (error) {
                 problems.push(`${repo.name}: ${(error as Error).message}`);
                 state = { ...state, status: 'error', detail: (error as Error).message };
             }
         }
-        if (!check && BLOCKING.has(state.status) && state.status !== 'missing') {
+        if (!check && BLOCKING.has(state.status)) {
             problems.push(`${repo.name}: ${state.status} — ${state.detail}`);
         }
         states.push(state);
@@ -721,7 +811,9 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
                             repo: repo.name,
                             kind: 'installer-refused',
                             detail: `${repo.installer} refused to overwrite a file it does not own; nothing was forced`,
-                            diagnostic: tail(diagnostic, 12),
+                            // The refusal message comes first; keep the head so
+                            // the report shows the cause, capped by redactReport.
+                            diagnostic: diagnostic.split('\n').slice(0, 12).join('\n'),
                         });
                         log?.('        installer refused; diagnostic follows in the report');
                     } else {
@@ -734,6 +826,8 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
     }
 
     const bins = inspectCheckoutBins(repos, npm, ctx);
+    const commits = new Map(states.map((state) => [state.name, state.commit]));
+    for (const entry of bins) entry.commit = commits.get(entry.repo) ?? null;
     for (const state of states) {
         const finding = driftFor(state);
         if (finding) drift.push(finding);
@@ -759,9 +853,10 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
         if (repo.installer) drift.push(...checkInstaller(repo, ctx));
     }
 
-    return {
+    return redactReport({
         command: 'xt-checkouts/1',
         check,
+        fetched: fetch,
         root: path.dirname(repos[0]?.dir ?? path.join(home, 'dev')),
         home: options.home ?? null,
         npm,
@@ -770,7 +865,7 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
         drift,
         problems,
         ok: drift.length === 0 && problems.length === 0,
-    };
+    });
 }
 
 export interface CheckoutRenderOptions {
@@ -783,7 +878,10 @@ export function renderCheckoutReport(report: CheckoutReport, options: CheckoutRe
     const home = options.tildeHome ?? os.homedir();
     const tilde = (p: string): string => (p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p);
     const lines: string[] = [];
-    lines.push(report.check ? 'checkouts (read-only)' : 'checkouts');
+    const mode = report.check
+        ? `checkouts (read-only${report.fetched ? '' : ', no fetch'})`
+        : 'checkouts';
+    lines.push(mode);
     lines.push(`  ${'repo'.padEnd(12)} ${'branch'.padEnd(7)} ${'commit'.padEnd(8)} state`);
     for (const state of report.repos) {
         const suffix = state.status === 'ok' && state.dirty.untracked > 0 ? ` (untracked ${state.dirty.untracked})` : '';
@@ -794,12 +892,13 @@ export function renderCheckoutReport(report: CheckoutReport, options: CheckoutRe
         : report.bins;
     if (bins.length > 0) {
         lines.push('');
-        lines.push(`  ${'binary'.padEnd(20)} ${'resolves to'.padEnd(58)} state`);
+        lines.push(`  ${'binary'.padEnd(20)} ${'resolves to'.padEnd(52)} ${'commit'.padEnd(8)} state`);
         for (const entry of bins) {
             const shadow = entry.pathFirst && entry.resolved && (realpathOrNull(entry.pathFirst) ?? entry.pathFirst) !== entry.resolved
                 ? `  PATH first: ${tilde(entry.pathFirst)}`
                 : '';
-            lines.push(`  ${entry.bin.padEnd(20)} ${tilde(entry.resolved ?? '-').padEnd(58)} ${entry.state ?? '-'}${shadow}`);
+            const resolved = tilde(entry.resolved ?? '-');
+            lines.push(`  ${entry.bin.padEnd(20)} ${resolved.padEnd(52)} ${(entry.commit ?? '-').padEnd(8)} ${entry.state ?? '-'}${shadow}`);
         }
     }
     if (report.drift.length > 0) {
@@ -819,7 +918,10 @@ export function renderCheckoutReport(report: CheckoutReport, options: CheckoutRe
     }
     lines.push('');
     if (report.ok) lines.push(report.check ? 'no drift' : 'up to date');
-    else if (report.check) lines.push(`drift found: ${report.drift.length} finding(s), ${report.problems.length} problem(s); run xt install --from-checkouts to update`);
+    else if (report.check) {
+        lines.push(`drift found: ${report.drift.length} finding(s), ${report.problems.length} problem(s); run xt update --from-checkouts to update`);
+        if (!report.fetched) lines.push('remote refs are the last fetched state; pass --fetch to compare with origin');
+    }
     else lines.push(`incomplete: ${report.problems.length} problem(s); resolve the checkouts above and re-run`);
     return lines;
 }

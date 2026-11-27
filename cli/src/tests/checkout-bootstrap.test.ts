@@ -7,10 +7,13 @@ import path from 'node:path';
 import {
     inspectCheckoutBins,
     loadCheckoutConfig,
+    redactRemote,
+    redactText,
     resolveCheckoutRepos,
     runCheckoutPhase,
     type CheckoutConfig,
 } from '../core/checkout-bootstrap.js';
+import { checkoutInitMode } from '../commands/init.js';
 
 /**
  * CORE-2810: the checkout phase must never discard local work, must be
@@ -162,11 +165,28 @@ describe('checkout configuration', () => {
         expect(() => loadCheckoutConfig(home)).toThrow(/needs a string "root"/);
     });
 
-    it('resolves core to the main worktree of the running CLI', () => {
-        const repos = resolveCheckoutRepos({ root: path.join(home, 'dev') }, home);
-        const core = repos.find((repo) => repo.name === 'core');
-        expect(core?.dir).not.toContain('.xtrm/worktrees');
-        expect(repos.map((repo) => repo.name)).toEqual(['core', 'xtrm', 'xtmux', 'specialists']);
+    it('resolves core to the running checkout only when that checkout IS core', () => {
+        const root = path.join(home, 'dev');
+        const foreign = tmp('xt-checkouts-foreign-');
+        const fromForeign = resolveCheckoutRepos({ root }, home, foreign);
+        expect(fromForeign.find((repo) => repo.name === 'core')?.dir).toBe(path.join(root, 'core'));
+        expect(fromForeign.map((repo) => repo.name)).toEqual(['core', 'xtrm', 'xtmux', 'specialists']);
+
+        // A core checkout (package `xtrm-tools` with its cli/) is the one case
+        // where the running project is the checkout: a worktree must not be.
+        const coreDir = path.join(home, 'core-checkout');
+        fs.mkdirSync(path.join(coreDir, 'cli'), { recursive: true });
+        fs.writeFileSync(path.join(coreDir, 'package.json'), JSON.stringify({ name: 'xtrm-tools', version: '9.9.9' }));
+        const fromCore = resolveCheckoutRepos({ root }, home, coreDir);
+        expect(fromCore.find((repo) => repo.name === 'core')?.dir).toBe(coreDir);
+    });
+
+    it('never treats a foreign repository as the core checkout', () => {
+        const other = fixture('other', { name: 'other-project', version: '1.0.0' });
+        clone(other, 'other');
+        const root = path.join(home, 'dev');
+        const repos = resolveCheckoutRepos({ root }, home, other.dir);
+        expect(repos.find((repo) => repo.name === 'core')?.dir).toBe(path.join(root, 'core'));
     });
 });
 
@@ -179,11 +199,20 @@ describe('checkout states', () => {
         git(f.seed, 'push');
         writeConfig(f.home, { ...idleRepos(f.home, ['core', 'xtmux', 'specialists']), xtrm: { dir: f.dir, remote: f.origin, links: [] } });
 
-        const check = phase(f.home, { check: true });
+        // A report writes nothing and does not fetch: it compares against the
+        // remote refs from the last fetch, so the new upstream commit is unseen.
+        fs.rmSync(path.join(f.dir, '.git', 'FETCH_HEAD'), { force: true });
+        const stale = phase(f.home, { check: true });
+        expect(stale?.fetched).toBe(false);
+        expect(stale?.repos.find((repo) => repo.name === 'xtrm')?.status).toBe('ok');
+        expect(fs.existsSync(path.join(f.dir, '.git', 'FETCH_HEAD'))).toBe(false);
+
+        // --fetch is the explicit opt-in for the network; still no checkout write.
+        const check = phase(f.home, { check: true, fetch: true });
+        expect(check?.fetched).toBe(true);
         const xtrm = check?.repos.find((repo) => repo.name === 'xtrm');
         expect(xtrm?.status).toBe('behind');
         expect(xtrm?.behind).toBe(1);
-        // --check wrote nothing.
         expect(git(f.dir, 'rev-parse', '--short=8', 'HEAD')).not.toBe(git(f.seed, 'rev-parse', '--short=8', 'HEAD'));
 
         const applied = phase(f.home);
@@ -235,6 +264,42 @@ describe('checkout states', () => {
         expect(git(f.dir, 'log', '--format=%s', '-1')).toBe('local work');
     });
 
+    it('clones the four checkouts into the root when run from a foreign directory', () => {
+        const home = tmp('xt-checkouts-fresh-');
+        const root = path.join(home, 'dev');
+        const repos: Record<string, unknown> = {};
+        for (const name of ['core', 'xtrm', 'xtmux', 'specialists']) {
+            const base = path.join(home, 'origins', name);
+            fs.mkdirSync(base, { recursive: true });
+            const origin = path.join(base, 'origin.git');
+            git(base, 'init', '--bare', '--initial-branch=main', origin);
+            const seed = path.join(base, 'seed');
+            fs.mkdirSync(seed, { recursive: true });
+            git(seed, 'init', '--initial-branch=main');
+            fs.writeFileSync(path.join(seed, 'package.json'), `${JSON.stringify({ name, version: '1.0.0' })}\n`);
+            git(seed, 'add', '.');
+            git(seed, 'commit', '-m', 'initial');
+            git(seed, 'remote', 'add', 'origin', origin);
+            git(seed, 'push', '-u', 'origin', 'main');
+            // Empty installer/extraBins override the built-in xtmux entries:
+            // this test exercises cloning, not installation.
+            repos[name] = { remote: origin, links: [], installer: '', extraBins: [] };
+        }
+        writeConfig(home, repos, { root });
+        const cwd = tmp('xt-checkouts-foreign-cwd-');
+
+        const report = phase(home, { cwd, env: fakeEnv(home) });
+        expect(report?.repos.map((repo) => repo.dir)).toEqual(
+            ['core', 'xtrm', 'xtmux', 'specialists'].map((name) => path.join(root, name)),
+        );
+        for (const name of ['core', 'xtrm', 'xtmux', 'specialists']) {
+            expect(fs.existsSync(path.join(root, name, 'package.json'))).toBe(true);
+        }
+        // Nothing was installed or linked in the directory the run stood in.
+        expect(fs.existsSync(path.join(cwd, 'package.json'))).toBe(false);
+        expect(report?.problems).toEqual([]);
+    });
+
     it('reports the retired Beads hooks without rewriting git config', () => {
         const f = fixture('xtmux');
         clone(f, 'xtmux');
@@ -267,6 +332,7 @@ describe('install, link and installer behaviour', () => {
         const report = phase(f.home, { env: fakeEnv(f.home) });
         const bin = report?.bins.find((entry) => entry.bin === 'xtmux-fixture');
         expect(bin?.state).toBe('ok');
+        expect(bin?.commit).toBe(git(f.dir, 'rev-parse', '--short=8', 'HEAD'));
         expect(fs.existsSync(path.join(f.home, 'prefix', 'bin', 'xtmux-fixture'))).toBe(true);
     });
 
@@ -353,5 +419,66 @@ describe('bin inspection', () => {
         fs.symlinkSync('/bin/true', path.join(binDir, 'xtmux-fixture'));
         const mismatch = inspectCheckoutBins([repo], npm, { home, env });
         expect(mismatch[0].state).toBe('mismatch');
+    });
+});
+
+describe('report redaction', () => {
+    it('strips URL credentials and token-shaped strings, and caps the text', () => {
+        expect(redactRemote('https://x-access-token:tok@github.com/o/r.git')).toBe('https://github.com/o/r.git');
+        expect(redactRemote('https://user:pass@example.invalid/r.git')).toBe('https://example.invalid/r.git');
+        expect(redactRemote('git@github.com:xtrm-dev/core.git')).toBe('git@github.com:xtrm-dev/core.git');
+
+        const noisy = [
+            "fatal: unable to access 'http://x-access-token:abc123secret@example.invalid/r.git'",
+            'Authorization: Bearer ghp_aaaaaaaaaaaaaaaaaaaaaaaa',
+            'password=hunter2',
+            ...Array.from({ length: 10 }, (_, index) => `line ${index}`),
+        ].join('\n');
+        const scrubbed = redactText(noisy);
+        expect(scrubbed).not.toContain('abc123secret');
+        expect(scrubbed).not.toContain('ghp_');
+        expect(scrubbed).not.toContain('hunter2');
+        expect(scrubbed.split('\n').length).toBeLessThanOrEqual(7);
+        expect(redactText('x'.repeat(900)).length).toBeLessThanOrEqual(601);
+    });
+
+    it('redacts a credentialed remote and a refusal diagnostic in the report', () => {
+        const f = fixture('xtmux', { name: 'xtmux-fixture', version: '1.0.0' });
+        clone(f, 'xtmux');
+        fs.writeFileSync(path.join(f.dir, 'install.sh'), [
+            '#!/usr/bin/env bash',
+            'echo "refusing to overwrite a user-customised file" >&2',
+            'echo "== Info: \'http://x-access-token:leaked-token@example.invalid/xtmux.git\'" >&2',
+            'echo "token=ghp_bbbbbbbbbbbbbbbbbbbb" >&2',
+            'for i in $(seq 1 20); do echo "trace $i" >&2; done',
+            'exit 1',
+            '',
+        ].join('\n'));
+        git(f.dir, 'add', '.');
+        git(f.dir, 'commit', '-m', 'installer');
+        git(f.dir, 'push');
+        writeConfig(f.home, {
+            ...idleRepos(f.home, ['core', 'xtrm', 'specialists']),
+            xtmux: { dir: f.dir, remote: 'https://user:s3cret@example.invalid/xtmux.git', links: [], installer: 'install.sh' },
+        });
+
+        const report = phase(f.home, { env: fakeEnv(f.home) });
+        const serialized = JSON.stringify(report);
+        expect(report?.repos.find((repo) => repo.name === 'xtmux')?.remote).toBe('https://example.invalid/xtmux.git');
+        expect(serialized).not.toContain('s3cret');
+        expect(serialized).not.toContain('leaked-token');
+        expect(serialized).not.toContain('ghp_bbbb');
+        const refused = report?.drift.find((item) => item.kind === 'installer-refused');
+        expect(refused?.diagnostic?.split('\n').length).toBeLessThanOrEqual(7);
+        expect(refused?.diagnostic).toContain('refusing to overwrite');
+    });
+});
+
+describe('init checkout mode', () => {
+    it('previews under --dry-run and applies only on a real run', () => {
+        expect(checkoutInitMode({})).toBe('off');
+        expect(checkoutInitMode({ dryRun: true })).toBe('off');
+        expect(checkoutInitMode({ fromCheckouts: true })).toBe('apply');
+        expect(checkoutInitMode({ fromCheckouts: true, dryRun: true })).toBe('check');
     });
 });

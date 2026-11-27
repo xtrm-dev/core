@@ -68,7 +68,7 @@ program
     .option('--global', 'Install tooling to user-global scope instead of project-local', false)
     .option('--prune', 'Remove plugin-era artifacts (Claude plugin cache, stale settings keys)', false)
     .option('--substrate-dir <path>', 'Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment')
-    .option('--from-checkouts', 'Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts', false)
+    .option('--from-checkouts', 'Apply the local-checkout phase (clone or fast-forward, install, link) for core, xtrm, xtmux and specialists', false)
     .action(async (opts) => {
         await runProjectInit(opts);
     });

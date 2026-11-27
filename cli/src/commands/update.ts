@@ -58,6 +58,7 @@ interface UpdateOpts {
     strictRegistry?: boolean;
     force?: boolean;
     fromCheckouts?: boolean;
+    fetch?: boolean;
 }
 
 interface ResolvedTargets {
@@ -480,7 +481,8 @@ export function createUpdateCommand(): Command {
         .option('--all-repos', 'Sweep ~/dev and ~/projects for xtrm-managed repos (dry-run by default; --apply patches and commits each changed repo)', false)
         .option('--repo <path>', 'Target one repo path instead of cwd')
         .option('--json', 'Print JSON output', false)
-        .option('--from-checkouts', 'Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts', false)
+        .option('--from-checkouts', 'Apply the local-checkout phase (clone or fast-forward, install, link) even when no checkouts.json exists', false)
+        .option('--fetch', 'Fetch each checkout from origin before comparing; check mode does not fetch by default', false)
         .action(async (opts) => {
             const typedOpts = opts as UpdateOpts;
             const { targets, incomplete } = await resolveTargetRepos(typedOpts);
@@ -566,16 +568,21 @@ export function createUpdateCommand(): Command {
             // `--from-checkouts` asks for the built-in defaults.
             const applyCheckouts = Boolean(typedOpts.apply || typedOpts.fromCheckouts);
             let checkouts: CheckoutReport | null = null;
+            let checkoutsError: string | null = null;
             try {
                 checkouts = runCheckoutPhase({
                     fromCheckouts: Boolean(typedOpts.fromCheckouts),
                     check: !applyCheckouts,
+                    fetch: Boolean(typedOpts.fetch),
                     log: (line) => {
                         if (!opts.json) console.log(kleur.dim(`  • ${line}`));
                     },
                 });
             } catch (error) {
-                console.error(kleur.red(`  ✗ checkouts: ${(error as Error).message}`));
+                // A broken checkouts.json or an unreadable checkout must fail the
+                // run the same way init does; swallowing it reported success.
+                checkoutsError = (error as Error).message;
+                console.error(kleur.red(`  ✗ checkouts: ${checkoutsError}`));
             }
             if (checkouts && !opts.json) {
                 console.log('');
@@ -590,6 +597,7 @@ export function createUpdateCommand(): Command {
                     piStartupSmoke,
                     promptSync,
                     ...(checkouts ? { checkouts } : {}),
+                    ...(checkoutsError ? { checkoutsError } : {}),
                     ...([...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}),
                 }, null, 2));
             } else {
@@ -608,7 +616,10 @@ export function createUpdateCommand(): Command {
                 || packageAssurance.failed.length > 0
                 || piStartupSmoke?.status === 'failed'
                 || piStartupSmoke?.status === 'inconclusive'
-                || (checkouts !== null && !checkouts.ok && (applyCheckouts || checkouts.check))) {
+                || checkoutsError !== null
+                // A report on a routine refresh is information, not a failure;
+                // only a phase that applied and did not finish fails the run.
+                || (applyCheckouts && checkouts !== null && !checkouts.ok)) {
                 process.exitCode = 1;
             }
         });

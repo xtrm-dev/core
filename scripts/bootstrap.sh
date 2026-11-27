@@ -38,4 +38,9 @@ else
   cli="$root/core/cli/dist/index.cjs"
 fi
 
+# Anchor the run in the core checkout: the phase resolves `core` from the
+# project it stands in, and a run from ~/dev (or from a foreign repository)
+# would otherwise treat that directory as the core checkout and install there.
+cd "$root/core" || exit 2
+
 exec node "$cli" update --from-checkouts "$@"
