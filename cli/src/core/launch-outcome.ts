@@ -1,4 +1,5 @@
 import type { CommandOutcomeAction, CommandOutcomeV1 } from '@xtrm/contracts';
+import { TMUX_FIELD_SEP, splitTmuxFields, tmuxField } from './tmux-format.js';
 
 export interface DetachedLaunchOutcomeInput {
     runtime: 'pi' | 'claude';
@@ -95,6 +96,18 @@ export function parseLiveTmuxSessionId(status: number | null, stdout: string):
         : { ok: false, error: 'detached tmux session returned an invalid identity' };
 }
 
+/**
+ * The tmux listing format for a live session's identity (CORE-2811).
+ *
+ * '|' and not a TAB: tmux rewrites a control character inside a format argument
+ * to '_' under a non-UTF-8 locale (CORE-2802), so a tab-separated listing arrives
+ * collapsed and the detached-output path reports a live session as gone. Both
+ * fields are quoted because '|' is legal inside a session name, and a name is
+ * compared for equality here: an unquoted name would either shift the id or be
+ * read as a different session.
+ */
+export const LIVE_SESSION_LISTING_FORMAT = [tmuxField('session_name'), tmuxField('session_id')].join(TMUX_FIELD_SEP);
+
 export function parseLiveTmuxSessionListing(
     status: number | null,
     stdout: string,
@@ -102,9 +115,11 @@ export function parseLiveTmuxSessionListing(
 ): ReturnType<typeof parseLiveTmuxSessionId> {
     if (status !== 0) return { ok: false, error: 'detached tmux session is no longer live' };
     const matches = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-        const separator = line.indexOf('\t');
-        if (separator < 1 || line.slice(0, separator) !== expectedName) return [];
-        return [line.slice(separator + 1)];
+        // Exactly two fields, or the row is unreadable: a session name holding the
+        // separator keeps its id in field two, and a shifted row is never an identity.
+        const { fields, ok } = splitTmuxFields(line);
+        if (!ok || fields.length !== 2 || fields[0] !== expectedName) return [];
+        return [fields[1] as string];
     });
     if (matches.length === 0) return { ok: false, error: 'detached tmux session is no longer live' };
     if (matches.length !== 1) return { ok: false, error: 'detached tmux session returned an invalid identity' };

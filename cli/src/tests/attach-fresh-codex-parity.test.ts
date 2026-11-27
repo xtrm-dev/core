@@ -70,7 +70,7 @@ async function launch(existing: boolean, dispatcher: Record<string, string> = {}
         if (command === 'tmux' && args[0] === 'load-buffer') { cap.args = JSON.parse(mo.input as string).runtimeArgs; return ok(); }
         if (command === 'tmux' && args[0] === 'set-option') { if (!args.includes('-u')) cap.pane[args[4]] = args[5]; return ok(); }
         if (command === 'tmux' && args[0] === 'list-panes') return ok('%17\n');
-        if (command === 'tmux' && args[0] === 'list-sessions') return ok('codex-cdx1\t$42\n');
+        if (command === 'tmux' && args[0] === 'list-sessions') return ok('codex-cdx1|$42\n');
         if (command === 'tmux' && args[0] === 'display-message') return ok('$42\n');
         return ok();
     });

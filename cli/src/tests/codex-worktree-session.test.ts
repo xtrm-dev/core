@@ -165,7 +165,7 @@ describe('Codex worktree launcher', () => {
                 return { status: 0, stdout: '', stderr: '' };
             }
             if (command === 'tmux' && args[0] === 'list-panes') return { status: 0, stdout: '%17\n', stderr: '' };
-            if (command === 'tmux' && args[0] === 'list-sessions') return { status: 0, stdout: 'codex-demo\t$42\n', stderr: '' };
+            if (command === 'tmux' && args[0] === 'list-sessions') return { status: 0, stdout: 'codex-demo|$42\n', stderr: '' };
             if (command === 'tmux' && args[0] === 'display-message') return { status: 0, stdout: '$42\n', stderr: '' };
             if (command === path.join(repoRoot, 'bin', 'codex') && args[0] === '--version') {
                 return { status: 0, stdout: 'codex-cli 0.146.0\n', stderr: '' };
@@ -826,7 +826,7 @@ describe('Codex worktree launcher', () => {
                 return { status: 0, stdout: '', stderr: '' };
             }
             if (command === 'tmux' && args[0] === 'list-panes') return { status: 0, stdout: '%17\n', stderr: '' };
-            if (command === 'tmux' && args[0] === 'list-sessions') return { status: 0, stdout: 'codex-demo\t$42\n', stderr: '' };
+            if (command === 'tmux' && args[0] === 'list-sessions') return { status: 0, stdout: 'codex-demo|$42\n', stderr: '' };
             if (command === 'tmux' && args[0] === 'display-message') return { status: 0, stdout: '$42\n', stderr: '' };
             if (command === path.join(repoRoot, 'bin', 'codex') && args[0] === '--version') {
                 return { status: 0, stdout: 'codex-cli 0.146.0\n', stderr: '' };

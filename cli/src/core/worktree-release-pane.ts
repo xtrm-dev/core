@@ -37,20 +37,31 @@ import {
     configSourcesSnippet,
 } from './worktree-release.js';
 import type { KeybindingProbe, ReleaseBlocker } from './worktree-release.js';
+import { TMUX_FIELD_SEP, splitTmuxFields } from './tmux-format.js';
 
-const FIELD_SEP = '\u001f';
+/**
+ * '|' and not U+001F or a TAB: under a non-UTF-8 locale tmux rewrites a control
+ * character inside a format argument to '_' (CORE-2802), so a control-separated
+ * row collapses into one field and the pane reads as unbound (CORE-2811). Every
+ * field is quoted because '|' is legal inside a worktree path, a branch name and
+ * a bead ref, and a release decides on those values.
+ */
+const FIELD_SEP = TMUX_FIELD_SEP;
 
 /** Same expectations the binding resolves, read in one round trip. */
-const PANE_FORMAT = [
-    '#{@agent_worktree}',
-    '#{@agent_branch}',
-    '#{@agent_bead}',
-    '#{pane_pid}',
-    '#{pane_current_command}',
-    '#{pane_dead}',
-    '#{pane_in_mode}',
-    '#{pane_current_path}',
+export const PANE_FORMAT = [
+    '#{q:@agent_worktree}',
+    '#{q:@agent_branch}',
+    '#{q:@agent_bead}',
+    '#{q:pane_pid}',
+    '#{q:pane_current_command}',
+    '#{q:pane_dead}',
+    '#{q:pane_in_mode}',
+    '#{q:pane_current_path}',
 ].join(FIELD_SEP);
+
+/** The eight fields `PANE_FORMAT` asks for, in order. */
+const PANE_FIELD_COUNT = 8;
 
 export function tmux(args: string[], timeoutMs = 15_000): { ok: boolean; out: string; err: string } {
     const r = spawnSync('tmux', args, { encoding: 'utf8', stdio: 'pipe', timeout: timeoutMs });
@@ -90,7 +101,9 @@ export function readPaneInfo(paneId: string): { pane?: PaneInfo; error?: string 
     const result = tmux(['display-message', '-p', '-t', paneId, '-F', PANE_FORMAT]);
     if (!result.ok) return { error: result.err || 'tmux could not read the pane' };
 
-    const [worktree = '', branch = '', bead = '', panePidRaw = '', command = '', dead = '', inMode = '', currentPath = ''] = result.out.split(FIELD_SEP);
+    const { fields, ok } = splitTmuxFields(result.out, FIELD_SEP);
+    if (!ok || fields.length !== PANE_FIELD_COUNT) return { error: 'tmux returned an unreadable pane record' };
+    const [worktree = '', branch = '', bead = '', panePidRaw = '', command = '', dead = '', inMode = '', currentPath = ''] = fields;
     const panePid = Number(panePidRaw);
 
     return {

@@ -13,9 +13,25 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { TMUX_FIELD_SEP, splitTmuxFields, tmuxField } from '../core/tmux-format.js';
 
-/** The tmux format: pane cwd, the worktree the launcher recorded, the issue. */
-export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_issue}\t#{@agent_bead}';
+/**
+ * The tmux format: pane cwd, the worktree the launcher recorded, the issue.
+ *
+ * '|' and not a TAB: under a non-UTF-8 locale tmux rewrites a control character
+ * inside a format argument to '_' (CORE-2802), collapsing every row (CORE-2811).
+ * Every field is quoted because a path and a worktree path may contain the
+ * separator, and the row is matched against a path for equality.
+ */
+export const PANE_LISTING_FORMAT = [
+    tmuxField('pane_current_path'),
+    tmuxField('@agent_worktree'),
+    tmuxField('@agent_issue'),
+    tmuxField('@agent_bead'),
+].join(TMUX_FIELD_SEP);
+
+/** The four fields `PANE_LISTING_FORMAT` asks for, in order. */
+const PANE_LISTING_FIELD_COUNT = 4;
 
 /**
  * Hard ceiling for the pane probe (CORE-2740 F3). `xt attach` waits on this
@@ -54,7 +70,9 @@ export function listAgentPanes(timeoutMs: number = PANE_PROBE_TIMEOUT_MS): strin
 export function issueFromPaneListing(listing: string, worktreePath: string): string | null {
     const beads = new Set<string>();
     for (const line of String(listing ?? '').split(/\r?\n/)) {
-        const [currentPath = '', agentWorktree = '', issueOption = '', legacyBead = ''] = line.split('\t');
+        const { fields, ok } = splitTmuxFields(line);
+        if (!ok || fields.length !== PANE_LISTING_FIELD_COUNT) continue;
+        const [currentPath = '', agentWorktree = '', issueOption = '', legacyBead = ''] = fields;
         // `@agent_bead` is the read-only fallback for panes launched before CORE-2801.
         const issue = issueOption.trim() ? issueOption : legacyBead;
         if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;

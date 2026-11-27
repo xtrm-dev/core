@@ -121,11 +121,12 @@ The parent session a child records is `@agent_parent_session` (`XTRM_PARENT_SESS
 
 ## A note on tmux format strings
 
-tmux rewrites a TAB inside a format argument to `_` under a non-UTF-8 locale (`LC_ALL=C`: `display-message -p '#{session_id}\t#{session_name}'` returns `$0_operator`), while a UTF-8 locale preserves it. The launcher therefore separates format fields with `|`, which tmux never rewrites. Older code that splits a TAB-joined listing is tracked separately.
+tmux rewrites a TAB inside a format argument to `_` under a non-UTF-8 locale (`LC_ALL=C`: `display-message -p '#{session_id}\t#{session_name}'` returns `$0_operator`), while a UTF-8 locale preserves it. Every tmux format in the launcher therefore separates its fields with `|`, which tmux never rewrites; a TAB-separated listing arrives collapsed and a live pane or session reads as missing (CORE-2811).
 
 ## Tests
 
 - `cli/src/tests/tmux-placement.test.ts`: the resolution order, one case per source and per socket rule, with `env: {}` or an explicit env so a case never depends on the host.
+- `cli/src/tests/tmux-detached-output-session.test.ts`: the shipped listing format and the shipped `xt pi --json` launcher argv against a private tmux server, so a TAB separator that the operator's tmux collapses fails the test instead of silently reporting the detached session as gone.
 - `cli/src/tests/tmux-placement-session.test.ts`: private tmux servers under a private `TMUX_TMPDIR`. The resolver gets the caller's environment only, never a binding, and its runner fails any call it did not expect to be bound — so the test fails on a tree whose placement does not bind. A caller without `$TMUX` places a worker in `operator:workers`, four launches fill the window, the fifth rolls over to `workers-2`, a caller in a second session stays in that session, two servers that both hold `%0` are told apart by their sockets, a dead recorded socket creates on the default server without starting a server at the dead path, an identity with no known socket is refused, and the last resort writes the warning.
 - `cli/src/tests/codex-worktree-session.test.ts`: `xt codex --window` binds its window to the resolved session without `$TMUX`, takes order 3 when the caller carries no identity, and refuses a caller whose session nothing resolves.
 - `cli/src/tests/worktree-session-beads-noise.test.ts`: a failed launch on a private socket cleans up on that socket — every `kill-*` and buffer call carries `-S <socket>`.
