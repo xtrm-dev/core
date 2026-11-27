@@ -12,6 +12,7 @@ import { createClaudeCommand } from './commands/claude.js';
 import { createPiCommand } from './commands/pi.js';
 import { createCodexCommand } from './commands/codex.js';
 import { runProjectInit } from './commands/init.js';
+import { createInstallCommand } from './commands/install.js';
 import { createStatusCommand } from './commands/status.js';
 import { createResetCommand } from './commands/reset.js';
 import { createHelpCommand } from './commands/help.js';
@@ -71,6 +72,7 @@ program
     .action(async (opts) => {
         await runProjectInit(opts);
     });
+program.addCommand(createInstallCommand());
 program.addCommand(createStatusCommand());
 program.addCommand(createResetCommand());
 program.addCommand(createCleanCommand());

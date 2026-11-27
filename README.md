@@ -374,14 +374,16 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 
 ## Local checkouts
 
-On a machine that runs XTRM from local git checkouts (the operator's laptop and the server) instead of npm, one script sets up or updates the four checkouts, their links and the tmux guard:
+On a machine that runs XTRM from local git checkouts (the operator's laptop and the server) instead of npm, the checkout phase of the machine bootstrap sets up or updates the four checkouts, their links and the tmux guard:
 
 ```bash
-~/dev/core/scripts/bootstrap.sh --check   # read-only drift report
-~/dev/core/scripts/bootstrap.sh           # clone/fast-forward, install, link, report
+xt install --check --from-checkouts   # read-only drift report (exit 1 on drift)
+xt install --from-checkouts           # clone/fast-forward, install, link, install the guard, report
 ```
 
-It never discards uncommitted work: a dirty checkout stops that repository and is reported. The report names every binary, the checkout and commit it resolves to, and the package version. See [docs/local-checkouts.md](docs/local-checkouts.md).
+A machine opts in with `~/.xtrm/config/checkouts.json` (`{ "root": "~/dev" }`); after that, `xt update --apply` keeps the checkouts current and `xt doctor` reports their drift read-only. It never discards uncommitted work: a dirty, diverged or wrong-branch checkout stops that repository and is reported. The report names every binary, the checkout, commit and version it resolves to.
+
+On a machine with no `xt` yet, `scripts/bootstrap.sh` clones `core` and then runs the same command. See [docs/local-checkouts.md](docs/local-checkouts.md).
 
 | [XTRM-GUIDE.md](XTRM-GUIDE.md) | full architecture and workflow reference |
 | [docs/worktrees.md](docs/worktrees.md) | `xt` worktrees, attach/end/reap and isolation |
@@ -397,7 +399,7 @@ It never discards uncommitted work: a dirty checkout stops that repository and i
 | [docs/mcp-servers.md](docs/mcp-servers.md) | managed MCP servers including Exa research |
 | [docs/policies.md](docs/policies.md) | policy compiler and runtime parity |
 | [docs/cli-architecture.md](docs/cli-architecture.md) | install/update/composition internals |
-| [docs/local-checkouts.md](docs/local-checkouts.md) | one-command setup/update of the local `core`/`xtrm`/`xtmux`/`specialists` checkouts, links and tmux guard |
+| [docs/local-checkouts.md](docs/local-checkouts.md) | `xt install`/`xt update`/`xt doctor` handling of the local `core`/`xtrm`/`xtmux`/`specialists` checkouts, links and tmux guard |
 | [docs/testing.md](docs/testing.md) | validation checklist |
 | [docs/release.md](docs/release.md) | release/publish contract |
 | [CHANGELOG.md](CHANGELOG.md) | version history |

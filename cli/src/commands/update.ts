@@ -25,6 +25,7 @@ import { resolveMainProjectRoot } from '../utils/repo-root.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
 import { stageMigrationChanges } from '../utils/git-staging.js';
+import { renderCheckoutReport, runCheckoutPhase, type CheckoutReport } from '../core/checkout-bootstrap.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
@@ -556,12 +557,34 @@ export function createUpdateCommand(): Command {
                 }
             }
 
+            // CORE-2810: local checkouts are part of the update story on a
+            // machine that installs from them. Configured machines apply the
+            // phase on `--apply` and report it read-only otherwise; an
+            // unconfigured machine never has its links touched.
+            let checkouts: CheckoutReport | null = null;
+            try {
+                checkouts = runCheckoutPhase({
+                    check: !typedOpts.apply,
+                    log: (line) => {
+                        if (!opts.json) console.log(kleur.dim(`  • ${line}`));
+                    },
+                });
+            } catch (error) {
+                console.error(kleur.red(`  ✗ checkouts: ${(error as Error).message}`));
+            }
+            if (checkouts && !opts.json) {
+                console.log('');
+                for (const line of renderCheckoutReport(checkouts)) console.log(line);
+                console.log('');
+            }
+
             if (opts.json) {
                 console.log(JSON.stringify({
                     repos: rows,
                     packages: packageAssurance,
                     piStartupSmoke,
                     promptSync,
+                    ...(checkouts ? { checkouts } : {}),
                     ...([...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}),
                 }, null, 2));
             } else {
@@ -579,7 +602,8 @@ export function createUpdateCommand(): Command {
             if (rows.some(row => row.status === 'failed' || row.status === 'incomplete')
                 || packageAssurance.failed.length > 0
                 || piStartupSmoke?.status === 'failed'
-                || piStartupSmoke?.status === 'inconclusive') {
+                || piStartupSmoke?.status === 'inconclusive'
+                || (checkouts !== null && !checkouts.ok && (typedOpts.apply || checkouts.check))) {
                 process.exitCode = 1;
             }
         });

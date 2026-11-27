@@ -22,6 +22,7 @@ import { trailerHookVerdict } from '../core/trailer-hooks.js';
 import { CLAUDE_CHANNEL_POLICY_JSON, defaultInstalledPluginsPath, defaultManagedSettingsPath, getClaudeChannelStatus, type ClaudeChannelStatus } from '../core/claude-channel-status.js';
 import { CLAUDE_ROUTE_BLOCK_KEY, getClaudeRouteStatus, type ClaudeRouteStatus } from '../core/claude-route.js';
 import { checkXtrmUpdates, defaultCacheFile, formatUpdateRows, updatesSummary, type PackageStatus } from '../utils/npm-latest.js';
+import { renderCheckoutReport, runCheckoutPhase, type CheckoutReport } from '../core/checkout-bootstrap.js';
 
 interface CheckJson {
   managed_sections: Array<{ name: string; version: string; canonical_version: string | null }>;
@@ -108,6 +109,8 @@ interface DoctorJson {
   claudeChannels: ClaudeChannelStatus;
   /** Advisory operator Claude Code route state (CORE-2632); never affects the exit code. */
   claudeRoute: ClaudeRouteDoctorSection;
+  /** CORE-2810: present only on a machine configured to install from local checkouts. */
+  checkouts?: CheckoutReport;
 }
 
 interface ClaudeRouteDoctorSection extends ClaudeRouteStatus {
@@ -745,6 +748,37 @@ function renderClaudeRoute(report: ClaudeRouteDoctorSection): void {
   }
 }
 
+/**
+ * CORE-2810: local checkouts, reported read-only. A machine that installs from
+ * local checkouts (checkouts.json) gets the drift list here; an unconfigured
+ * machine prints nothing, so doctor stays quiet on npm-installed machines.
+ * Nothing is fetched from disk beyond `git fetch`; nothing is written.
+ */
+function renderLocalCheckouts(report: CheckoutReport | null): number {
+  if (!report) return 0;
+  section('Local checkouts');
+  for (const state of report.repos) {
+    const suffix = state.status === 'ok' && state.dirty.untracked > 0 ? ` (untracked ${state.dirty.untracked})` : '';
+    const line = `${state.name} ${state.branch ?? '-'} ${state.commit ?? '-'} ${state.status}${suffix}`;
+    if (state.status === 'ok') ok(line);
+    else warn(line);
+    if (state.detail) fix(state.detail);
+  }
+  for (const item of report.drift) {
+    warn(`${item.repo}: ${item.detail}`);
+    if (item.diagnostic) console.log(kleur.dim(item.diagnostic.split('\n').map(l => `      ${l}`).join('\n')));
+  }
+  for (const problem of report.problems) warn(problem);
+  if (report.bins.some(entry => entry.state !== 'ok')) {
+    for (const entry of report.bins.filter(e => e.state !== 'ok')) {
+      warn(`${entry.bin} ${entry.state}: resolves to ${entry.resolved ?? 'nothing'}, expected ${entry.expected}`);
+    }
+  }
+  if (report.ok) ok('checkouts, links and installer state all match');
+  else fix('run: xt install --from-checkouts');
+  return report.drift.length + report.problems.length;
+}
+
 export function createDoctorCommand(): Command {
   const doctor = new Command('doctor')
     .description('Canonical diagnosis for xtrm-managed project and runtime surfaces')
@@ -769,6 +803,14 @@ export function createDoctorCommand(): Command {
       const claudeChannels = buildClaudeChannelsSection();
       const claudeRoute = buildClaudeRouteSection(piPackages);
       const bundle = readBundleFreshness({ cliRoot: path.resolve(__dirname, '..') });
+      let checkouts: CheckoutReport | null = null;
+      let checkoutDrift = 0;
+      try {
+        checkouts = runCheckoutPhase({ check: true });
+      } catch (error) {
+        warn(`checkouts: ${(error as Error).message}`);
+        checkoutDrift = 1;
+      }
       const doctorJson: DoctorJson = {
         bundle,
         catB,
@@ -788,6 +830,7 @@ export function createDoctorCommand(): Command {
         legacyMigration,
         claudeChannels,
         claudeRoute,
+        ...(checkouts ? { checkouts } : {}),
       };
 
       if (opts.json) {
@@ -833,6 +876,7 @@ export function createDoctorCommand(): Command {
       if (trailer.status === 'installed') ok(trailer.message);
       else warn(trailer.message);
       renderCatB(catB);
+      checkoutDrift = Math.max(checkoutDrift, renderLocalCheckouts(checkouts));
 
       section('Updates');
       const summary = updatesSummary(updateStatuses);
@@ -846,7 +890,8 @@ export function createDoctorCommand(): Command {
       // Substrate-unavailable warns but does not fail: the fleet is
       // pre-Substrate (no sb binary ships yet) and doctor must stay usable
       // there. Legacy machinery present fails — it is actionable via update.
-      const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB) || legacyMigrationRequired;
+      const failed = !fragmentsOk || !piPackagesOk || piPackages.hasIssues || hasCatBIssues(catB) || legacyMigrationRequired
+        || (opts.checkDrift && checkoutDrift > 0);
       if (failed) {
         console.log('');
         console.log(`  ${kleur.yellow('○')} ${kleur.bold('Some checks failed')}  — follow the fix hints above`);
