@@ -69456,9 +69456,10 @@ async function launchWorktreeSession(opts) {
   if (reuseRequested) {
     const roleSlug = resolvedRole ? slugifyForSession(resolvedRole.name) : null;
     const sessionName = roleSlug ? `role-${runtime}-${roleSlug}${issue2 ? `-${slugifyForSession(issue2)}` : ""}` : `${runtime}-${slugifyForSession(slug)}`;
-    const sessionExists = (0, import_node_child_process11.spawnSync)("tmux", ["has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0;
+    const reuseSocket = resolvedPlacement.socketArgs;
+    const sessionExists = (0, import_node_child_process11.spawnSync)("tmux", [...reuseSocket, "has-session", "-t", `=${sessionName}`], { stdio: "pipe" }).status === 0;
     if (sessionExists) {
-      const paneQuery = (0, import_node_child_process11.spawnSync)("tmux", ["list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
+      const paneQuery = (0, import_node_child_process11.spawnSync)("tmux", [...reuseSocket, "list-panes", "-t", sessionName, "-F", "#{pane_id}"], {
         stdio: "pipe",
         encoding: "utf8"
       });
@@ -69468,7 +69469,7 @@ async function launchWorktreeSession(opts) {
 `);
         process.exit(0);
       }
-      const attachResult = (0, import_node_child_process11.spawnSync)("tmux", chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), {
+      const attachResult = (0, import_node_child_process11.spawnSync)("tmux", [...reuseSocket, ...chooseAttachCommand(sessionName, Boolean(process.env.TMUX))], {
         stdio: "inherit"
       });
       process.exit(attachResult.status ?? 0);
@@ -69694,9 +69695,9 @@ async function launchWorktreeSession(opts) {
   });
   process.exit(launchResult2.status ?? 0);
 }
-function resolveParentSession(target) {
+function resolveParentSession(target, socketArgs = []) {
   if (/^\$\d+$/.test(target)) return target;
-  const r = (0, import_node_child_process11.spawnSync)("tmux", ["display-message", "-p", "-t", target, "#{session_id}"], {
+  const r = (0, import_node_child_process11.spawnSync)("tmux", [...socketArgs, "display-message", "-p", "-t", target, "#{session_id}"], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -69774,7 +69775,7 @@ async function launchTmuxSession(args) {
   }
   let parentSessionId;
   if (parent) {
-    const resolved = resolveParentSession(parent);
+    const resolved = resolveParentSession(parent, placement.socketArgs);
     if (!resolved) {
       process.stderr.write(kleur_default.red(
         `

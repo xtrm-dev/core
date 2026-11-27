@@ -201,7 +201,8 @@ describe('CORE-2792 restored environment', () => {
         try {
             mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
                 // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-                if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+                if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
                 const joined = args.join(' ');
                 if (command === 'tmux' && joined.includes('#{session_id}')) return { status: 0, stdout: '$3\n', stderr: '' };
                 if (command === 'tmux' && joined.includes('#{session_name}')) return { status: 0, stdout: 'sess\n', stderr: '' };
@@ -227,7 +228,8 @@ describe('CORE-2792 restored environment', () => {
         try {
             mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
                 // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-                if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+                if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
                 const joined = args.join(' ');
                 if (command === 'tmux' && joined.includes('#{session_id}')) return { status: 0, stdout: '$9\n', stderr: '' };
                 if (command === 'tmux' && joined.includes('#{session_name}')) return { status: 0, stdout: 'hermetic\n', stderr: '' };
@@ -547,7 +549,8 @@ describe('CORE-2792 xt attach resumes with the launch identity restored', () => 
     function install(cap: Caps): void {
         mocked.spawnSync.mockImplementation((command: string, args: string[] = [], options: Record<string, unknown> = {}) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                            // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+                if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
             if (command === 'git') {

@@ -33,7 +33,8 @@ function installMock(h: Harness): void {
   const { repoRoot } = h;
   mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
       // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-      if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+            // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+      if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
     const joined = args.join(' ');
     if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
     if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };

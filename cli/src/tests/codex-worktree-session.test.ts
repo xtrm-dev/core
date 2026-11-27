@@ -47,7 +47,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') {
@@ -130,7 +131,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') {
@@ -247,7 +249,8 @@ describe('Codex worktree launcher', () => {
         let windowArgs: string[] = [];
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -360,7 +363,8 @@ describe('Codex worktree launcher', () => {
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // Record the RAW argv: the `-S` binding is part of what this test proves.
             calls.push([command, ...args]);
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -483,7 +487,8 @@ describe('Codex worktree launcher', () => {
         let worktreeAdds = 0;
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -532,7 +537,8 @@ describe('Codex worktree launcher', () => {
         process.chdir(repoRoot);
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: 'bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -576,7 +582,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -625,7 +632,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -665,7 +673,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -718,7 +727,8 @@ describe('Codex worktree launcher', () => {
 
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sh') return { status: 0, stdout: '/opt/xtrm/bin/codex\n', stderr: '' };
             if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -778,7 +788,8 @@ describe('Codex worktree launcher', () => {
         const sbCalls: string[][] = [];
         mocked.spawnSync.mockImplementation((command: string, args: string[] = []) => {
             // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
-            if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
+                        // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+            if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
             const joined = args.join(' ');
             if (command === 'sb') {
                 sbCalls.push(args);

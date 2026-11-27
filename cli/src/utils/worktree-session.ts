@@ -3662,9 +3662,13 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         const sessionName = roleSlug
             ? `role-${runtime}-${roleSlug}${issue ? `-${slugifyForSession(issue)}` : ''}`
             : `${runtime}-${slugifyForSession(slug)}`;
-        const sessionExists = spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0;
+        // CORE-2802 review: reuse runs exactly when `$TMUX` is absent, so a bare name
+        // would find — or attach the operator to — a session of the same name on the
+        // default server. The seat's own socket decides which session is reused.
+        const reuseSocket = resolvedPlacement.socketArgs;
+        const sessionExists = spawnSync('tmux', [...reuseSocket, 'has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0;
         if (sessionExists) {
-            const paneQuery = spawnSync('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
+            const paneQuery = spawnSync('tmux', [...reuseSocket, 'list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
                 stdio: 'pipe', encoding: 'utf8',
             });
             const existingPane = (paneQuery.stdout ?? '').trim().split('\n')[0] ?? '';
@@ -3672,7 +3676,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 process.stdout.write(`${sessionName}:${existingPane}\n`);
                 process.exit(0);
             }
-            const attachResult = spawnSync('tmux', chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), {
+            const attachResult = spawnSync('tmux', [...reuseSocket, ...chooseAttachCommand(sessionName, Boolean(process.env.TMUX))], {
                 stdio: 'inherit',
             });
             process.exit(attachResult.status ?? 0);
@@ -4000,9 +4004,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
  * failure so the launcher can print a clear error before spawning pi.
  * xtmux-1lb.5.1.
  */
-function resolveParentSession(target: string): string | null {
+function resolveParentSession(target: string, socketArgs: string[] = []): string | null {
     if (/^\$\d+$/.test(target)) return target; // already a sid
-    const r = spawnSync('tmux', ['display-message', '-p', '-t', target, '#{session_id}'], {
+    // CORE-2802 review: a `--parent` name is a name on one server. Probing it on the
+    // default server reported "not found" for a session the seat can see.
+    const r = spawnSync('tmux', [...socketArgs, 'display-message', '-p', '-t', target, '#{session_id}'], {
         stdio: 'pipe', encoding: 'utf8',
     });
     if (r.status !== 0) return null;
@@ -4141,7 +4147,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // wins over auto (current session).
     let parentSessionId: string;
     if (parent) {
-        const resolved = resolveParentSession(parent);
+        const resolved = resolveParentSession(parent, placement.socketArgs);
         if (!resolved) {
             process.stderr.write(kleur.red(
                 `\n  ✗ --parent '${parent}': tmux session not found\n`,

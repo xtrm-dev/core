@@ -218,11 +218,6 @@ function sessionIdOf(target: string | undefined, socketArgs: string[], deps: Pla
  * tmux server the caller talks to, then the identity the launcher exported. Every source
  * is validated against the live server, so a stale variable never places a launch.
  */
-export function resolveCallerSession(deps: PlacementDeps = {}, announce = true): string | undefined {
-    const socket = resolveSocketBinding(deps, false);
-    return callerSessionOn(socket, deps, announce && !socket.stale);
-}
-
 function callerSessionOn(socket: SocketBinding, deps: PlacementDeps, announce: boolean): string | undefined {
     const env = deps.env ?? process.env;
     if (socket.args.length === 0) {
@@ -300,7 +295,7 @@ export function resolvePlacement(options: PlacementOptions, deps: PlacementDeps 
     // session is where a dispatched agent belongs, and the configured session is the
     // project default. The socket is resolved first, because an id means nothing without
     // the server it belongs to; it is part of the result so the create verb and every call
-    // after it use the same server. resolveCallerSession probes only when two of them are
+    // after it use the same server. The caller's session is probed only when two of them are
     // missing, and it stays silent on the plain path: there a new session is the product,
     // so an untrusted identity is not worth a warning on a stream scripts scrape (K1).
     const socket = resolveSocketBinding(deps, Boolean(selected));

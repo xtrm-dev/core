@@ -25,15 +25,24 @@ The target session is resolved in this order. The first source that resolves win
 
 A pane id (`%3`) and a session id (`$1`) are unique only inside one tmux server. Confirming `%3` against the default server would confirm a different pane that happens to share the number, which is how a launch lands in an unrelated session.
 
-So order 2 also resolves the socket, and every query of that step runs against it: the socket of `$TMUX`, else the value of `XTRM_SESSION_SOCKET`. The launcher records that variable for the seats it creates — `xt pi`, `xt claude`, `xt codex --window` and `xt attach --fresh`; a bare `xt codex` records no session identity at all, and `xt attach` rebuilds the identity of an existing seat. When neither names a socket, no identity at that step is trusted — even a `%3` the process carries — and the launch falls through to order 3 with one note on stderr:
+So order 2 also resolves the socket, and every query of that step runs against it: the socket of `$TMUX`, else the value of `XTRM_SESSION_SOCKET`. The launcher records that variable for the seats it creates — `xt pi`, `xt claude`, `xt codex --window` and `xt attach --fresh`; a bare `xt codex` records no session identity at all, and `xt attach` rebuilds the identity of an existing seat. When neither names a socket, no identity at that step is trusted — even a `%3` the process carries — and the launch falls through to order 3, saying why on stderr:
 
 ```text
 warning: %3 names a tmux session, but the server it belongs to is unknown; not placing this launch in it (set $TMUX or XTRM_SESSION_SOCKET)
 ```
 
-A plain launch with no role rule stays silent in that case, for the same reason order 4 stays silent.
+A plain launch with no role rule stays silent in that case, for the same reason order 4 stays silent. A launch with a role rule or a flag speaks, because it asked for a placement.
 
-A recorded socket that nothing answers on is dropped for the whole launch, with one note and no other effect:
+Each cause writes its own note, so one launch can print two — a dropped socket, then the last resort:
+
+```text
+warning: /tmp/tmux-1000/coord is recorded as this seat's tmux server, but nothing answers there; creating on the default server
+warning: no tmux session to place this launch in; launching a new session instead
+```
+
+That pair appears only when nothing else names a session: an identity whose server is unknown, no `session` in the launch config, and a role rule or flag that needs one.
+
+A recorded socket that nothing answers on is dropped for the whole launch, with that note and no other effect:
 
 ```text
 warning: /tmp/tmux-1000/coord is recorded as this seat's tmux server, but nothing answers there; creating on the default server
@@ -121,3 +130,4 @@ tmux rewrites a TAB inside a format argument to `_` under a non-UTF-8 locale (`L
 - `cli/src/tests/codex-worktree-session.test.ts`: `xt codex --window` binds its window to the resolved session without `$TMUX`, takes order 3 when the caller carries no identity, and refuses a caller whose session nothing resolves.
 - `cli/src/tests/worktree-session-beads-noise.test.ts`: a failed launch on a private socket cleans up on that socket — every `kill-*` and buffer call carries `-S <socket>`.
 - `cli/src/tests/worktree-session-identity.test.ts`: an identity the server does not answer for is not opened in, and a plain launch outside tmux writes no placement warning.
+- Launcher tests that reach tmux through a stub assert the socket on every bound call instead of discarding the binding, so a call that loses it fails the test.
