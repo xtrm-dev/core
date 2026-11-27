@@ -68,6 +68,8 @@ local git checkouts, and report which binary resolves to which checkout.
 
 options:
   --root <dir>     directory that holds the sibling checkouts (default: ~/dev)
+  --home <dir>     install against this HOME instead of the real one (links,
+                   installer state, Pi settings); used for rehearsal and tests
   --check          report drift only; change nothing (fetches to compare)
   --json           machine-readable report on stdout
   --no-install     clone/fast-forward only; skip every install step
@@ -121,10 +123,29 @@ function isDirectory(file) {
     }
 }
 
+let EFFECTIVE_HOME = null;
+
+function homeDir() {
+    return EFFECTIVE_HOME ?? os.homedir();
+}
+
+/**
+ * Environment for install steps. With --home every write that resolves through
+ * HOME lands under the given directory: package links (npm prefix), the xtmux
+ * installer state and payload, and the Pi settings read for conflicts.
+ */
+function childEnv() {
+    if (!EFFECTIVE_HOME) return process.env;
+    const env = { ...process.env, HOME: EFFECTIVE_HOME };
+    if (!env.XDG_STATE_HOME) env.XDG_STATE_HOME = path.join(EFFECTIVE_HOME, '.local', 'state');
+    if (!env.npm_config_prefix) env.npm_config_prefix = path.join(EFFECTIVE_HOME, '.npm-global');
+    return env;
+}
+
 function run(cmd, args, options = {}) {
     const result = spawnSync(cmd, args, {
         cwd: options.cwd,
-        env: options.env ?? process.env,
+        env: options.env ?? childEnv(),
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
     });
@@ -138,7 +159,9 @@ function run(cmd, args, options = {}) {
 }
 
 function git(cwd, args) {
-    return run('git', args, { cwd });
+    // Git reads machine identity and global config from the real HOME even when
+    // the install itself is rehearsed against --home.
+    return run('git', args, { cwd, env: process.env });
 }
 
 function tail(text, lines = 12) {
@@ -159,10 +182,11 @@ function expandHome(p) {
 }
 
 function localBinDir() {
-    return path.join(os.homedir(), '.local', 'bin');
+    return path.join(homeDir(), '.local', 'bin');
 }
 
 function stateHome() {
+    if (EFFECTIVE_HOME) return path.join(EFFECTIVE_HOME, '.local', 'state');
     return process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
 }
 
@@ -172,6 +196,7 @@ function stateHome() {
 function parseArgs(argv) {
     const opts = {
         root: path.join(os.homedir(), 'dev'),
+        home: null,
         check: false,
         json: false,
         install: true,
@@ -188,6 +213,7 @@ function parseArgs(argv) {
         };
         switch (arg) {
             case '--root': opts.root = path.resolve(expandHome(value())); break;
+            case '--home': opts.home = path.resolve(expandHome(value())); break;
             case '--check': opts.check = true; break;
             case '--json': opts.json = true; break;
             case '--no-install': opts.install = false; break;
@@ -298,6 +324,14 @@ function inspectRepo(repo) {
         return state;
     }
     state.isRepo = true;
+
+    // A checkout wired to the retired Beads hooks fails inside post-merge on
+    // every pull. Report it; never rewrite the machine's git config.
+    const hooksPath = git(repo.dir, ['config', '--get', 'core.hooksPath']);
+    if (hooksPath.status === 0 && hooksPath.stdout) {
+        state.hooksPath = hooksPath.stdout;
+        state.beadsHooks = /(^|\/)\.beads(\/|$)/.test(hooksPath.stdout);
+    }
 
     const pkg = readJson(path.join(repo.dir, 'package.json'));
     state.version = typeof pkg?.version === 'string' ? pkg.version : null;
@@ -508,7 +542,7 @@ function installerState() {
  * conflict instead of writing it.
  */
 function piEntryConflict(repo) {
-    const settingsPath = path.join(os.homedir(), '.pi', 'agent', 'settings.json');
+    const settingsPath = path.join(homeDir(), '.pi', 'agent', 'settings.json');
     const settings = readJson(settingsPath);
     const entries = Array.isArray(settings?.packages) ? settings.packages : [];
     const repoRoot = realpathOrNull(repo.dir) ?? repo.dir;
@@ -560,6 +594,43 @@ function checkInstaller(repo) {
 }
 
 // ---------------------------------------------------------------------------
+// lockfiles and installer refusals
+
+const LOCKFILES = ['package-lock.json', 'bun.lock', 'bun.lockb', 'yarn.lock', 'pnpm-lock.yaml'];
+const REFUSAL = /\brefus(e|ed|es|ing|al)\b|not overwrit|already exists and differs|declin/i;
+
+/**
+ * Tracked lockfiles that are clean before an install step. A package manager
+ * may rewrite them when the committed lockfile is out of sync; the bootstrap
+ * restores them afterwards so an update never leaves the checkout it just
+ * fast-forwarded dirty.
+ */
+function cleanTrackedLockfiles(pkgDir) {
+    const names = [];
+    for (const name of LOCKFILES) {
+        if (!exists(path.join(pkgDir, name))) continue;
+        if (git(pkgDir, ['ls-files', '--error-unmatch', '--', name]).status !== 0) continue;
+        if (git(pkgDir, ['status', '--porcelain=v1', '--', name]).stdout !== '') continue;
+        names.push(name);
+    }
+    return names;
+}
+
+function restoreLockfiles(pkgDir, names, repoName, drift) {
+    for (const name of names) {
+        if (git(pkgDir, ['status', '--porcelain=v1', '--', name]).stdout === '') continue;
+        const restore = git(pkgDir, ['checkout', '--', name]);
+        drift.push({
+            repo: repoName,
+            kind: 'lockfile-rewritten',
+            detail: restore.status === 0
+                ? `${name} was rewritten by the install step and restored; the committed lockfile is out of sync with package.json, fix it in that repo`
+                : `${name} was rewritten by the install step and could not be restored${shortError(restore)}`,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // reporting
 
 function driftFor(state) {
@@ -602,7 +673,7 @@ function formatBins(bins, showAll) {
 }
 
 function tilde(p) {
-    const home = os.homedir();
+    const home = homeDir();
     return p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p;
 }
 
@@ -627,6 +698,7 @@ function main() {
         console.log(USAGE);
         return 0;
     }
+    EFFECTIVE_HOME = opts.home;
 
     let repos;
     try {
@@ -639,10 +711,12 @@ function main() {
     const npm = resolveNpm();
     const out = opts.json ? () => {} : (line) => console.log(line);
     const problems = [];
+    const drift = [];
 
     if (!opts.json) {
         out(`XTRM local checkouts — ${opts.check ? 'check (read-only)' : 'bootstrap'}`);
         out(`  root: ${tilde(opts.root)}`);
+        if (opts.home) out(`  home: ${tilde(opts.home)} (install target; the real HOME is not touched)`);
         out(`  npm:  ${npm}`);
     }
 
@@ -690,8 +764,10 @@ function main() {
                     continue;
                 }
                 const manager = chooseInstall(pkgDir, npm);
+                const lockfiles = cleanTrackedLockfiles(pkgDir);
                 out(`install ${repo.name}/${rel === '.' ? '' : rel} (${manager.label})`);
                 const install = run(manager.cmd, manager.args, { cwd: pkgDir });
+                restoreLockfiles(pkgDir, lockfiles, repo.name, drift);
                 if (install.status !== 0) {
                     problems.push(`${repo.name}/${rel}: ${manager.label} failed${shortError(install)}`);
                     out(`        ${tail(install.stderr || install.stdout, 6)}`);
@@ -715,8 +791,22 @@ function main() {
                 out(`install ${repo.name}/${repo.installer}`);
                 const installer = run('bash', [path.resolve(repo.dir, repo.installer)], { cwd: repo.dir });
                 if (installer.status !== 0) {
-                    problems.push(`${repo.name}: ${repo.installer} failed${shortError(installer)}`);
-                    out(`        ${tail(installer.stderr || installer.stdout, 8)}`);
+                    const diagnostic = installer.stderr || installer.stdout;
+                    if (REFUSAL.test(diagnostic)) {
+                        // The installer owns the file and declines to overwrite
+                        // one it did not write. Surface the diagnostic, never
+                        // force or remove the file.
+                        drift.push({
+                            repo: repo.name,
+                            kind: 'installer-refused',
+                            detail: `${repo.installer} refused to overwrite a file it does not own; nothing was forced`,
+                            diagnostic: tail(diagnostic, 12),
+                        });
+                        out('        installer refused; diagnostic follows in the report');
+                    } else {
+                        problems.push(`${repo.name}: ${repo.installer} failed${shortError(installer)}`);
+                        out(`        ${tail(diagnostic, 8)}`);
+                    }
                 }
             }
         }
@@ -724,10 +814,17 @@ function main() {
 
     // 3. report
     const bins = inspectBins(repos, npm);
-    const drift = [];
     for (const state of states) {
         const finding = driftFor(state);
         if (finding) drift.push(finding);
+        if (state.beadsHooks) {
+            drift.push({
+                repo: state.name,
+                kind: 'beads-hooks',
+                detail: `core.hooksPath=${state.hooksPath} runs the retired Beads hooks; every pull fails inside post-merge. `
+                    + `Fix in that checkout: git config --unset core.hooksPath (reported only, not changed)`,
+            });
+        }
     }
     if (opts.links) {
         for (const entry of bins) {
@@ -746,6 +843,7 @@ function main() {
         command: 'xtrm-bootstrap/1',
         check: opts.check,
         root: opts.root,
+        home: opts.home,
         npm,
         repos: states,
         bins,
@@ -776,7 +874,12 @@ function main() {
         if (drift.length > 0) {
             out('');
             out(`drift (${drift.length})`);
-            for (const item of drift) out(`  - ${item.repo}: ${item.detail}`);
+            for (const item of drift) {
+                out(`  - ${item.repo}: ${item.detail}`);
+                if (item.diagnostic) {
+                    for (const line of item.diagnostic.split('\n')) out(`      ${line}`);
+                }
+            }
         }
         if (problems.length > 0) {
             out('');

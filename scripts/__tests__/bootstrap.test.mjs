@@ -258,3 +258,100 @@ test('a Pi settings entry that loads the checkout directly is reported as a conf
     assert.ok(assertReport(apply).problems.some((problem) => problem.includes('pi-entry-conflict') || problem.includes('loads xtmux from the checkout')));
     await assert.rejects(fs.access(path.join(checkout, 'installer-ran')), 'installer must not run while the Pi entry conflicts');
 });
+
+test('--home scopes installer writes and link targets to the given home', async () => {
+    const root = await makeRoot();
+    const home = path.join(root, 'rehearsal-home');
+    const origin = await makeOrigin(root, 'xtmux', {
+        'package.json': JSON.stringify({ name: '@xtrm-test/xtmux-home', version: '0.1.0' }, null, 2),
+        'install.sh': '#!/usr/bin/env bash\nmkdir -p "$HOME/.local/state/xtmux"\n'
+            + 'printf \'{"version":"0.1.0"}\' > "$HOME/.local/state/xtmux/installer.json"\n',
+    });
+    git(root, ['clone', '-q', origin.bare, path.join(root, 'xtmux')]);
+    const entry = { ...origin.entry, installer: 'install.sh' };
+
+    const apply = run(root, [entry], ['--home', home], { npm_config_prefix: path.join(root, 'prefix') });
+    const report = assertReport(apply);
+    assert.equal(report.home, home);
+    assert.equal(apply.status, 0, apply.stdout + apply.stderr);
+    await fs.access(path.join(home, '.local', 'state', 'xtmux', 'installer.json'));
+    assert.ok(report.drift.every((item) => item.kind !== 'installer-missing'), 'installer state must resolve inside --home');
+});
+
+test('a lockfile rewritten by the install step is restored and reported', async () => {
+    const root = await makeRoot();
+    const prefix = path.join(root, 'npm-prefix');
+    const fakeNpm = path.join(root, 'fake-npm.cjs');
+    await write(fakeNpm, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const [cmd] = process.argv.slice(2);
+if (cmd === 'prefix') {
+    process.stdout.write(path.join(process.env.FAKE_PREFIX, 'bin'));
+    process.exit(0);
+}
+if (cmd === 'install') {
+    const lock = path.join(process.cwd(), 'package-lock.json');
+    if (fs.existsSync(lock)) {
+        const data = JSON.parse(fs.readFileSync(lock, 'utf8'));
+        data.version = '9.9.9';
+        fs.writeFileSync(lock, JSON.stringify(data, null, 2));
+    }
+    process.exit(0);
+}
+process.exit(0);
+`);
+    await fs.chmod(fakeNpm, 0o755);
+    const origin = await makeOrigin(root, 'alpha', {
+        'package.json': JSON.stringify({ name: '@xtrm-test/boot-lock', version: '1.0.0' }, null, 2),
+        'package-lock.json': JSON.stringify({ name: '@xtrm-test/boot-lock', version: '1.0.0', lockfileVersion: 3 }, null, 2),
+    });
+    const checkout = path.join(root, 'alpha');
+    git(root, ['clone', '-q', origin.bare, checkout]);
+
+    const env = { XTRM_BOOTSTRAP_NPM: fakeNpm, FAKE_PREFIX: prefix, npm_config_prefix: prefix };
+    const apply = run(root, [origin.entry], [], env);
+    const report = assertReport(apply);
+    assert.ok(report.drift.some((item) => item.kind === 'lockfile-rewritten'), apply.stdout);
+    assert.equal(git(checkout, ['status', '--porcelain']), '', 'the checkout must stay clean after an install step');
+    assert.equal(JSON.parse(await fs.readFile(path.join(checkout, 'package-lock.json'), 'utf8')).version, '1.0.0');
+});
+
+test('retired Beads hook wiring is reported and left unchanged', async () => {
+    const root = await makeRoot();
+    const origin = await makeOrigin(root, 'xtmux');
+    const checkout = path.join(root, 'xtmux');
+    git(root, ['clone', '-q', origin.bare, checkout]);
+    git(checkout, ['config', 'core.hooksPath', '.beads/hooks']);
+
+    const result = run(root, [origin.entry], ['--check', '--no-links']);
+    const report = assertReport(result);
+    assert.equal(result.status, 1);
+    const finding = report.drift.find((item) => item.kind === 'beads-hooks');
+    assert.ok(finding, 'beads-hooks finding missing');
+    assert.match(finding.detail, /\.beads\/hooks/);
+    assert.equal(git(checkout, ['config', '--get', 'core.hooksPath']), '.beads/hooks', 'git config must not be rewritten');
+});
+
+test('an installer refusal is surfaced with its diagnostic and never forced', async () => {
+    const root = await makeRoot();
+    const home = path.join(root, 'home');
+    const origin = await makeOrigin(root, 'xtmux', {
+        'package.json': JSON.stringify({ name: '@xtrm-test/xtmux-refuse', version: '0.2.5' }, null, 2),
+        'install.sh': '#!/usr/bin/env bash\n'
+            + 'echo "xtmux install: refusing to overwrite $HOME/.tmux/scripts/git-pane-status.sh" >&2\n'
+            + 'echo "  it is not a symlink the installer owns; remove or move it yourself" >&2\n'
+            + 'exit 1\n',
+    });
+    const checkout = path.join(root, 'xtmux');
+    git(root, ['clone', '-q', origin.bare, checkout]);
+    const entry = { ...origin.entry, installer: 'install.sh' };
+
+    const result = run(root, [entry], ['--home', home], { npm_config_prefix: path.join(root, 'prefix') });
+    const report = assertReport(result);
+    assert.equal(result.status, 1);
+    const finding = report.drift.find((item) => item.kind === 'installer-refused');
+    assert.ok(finding, 'installer-refused finding missing');
+    assert.match(finding.diagnostic, /refusing to overwrite/);
+    assert.equal(report.problems.length, 0, 'a refusal is a finding, not an unhandled failure');
+});

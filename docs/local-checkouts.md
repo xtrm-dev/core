@@ -59,6 +59,10 @@ An apply run (no `--check`) performs three phases.
      never creates a new lockfile.
    - It then runs `npm link` in that directory, which registers the package and its
      bins in the global npm prefix.
+   - A dependency install can rewrite a tracked lockfile when the committed
+     lockfile is out of sync with `package.json`. The script restores such a
+     lockfile to its committed content and reports `lockfile-rewritten`, so a
+     run never leaves the checkout it just fast-forwarded dirty.
    - For `xtmux` it also runs the repository installer (`install.sh`), which places
      the bins and the `tmux` kill guard in `~/.local/bin`, installs the Pi package
      copy, the Claude and Codex hooks, and writes
@@ -83,6 +87,7 @@ It writes nothing to the checkouts or to the home directory in `--check` mode.
 |---|---|
 | `--check` | Report drift only. No clone, pull, install, link or installer run. |
 | `--root <dir>` | Directory that holds the checkouts. Default `~/dev`. |
+| `--home <dir>` | Install against this home instead of the real one: `npm link` prefix, `~/.local/bin`, the xtmux installer state and payload, and the Pi settings read for conflicts. The real home is not touched. Use it to rehearse a run or in tests. |
 | `--json` | Print the report as JSON. |
 | `--no-install` | Git phase only; skip dependency install, `npm link` and the installer. |
 | `--no-links` | Skip link creation, link verification and the xtmux installer. |
@@ -92,7 +97,7 @@ It writes nothing to the checkouts or to the home directory in `--check` mode.
 |---|---|
 | `XTRM_BOOTSTRAP_REPOS_JSON` | Replace the built-in repository table (name, directory, remote, linked package directories, optional installer). Use it for a non-standard layout, or in tests. |
 | `XTRM_BOOTSTRAP_NPM` | npm executable to use instead of the one resolved from `PATH`. |
-| `npm_config_prefix` | Honoured by `npm link` and by link verification, so a run can target a prefix other than the machine default. |
+| `npm_config_prefix` | Honoured by `npm link` and by link verification, so a run can target a prefix other than the machine default. With `--home` and no explicit value, the script uses `<home>/.npm-global`. |
 
 Exit codes: `0` nothing to do or everything succeeded, `1` drift found or a step
 failed, `2` usage error.
@@ -139,6 +144,14 @@ exists. A `note` marks a binary shadowed earlier on `PATH` (for example
 - Every step is idempotent: a second run on a clean machine reports no drift and
   changes nothing.
 - `--check` never mutates state. Only the network `fetch` runs.
+- An installer refusal is reported, never forced. When a repository installer
+  declines to overwrite a file it does not own (xtmux does this for a
+  user-customised `~/.tmux/scripts/git-pane-status.sh`), the run records
+  `installer-refused` with the installer's own diagnostic and leaves the file in
+  place.
+- Machine git configuration is read, never written. A checkout wired to the
+  retired Beads hooks (`core.hooksPath` pointing into `.beads/hooks`) is reported
+  as `beads-hooks`; the script does not unset it.
 
 ## A new machine
 
@@ -182,7 +195,10 @@ requires no interactive input, so it is safe over a non-interactive ssh command.
 | `ahead` | Local commits are not pushed. | Push them, or accept that the checkout is intentionally ahead. |
 | `wrong-branch` | The checkout is on another branch. | `git switch <default>` when the branch is finished; the script never switches. |
 | `detached` | The checkout is on a detached HEAD. | `git switch <default>`. |
-| `installer-missing` | No `~/.local/state/xtmux/installer.json`. | Run the apply mode so `install.sh` runs. |
+| `installer-missing` | No `~/.local/state/xtmux/installer.json` (under `--home` when given). | Run the apply mode so `install.sh` runs. |
+| `installer-refused` | The repository installer declined to overwrite a file it does not own; its diagnostic follows the finding. | Read the diagnostic and move or remove the file yourself, then re-run. The script never forces the overwrite. |
+| `beads-hooks` | `core.hooksPath` points into `.beads/hooks`, so every pull fails inside the retired Beads `post-merge` hook. | Run `git -C <checkout> config --unset core.hooksPath`, then re-run `--check`. Reported only; the script never edits git config. |
+| `lockfile-rewritten` | The dependency install rewrote a tracked lockfile that was out of sync with `package.json`. | The script restored the committed lockfile. Fix the lockfile in that repository. |
 | `installer-root` | The installer state points at another checkout. | Re-run the apply mode from the checkout that should own the bins. |
 | `installer-version` | Installed xtmux version differs from the checkout. | Re-run the apply mode. |
 | `installer-payload` | A directory the installer recorded (Pi package copy, Claude or Codex hooks) is gone. | Re-run the apply mode. |
