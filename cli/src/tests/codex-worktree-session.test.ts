@@ -422,6 +422,36 @@ describe('Codex worktree launcher', () => {
         expect(h.printed.join('')).toBe('coord-sess:%21\n');
     });
 
+    // CORE-2802 review (finding 4): codex applies order 3 too. A caller with no identity of
+    // its own still has a place to go when the launch config names the session — the same
+    // answer `xt pi --window` and `xt claude --window` give.
+    it('--window falls back to the configured session when the caller carries no identity (CORE-2802)', async () => {
+        const saved: Record<string, string | undefined> = {};
+        for (const key of ['TMUX', 'TMUX_PANE', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME', 'XTRM_SESSION_SOCKET', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID', 'XTRM_LAUNCH_CONFIG']) {
+            saved[key] = process.env[key];
+            delete process.env[key];
+        }
+        const h = codexWindowHarness({ pane: '$7', name: 'coord' });
+        fs.writeFileSync(
+            path.join(process.env.HOME!, '.xtrm', 'config', 'launch.json'),
+            JSON.stringify({ version: 1, session: 'coord', placement: {} }),
+        );
+        try {
+            await h.launch();
+        } finally {
+            for (const [k, v] of Object.entries(saved)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+            }
+        }
+        const windowCall = h.calls.find((call) => call.includes('new-window'));
+        const verbAt = windowCall?.indexOf('new-window') ?? -1;
+        expect(windowCall?.slice(verbAt, verbAt + 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', 'coord:']);
+        // A configured session lives on the default server, so nothing is bound.
+        expect(h.calls.some((call) => call[0] === 'tmux' && call[1] === '-S')).toBe(false);
+        expect(h.printed.join('')).toBe('coord:%21\n');
+    });
+
     it('--window refuses a caller with no session it can resolve (CORE-2802)', async () => {
         const saved = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, XTRM_SESSION_ID: process.env.XTRM_SESSION_ID, XTRM_SESSION_NAME: process.env.XTRM_SESSION_NAME, XTRM_SESSION_SOCKET: process.env.XTRM_SESSION_SOCKET, XTRM_PARENT_PANE_ID: process.env.XTRM_PARENT_PANE_ID, SUBSTRATE_HOLDER: process.env.SUBSTRATE_HOLDER };
         for (const key of ['TMUX', 'TMUX_PANE', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME', 'XTRM_SESSION_SOCKET', 'XTRM_PARENT_PANE_ID']) delete process.env[key];

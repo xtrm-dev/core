@@ -824,6 +824,91 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  // CORE-2802 review (finding 2): a seat created on a private server must be cleaned up on
+  // that server. An unbound `kill-session -t <name>` would kill a same-named session on the
+  // default one, so every kill-* and buffer call states the socket the seat was created on.
+  it('binds the failure cleanup to the seat socket', async () => {
+    const repoRoot = path.join(tempRoot, 'repo');
+    const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-pi-socketed');
+    const socket = path.join(tempRoot, 'tmux-1000', 'private');
+    await fs.ensureDir(path.join(repoRoot, '.beads'));
+    process.chdir(repoRoot);
+    const previousSocket = process.env.XTRM_SESSION_SOCKET;
+    process.env.XTRM_SESSION_SOCKET = socket;
+
+    /** Records the argv the launcher really passes, then strips the binding for the verb stubs. */
+    const raw: string[][] = [];
+    mocked.spawnSync.mockImplementation((command: string, passed: string[] = []) => {
+      if (command !== 'tmux') {
+        const joinedArgs = passed.join(' ');
+        if (command === 'sp' && passed[0] === 'view') {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              specialist: {
+                metadata: { name: 'blank' },
+                prompt: { system: 'role' },
+                skills: { paths: [] },
+              },
+            }),
+            stderr: '',
+          };
+        }
+        if (command === 'sp' && passed[0] === 'render-skill-prefix') {
+          return passed[1] === '--help'
+            ? { status: 0, stdout: 'usage', stderr: '' }
+            : { status: 0, stdout: JSON.stringify({ ok: true, skill_prefix: '' }), stderr: '' };
+        }
+        if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
+          return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+        }
+        if (command === 'git' && joinedArgs === 'rev-parse --git-common-dir') {
+          return { status: 0, stdout: '.git\n', stderr: '' };
+        }
+        if (command === 'bd' && passed[0] === 'worktree' && passed[1] === 'create') {
+          fs.ensureDirSync(worktreePath);
+          fs.ensureDirSync(path.join(worktreePath, '.git'));
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      raw.push(passed);
+      let args = passed;
+      if (args[0] === '-S') args = args.slice(2);
+      const joinedArgs = args.join(' ');
+      if (joinedArgs === 'display-message -p #{pid}') return { status: 0, stdout: '4242', stderr: '' };
+      if (args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
+      if (args[0] === 'wait-for' && args[1]?.endsWith('-consumer-ready')) {
+        return { status: null, stdout: '', stderr: '', error: Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }) };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+
+    const exitSpy = mockProcessExit();
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    try {
+      await expect(launchWorktreeSession({
+        runtime: 'pi',
+        role: 'blank',
+        name: 'socketed',
+        newSession: true,
+        attach: false,
+      })).rejects.toThrow('exit:1');
+    } finally {
+      if (previousSocket === undefined) delete process.env.XTRM_SESSION_SOCKET;
+      else process.env.XTRM_SESSION_SOCKET = previousSocket;
+    }
+
+    const cleanup = raw.filter(args => args.some(arg => arg === 'kill-session' || arg === 'kill-pane' || arg === 'delete-buffer'));
+    expect(cleanup.length).toBeGreaterThan(0);
+    for (const args of cleanup) expect(args.slice(0, 2)).toEqual(['-S', socket]);
+    // Nothing was created or cleaned up on any other server.
+    expect(raw.every(args => args[0] === '-S' && args[1] === socket)).toBe(true);
+    expect(worktreePath).toContain('socketed');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('removes worktree .beads/ and marks tracked .beads paths skip-worktree (no symlink)', async () => {
     const repoRoot = path.join(tempRoot, 'repo');
     const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-pi-noise1');

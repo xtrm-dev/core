@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     parseLaunchPlacementConfig,
     resolvePlacement,
-    resolveTmuxSocket,
-    tmuxSocketArgs,
+    resolveSocketBinding,
     validateLayout,
 } from '../utils/tmux-placement.js';
 import type { PlacementDeps } from '../utils/tmux-placement.js';
@@ -143,11 +142,15 @@ describe('placement session resolution order (CORE-2802)', () => {
     const SOCKET = '/tmp/tmux-1000/private';
     const withSocket = { XTRM_SESSION_SOCKET: SOCKET };
 
-    /** tmux stub: records the raw argv, answers -t from `valid`, ignores the -S binding. */
-    const sessionProbe = (valid: string[], answer = '$3') => {
+    /** The socket liveness check (`-S <socket> display-message -p '#{pid}'`). */
+    const isSocketCheck = (args: string[]): boolean => args[0] === '-S' && args[2] === 'display-message' && args.includes('#{pid}');
+
+    /** tmux stub: records the raw argv, answers the socket check and -t from `valid`. */
+    const sessionProbe = (valid: string[], answer = '$3', socketAnswers = true) => {
         const calls: string[][] = [];
         const tmux = (args: string[]): { status: number | null; stdout?: string } => {
             calls.push(args);
+            if (isSocketCheck(args)) return socketAnswers ? { status: 0, stdout: '4242' } : { status: 1, stdout: '' };
             const bare = args[0] === '-S' ? args.slice(2) : args;
             if (bare[0] === 'list-windows') return { status: 0, stdout: '@1|workers|1' };
             const at = bare.indexOf('-t');
@@ -164,16 +167,56 @@ describe('placement session resolution order (CORE-2802)', () => {
             ...config({ version: 1, session: 'fallback', placement: { worker: 'workers' } }),
             tmux,
         });
-        expect(result).toMatchObject({ kind: 'workers', session: '$3', target: '@1' });
-        expect(calls[0]).toEqual(['display-message', '-p', '-t', '%5', '#{session_id}']);
+        expect(result).toMatchObject({ kind: 'workers', session: '$3', target: '@1', socketArgs: ['-S', SOCKET] });
+        expect(calls.find(args => !isSocketCheck(args))).toEqual(['-S', SOCKET, 'display-message', '-p', '-t', '%5', '#{session_id}']);
     });
 
-    it('binds the probe to the $TMUX socket, which wins over the recorded one', () => {
-        expect(tmuxSocketArgs({ TMUX: '/tmp/tmux-1000/default,1,0', XTRM_SESSION_SOCKET: '/tmp/other/sock' }))
-            .toEqual(['-S', '/tmp/tmux-1000/default']);
-        expect(tmuxSocketArgs({ XTRM_SESSION_SOCKET: '/tmp/other/sock' })).toEqual(['-S', '/tmp/other/sock']);
-        expect(tmuxSocketArgs({})).toEqual([]);
-        expect(resolveTmuxSocket({})).toBeUndefined();
+    it('binds every probe to the $TMUX socket, which wins over the recorded one', () => {
+        expect(resolveSocketBinding({ env: { TMUX: '/tmp/tmux-1000/default,1,0', XTRM_SESSION_SOCKET: '/tmp/other/sock' } }))
+            .toEqual({ args: ['-S', '/tmp/tmux-1000/default'] });
+        expect(resolveSocketBinding({ env: {} })).toEqual({ args: [] });
+    });
+
+    it('confirms a recorded socket before trusting it', () => {
+        const calls: string[][] = [];
+        const live = resolveSocketBinding({
+            env: { XTRM_SESSION_SOCKET: '/tmp/other/sock' },
+            tmux: (args) => {
+                calls.push(args);
+                return { status: 0, stdout: '4242' };
+            },
+        });
+        expect(live).toEqual({ args: ['-S', '/tmp/other/sock'] });
+        expect(calls).toEqual([['-S', '/tmp/other/sock', 'display-message', '-p', '#{pid}']]);
+    });
+
+    it('drops a recorded socket that no server answers on, instead of creating one there', () => {
+        const written: string[] = [];
+        vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+            written.push(String(chunk));
+            return true;
+        }) as never);
+        const dead = '/tmp/tmux-1000/gone';
+        const binding = resolveSocketBinding({
+            env: { XTRM_SESSION_SOCKET: dead },
+            tmux: () => ({ status: 1, stdout: '' }),
+        });
+        expect(binding).toEqual({ args: [], stale: dead });
+        expect(written.join('')).toContain(`${dead} is recorded as this seat's tmux server, but nothing answers there`);
+
+        // CORE-2802 review: the resolution and the create verb must agree. A dead socket is not
+        // carried into the verb, so the launch cannot start a second server at that path.
+        written.length = 0;
+        const result = resolvePlacement({ role: 'worker', insideTmux: false }, {
+            env: { XTRM_SESSION_SOCKET: dead, XTRM_SESSION_ID: '$9' },
+            ...config({ version: 1, session: 'project', placement: { worker: 'workers' } }),
+            tmux: (args) => (args[0] === '-S'
+                ? { status: 1, stdout: '' }
+                : args[0] === 'list-windows' ? { status: 0, stdout: '@1|workers|1' } : { status: 1, stdout: '' }),
+        });
+        expect(result).toMatchObject({ kind: 'workers', session: 'project', socketArgs: [] });
+        // One note, not two: the dropped socket already explains why the identity was not used.
+        expect(written.join('').match(/warning:/g)?.length).toBe(1);
     });
 
     it('does not trust a pane id when the server it belongs to is unknown', () => {
@@ -268,7 +311,7 @@ describe('placement session resolution order (CORE-2802)', () => {
             ...config({ version: 1, placement: { worker: 'workers' } }),
             tmux,
         })).toMatchObject({ kind: 'workers', session: '$3' });
-        expect(calls[0]).toEqual(['display-message', '-p', '-t', '%12', '#{session_id}']);
+        expect(calls.find(args => !isSocketCheck(args))).toEqual(['-S', SOCKET, 'display-message', '-p', '-t', '%12', '#{session_id}']);
     });
 
     it('ignores a stale identity and uses the configured session instead', () => {
@@ -280,8 +323,9 @@ describe('placement session resolution order (CORE-2802)', () => {
         });
         expect(result).toMatchObject({ kind: 'workers', session: 'project', target: '@1' });
         expect(calls).toEqual([
-            ['display-message', '-p', '-t', '$8', '#{session_id}'],
-            ['list-windows', '-t', 'project', '-F', '#{window_id}|#{window_name}|#{window_panes}'],
+            ['-S', SOCKET, 'display-message', '-p', '#{pid}'],
+            ['-S', SOCKET, 'display-message', '-p', '-t', '$8', '#{session_id}'],
+            ['-S', SOCKET, 'list-windows', '-t', 'project', '-F', '#{window_id}|#{window_name}|#{window_panes}'],
         ]);
     });
 

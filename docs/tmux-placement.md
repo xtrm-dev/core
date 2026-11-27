@@ -7,8 +7,8 @@ This document is the single placement rule. It never moves or kills an existing 
 Coverage, stated exactly, because the surfaces differ:
 
 - `xt claude`, `xt pi` and `xt attach --fresh` apply the rule in full: the target session, then the role rule inside it.
-- `xt codex --window` applies the target-session part in full (`$TMUX` is no longer required), and always opens a new window; codex has no role-rule flags.
-- `xt codex` without `--window` keeps its own behaviour: it creates its own session named `codex-<name>` (or `role-codex-<role>-<issue>`), outside this rule. Changing that launch is a separate issue.
+- `xt codex --window` applies the whole rule to its own surface (`$TMUX` is no longer required, and order 3 counts); it always opens a new window, because codex has no role-rule flags.
+- `xt codex` without `--window` keeps its own behaviour: it creates its own session named `codex-<name>` (or `role-codex-<role>-<issue>`), outside this rule, and records no session identity. Changing that launch is a separate issue.
 
 ## The rule
 
@@ -25,13 +25,21 @@ The target session is resolved in this order. The first source that resolves win
 
 A pane id (`%3`) and a session id (`$1`) are unique only inside one tmux server. Confirming `%3` against the default server would confirm a different pane that happens to share the number, which is how a launch lands in an unrelated session.
 
-So order 2 also resolves the socket, and every query of that step runs against it: the socket of `$TMUX`, else the value of `XTRM_SESSION_SOCKET`, which the launcher records for every seat it creates. When neither names a socket, no identity at that step is trusted — even a `%3` the process carries — and the launch falls through to order 3 with one note on stderr:
+So order 2 also resolves the socket, and every query of that step runs against it: the socket of `$TMUX`, else the value of `XTRM_SESSION_SOCKET`. The launcher records that variable for the seats it creates — `xt pi`, `xt claude`, `xt codex --window` and `xt attach --fresh`; a bare `xt codex` records no session identity at all, and `xt attach` rebuilds the identity of an existing seat. When neither names a socket, no identity at that step is trusted — even a `%3` the process carries — and the launch falls through to order 3 with one note on stderr:
 
 ```text
 warning: %3 names a tmux session, but the server it belongs to is unknown; not placing this launch in it (set $TMUX or XTRM_SESSION_SOCKET)
 ```
 
 A plain launch with no role rule stays silent in that case, for the same reason order 4 stays silent.
+
+A recorded socket that nothing answers on is dropped for the whole launch, with one note and no other effect:
+
+```text
+warning: /tmp/tmux-1000/coord is recorded as this seat's tmux server, but nothing answers there; creating on the default server
+```
+
+Dropping it matters more than the note. `tmux -S <path> new-session` does not fail on a path that holds no server: it starts one there, so keeping a dead socket would create a seat on a phantom server that nothing else can see. After the drop the launch creates on the default server (or on the socket of an explicit target), and the create verb and every later call — the pane options, the published identity, the cleanup — carry the same binding. A failed launch cleans up on the socket it created on, never on the default one.
 
 Order 2 is why a child lands in its parent's session even when the launch process has no `$TMUX`: a dispatched agent, an in-process specialist, the app and a remote caller keep the pane id, the socket and the exported identity of the session they live in, and the parent session recorded by CORE-2801 (`@agent_parent_session` / `XTRM_PARENT_SESSION_ID`) participates in the same order.
 
@@ -109,5 +117,7 @@ tmux rewrites a TAB inside a format argument to `_` under a non-UTF-8 locale (`L
 ## Tests
 
 - `cli/src/tests/tmux-placement.test.ts`: the resolution order, one case per source and per socket rule, with `env: {}` or an explicit env so a case never depends on the host.
-- `cli/src/tests/tmux-placement-session.test.ts`: private tmux servers under a private `TMUX_TMPDIR`, addressed with `-L` and `-S` only. A caller without `$TMUX` places a worker in `operator:workers`, four launches fill the window, the fifth rolls over to `workers-2`, a caller in a second session stays in that session, two servers that both hold `%0` are told apart by their sockets, an identity with no known socket is refused, and the last resort writes the warning.
-- `cli/src/tests/codex-worktree-session.test.ts`: `xt codex --window` binds its window to the resolved session without `$TMUX`, and refuses a caller whose session nothing resolves.
+- `cli/src/tests/tmux-placement-session.test.ts`: private tmux servers under a private `TMUX_TMPDIR`. The resolver gets the caller's environment only, never a binding, and its runner fails any call it did not expect to be bound — so the test fails on a tree whose placement does not bind. A caller without `$TMUX` places a worker in `operator:workers`, four launches fill the window, the fifth rolls over to `workers-2`, a caller in a second session stays in that session, two servers that both hold `%0` are told apart by their sockets, a dead recorded socket creates on the default server without starting a server at the dead path, an identity with no known socket is refused, and the last resort writes the warning.
+- `cli/src/tests/codex-worktree-session.test.ts`: `xt codex --window` binds its window to the resolved session without `$TMUX`, takes order 3 when the caller carries no identity, and refuses a caller whose session nothing resolves.
+- `cli/src/tests/worktree-session-beads-noise.test.ts`: a failed launch on a private socket cleans up on that socket — every `kill-*` and buffer call carries `-S <socket>`.
+- `cli/src/tests/worktree-session-identity.test.ts`: an identity the server does not answer for is not opened in, and a plain launch outside tmux writes no placement warning.

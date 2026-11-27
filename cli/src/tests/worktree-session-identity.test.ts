@@ -39,10 +39,12 @@ interface Harness {
   newWindowArgs?: string[] | null;
 }
 
-function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEmail?: string } = {}): void {
+function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEmail?: string; knownTargets?: string[] } = {}): void {
   const { repoRoot } = h;
   const answer = opts.sessionIdAnswer === undefined ? '$7' : opts.sessionIdAnswer;
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+    // CORE-2802: the socket liveness check, answered before the binding is stripped.
+    if (command === 'tmux' && args[0] === '-S' && args.includes('#{pid}')) return { status: 0, stdout: '4242\n', stderr: '' };
       // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
       if (command === 'tmux' && args[0] === '-S') args = args.slice(2);
     const joined = args.join(' ');
@@ -86,9 +88,17 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
     if (command === 'tmux' && args[0] === 'display-message') {
       if (joined.includes('#{pane_id}')) return { status: 0, stdout: '%9\n', stderr: '' };
       // CORE-2802: the session-identity probe asks for the id and the name together.
-      if (joined.includes('#{session_id}|#{session_name}')) return { status: 0, stdout: `${answer ?? '$3'}|cur-sess\n`, stderr: '' };
+      // CORE-2802 review (finding 8): with `knownTargets`, only a session that exists answers,
+      // so a stale identity must fall through instead of being placed in.
+      const target = args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined;
+      const unknown = target !== undefined && opts.knownTargets !== undefined && !opts.knownTargets.includes(target);
+      if (joined.includes('#{session_id}|#{session_name}')) {
+        return unknown
+          ? { status: 1, stdout: '', stderr: 'no session' }
+          : { status: 0, stdout: `${answer ?? '$3'}|cur-sess\n`, stderr: '' };
+      }
       if (args.includes('-t')) {
-        return answer === null
+        return answer === null || unknown
           ? { status: 1, stdout: '', stderr: 'no session' }
           : { status: 0, stdout: `${answer}\n`, stderr: '' };
       }
@@ -224,6 +234,43 @@ describe('xt/tmux launcher session-identity propagation', () => {
     }
     await fs.remove(tempRoot);
     vi.restoreAllMocks();
+  });
+
+  // CORE-2802 review (finding 7): K1 pins that a plain launch outside tmux stays silent, and
+  // this is that pin at the launcher boundary, where scripts read the streams.
+  it('a plain launch outside tmux writes no placement warning (CORE-2802)', async () => {
+    installMock(h);
+    const written: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'quiet1', attach: false })).rejects.toThrow('exit:0');
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(written.join('')).not.toContain('warning:');
+    expect(sessionNameFromNewSession(h.newSessionArgs)).toBe('pi-quiet1');
+  });
+
+  // CORE-2802 review (finding 8): the launcher boundary, not only the resolver. A worker
+  // shell that still exports a session the server no longer has must not be placed in it.
+  it('does not open a window in an identity the server does not answer for (CORE-2802)', async () => {
+    process.env.XTRM_SESSION_SOCKET = '/tmp/tmux-1000/coord';
+    process.env.XTRM_SESSION_NAME = 'ghost';
+    installMock(h, { knownTargets: [] });
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    await expect(launchWorktreeSession({ runtime: 'pi', name: 'stale1', attach: false })).rejects.toThrow('exit:0');
+
+    // The stale name was probed on the recorded socket and refused; the launch fell back to a
+    // new session instead of opening a window in a session that does not exist.
+    expect(h.newWindowArgs).toBeUndefined();
+    expect(sessionNameFromNewSession(h.newSessionArgs)).toBe('pi-stale1');
+    const probe = mocked.spawnSync.mock.calls.find(
+      (call) => call[0] === 'tmux' && Array.isArray(call[1]) && call[1].includes('ghost'),
+    );
+    expect(probe?.[1].slice(0, 2)).toEqual(['-S', '/tmp/tmux-1000/coord']);
   });
 
   it('bare pi launch carries the same name via -e and the same id via set-environment', async () => {
