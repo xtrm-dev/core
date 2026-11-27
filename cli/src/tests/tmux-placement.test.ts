@@ -4,6 +4,7 @@ import {
     resolvePlacement,
     resolveSocketBinding,
     validateLayout,
+    WINDOWS_LISTING_FORMAT,
 } from '../utils/tmux-placement.js';
 import type { PlacementDeps } from '../utils/tmux-placement.js';
 
@@ -325,8 +326,24 @@ describe('placement session resolution order (CORE-2802)', () => {
         expect(calls).toEqual([
             ['-S', SOCKET, 'display-message', '-p', '#{pid}'],
             ['-S', SOCKET, 'display-message', '-p', '-t', '$8', '#{session_id}'],
-            ['-S', SOCKET, 'list-windows', '-t', 'project', '-F', '#{window_id}|#{window_name}|#{window_panes}'],
+            ['-S', SOCKET, 'list-windows', '-t', 'project', '-F', WINDOWS_LISTING_FORMAT],
         ]);
+    });
+
+    it('reads a window name that holds the field separator without shifting the pane count (CORE-2811)', () => {
+        // The listing is quoted, so a decorated window name stays one column: if it were
+        // split, "workers|custom" would report one pane and be reused as a workers window.
+        const calls: string[][] = [];
+        const result = resolvePlacement({ role: 'worker', insideTmux: false }, {
+            env: NO_TMUX,
+            ...config({ version: 1, session: 'project', placement: { worker: 'workers' } }),
+            tmux: (args) => {
+                calls.push(args);
+                return { status: 0, stdout: '@1|workers\\|custom|1\n@2|workers|1' };
+            },
+        });
+        expect(result).toMatchObject({ kind: 'workers', session: 'project', target: '@2' });
+        expect(calls.at(-1)).toEqual(['list-windows', '-t', 'project', '-F', WINDOWS_LISTING_FORMAT]);
     });
 
     it('uses the configured session without probing tmux when the caller has no identity', () => {

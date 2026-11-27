@@ -66942,6 +66942,50 @@ function setWorktreeIssue(repoRoot, issueRef) {
   return { ok: true };
 }
 
+// src/core/tmux-format.ts
+var TMUX_FIELD_SEP = "|";
+function tmuxField(name) {
+  return `#{q:${name}}`;
+}
+function splitTmuxFields(row, sep6 = TMUX_FIELD_SEP) {
+  const fields = [];
+  let current = "";
+  let quoted = false;
+  for (let i = 0; i < row.length; i += 1) {
+    const char = row[i];
+    if (quoted) {
+      if (char !== "'") {
+        current += char;
+        continue;
+      }
+      if (row[i + 1] === "\\" && row[i + 2] === "'" && row[i + 3] === "'") {
+        current += "'";
+        i += 3;
+        continue;
+      }
+      quoted = false;
+      continue;
+    }
+    if (char === "\\" && i + 1 < row.length) {
+      current += row[i + 1];
+      i += 1;
+      continue;
+    }
+    if (char === sep6) {
+      fields.push(current);
+      current = "";
+      continue;
+    }
+    if (char === "'") {
+      quoted = true;
+      continue;
+    }
+    current += char;
+  }
+  fields.push(current);
+  return { fields, ok: !quoted };
+}
+
 // src/core/launch-outcome.ts
 function checkStructuredLaunchOptions(input2) {
   if (!input2.json) return { ok: true };
@@ -67001,13 +67045,13 @@ function parseLiveTmuxSessionId(status2, stdout) {
   const sessionId = stdout.trim();
   return /^\$[0-9]+$/.test(sessionId) ? { ok: true, sessionId } : { ok: false, error: "detached tmux session returned an invalid identity" };
 }
-var LIVE_SESSION_LISTING_FORMAT = "#{session_name}|#{session_id}";
+var LIVE_SESSION_LISTING_FORMAT = [tmuxField("session_name"), tmuxField("session_id")].join(TMUX_FIELD_SEP);
 function parseLiveTmuxSessionListing(status2, stdout, expectedName) {
   if (status2 !== 0) return { ok: false, error: "detached tmux session is no longer live" };
   const matches = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-    const separator = line.lastIndexOf("|");
-    if (separator < 1 || line.slice(0, separator) !== expectedName) return [];
-    return [line.slice(separator + 1)];
+    const { fields, ok: ok2 } = splitTmuxFields(line);
+    if (!ok2 || fields.length !== 2 || fields[0] !== expectedName) return [];
+    return [fields[1]];
   });
   if (matches.length === 0) return { ok: false, error: "detached tmux session is no longer live" };
   if (matches.length !== 1) return { ok: false, error: "detached tmux session returned an invalid identity" };
@@ -67106,6 +67150,7 @@ var import_node_os14 = __toESM(require("os"), 1);
 var import_node_path22 = __toESM(require("path"), 1);
 var import_node_fs8 = require("fs");
 var import_node_child_process10 = require("child_process");
+var WINDOWS_LISTING_FORMAT = [tmuxField("window_id"), tmuxField("window_name"), tmuxField("window_panes")].join(TMUX_FIELD_SEP);
 var WINDOW_REQUIRES_SESSION = '--window requires a tmux session: run inside tmux, launch from an agent whose session is known, or set "session" in the launch config';
 var DEFAULT_MAX_PANES = 4;
 var CONFIG_ENV = "XTRM_LAUNCH_CONFIG";
@@ -67227,8 +67272,8 @@ function resolvePaneTarget(target, session, deps) {
 }
 function workersTarget(session, maxPanes, socketArgs, deps) {
   if (!session) return null;
-  const listing = tmuxCall(socketArgs, ["list-windows", "-t", session, "-F", "#{window_id}|#{window_name}|#{window_panes}"], deps);
-  const windows2 = listing.split(/\r?\n/).map((line) => line.split("|")).filter((row) => row.length >= 3);
+  const listing = tmuxCall(socketArgs, ["list-windows", "-t", session, "-F", WINDOWS_LISTING_FORMAT], deps);
+  const windows2 = listing.split(/\r?\n/).map((line) => splitTmuxFields(line)).filter((row) => row.ok && row.fields.length === 3).map((row) => row.fields);
   for (const [id, name, count] of windows2) {
     if (/^workers(?:-\d+)?$/.test(name) && Number(count) < maxPanes) return { target: id, name };
   }
@@ -68938,12 +68983,15 @@ function forwardedLaunchEnv(env3 = process.env) {
   return out;
 }
 function resolveTmuxSessionIdentity(session, socketArgs = []) {
-  const r = (0, import_node_child_process11.spawnSync)("tmux", [...socketArgs, "display-message", "-p", "-t", session, "#{session_id}|#{session_name}"], {
+  const identityFormat = [tmuxField("session_id"), tmuxField("session_name")].join(TMUX_FIELD_SEP);
+  const r = (0, import_node_child_process11.spawnSync)("tmux", [...socketArgs, "display-message", "-p", "-t", session, identityFormat], {
     encoding: "utf8",
     stdio: "pipe"
   });
   if (r.status !== 0) return null;
-  const [sessionId, sessionName] = (r.stdout ?? "").trim().split("|", 2);
+  const { fields, ok: ok2 } = splitTmuxFields((r.stdout ?? "").trim());
+  if (!ok2 || fields.length !== 2) return null;
+  const [sessionId, sessionName] = fields;
   return sessionId && sessionName ? { sessionId, sessionName } : null;
 }
 function currentTmuxSessionId() {
@@ -79289,17 +79337,18 @@ function readTextIfExists(path100) {
 }
 
 // src/core/worktree-release-pane.ts
-var FIELD_SEP = "|";
+var FIELD_SEP = TMUX_FIELD_SEP;
 var PANE_FORMAT = [
-  "#{@agent_worktree}",
-  "#{@agent_branch}",
-  "#{@agent_bead}",
-  "#{pane_pid}",
-  "#{pane_current_command}",
-  "#{pane_dead}",
-  "#{pane_in_mode}",
-  "#{pane_current_path}"
+  "#{q:@agent_worktree}",
+  "#{q:@agent_branch}",
+  "#{q:@agent_bead}",
+  "#{q:pane_pid}",
+  "#{q:pane_current_command}",
+  "#{q:pane_dead}",
+  "#{q:pane_in_mode}",
+  "#{q:pane_current_path}"
 ].join(FIELD_SEP);
+var PANE_FIELD_COUNT = 8;
 function tmux(args, timeoutMs = 15e3) {
   const r = (0, import_node_child_process24.spawnSync)("tmux", args, { encoding: "utf8", stdio: "pipe", timeout: timeoutMs });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
@@ -79320,7 +79369,9 @@ function notify(text, paneId) {
 function readPaneInfo(paneId) {
   const result = tmux(["display-message", "-p", "-t", paneId, "-F", PANE_FORMAT]);
   if (!result.ok) return { error: result.err || "tmux could not read the pane" };
-  const [worktree = "", branch = "", bead = "", panePidRaw = "", command = "", dead = "", inMode = "", currentPath = ""] = result.out.split(FIELD_SEP);
+  const { fields, ok: ok2 } = splitTmuxFields(result.out, FIELD_SEP);
+  if (!ok2 || fields.length !== PANE_FIELD_COUNT) return { error: "tmux returned an unreadable pane record" };
+  const [worktree = "", branch = "", bead = "", panePidRaw = "", command = "", dead = "", inMode = "", currentPath = ""] = fields;
   const panePid = Number(panePidRaw);
   return {
     pane: {
@@ -81148,7 +81199,13 @@ init_pi_runtime();
 
 // src/utils/worktree-pane-issue.ts
 var import_node_child_process26 = require("child_process");
-var PANE_LISTING_FORMAT = "#{pane_current_path}|#{@agent_worktree}|#{@agent_issue}|#{@agent_bead}";
+var PANE_LISTING_FORMAT = [
+  tmuxField("pane_current_path"),
+  tmuxField("@agent_worktree"),
+  tmuxField("@agent_issue"),
+  tmuxField("@agent_bead")
+].join(TMUX_FIELD_SEP);
+var PANE_LISTING_FIELD_COUNT = 4;
 var PANE_PROBE_TIMEOUT_MS = 2e3;
 function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
   try {
@@ -81166,7 +81223,9 @@ function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
 function issueFromPaneListing(listing, worktreePath) {
   const beads = /* @__PURE__ */ new Set();
   for (const line of String(listing ?? "").split(/\r?\n/)) {
-    const [currentPath = "", agentWorktree = "", issueOption = "", legacyBead = ""] = line.split("|");
+    const { fields, ok: ok2 } = splitTmuxFields(line);
+    if (!ok2 || fields.length !== PANE_LISTING_FIELD_COUNT) continue;
+    const [currentPath = "", agentWorktree = "", issueOption = "", legacyBead = ""] = fields;
     const issue2 = issueOption.trim() ? issueOption : legacyBead;
     if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
     const candidate = issue2.trim();
@@ -90752,7 +90811,7 @@ var import_node_os40 = require("os");
 var import_node_path80 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
 var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process48.execFile);
-var SEP2 = "|";
+var SEP2 = TMUX_FIELD_SEP;
 var PANE_FIELDS = [
   "pane_id",
   "session_id",
@@ -90775,11 +90834,11 @@ var PANE_FIELDS = [
   "pane_index",
   "window_active",
   "pane_active",
-  // Free text, so last: a tab inside a window name rejoins instead of
-  // shifting every later column.
+  // Free text like the fields above it, so it is quoted, not treated as a tail
+  // to rejoin: a window name may contain the separator.
   "window_name"
 ];
-var PANE_FORMAT2 = PANE_FIELDS.map((f) => `#{${f}}`).join(SEP2);
+var PANE_FORMAT2 = PANE_FIELDS.map((f) => tmuxField(f)).join(SEP2);
 var READ_ONLY_COMMANDS = {
   xtmux: { bin: "xtmux", args: ["topology", "--json"], timeoutMs: 5e3 },
   tmux: { bin: "tmux", args: ["list-panes", "-a", "-F", PANE_FORMAT2], timeoutMs: 5e3 },
@@ -90863,8 +90922,8 @@ function parsePanes(stdout) {
   const panes = [];
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
-    const cols = line.split(SEP2);
-    if (cols.length < PANE_FIELDS.length) continue;
+    const { fields, ok: ok2 } = splitTmuxFields(line, SEP2);
+    if (!ok2 || fields.length !== PANE_FIELDS.length) continue;
     const [
       pane_id,
       session_id,
@@ -90885,9 +90944,9 @@ function parsePanes(stdout) {
       window_index,
       pane_index,
       window_active,
-      pane_active
-    ] = cols;
-    const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP2);
+      pane_active,
+      window_name
+    ] = fields;
     const bead_id = issue_id?.trim() ? issue_id : legacy_bead_id;
     const lineage = [state, role, task, bead_id, worktree, branch, parent_session_id];
     const agent = lineage.some(Boolean) ? {

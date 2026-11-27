@@ -147,9 +147,35 @@ describe('parsers', () => {
         expect(prs.get('b')?.number).toBe(42);
     });
 
-    it('reads window and pane layout fields, and keeps a tab inside a window name', () => {
-        const [pane] = parsePanes(paneLine({ window_index: '3', pane_index: '1', window_active: '0', pane_active: '1', window_name: `a${SEP}b` }));
+    it('reads window and pane layout fields, and keeps a separator inside a window name', () => {
+        // The shipped format quotes window_name, so tmux prints the separator escaped
+        // (CORE-2811 review); an unquoted `a|b` would be two columns and is rejected.
+        const [pane] = parsePanes(paneLine({ window_index: '3', pane_index: '1', window_active: '0', pane_active: '1', window_name: `a\\${SEP}b` }));
         expect(pane).toMatchObject({ window_index: 3, pane_index: 1, window_active: false, pane_active: true, window_name: `a${SEP}b` });
+    });
+
+    it('keeps a separator inside a session name, a branch, a path and a task (CORE-2811 review)', () => {
+        // Every free-text field the shipped format asks for holds the separator here, in the
+        // quoted form tmux prints. A hard split would shift every later column onto its
+        // neighbour, which is what made a pane report another pane's command and bead.
+        const [pane] = parsePanes([
+            '%7', '$3', 's\\|1', '@2', 'claude', '/repo/a\\|b', 'running', 'worker', 'task\\|x',
+            'CORE-1', '', '/repo/a\\|b/.xtrm/worktrees/w\\|1', 'xt/a\\|b', '$2', '%4', 'inst-a',
+            '1', '0', '1', '0', 'zsh\\|z',
+        ].join(SEP));
+        expect(pane).toMatchObject({
+            pane_id: '%7',
+            session_name: 's|1',
+            current_path: '/repo/a|b',
+            window_name: 'zsh|z',
+            agent: {
+                task: 'task|x',
+                bead_id: 'CORE-1',
+                worktree: '/repo/a|b/.xtrm/worktrees/w|1',
+                branch: 'xt/a|b',
+                instance_id: 'inst-a',
+            },
+        });
     });
 
     it('maps a Substrate issue envelope onto the bead fields', () => {

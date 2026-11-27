@@ -1,10 +1,11 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LIVE_SESSION_LISTING_FORMAT, parseLiveTmuxSessionListing } from '../core/launch-outcome.js';
+import { READ_ONLY_COMMANDS, parsePanes } from '../core/topology-projection.js';
+import { PANE_LISTING_FORMAT, issueFromPaneListing } from '../utils/worktree-pane-issue.js';
 
 // CORE-2811 e2e on a private tmux server. tmux rewrites a control character inside a
 // format argument to '_' under a non-UTF-8 locale (CORE-2802), so a TAB-separated
@@ -93,9 +94,11 @@ describe.skipIf(!tmuxAvailable)('detached launch output on a real, private tmux 
         expect(sessionId).toMatch(/^\$\d+$/);
 
         // The format the launcher passes, run by the real binary, parsed by the real parser.
+        // The id arrives quoted (`\$0`) because every field is quoted (CORE-2811 review):
+        // the parser decodes it, so the row is compared through the parser, not as text.
         const listing = tmux(['list-sessions', '-F', LIVE_SESSION_LISTING_FORMAT]);
         expect(listing.status).toBe(0);
-        expect(listing.stdout).toBe(`pi-json|${sessionId}`);
+        expect(listing.stdout).toContain('\|');
         expect(parseLiveTmuxSessionListing(listing.status, `${listing.stdout}\n`, 'pi-json')).toEqual({
             ok: true,
             sessionId,
@@ -176,28 +179,46 @@ describe.skipIf(!tmuxAvailable)('detached launch output on a real, private tmux 
         expect(exitSpy).toHaveBeenCalledWith(0);
     });
 
-    it('keeps every tmux format in the cli sources free of control separators', async () => {
-        const cliRoot = fileURLToPath(new URL('../..', import.meta.url));
-        const offenders: string[] = [];
-        async function walk(current: string): Promise<void> {
-            for (const entry of await fs.readdir(current, { withFileTypes: true })) {
-                const full = path.join(current, entry.name);
-                if (entry.isDirectory()) {
-                    if (entry.name === 'tests') continue;
-                    await walk(full);
-                    continue;
-                }
-                if (!full.endsWith('.ts')) continue;
-                const lines = (await fs.readFile(full, 'utf8')).split('\n');
-                lines.forEach((line, index) => {
-                    // A tmux format expansion next to a TAB or unit-separator escape is the bug.
-                    if (line.includes('#{') && (line.includes('\\t') || line.includes('\\u001f'))) {
-                        offenders.push(`${path.relative(cliRoot, full)}:${index + 1}: ${line.trim()}`);
-                    }
-                });
-            }
+    // The CORE-2811 review replaced the line-local source scan that lived here: it read
+    // source text, so a separator constant reverted to a TAB, or a literal TAB byte, passed
+    // it. The invariant now runs against the shipped format VALUES in
+    // src/tests/tmux-format.test.ts (`assertQuotedFormat`), and the parsers below prove the
+    // quoting works on a real server, where a quote-aware split is the difference between
+    // reading a value and reading the next field.
+    it('keeps every separator out of the values: session name, branch and path hold one', () => {
+        const shared = path.join(dir, 'a|b');
+        fs.ensureDirSync(shared);
+        const sessionName = "s|1'q";
+        expect(tmux(['new-session', '-d', '-s', sessionName, '-c', shared, 'sleep 60']).status).toBe(0);
+        const paneId = tmux(['list-panes', '-t', `=${sessionName}`, '-F', '#{pane_id}']).stdout;
+        expect(paneId).toMatch(/^%\d+$/);
+        for (const [key, value] of [
+            ['@agent_worktree', shared],
+            ['@agent_branch', 'xt/a|b'],
+            ['@agent_issue', 'CORE-1'],
+            ['@agent_bead', ''],
+            ['@agent_task', 'task|with|pipes'],
+            ['@agent_state', 'running'],
+        ] as const) {
+            expect(tmux(['set-option', '-p', '-t', paneId, key, value]).status).toBe(0);
         }
-        await walk(path.join(cliRoot, 'src'));
-        expect(offenders).toEqual([]);
+
+        // topology: every column keeps its own value, and the row is not shifted.
+        const topologyListing = tmux(['list-panes', '-a', '-F', READ_ONLY_COMMANDS.tmux.args.at(-1) as string]);
+        expect(topologyListing.status).toBe(0);
+        const pane = parsePanes(topologyListing.stdout).find((candidate) => candidate.pane_id === paneId);
+        expect(pane).toMatchObject({
+            session_name: sessionName,
+            current_path: fs.realpathSync(shared),
+            agent: { branch: 'xt/a|b', worktree: shared, bead_id: 'CORE-1', task: 'task|with|pipes' },
+        });
+
+        // attach's pane probe: the path with a separator still matches EXACTLY.
+        // (The release-pane reader is covered on its own private server in
+        // worktree-release-pane.test.ts; this file mocks node:child_process for the
+        // launcher, so a module-level tmux caller would not reach the real binary.)
+        const attachListing = tmux(['list-panes', '-a', '-F', PANE_LISTING_FORMAT]);
+        expect(attachListing.status).toBe(0);
+        expect(issueFromPaneListing(attachListing.stdout, fs.realpathSync(shared))).toBe('CORE-1');
     });
 });

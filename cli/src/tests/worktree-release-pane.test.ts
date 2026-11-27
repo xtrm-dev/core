@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { escapePromptText, releasePane } from '../core/worktree-release-pane.js';
+import { escapePromptText, readPaneInfo, releasePane } from '../core/worktree-release-pane.js';
 
 function hasTmux(): boolean {
     return spawnSync('tmux', ['-V'], { encoding: 'utf8', stdio: 'pipe' }).status === 0;
@@ -136,6 +136,39 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
             spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
         }
     }, 120_000);
+
+    it('reads a branch, a worktree and a path that hold the field separator (CORE-2811)', () => {
+        // '|' is legal in a branch name and a path, and the release decides on both. The
+        // shipped format quotes every field, so the values survive instead of shifting the
+        // record: this is the reader, on a real server, with a separator inside the data.
+        const socket = `xt-release-sep-${process.pid}`;
+        const repoRoot = path.join(os.tmpdir(), `xt|sep-${process.pid}`);
+        const worktree = path.join(repoRoot, '.xtrm', 'worktrees', 'w|1');
+        fs.mkdirSync(worktree, { recursive: true });
+        created.push(repoRoot);
+        tmuxBin(socket, ['new-session', '-d', '-s', "s|1", '-c', worktree, 'sleep 300']);
+        const paneId = tmuxBin(socket, ['list-panes', '-t', "=s|1", '-F', '#{pane_id}']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/a|b']);
+        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_bead', 'CORE-1']);
+        // readPaneInfo resolves the server from $TMUX, which names this private socket.
+        const previousTmux = process.env.TMUX;
+        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
+        try {
+            const info = readPaneInfo(paneId);
+            expect(info.error).toBeUndefined();
+            expect(info.pane).toMatchObject({
+                branch: 'xt/a|b',
+                worktree,
+                bead: 'CORE-1',
+                currentPath: fs.realpathSync(worktree),
+            });
+        } finally {
+            if (previousTmux === undefined) delete process.env.TMUX;
+            else process.env.TMUX = previousTmux;
+            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
+        }
+    }, 60_000);
 
     it.skipIf(!canDriveRealCli)('releases through the real CLI and a real prompt', async () => {
         // The in-process path cannot be tested here: confirmRelease uses spawnSync and

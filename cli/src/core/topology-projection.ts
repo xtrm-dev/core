@@ -35,6 +35,7 @@ import { execFile } from 'node:child_process';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { TMUX_FIELD_SEP, splitTmuxFields, tmuxField } from './tmux-format.js';
 import type {
     TopologyAgentSession,
     TopologyBead,
@@ -51,15 +52,15 @@ import type {
 const execFileAsync = promisify(execFile);
 
 /**
- * Field separator for the tmux format string.
+ * Field separator for the tmux format string (CORE-2811).
  *
  * '|' and not a TAB: under a non-UTF-8 locale tmux rewrites a control character
  * inside a format argument to '_' (CORE-2802), so a tab-separated row collapses
- * into one field and every pane is skipped (CORE-2811). A printable separator
- * passes through verbatim. `window_name` is the last field and is rebuilt from
- * the tail, so a window name that itself contains '|' still parses.
+ * into one field and every pane is skipped. A printable separator passes through
+ * verbatim, and every field is quoted by `tmuxField` because '|' is legal inside
+ * a session name, a branch and a path.
  */
-const SEP = '|';
+const SEP = TMUX_FIELD_SEP;
 
 /**
  * tmux format fields, in argv order. `@agent_*` are the lineage pane options
@@ -89,12 +90,12 @@ const PANE_FIELDS = [
     'pane_index',
     'window_active',
     'pane_active',
-    // Free text, so last: a tab inside a window name rejoins instead of
-    // shifting every later column.
+    // Free text like the fields above it, so it is quoted, not treated as a tail
+    // to rejoin: a window name may contain the separator.
     'window_name',
 ] as const;
 
-const PANE_FORMAT = PANE_FIELDS.map((f) => `#{${f}}`).join(SEP);
+const PANE_FORMAT = PANE_FIELDS.map((f) => tmuxField(f)).join(SEP);
 
 /**
  * Every command this module is permitted to run. Argv is taken from here rather
@@ -252,14 +253,16 @@ export function parsePanes(stdout: string): RawPane[] {
     const panes: RawPane[] = [];
     for (const line of stdout.split('\n')) {
         if (!line.trim()) continue;
-        const cols = line.split(SEP);
-        if (cols.length < PANE_FIELDS.length) continue;
+        const { fields, ok } = splitTmuxFields(line, SEP);
+        // Exactly one column per field: a quoted value keeps its separator, and a
+        // row that still splits into the wrong count is unreadable, never shifted.
+        if (!ok || fields.length !== PANE_FIELDS.length) continue;
         const [
             pane_id, session_id, session_name, window_id, current_command, current_path,
             state, role, task, issue_id, legacy_bead_id, worktree, branch, parent_session_id, parent_pane_id, instance_id,
             window_index, pane_index, window_active, pane_active,
-        ] = cols;
-        const window_name = cols.slice(PANE_FIELDS.length - 1).join(SEP);
+            window_name,
+        ] = fields;
         // A pane is an xtrm-launched agent only if it carries lineage. A plain
         // shell gets `agent: null` rather than an object of empty strings —
         // "not an agent" and "an agent with no role" are different facts.

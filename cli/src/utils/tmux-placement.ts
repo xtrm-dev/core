@@ -20,8 +20,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { TMUX_FIELD_SEP, splitTmuxFields, tmuxField } from '../core/tmux-format.js';
 
 export type PlacementKind = 'current' | 'session' | 'window' | 'pane' | 'workers';
+
+/**
+ * The workers-window listing (CORE-2811): '|' and not a TAB, because tmux rewrites a
+ * control character inside a format argument to '_'. Every field is quoted because a
+ * window name may contain the separator, and this listing is matched on the name.
+ */
+export const WINDOWS_LISTING_FORMAT = [tmuxField('window_id'), tmuxField('window_name'), tmuxField('window_panes')].join(TMUX_FIELD_SEP);
 
 /**
  * The one refusal a `--window` launch can give (CORE-2802): pi, claude and codex all resolve
@@ -269,9 +277,11 @@ function resolvePaneTarget(target: string, session: string | undefined, deps: Pl
 
 function workersTarget(session: string | undefined, maxPanes: number, socketArgs: string[], deps: PlacementDeps): { target: string; name: string } | null {
     if (!session) return null;
-    // '|' and not a TAB: tmux rewrites a control character inside a format argument to '_'.
-    const listing = tmuxCall(socketArgs, ['list-windows', '-t', session, '-F', '#{window_id}|#{window_name}|#{window_panes}'], deps);
-    const windows = listing.split(/\r?\n/).map(line => line.split('|')).filter(row => row.length >= 3);
+    const listing = tmuxCall(socketArgs, ['list-windows', '-t', session, '-F', WINDOWS_LISTING_FORMAT], deps);
+    const windows = listing.split(/\r?\n/)
+        .map(line => splitTmuxFields(line))
+        .filter(row => row.ok && row.fields.length === 3)
+        .map(row => row.fields as [string, string, string]);
     for (const [id, name, count] of windows) {
         if (/^workers(?:-\d+)?$/.test(name) && Number(count) < maxPanes) return { target: id, name };
     }

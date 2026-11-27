@@ -73,7 +73,7 @@ function install(repoRoot: string, cap: Capture): void {
       if (args[0] === 'split-window' || args[0] === 'new-window') { cap.placementArgs.push([...args]); cap.newSessionArgs = [...args]; return ok('%77\n'); }
       if (args[0] === 'display-message') {
         if (joined.includes('#{pane_id}')) return ok('%9\n');
-        if (joined.includes('#{session_id}')) return ok(args.includes('other-sess:workers') || args.includes('%9') ? '$9|other-sess\n' : '$3\n');
+        if (joined.includes('session_id')) return ok(args.includes('other-sess:workers') || args.includes('%9') ? '$9|other-sess\n' : '$3\n');
         if (args.some((arg) => arg.includes('#{window_id}'))) return ok('@1\n');
         return ok('cur-sess\n');
       }

@@ -31,6 +31,7 @@ import {
     resolveTmuxSessionId,
     XTRM_SESSION_ID_VAR,
 } from '../core/session-identity.js';
+import { TMUX_FIELD_SEP, splitTmuxFields, tmuxField } from '../core/tmux-format.js';
 import { placementCreateArgs, resolvePlacement, validateLayout, WINDOW_REQUIRES_SESSION, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
 
 /**
@@ -2769,11 +2770,16 @@ export function forwardedLaunchEnv(env: NodeJS.ProcessEnv = process.env): Record
 
 function resolveTmuxSessionIdentity(session: string, socketArgs: string[] = []): ReturnType<typeof resolveCurrentTmuxSessionIdentity> | null {
     // '|' and not a TAB: tmux rewrites a control character inside a format argument to '_'.
-    const r = spawnSync('tmux', [...socketArgs, 'display-message', '-p', '-t', session, '#{session_id}|#{session_name}'], {
+    // Both fields are quoted because a session name may contain the separator, and the
+    // name is half of the identity this returns.
+    const identityFormat = [tmuxField('session_id'), tmuxField('session_name')].join(TMUX_FIELD_SEP);
+    const r = spawnSync('tmux', [...socketArgs, 'display-message', '-p', '-t', session, identityFormat], {
         encoding: 'utf8', stdio: 'pipe',
     });
     if (r.status !== 0) return null;
-    const [sessionId, sessionName] = (r.stdout ?? '').trim().split('|', 2);
+    const { fields, ok } = splitTmuxFields((r.stdout ?? '').trim());
+    if (!ok || fields.length !== 2) return null;
+    const [sessionId, sessionName] = fields;
     return sessionId && sessionName ? { sessionId, sessionName } : null;
 }
 
