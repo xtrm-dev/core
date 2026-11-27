@@ -22,7 +22,7 @@ import { buildDispatcherEnvWithResolution, recordDispatcherBinding, type Dispatc
 import { panePath } from '../core/pane-path.js';
 import { preflightLaunchIdentity, resolveLaunchIdentity } from '../core/launch-identity.js';
 import { resolveGitEmail } from '../core/git-identity.js';
-import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity } from '../core/session-identity.js';
+import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity, resolveTmuxSessionId, type TmuxSessionIdentity } from '../core/session-identity.js';
 import {
     checkStructuredLaunchOptions,
     checkStructuredLaunchPaths,
@@ -46,6 +46,7 @@ import { applyPaneOptions, relationshipPaneOptions } from './worktree-session.js
 import { withRestoredDispatcher } from '../core/dispatcher-identity.js';
 import { ensureAgentsSkillsSymlink } from '../core/skills-scaffold.js';
 import { fetchWorktreeBase } from './worktree-base.js';
+import { resolveCallerSession } from './tmux-placement.js';
 
 export interface CodexWorktreeSessionOptions {
     name?: string;
@@ -106,6 +107,23 @@ function resolveCodexExecutable(): string | null {
     return result.status === 0 && path.basename(absolute) === 'codex'
         ? absolute
         : null;
+}
+
+/**
+ * The identity of the session a `--window` worker joins (CORE-2390). A caller inside tmux
+ * reports its own session; a caller outside tmux (CORE-2802) reports the session the
+ * placement rule resolved from its identity, so the pane is not left anonymous.
+ */
+function callerSessionIdentity(session: string | undefined): TmuxSessionIdentity {
+    const current = resolveCurrentTmuxSessionIdentity();
+    if (current.sessionId) return current;
+    const sessionId = session ? resolveTmuxSessionId(session) : null;
+    const name = session
+        ? (spawnSync('tmux', ['display-message', '-p', '-t', session, '-F', '#{session_name}'], {
+            stdio: 'pipe', encoding: 'utf8',
+        }).stdout ?? '').trim()
+        : '';
+    return { sessionId, sessionName: name || null };
 }
 
 function codexBufferCommand(buffer: string): string {
@@ -213,7 +231,11 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     if (!optionCheck.ok) fail(optionCheck.error);
     if (opts.role && opts.issue && opts.prompt) fail('--issue and --prompt are mutually exclusive with --role');
     const window = Boolean(opts.window);
-    if (window && !process.env.TMUX) fail('--window requires running inside tmux');
+    // CORE-2802: one placement rule (docs/tmux-placement.md). A caller without $TMUX still has a
+    // session when a pane id or an exported identity names it, which is how a dispatched agent,
+    // an in-process specialist or the app launches a --window worker into the session it lives in.
+    const callerSession = resolveCallerSession();
+    if (window && !callerSession) fail('--window requires a tmux session: run inside tmux, or launch from an agent whose session is known');
     if (window && structured) fail('--window cannot combine with --json');
 
     const passthrough = checkCodexPassthrough(opts.passthrough ?? []);
@@ -401,11 +423,8 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     }
 
     const launchedAfterMs = Date.now() - 1_000;
-    const parentSession = process.env.TMUX
-        ? (spawnSync('tmux', ['display-message', '-p', '-F', '#{session_id}'], {
-            stdio: 'pipe', encoding: 'utf8',
-        }).stdout ?? '').trim()
-        : '';
+    // CORE-2802: the caller's session comes from its identity, not only from $TMUX.
+    const parentSession = callerSession ?? '';
     const paneOptions: Array<{ key: string; value: string }> = [
         { key: '@agent_parent_session', value: parentSession },
         { key: '@agent_task', value: roleName ? taskForRole(roleName) : `session:${slug}` },
@@ -417,7 +436,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
     ];
     // CORE-2390: dispatcher identity; a --window worker also carries the
     // caller session's identity, since that is the session it runs in.
-    const windowIdentity = window ? resolveCurrentTmuxSessionIdentity() : null;
+    const windowIdentity = window ? callerSessionIdentity(callerSession) : null;
     // CORE-2528: role App identity when this host has the App and its installation
     // covers the repo owner; otherwise the operator identity, as before.
     const launchIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, forwardInherited: true, env: opts.identityEnv });

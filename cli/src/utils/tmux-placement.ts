@@ -1,3 +1,11 @@
+// Placement rule for a launch (CORE-2776, CORE-2802; docs/tmux-placement.md).
+//
+// The target session of a launch is resolved in one order: the explicit --session flag,
+// the caller's own session taken from its identity, the configured default session in
+// ~/.xtrm/config/launch.json, and a new session only as a last resort, announced on
+// stderr. The caller's identity is not only $TMUX: a process without $TMUX (a dispatched
+// agent, an in-process specialist, the app) still names its session through its pane id
+// or the launcher's exports.
 import os from 'node:os';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -39,12 +47,30 @@ export interface PlacementDeps {
     readFile?: (file: string) => string;
     exists?: (file: string) => boolean;
     tmux?: (args: string[]) => { status: number | null; stdout?: string; stderr?: string };
+    /**
+     * CORE-2802: the environment that carries the caller's tmux identity. It defaults to
+     * process.env; pass `env: {}` to state that the caller has no identity at all, so a
+     * test never depends on the host it runs on.
+     */
+    env?: NodeJS.ProcessEnv;
 }
 
 const DEFAULT_MAX_PANES = 4;
 const CONFIG_ENV = 'XTRM_LAUNCH_CONFIG';
 const PLACEMENT_VALUES = new Set(['workers', 'window', 'session', 'current']);
 const LAYOUT_RE = /^[a-z][a-z0-9-]*$/;
+/** An exact tmux session id (`$N`): the only form a probe result is trusted in. */
+const SESSION_ID_RE = /^\$\d+$/;
+/** A caller-supplied or inherited tmux target this module is willing to hand to tmux. */
+const TARGET_RE = /^[A-Za-z0-9_.%$-]+$/;
+const PANE_ID_RE = /^%\d+$/;
+/**
+ * The caller's own session, in identity order: what the launcher exported at launch,
+ * then the dispatcher relation it recorded (CORE-2801). Every name already exists; the
+ * dispatcher's pane (XTRM_PARENT_PANE_ID) is the one that survives when a worker shell
+ * keeps no session of its own.
+ */
+const CALLER_SESSION_ENV = ['XTRM_SESSION_ID', 'XTRM_SESSION_NAME', 'XTRM_PARENT_SESSION_ID', 'XTRM_PARENT_PANE_ID'] as const;
 
 export function launchConfigPath(home = os.homedir()): string {
     return process.env[CONFIG_ENV] || path.join(home, '.xtrm', 'config', 'launch.json');
@@ -89,13 +115,68 @@ export function loadLaunchPlacementConfig(deps: PlacementDeps = {}): LaunchPlace
 
 function tmuxCall(args: string[], deps: PlacementDeps): string {
     const run = deps.tmux ?? ((argv: string[]) => spawnSync('tmux', argv, { encoding: 'utf8', stdio: 'pipe' }));
-    const result = run(args);
-    if (result.status !== 0) return '';
+    let result: { status: number | null; stdout?: string; stderr?: string } | undefined;
+    try {
+        result = run(args);
+    } catch {
+        // A missing server or binary is an absent answer, never a failed launch decision.
+        return '';
+    }
+    if (!result || result.status !== 0) return '';
     return (result.stdout ?? '').trim();
 }
 
-function currentSession(deps: PlacementDeps): string | undefined {
-    return tmuxCall(['display-message', '-p', '#{session_name}'], deps) || undefined;
+/**
+ * The session id of one tmux target, or undefined when the target is unsafe, absent or
+ * gone. A value that no longer resolves (a recycled pane id, a closed session) is not
+ * an identity: the caller falls through to the next source.
+ */
+function sessionIdOf(target: string | undefined, deps: PlacementDeps): string | undefined {
+    if (target !== undefined && !TARGET_RE.test(target)) return undefined;
+    const args = target === undefined
+        ? ['display-message', '-p', '#{session_id}']
+        : ['display-message', '-p', '-t', target, '#{session_id}'];
+    const id = tmuxCall(args, deps);
+    return SESSION_ID_RE.test(id) ? id : undefined;
+}
+
+/**
+ * The tmux session the caller belongs to (CORE-2802). `$TMUX` alone is not enough: a
+ * dispatched agent, an in-process specialist and the app can lack it while their pane
+ * id or their exported identity still names the session they live in.
+ *
+ * Order: the caller's own pane (which works without `$TMUX`), the current session of the
+ * tmux server the caller talks to, then the identity the launcher exported. Every source
+ * is validated against the live server, so a stale variable never places a launch.
+ */
+export function resolveCallerSession(deps: PlacementDeps = {}): string | undefined {
+    const env = deps.env ?? process.env;
+    const paneId = (env.TMUX_PANE ?? '').trim();
+    if (PANE_ID_RE.test(paneId)) {
+        const fromPane = sessionIdOf(paneId, deps);
+        if (fromPane) return fromPane;
+    }
+    if (env.TMUX) {
+        const live = sessionIdOf(undefined, deps);
+        if (live) return live;
+    }
+    for (const key of CALLER_SESSION_ENV) {
+        const value = (env[key] ?? '').trim();
+        if (!value) continue;
+        const resolved = sessionIdOf(value, deps);
+        if (resolved) return resolved;
+    }
+    return undefined;
+}
+
+/**
+ * The last resort (CORE-2802). When a flag or a role rule asked for a session and none
+ * resolved, the fallback is announced. A plain launch that asked for nothing keeps its
+ * silent new session: outside tmux that session is the product, not a fallback.
+ */
+function newSessionPlacement(session: string | undefined, maxPanes: number, announce = true): ResolvedPlacement {
+    if (announce) process.stderr.write('warning: no tmux session to place this launch in; launching a new session instead\n');
+    return { kind: 'session', session, maxPanes };
 }
 
 function resolvePaneTarget(target: string, session: string | undefined, deps: PlacementDeps): string {
@@ -106,8 +187,9 @@ function resolvePaneTarget(target: string, session: string | undefined, deps: Pl
 
 function workersTarget(session: string | undefined, maxPanes: number, deps: PlacementDeps): { target: string; name: string } | null {
     if (!session) return null;
-    const listing = tmuxCall(['list-windows', '-t', session, '-F', '#{window_id}\t#{window_name}\t#{window_panes}'], deps);
-    const windows = listing.split(/\r?\n/).map(line => line.split('\t')).filter(row => row.length >= 3);
+    // '|' and not a TAB: tmux rewrites a control character inside a format argument to '_'.
+    const listing = tmuxCall(['list-windows', '-t', session, '-F', '#{window_id}|#{window_name}|#{window_panes}'], deps);
+    const windows = listing.split(/\r?\n/).map(line => line.split('|')).filter(row => row.length >= 3);
     for (const [id, name, count] of windows) {
         if (/^workers(?:-\d+)?$/.test(name) && Number(count) < maxPanes) return { target: id, name };
     }
@@ -127,27 +209,68 @@ export function resolvePlacement(options: PlacementOptions, deps: PlacementDeps 
         : !explicit ? config?.placement.default : undefined;
     const selected = explicit ?? configured;
     const maxPanes = config?.workersMaxPanes ?? DEFAULT_MAX_PANES;
-    if (!selected) return { kind: options.insideTmux ? 'current' : 'session', maxPanes };
-    if (selected === 'current') return { kind: 'current', session: options.session ?? config?.session, maxPanes };
-    if (selected === 'session') return { kind: 'session', session: options.session ?? config?.session, maxPanes };
-    const configuredSession = options.session ?? config?.session;
-    const querySession = configuredSession ?? (options.insideTmux ? currentSession(deps) : undefined);
+    // CORE-2802: one placement-session order. The flag is explicit intent, the caller's own
+    // session is where a dispatched agent belongs, and the configured session is the
+    // project default. resolveCallerSession probes only when two of them are missing.
+    const session = options.session ?? resolveCallerSession(deps) ?? config?.session;
+    if (!selected) {
+        if (options.insideTmux) return { kind: 'current', session, maxPanes };
+        return session
+            ? { kind: 'window', session, windowName: options.windowName, layout: options.layout, maxPanes }
+            : newSessionPlacement(session, maxPanes, false);
+    }
+    if (selected === 'current') {
+        // 'current' needs the caller's own pane. Without $TMUX it becomes a window of the
+        // resolved session, and a new session when there is none.
+        if (options.insideTmux) return { kind: 'current', session, maxPanes };
+        return session
+            ? { kind: 'window', session, windowName: options.windowName, layout: options.layout, maxPanes }
+            : newSessionPlacement(session, maxPanes);
+    }
+    if (selected === 'session') return { kind: 'session', session, maxPanes };
     if (selected === 'workers') {
-        const worker = workersTarget(querySession, maxPanes, deps);
+        const worker = workersTarget(session, maxPanes, deps);
         if (worker) {
-            return { kind: 'workers', session: configuredSession, target: worker.target, windowName: worker.name, layout: options.layout ?? 'tiled', maxPanes, existingWindow: worker.target.startsWith('@') };
+            return { kind: 'workers', session, target: worker.target, windowName: worker.name, layout: options.layout ?? 'tiled', maxPanes, existingWindow: worker.target.startsWith('@') };
         }
-        process.stderr.write('warning: --workers requires a tmux session; launching a new session instead\n');
-        return { kind: 'session', session: configuredSession, maxPanes };
+        return newSessionPlacement(session, maxPanes);
     }
     if (selected === 'window') {
-        return options.insideTmux || configuredSession
-            ? { kind: 'window', session: configuredSession, windowName: options.windowName, layout: options.layout, maxPanes }
-            : { kind: 'session', maxPanes };
+        return session
+            ? { kind: 'window', session, windowName: options.windowName, layout: options.layout, maxPanes }
+            : newSessionPlacement(session, maxPanes);
     }
-    if (!options.insideTmux && !configuredSession) return { kind: 'session', maxPanes };
-    const target = resolvePaneTarget(selected.slice(5), querySession, deps);
-    return { kind: 'pane', session: configuredSession, target, layout: options.layout ?? 'tiled', maxPanes };
+    const target = selected.slice(5);
+    // An absolute pane id is its own target: it needs no session to resolve against.
+    if (!session && !PANE_ID_RE.test(target)) return newSessionPlacement(session, maxPanes);
+    return { kind: 'pane', session, target: resolvePaneTarget(target, session, deps), layout: options.layout ?? 'tiled', maxPanes };
+}
+
+export interface PlacementCreateArgs {
+    /** The session the launch lands in: the resolved one, the live one, or the new one. */
+    targetSession: string;
+    /** Window name for a window placement. */
+    windowName: string;
+    /** Working directory of the new pane. */
+    worktreePath: string;
+    /** Session name that a last-resort `new-session` creates. */
+    newSessionName: string;
+}
+
+/**
+ * The tmux verb that creates the pane for a resolved placement (CORE-2776, CORE-2802).
+ * Pure: the caller supplies the resolved session, so a placement into the caller's own
+ * session produces the same arguments whether or not the caller has `$TMUX`.
+ */
+export function placementCreateArgs(placement: ResolvedPlacement, args: PlacementCreateArgs): string[] {
+    const target = placement.target ?? args.targetSession;
+    if (placement.kind === 'pane' || (placement.kind === 'workers' && placement.existingWindow)) {
+        return ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', target, '-c', args.worktreePath];
+    }
+    if (placement.kind === 'workers' || placement.kind === 'window') {
+        return ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${args.targetSession}:`, '-n', placement.windowName ?? args.windowName, '-c', args.worktreePath];
+    }
+    return ['new-session', '-d', '-s', args.newSessionName, '-c', args.worktreePath];
 }
 
 export function validateLayout(layout: string | undefined): void {

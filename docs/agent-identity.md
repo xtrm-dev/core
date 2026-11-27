@@ -106,6 +106,12 @@ A pane whose agent process exited is not live. A reader derives the state: when 
 | `XTRM_PARENT_PANE_ID`, `XTRM_PARENT_SESSION_ID` | Launcher | Equal `@agent_parent_pane` and `@agent_parent_session`. |
 | `XTRM_ROLE` | Launcher | Role used for identity resolution. |
 
+## Placement
+
+Where a new seat opens its pane is a separate rule, documented once in [tmux-placement.md](tmux-placement.md). The target session is the explicit `--session` flag, else the caller's own session (its pane id, `$TMUX`, or the launcher's exports), else `session` in `~/.xtrm/config/launch.json`. A new session is the last resort and is announced on stderr.
+
+This matters to identity in one place: a child launched from a process without `$TMUX` records the session that placement resolved as its `@agent_parent_session`, so the relationship options stay correct for a dispatched agent, an in-process specialist, the app and a remote caller.
+
 ## Migration
 
 - A pane launched before this change carries `@agent_bead` and no `@agent_holder`. Readers fall back to `@agent_bead`. Claim sync skips such a pane because it has no `@agent_holder`. Relaunch the pane to enable claim sync.

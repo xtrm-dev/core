@@ -83,6 +83,8 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
     }
     if (command === 'tmux' && args[0] === 'display-message') {
       if (joined.includes('#{pane_id}')) return { status: 0, stdout: '%9\n', stderr: '' };
+      // CORE-2802: the session-identity probe asks for the id and the name together.
+      if (joined.includes('#{session_id}|#{session_name}')) return { status: 0, stdout: `${answer ?? '$3'}|cur-sess\n`, stderr: '' };
       if (args.includes('-t')) {
         return answer === null
           ? { status: 1, stdout: '', stderr: 'no session' }
@@ -247,6 +249,10 @@ describe('xt/tmux launcher session-identity propagation', () => {
     process.env.XTRM_AGENT_NAME = 'stale-parent-name';
     process.env.XTRM_SESSION_NAME = 'xx';
     installMock(h);
+    // CORE-2802: an exported session name is placement identity now, so a launch that keeps
+    // it opens a window in that session instead of a new one. This test measures the
+    // launched env, so the stale name is dropped right before the launch.
+    delete process.env.XTRM_SESSION_NAME;
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
     await expect(launchWorktreeSession({ runtime: 'pi', name: 'attr1', attach: false })).rejects.toThrow('exit:0');
@@ -659,7 +665,9 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
       expect(h.newSessionArgs).toBeNull();
       const args = h.newWindowArgs ?? [];
-      expect(args.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$3:']);
+      // CORE-2802: the caller's PANE decides the session, ahead of the $TMUX client, so a
+      // worker of a lead that sits in another session joins the lead's session.
+      expect(args.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$7:']);
       expect(args[args.indexOf('-n') + 1]).toBe('pi-dwk5');
       const env = envPairs(args);
       expectDispatcher(env, 'dwk5');
