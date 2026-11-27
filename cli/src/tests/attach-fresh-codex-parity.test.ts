@@ -44,6 +44,9 @@ async function launch(existing: boolean, dispatcher: Record<string, string> = {}
     if (existing) fs.ensureDirSync(worktreePath);
     const cap: Cap = { env: {}, args: [], pane: {}, calls: [] };
     mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: { input?: string } = {}) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
         const joined = args.join(' ');
         cap.calls.push(`${command} ${joined}`);
         const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });

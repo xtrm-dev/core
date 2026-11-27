@@ -57,7 +57,7 @@ export function createClaudeCommand(): Command {
         .option('--child', 'With --role: explicit form of the auto-behavior — @agent_parent_session = current pane\'s session_id')
         .option('--reuse', 'With --role + --new-session (or outside $TMUX): if a session named role-<slug>[-<issue>] already exists, attach to it instead of auto-suffixing a fresh one')
         .option('--subordinate', 'Canonical subordinate-coordinator launch: implies --new-session --no-attach and parents the child to the current session. Requires --role; still gets its own worktree and branch')
-        .option('--window', 'Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>')
+        .option('--window', 'Open the worker as a detached new window in the caller\'s tmux session (from $TMUX, or the session the placement rule resolves); prints <session>:<pane_id>')
         .option('--window-name <name>', 'Name the detached tmux window (with --window)')
         .option('--pane <target>', 'Split into an existing tmux window (session:window, window name, or pane id)')
         .option('--workers', 'Place in the first workers* window with capacity, or create the next workers window')

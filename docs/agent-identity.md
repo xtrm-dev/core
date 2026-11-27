@@ -104,7 +104,14 @@ A pane whose agent process exited is not live. A reader derives the state: when 
 | `SUBSTRATE_HOLDER` | Launcher | Holder name of the session. Copied to `@agent_holder`. |
 | `XTRM_DISPATCHER_NAME`, `XTRM_DISPATCHER_ADDRESS`, `XTRM_DISPATCHER_PARTICIPANT` | Launcher | Messaging identity of the dispatcher. `XTRM_DISPATCHER_PARTICIPANT` equals `@agent_dispatcher`. |
 | `XTRM_PARENT_PANE_ID`, `XTRM_PARENT_SESSION_ID` | Launcher | Equal `@agent_parent_pane` and `@agent_parent_session`. |
+| `XTRM_SESSION_SOCKET` | Launcher | Path of the tmux socket the seat lives on. The placement rule confirms an inherited pane or session id against this socket, so an id is never read on the wrong server. |
 | `XTRM_ROLE` | Launcher | Role used for identity resolution. |
+
+## Placement
+
+Where a new seat opens its pane is a separate rule, documented once in [tmux-placement.md](tmux-placement.md). The target session is the explicit `--session` flag, else the caller's own session (its pane id, `$TMUX`, or the launcher's exports — each confirmed on the socket that identity came from, `$TMUX`'s or `XTRM_SESSION_SOCKET`), else `session` in `~/.xtrm/config/launch.json`. A new session is the last resort and is announced on stderr; an identity whose server is unknown is not trusted, and the launcher says so.
+
+This matters to identity in one place: a child launched from a process without `$TMUX` records the session that placement resolved as its `@agent_parent_session`, so the relationship options stay correct for a dispatched agent, an in-process specialist, the app and a remote caller.
 
 ## Migration
 

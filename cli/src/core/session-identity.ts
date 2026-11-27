@@ -11,6 +11,9 @@
  *   variable stays absent rather than carrying a placeholder.
  * - `XTRM_SESSION_NAME` — the tmux session name (the launcher-computed
  *   `pi-<slug>` / `role-<slug>` / `claude-<slug>` value, post-suffix).
+ * - `XTRM_SESSION_SOCKET` — the tmux socket path those two ids belong to
+ *   (CORE-2802). A child that loses `$TMUX` still knows which server its
+ *   identity means, so a placement probe cannot answer for another server.
  *
  * Unknown stays absent (ADR §98, joint with X1): every builder here omits
  * keys it cannot observe. No parallel registry, no model-entered flags.
@@ -20,6 +23,7 @@ import { spawnSync } from 'node:child_process';
 
 export const XTRM_SESSION_ID_VAR = 'XTRM_SESSION_ID';
 export const XTRM_SESSION_NAME_VAR = 'XTRM_SESSION_NAME';
+export const XTRM_SESSION_SOCKET_VAR = 'XTRM_SESSION_SOCKET';
 
 /**
  * Environment variables that carry a worker's OWN runtime session id, in
@@ -51,6 +55,8 @@ export function resolveWorkerSessionId(env: NodeJS.ProcessEnv = process.env): st
 export interface TmuxSessionIdentity {
     sessionId?: string | null;
     sessionName?: string | null;
+    /** The tmux socket the ids were observed on (CORE-2802); omitted when unobserved. */
+    socket?: string | null;
 }
 
 /** Minimal tmux probe surface; tests inject a stub, production uses spawnSync. */
@@ -76,8 +82,10 @@ export function buildSessionIdentityEnv(identity: TmuxSessionIdentity): Record<s
     const env: Record<string, string> = {};
     const sessionId = clean(identity.sessionId);
     const sessionName = clean(identity.sessionName);
+    const socket = clean(identity.socket);
     if (sessionId) env[XTRM_SESSION_ID_VAR] = sessionId;
     if (sessionName) env[XTRM_SESSION_NAME_VAR] = sessionName;
+    if (socket) env[XTRM_SESSION_SOCKET_VAR] = socket;
     return env;
 }
 

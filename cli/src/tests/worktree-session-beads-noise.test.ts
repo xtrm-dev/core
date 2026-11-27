@@ -80,6 +80,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -128,6 +131,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -197,6 +203,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       if (command === 'sp' && args[0] === 'view') {
         return {
           status: 0,
@@ -250,6 +259,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     let newSessionArgs: string[] = [];
     let usedBufferedTransport = false;
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -320,6 +332,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'sh' && args[0] === '-c') {
         return { status: 0, stdout: 'bin/pi\n', stderr: '' };
@@ -390,7 +405,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     );
     expect(mocked.spawnSync.mock.calls.some(([command, args]) =>
       command === 'tmux'
-      && args[0] === 'new-session'
+      && args.includes('new-session')
       && splitUnsetPrefix(args.at(-1) ?? '').command === `'${path.join(repoRoot, 'bin', 'pi')}' '--name' 'repo-xt-pi-json' 'echo hi'`
     )).toBe(true);
     expect(mocked.spawnSync).toHaveBeenCalledWith(
@@ -412,6 +427,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -455,6 +473,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.env.TMUX = '/tmp/tmux-1000/default,1,0';
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -501,6 +522,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
@@ -562,6 +586,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     let bufferedPayload = '';
     let newSessionCommand = '';
     mocked.spawnSync.mockImplementation((command: string, args: string[], options?: { input?: string }) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'sp' && args[0] === 'view') {
         return {
@@ -653,6 +680,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'sp' && args[0] === 'view') {
         return {
@@ -731,6 +761,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'sp' && args[0] === 'view') {
         return {
@@ -802,6 +835,138 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  // CORE-2802 review (round 2, finding 1): `--reuse` runs exactly when `$TMUX` is absent.
+  // A bare name there finds — and attaches the operator to — a session of the same name on
+  // the DEFAULT server, which is another project's seat. The seat's socket decides.
+  it('binds the --reuse lookup and its attach to the seat socket', async () => {
+    const repoRoot = path.join(tempRoot, 'repo');
+    await fs.ensureDir(repoRoot);
+    process.chdir(repoRoot);
+    const socket = '/tmp/tmux-1000/private';
+    const saved = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE, XTRM_SESSION_SOCKET: process.env.XTRM_SESSION_SOCKET, XTRM_SESSION_ID: process.env.XTRM_SESSION_ID, XTRM_SESSION_NAME: process.env.XTRM_SESSION_NAME };
+    for (const key of ['TMUX', 'TMUX_PANE', 'XTRM_SESSION_ID', 'XTRM_SESSION_NAME']) delete process.env[key];
+    process.env.XTRM_SESSION_SOCKET = socket;
+    const raw: string[][] = [];
+    const written: string[] = [];
+    mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'tmux') raw.push([...args]);
+              // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
+      const joined = args.join(' ');
+      if (command === 'tmux' && args.includes('#{pid}')) return { status: 0, stdout: '4242\n', stderr: '' };
+      if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+      if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
+      if (command === 'tmux' && args[0] === 'has-session') return { status: 0, stdout: '', stderr: '' };
+      if (command === 'tmux' && args[0] === 'list-panes') return { status: 0, stdout: '%42\n', stderr: '' };
+      if (command === 'tmux' && (args[0] === 'attach-session' || args[0] === 'switch-client')) return { status: 0, stdout: '', stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
+    });
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string) => { written.push(String(chunk)); return true; }) as never);
+    const exitSpy = mockProcessExit();
+    try {
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'reuseme', reuse: true, attach: false })).rejects.toThrow('exit:0');
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+    const bound = (verb: string) => raw.filter((args) => args[0] === '-S' && args[2] === verb);
+    expect(bound('has-session')[0]?.slice(0, 2)).toEqual(['-S', socket]);
+    expect(bound('list-panes')[0]?.slice(0, 2)).toEqual(['-S', socket]);
+    // No unbound lookup at all: an unbound `has-session` is the defect this pins.
+    expect(raw.some((args) => args[0] === 'has-session')).toBe(false);
+    expect(written.join('')).toBe('pi-reuseme:%42\n');
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    stdout.mockRestore();
+  });
+
+  // CORE-2802 review (finding 2): a seat created on a private server must be cleaned up on
+  // that server. An unbound `kill-session -t <name>` would kill a same-named session on the
+  // default one, so every kill-* and buffer call states the socket the seat was created on.
+  it('binds the failure cleanup to the seat socket', async () => {
+    const repoRoot = path.join(tempRoot, 'repo');
+    const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-pi-socketed');
+    const socket = path.join(tempRoot, 'tmux-1000', 'private');
+    await fs.ensureDir(path.join(repoRoot, '.beads'));
+    process.chdir(repoRoot);
+    const previousSocket = process.env.XTRM_SESSION_SOCKET;
+    process.env.XTRM_SESSION_SOCKET = socket;
+
+    /** Records the argv the launcher really passes, then strips the binding for the verb stubs. */
+    const raw: string[][] = [];
+    mocked.spawnSync.mockImplementation((command: string, passed: string[] = []) => {
+      if (command !== 'tmux') {
+        const joinedArgs = passed.join(' ');
+        if (command === 'sp' && passed[0] === 'view') {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              specialist: {
+                metadata: { name: 'blank' },
+                prompt: { system: 'role' },
+                skills: { paths: [] },
+              },
+            }),
+            stderr: '',
+          };
+        }
+        if (command === 'sp' && passed[0] === 'render-skill-prefix') {
+          return passed[1] === '--help'
+            ? { status: 0, stdout: 'usage', stderr: '' }
+            : { status: 0, stdout: JSON.stringify({ ok: true, skill_prefix: '' }), stderr: '' };
+        }
+        if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
+          return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
+        }
+        if (command === 'git' && joinedArgs === 'rev-parse --git-common-dir') {
+          return { status: 0, stdout: '.git\n', stderr: '' };
+        }
+        if (command === 'bd' && passed[0] === 'worktree' && passed[1] === 'create') {
+          fs.ensureDirSync(worktreePath);
+          fs.ensureDirSync(path.join(worktreePath, '.git'));
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      raw.push(passed);
+      let args = passed;
+      if (args[0] === '-S') args = args.slice(2);
+      const joinedArgs = args.join(' ');
+      if (joinedArgs === 'display-message -p #{pid}') return { status: 0, stdout: '4242', stderr: '' };
+      if (args[0] === 'has-session') return { status: 1, stdout: '', stderr: '' };
+      if (args[0] === 'wait-for' && args[1]?.endsWith('-consumer-ready')) {
+        return { status: null, stdout: '', stderr: '', error: Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }) };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    });
+
+    const exitSpy = mockProcessExit();
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    try {
+      await expect(launchWorktreeSession({
+        runtime: 'pi',
+        role: 'blank',
+        name: 'socketed',
+        newSession: true,
+        attach: false,
+      })).rejects.toThrow('exit:1');
+    } finally {
+      if (previousSocket === undefined) delete process.env.XTRM_SESSION_SOCKET;
+      else process.env.XTRM_SESSION_SOCKET = previousSocket;
+    }
+
+    const cleanup = raw.filter(args => args.some(arg => arg === 'kill-session' || arg === 'kill-pane' || arg === 'delete-buffer'));
+    expect(cleanup.length).toBeGreaterThan(0);
+    for (const args of cleanup) expect(args.slice(0, 2)).toEqual(['-S', socket]);
+    // Nothing was created or cleaned up on any other server.
+    expect(raw.every(args => args[0] === '-S' && args[1] === socket)).toBe(true);
+    expect(worktreePath).toContain('socketed');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('removes worktree .beads/ and marks tracked .beads paths skip-worktree (no symlink)', async () => {
     const repoRoot = path.join(tempRoot, 'repo');
     const worktreePath = path.join(repoRoot, '.xtrm', 'worktrees', 'repo-xt-pi-noise1');
@@ -814,6 +979,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
 
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
@@ -880,6 +1048,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
 
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
@@ -959,6 +1130,9 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
     process.chdir(repoRoot);
 
     mocked.spawnSync.mockImplementation((command: string, args: string[]) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
       const joinedArgs = args.join(' ');
       if (command === 'git' && joinedArgs === 'rev-parse --show-toplevel') {
         return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };

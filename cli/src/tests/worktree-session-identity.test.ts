@@ -39,10 +39,15 @@ interface Harness {
   newWindowArgs?: string[] | null;
 }
 
-function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEmail?: string } = {}): void {
+function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEmail?: string; knownTargets?: string[] } = {}): void {
   const { repoRoot } = h;
   const answer = opts.sessionIdAnswer === undefined ? '$7' : opts.sessionIdAnswer;
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+    // CORE-2802: the socket liveness check, answered before the binding is stripped.
+    if (command === 'tmux' && args[0] === '-S' && args.includes('#{pid}')) return { status: 0, stdout: '4242\n', stderr: '' };
+      // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+      if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
     const joined = args.join(' ');
     if (command === 'git' && joined === 'rev-parse --show-toplevel') return { status: 0, stdout: `${repoRoot}\n`, stderr: '' };
     if (command === 'git' && joined === 'rev-parse --git-common-dir') return { status: 0, stdout: '.git\n', stderr: '' };
@@ -83,8 +88,18 @@ function installMock(h: Harness, opts: { sessionIdAnswer?: string | null; gitEma
     }
     if (command === 'tmux' && args[0] === 'display-message') {
       if (joined.includes('#{pane_id}')) return { status: 0, stdout: '%9\n', stderr: '' };
+      // CORE-2802: the session-identity probe asks for the id and the name together.
+      // CORE-2802 review (finding 8): with `knownTargets`, only a session that exists answers,
+      // so a stale identity must fall through instead of being placed in.
+      const target = args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined;
+      const unknown = target !== undefined && opts.knownTargets !== undefined && !opts.knownTargets.includes(target);
+      if (joined.includes('#{session_id}|#{session_name}')) {
+        return unknown
+          ? { status: 1, stdout: '', stderr: 'no session' }
+          : { status: 0, stdout: `${answer ?? '$3'}|cur-sess\n`, stderr: '' };
+      }
       if (args.includes('-t')) {
-        return answer === null
+        return answer === null || unknown
           ? { status: 1, stdout: '', stderr: 'no session' }
           : { status: 0, stdout: `${answer}\n`, stderr: '' };
       }
@@ -222,6 +237,43 @@ describe('xt/tmux launcher session-identity propagation', () => {
     vi.restoreAllMocks();
   });
 
+  // CORE-2802 review (finding 7): K1 pins that a plain launch outside tmux stays silent, and
+  // this is that pin at the launcher boundary, where scripts read the streams.
+  it('a plain launch outside tmux writes no placement warning (CORE-2802)', async () => {
+    installMock(h);
+    const written: string[] = [];
+    const original = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try {
+      const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+      await expect(launchWorktreeSession({ runtime: 'pi', name: 'quiet1', attach: false })).rejects.toThrow('exit:0');
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(written.join('')).not.toContain('warning:');
+    expect(sessionNameFromNewSession(h.newSessionArgs)).toBe('pi-quiet1');
+  });
+
+  // CORE-2802 review (finding 8): the launcher boundary, not only the resolver. A worker
+  // shell that still exports a session the server no longer has must not be placed in it.
+  it('does not open a window in an identity the server does not answer for (CORE-2802)', async () => {
+    process.env.XTRM_SESSION_SOCKET = '/tmp/tmux-1000/coord';
+    process.env.XTRM_SESSION_NAME = 'ghost';
+    installMock(h, { knownTargets: [] });
+    const { launchWorktreeSession } = await import('../utils/worktree-session.js');
+
+    await expect(launchWorktreeSession({ runtime: 'pi', name: 'stale1', attach: false })).rejects.toThrow('exit:0');
+
+    // The stale name was probed on the recorded socket and refused; the launch fell back to a
+    // new session instead of opening a window in a session that does not exist.
+    expect(h.newWindowArgs).toBeUndefined();
+    expect(sessionNameFromNewSession(h.newSessionArgs)).toBe('pi-stale1');
+    const probe = mocked.spawnSync.mock.calls.find(
+      (call) => call[0] === 'tmux' && Array.isArray(call[1]) && call[1].includes('ghost'),
+    );
+    expect(probe?.[1].slice(0, 2)).toEqual(['-S', '/tmp/tmux-1000/coord']);
+  });
+
   it('bare pi launch carries the same name via -e and the same id via set-environment', async () => {
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
@@ -245,8 +297,10 @@ describe('xt/tmux launcher session-identity propagation', () => {
   it('exports XTRM_AGENT_NAME with the full worktree name next to SUBSTRATE_HOLDER (CORE-2606)', async () => {
     // A developer shell that already exports a name must not decide this test.
     process.env.XTRM_AGENT_NAME = 'stale-parent-name';
-    process.env.XTRM_SESSION_NAME = 'xx';
     installMock(h);
+    // CORE-2802: an exported session name is placement identity (the launch would open a
+    // window in it instead of a new session). This test measures the launched env, and the
+    // file's beforeEach already clears every identity key, so none is inherited here.
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 
     await expect(launchWorktreeSession({ runtime: 'pi', name: 'attr1', attach: false })).rejects.toThrow('exit:0');
@@ -659,7 +713,9 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
       expect(h.newSessionArgs).toBeNull();
       const args = h.newWindowArgs ?? [];
-      expect(args.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$3:']);
+      // CORE-2802: the caller's PANE decides the session, ahead of the $TMUX client, so a
+      // worker of a lead that sits in another session joins the lead's session.
+      expect(args.slice(0, 7)).toEqual(['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', '$7:']);
       expect(args[args.indexOf('-n') + 1]).toBe('pi-dwk5');
       const env = envPairs(args);
       expectDispatcher(env, 'dwk5');

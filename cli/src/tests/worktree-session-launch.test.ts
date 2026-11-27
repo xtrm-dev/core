@@ -185,6 +185,9 @@ async function runLaunch(h: LaunchHarness, opts: Record<string, unknown>): Promi
 
     const specPaths = h.roleSpecPaths ?? rolePathsFor(homeRoot);
     mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+        // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+                // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+        if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
         const joined = (args ?? []).join(' ');
         allCalls.push({ command, argv: args ?? [], cwd: (mo.cwd as string | undefined) ?? process.cwd(), env: mo.env as Record<string, string | undefined> | undefined });
         if (command === 'sp' && args[0] === 'view') {

@@ -36,6 +36,9 @@ interface Capture {
 
 function install(repoRoot: string, cap: Capture): void {
   mocked.spawnSync.mockImplementation((command: string, args: string[] = [], mo: Record<string, unknown> = {}) => {
+      // CORE-2802: the launcher binds tmux to the caller's socket; the verb is args[0] again.
+            // CORE-2802 review (finding 5): the binding is asserted, never merely stripped.
+      if (command === 'tmux' && args[0] === '-S') { expect(args[1]).toMatch(/^(?:\/|tmux-)/); args = args.slice(2); }
     const joined = args.join(' ');
     const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
     if (command === 'git') {
@@ -70,12 +73,12 @@ function install(repoRoot: string, cap: Capture): void {
       if (args[0] === 'split-window' || args[0] === 'new-window') { cap.placementArgs.push([...args]); cap.newSessionArgs = [...args]; return ok('%77\n'); }
       if (args[0] === 'display-message') {
         if (joined.includes('#{pane_id}')) return ok('%9\n');
-        if (joined.includes('#{session_id}')) return ok(args.includes('other-sess:workers') || args.includes('%9') ? '$9\tother-sess\n' : '$3\n');
+        if (joined.includes('#{session_id}')) return ok(args.includes('other-sess:workers') || args.includes('%9') ? '$9|other-sess\n' : '$3\n');
         if (args.some((arg) => arg.includes('#{window_id}'))) return ok('@1\n');
         return ok('cur-sess\n');
       }
       if (args[0] === 'list-panes') return ok('%17\n');
-      if (args[0] === 'list-windows') return ok('@1\tworkers\t1\n');
+      if (args[0] === 'list-windows') return ok('@1|workers|1\n');
       if (args[0] === 'set-option') { if (!args.includes('-u')) cap.paneOptions[args[4]] = args[5]; return ok(); }
       if (args[0] === 'load-buffer') {
         const input = (mo as { input?: string }).input;
@@ -185,7 +188,9 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     vi.resetModules(); mocked.spawnSync.mockReset();
     const dispatcher = Object.fromEntries(['XTRM_DISPATCHER_NAME', 'XTRM_DISPATCHER_ADDRESS', 'XTRM_DISPATCHER_PARTICIPANT'].filter((k) => k in normal.env).map((k) => [k, normal.env[k]]));
     const pane = await launch('claude', true, dispatcher, undefined, false, { pane: 'other-sess:workers' });
-    expect(pane.placementArgs.some((args) => args[0] === 'split-window' && args.includes('other-sess:workers'))).toBe(true);
+    // The verb carries the caller's socket binding first (CORE-2802 review), so match the
+    // verb by name rather than by position.
+    expect(pane.placementArgs.some((args) => args.includes('split-window') && args.includes('other-sess:workers'))).toBe(true);
     expect(pane.env.XTRM_SESSION_ID).toBe('$9');
     expect(pane.env.XTRM_SESSION_NAME).toBe('other-sess');
     expect(pane.env).toEqual(expect.objectContaining({ ...normal.env, XTRM_SESSION_ID: '$9', XTRM_SESSION_NAME: 'other-sess' }));
@@ -193,7 +198,7 @@ describe('xt attach --fresh launch parity (CORE-2775)', () => {
     expect(pane.paneOptions).toEqual(normal.paneOptions);
     vi.resetModules(); mocked.spawnSync.mockReset();
     const paneId = await launch('claude', true, dispatcher, undefined, false, { pane: '%9' });
-    expect(paneId.placementArgs.some((args) => args[0] === 'split-window' && args.includes('%9'))).toBe(true);
+    expect(paneId.placementArgs.some((args) => args.includes('split-window') && args.includes('%9'))).toBe(true);
     expect(paneId.env.XTRM_SESSION_ID).toBe('$9');
     expect(paneId.env.XTRM_SESSION_NAME).toBe('other-sess');
     expect(paneId.args).toEqual(normal.args);

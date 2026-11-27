@@ -30,7 +30,7 @@ import {
     resolveTmuxSessionId,
     XTRM_SESSION_ID_VAR,
 } from '../core/session-identity.js';
-import { resolvePlacement, validateLayout, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
+import { placementCreateArgs, resolvePlacement, validateLayout, WINDOW_REQUIRES_SESSION, type PlacementKind, type ResolvedPlacement } from './tmux-placement.js';
 
 /**
  * Hard ceiling for the turn-1 shell command length. tmux new-session refuses
@@ -2015,8 +2015,8 @@ export function createRuntimeBufferName(): string {
     return `xtrm-role-${randomBytes(16).toString('hex')}`;
 }
 
-function deleteRuntimeBuffer(bufferName: string): void {
-    spawnSync('tmux', ['delete-buffer', '-b', bufferName], { stdio: 'ignore' });
+function deleteRuntimeBuffer(bufferName: string, socketArgs: string[] = []): void {
+    spawnSync('tmux', [...socketArgs, 'delete-buffer', '-b', bufferName], { stdio: 'ignore' });
 }
 
 export function buildBufferedRuntimeCommand(
@@ -2766,12 +2766,13 @@ export function forwardedLaunchEnv(env: NodeJS.ProcessEnv = process.env): Record
     return out;
 }
 
-function resolveTmuxSessionIdentity(session: string): ReturnType<typeof resolveCurrentTmuxSessionIdentity> | null {
-    const r = spawnSync('tmux', ['display-message', '-p', '-t', session, '#{session_id}\t#{session_name}'], {
+function resolveTmuxSessionIdentity(session: string, socketArgs: string[] = []): ReturnType<typeof resolveCurrentTmuxSessionIdentity> | null {
+    // '|' and not a TAB: tmux rewrites a control character inside a format argument to '_'.
+    const r = spawnSync('tmux', [...socketArgs, 'display-message', '-p', '-t', session, '#{session_id}|#{session_name}'], {
         encoding: 'utf8', stdio: 'pipe',
     });
     if (r.status !== 0) return null;
-    const [sessionId, sessionName] = (r.stdout ?? '').trim().split('\t', 2);
+    const [sessionId, sessionName] = (r.stdout ?? '').trim().split('|', 2);
     return sessionId && sessionName ? { sessionId, sessionName } : null;
 }
 
@@ -3303,11 +3304,28 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         child = subordinate.child;
     }
 
-    // --window: a sibling window in the caller's tmux session. It is always
-    // detached (the dispatcher keeps its own view) and is its own transport,
-    // so it cannot combine with a new session or the JSON outcome. CORE-2390.
+    // Validate placement configuration before creating or mutating a worktree. It runs
+    // before the --window option check because that check needs the resolved session
+    // (CORE-2802 review: a caller without $TMUX but with a known session may use --window).
+    validateLayout(opts.layout);
+    const resolvedPlacement = resolvePlacement({
+        role: roleName,
+        pane: opts.pane,
+        workers: opts.workers,
+        window: opts.window,
+        windowName: opts.windowName,
+        session: opts.session,
+        layout: opts.layout,
+        newSession,
+        insideTmux: Boolean(process.env.TMUX),
+    });
+
+    // --window: a sibling window in the caller's session (CORE-2390, CORE-2802). It is
+    // always detached (the dispatcher keeps its own view) and is its own transport, so it
+    // cannot combine with a new session or the JSON outcome. A caller without $TMUX still
+    // has a session when the placement rule resolved one from its identity.
     if (opts.window) {
-        const conflict = !process.env.TMUX ? '--window requires running inside tmux'
+        const conflict = !resolvedPlacement.session ? WINDOW_REQUIRES_SESSION
             : newSession ? '--window cannot combine with --new-session or --subordinate'
                 : opts.json ? '--window cannot combine with --json'
                     : null;
@@ -3631,20 +3649,6 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
 
     const cwdBasename = path.basename(mainRepoRoot);
 
-    // Validate placement configuration before creating or mutating a worktree.
-    validateLayout(opts.layout);
-    const resolvedPlacement = resolvePlacement({
-        role: roleName,
-        pane: opts.pane,
-        workers: opts.workers,
-        window: opts.window,
-        windowName: opts.windowName,
-        session: opts.session,
-        layout: opts.layout,
-        newSession,
-        insideTmux: Boolean(process.env.TMUX),
-    });
-
     // Resolve slug — shared by both branch and worktree path so they're linked
     const existing = opts.existingWorktree;
     const slug = existing?.slug ?? name ?? randomSlug(4);
@@ -3658,9 +3662,13 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
         const sessionName = roleSlug
             ? `role-${runtime}-${roleSlug}${issue ? `-${slugifyForSession(issue)}` : ''}`
             : `${runtime}-${slugifyForSession(slug)}`;
-        const sessionExists = spawnSync('tmux', ['has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0;
+        // CORE-2802 review: reuse runs exactly when `$TMUX` is absent, so a bare name
+        // would find — or attach the operator to — a session of the same name on the
+        // default server. The seat's own socket decides which session is reused.
+        const reuseSocket = resolvedPlacement.socketArgs;
+        const sessionExists = spawnSync('tmux', [...reuseSocket, 'has-session', '-t', `=${sessionName}`], { stdio: 'pipe' }).status === 0;
         if (sessionExists) {
-            const paneQuery = spawnSync('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
+            const paneQuery = spawnSync('tmux', [...reuseSocket, 'list-panes', '-t', sessionName, '-F', '#{pane_id}'], {
                 stdio: 'pipe', encoding: 'utf8',
             });
             const existingPane = (paneQuery.stdout ?? '').trim().split('\n')[0] ?? '';
@@ -3668,7 +3676,7 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
                 process.stdout.write(`${sessionName}:${existingPane}\n`);
                 process.exit(0);
             }
-            const attachResult = spawnSync('tmux', chooseAttachCommand(sessionName, Boolean(process.env.TMUX)), {
+            const attachResult = spawnSync('tmux', [...reuseSocket, ...chooseAttachCommand(sessionName, Boolean(process.env.TMUX))], {
                 stdio: 'inherit',
             });
             process.exit(attachResult.status ?? 0);
@@ -3996,9 +4004,11 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
  * failure so the launcher can print a clear error before spawning pi.
  * xtmux-1lb.5.1.
  */
-function resolveParentSession(target: string): string | null {
+function resolveParentSession(target: string, socketArgs: string[] = []): string | null {
     if (/^\$\d+$/.test(target)) return target; // already a sid
-    const r = spawnSync('tmux', ['display-message', '-p', '-t', target, '#{session_id}'], {
+    // CORE-2802 review: a `--parent` name is a name on one server. Probing it on the
+    // default server reported "not found" for a session the seat can see.
+    const r = spawnSync('tmux', [...socketArgs, 'display-message', '-p', '-t', target, '#{session_id}'], {
         stdio: 'pipe', encoding: 'utf8',
     });
     if (r.status !== 0) return null;
@@ -4109,6 +4119,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     const insideTmux = Boolean(process.env.TMUX);
     validateLayout(layout);
     const placement = args.placement ?? resolvePlacement({ role: args.mode === 'role' ? args.requestedRole ?? args.role.name : undefined, pane, workers, window, windowName, session, layout, newSession, insideTmux });
+    // The socket the placement decided on (CORE-2802 review): every tmux call for this seat
+    // uses it — the create verb, the pane options, the identity publish and the cleanup.
+    const seatSocket = placement.socketArgs;
     const placementKind: PlacementKind = placement.kind;
     const placementWindow = placementKind === 'window' || placementKind === 'workers';
     const placementTargeted = placementKind === 'pane' || placementKind === 'workers';
@@ -4134,7 +4147,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // wins over auto (current session).
     let parentSessionId: string;
     if (parent) {
-        const resolved = resolveParentSession(parent);
+        const resolved = resolveParentSession(parent, placement.socketArgs);
         if (!resolved) {
             process.stderr.write(kleur.red(
                 `\n  ✗ --parent '${parent}': tmux session not found\n`,
@@ -4217,6 +4230,16 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const entry = plan.paneOptions.find(option => option.key === '@agent_parent_session');
         if (entry) entry.value = parentSessionId;
     } else if (/^\$\d+$/.test(parentSessionId)) {
+        dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR] = parentSessionId;
+    }
+    // CORE-2802: without $TMUX the launcher cannot ask tmux for its own session, but the
+    // placement rule resolved the caller's session from its identity (its pane id, or the
+    // identity the launcher exported). That session is this launch's parent: the caller
+    // works inside it, on another pane or in another window of the same server.
+    if (!parent && !/^\$\d+$/.test(parentSessionId) && placement.session && /^\$\d+$/.test(placement.session)) {
+        parentSessionId = placement.session;
+        const entry = plan.paneOptions.find(option => option.key === '@agent_parent_session');
+        if (entry) entry.value = parentSessionId;
         dispatcherEnv[XTRM_PARENT_SESSION_ID_VAR] = parentSessionId;
     }
     plan.paneOptions.push(...relationshipPaneOptions({ holder: sessionSlug, dispatcherEnv }));
@@ -4343,7 +4366,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // naming now mirrors that so `xt pi --role X` twice in a row does the
     // sane thing.
     const sessionExists = (name: string): boolean => {
-        const r = spawnSync('tmux', ['has-session', '-t', `=${name}`], { stdio: 'pipe' });
+        const r = spawnSync('tmux', [...seatSocket, 'has-session', '-t', `=${name}`], { stdio: 'pipe' });
         return r.status === 0;
     };
     // --window opens inside the caller's session, so there is no session name
@@ -4354,7 +4377,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             // first-pane coordinates). Do NOT emit agent.role.launched —
             // the session isn't ours and metadata isn't guaranteed.
             const paneQuery = spawnSync('tmux', [
-                'list-panes', '-t', plan.sessionName, '-F', '#{pane_id}',
+                ...seatSocket, 'list-panes', '-t', plan.sessionName, '-F', '#{pane_id}',
             ], { stdio: 'pipe', encoding: 'utf8' });
             const existingPane = (paneQuery.stdout ?? '').trim().split('\n')[0] ?? '';
             if (!attach) {
@@ -4362,7 +4385,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
                 process.exit(0);
             }
             const attachCmd = chooseAttachCommand(plan.sessionName, insideTmux);
-            const attachResult = spawnSync('tmux', attachCmd, { stdio: 'inherit' });
+            const attachResult = spawnSync('tmux', [...seatSocket, ...attachCmd], { stdio: 'inherit' });
             process.exit(attachResult.status ?? 0);
         }
         // Auto-suffix. Try a handful of random slugs — collisions on
@@ -4399,16 +4422,19 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         ? (placement.target.includes(':') ? placement.target.split(':', 1)[0] : undefined)
         : placement.session;
     const targetSessionIdentity = placement.kind === 'pane' && placement.target
-        ? resolveTmuxSessionIdentity(placement.target)
+        ? resolveTmuxSessionIdentity(placement.target, placement.socketArgs)
         : identitySession
-            ? resolveTmuxSessionIdentity(identitySession)
+            ? resolveTmuxSessionIdentity(identitySession, placement.socketArgs)
             : null;
     const windowIdentity = (effectiveWindow || placement.kind === 'pane')
         ? targetSessionIdentity ?? resolveCurrentTmuxSessionIdentity()
         : null;
+    // CORE-2802 review: the recorded socket is the one the placement was decided on, so a
+    // stale path that was dropped is not recorded back into the seat's identity.
+    const launchSocket = placement.socketArgs[1];
     const newSessionIdentityEnv = windowIdentity
-        ? buildSessionIdentityEnv(windowIdentity)
-        : buildSessionIdentityEnv({ sessionName: plan.sessionName });
+        ? buildSessionIdentityEnv({ ...windowIdentity, socket: launchSocket })
+        : buildSessionIdentityEnv({ sessionName: plan.sessionName, socket: launchSocket });
     // One merged record is the single source of truth for the pane environment:
     // every entry becomes `-e`, and (CORE-2727) the D7 unset list is computed from
     // this same record, so a key that IS exported can never also be `env -u`-ed.
@@ -4446,12 +4472,17 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     // xtrm-3xgs5.
     let runtimeBuffer: string | null = null;
     let windowPaneId = '';
+    // An unbound `kill-session -t <name>` on a seat created on a private server would kill
+    // a same-named session on the default one, so cleanup states the socket too.
+    const seatTmux = (argv: string[]): void => {
+        spawnSync('tmux', [...seatSocket, ...argv], { stdio: 'ignore' });
+    };
     const discardLaunch = (): void => {
-        if (!effectiveWindow && !placementTargeted) spawnSync('tmux', ['kill-session', '-t', plan.sessionName], { stdio: 'ignore' });
-        else if (windowPaneId) spawnSync('tmux', ['kill-pane', '-t', windowPaneId], { stdio: 'ignore' });
+        if (!effectiveWindow && !placementTargeted) seatTmux(['kill-session', '-t', plan.sessionName]);
+        else if (windowPaneId) seatTmux(['kill-pane', '-t', windowPaneId]);
     };
     const cleanupOnSignal = (): void => {
-        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);
+        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer, seatSocket);
         discardLaunch();
         process.exit(1);
     };
@@ -4460,23 +4491,25 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     process.once('SIGHUP', cleanupOnSignal);
 
     const failNewSession = (stderr: string): never => {
-        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);
+        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer, seatSocket);
         const verb = createArgs[0] === 'new-session' ? 'tmux new-session failed' : 'tmux placement failed';
         process.stderr.write(kleur.red(`\n  ✗ ${verb}: ${stderr || 'unknown error'}\n`));
         process.exit(1);
     };
     // Same transport either way; only the tmux verb and target differ.
     const targetSession = placement.session || currentTmuxSessionId() || plan.sessionName;
-    const createArgs = placementKind === 'pane'
-        ? ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', placement.target ?? targetSession, '-c', worktreePath]
-        : placementKind === 'workers' && placement.existingWindow
-            ? ['split-window', '-d', '-P', '-F', '#{pane_id}', '-t', placement.target ?? targetSession, '-c', worktreePath]
-            : placementKind === 'workers'
-                ? ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${targetSession}:`, '-n', placement.windowName ?? plan.sessionName, '-c', worktreePath]
-            : effectiveWindow
-                ? ['new-window', '-d', '-P', '-F', '#{pane_id}', '-t', `${targetSession}:`, '-n', windowName ?? plan.sessionName, '-c', worktreePath]
-                : ['new-session', '-d', '-s', plan.sessionName, '-c', worktreePath];
-    const createdSessionId = (): string | null => (effectiveWindow || placementTargeted ? null : resolveTmuxSessionId(plan.sessionName));
+    const createArgs = placementCreateArgs(placement, {
+        targetSession,
+        windowName: windowName ?? plan.sessionName,
+        worktreePath,
+        newSessionName: plan.sessionName,
+    });
+    const createdSessionId = (): string | null => (effectiveWindow || placementTargeted
+        ? null
+        : resolveTmuxSessionId(plan.sessionName, argv => {
+            const result = spawnSync('tmux', [...seatSocket, ...argv], { encoding: 'utf8', stdio: 'pipe' });
+            return { status: result.status, stdout: String(result.stdout ?? '') };
+        }));
 
     // Before the pane exists, so it strictly precedes any runtime start on either
     // transport. See AssignIssueOptions.readyAfterMs.
@@ -4491,7 +4524,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // launcher holds. Absent when tmux cannot answer — never invented.
         const bareSessionId = createdSessionId();
         if (bareSessionId) {
-            spawnSync('tmux', ['set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, bareSessionId], { stdio: 'pipe' });
+            spawnSync('tmux', [...seatSocket, 'set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, bareSessionId], { stdio: 'pipe' });
         }
     } else {
         runtimeBuffer = createRuntimeBufferName();
@@ -4501,14 +4534,14 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         if (newSess.status !== 0) failNewSession((newSess.stderr ?? '').trim());
         if (effectiveWindow || placementTargeted) windowPaneId = (newSess.stdout ?? '').trim();
 
-        const consumerReady = spawnSync('tmux', ['wait-for', `${runtimeBuffer}-consumer-ready`], {
+        const consumerReady = spawnSync('tmux', [...seatSocket, 'wait-for', `${runtimeBuffer}-consumer-ready`], {
             stdio: 'pipe',
             encoding: 'utf8',
             timeout: TMUX_CONSUMER_READY_TIMEOUT_MS,
             killSignal: 'SIGTERM',
         });
         if (consumerReady.status !== 0) {
-            deleteRuntimeBuffer(runtimeBuffer);
+            deleteRuntimeBuffer(runtimeBuffer, seatSocket);
             discardLaunch();
             const stderr = (consumerReady.stderr ?? consumerReady.error?.message ?? '').trim() || 'consumer readiness timed out';
             process.stderr.write(kleur.red(`\n  ✗ tmux prompt consumer failed to become ready: ${stderr}\n`));
@@ -4520,7 +4553,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // runtime with the full identity already in its process env.
         const roleSessionId = createdSessionId();
         if (roleSessionId) {
-            spawnSync('tmux', ['set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, roleSessionId], { stdio: 'pipe' });
+            spawnSync('tmux', [...seatSocket, 'set-environment', '-t', plan.sessionName, XTRM_SESSION_ID_VAR, roleSessionId], { stdio: 'pipe' });
         }
         const bufferedPayload = JSON.stringify({
             runtimeCmd: runtimeExecutable,
@@ -4529,16 +4562,16 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
                 ? buildSessionIdentityEnv(windowIdentity)
                 : buildSessionIdentityEnv({ sessionId: roleSessionId, sessionName: plan.sessionName }),
         });
-        const loaded = spawnSync('tmux', ['load-buffer', '-b', runtimeBuffer, '-'], {
+        const loaded = spawnSync('tmux', [...seatSocket, 'load-buffer', '-b', runtimeBuffer, '-'], {
             input: bufferedPayload,
             stdio: ['pipe', 'pipe', 'pipe'],
             encoding: 'utf8',
         });
         const signaled = loaded.status === 0
-            ? spawnSync('tmux', ['wait-for', '-S', `${runtimeBuffer}-ready`], { stdio: 'pipe', encoding: 'utf8' })
+            ? spawnSync('tmux', [...seatSocket, 'wait-for', '-S', `${runtimeBuffer}-ready`], { stdio: 'pipe', encoding: 'utf8' })
             : null;
         if (loaded.status !== 0 || signaled?.status !== 0) {
-            deleteRuntimeBuffer(runtimeBuffer);
+            deleteRuntimeBuffer(runtimeBuffer, seatSocket);
             discardLaunch();
             const stderr = ((loaded.stderr ?? signaled?.stderr) as string | undefined)?.trim() || 'unknown error';
             process.stderr.write(kleur.red(`\n  ✗ tmux prompt transport failed: ${stderr}\n`));
@@ -4548,11 +4581,11 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
 
     const paneId = effectiveWindow || placementTargeted
         ? windowPaneId
-        : (spawnSync('tmux', ['list-panes', '-t', plan.sessionName, '-F', '#{pane_id}'], {
+        : (spawnSync('tmux', [...seatSocket, 'list-panes', '-t', plan.sessionName, '-F', '#{pane_id}'], {
             stdio: 'pipe', encoding: 'utf8',
         }).stdout ?? '').trim().split('\n')[0] ?? '';
     if (!paneId) {
-        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer);
+        if (runtimeBuffer) deleteRuntimeBuffer(runtimeBuffer, seatSocket);
         discardLaunch();
         process.stderr.write(kleur.red('\n  ✗ Could not resolve pane id for new session\n'));
         process.exit(1);
@@ -4562,9 +4595,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     process.off('SIGTERM', cleanupOnSignal);
     process.off('SIGHUP', cleanupOnSignal);
 
-    applyPaneOptions(paneId, plan.paneOptions);
+    applyPaneOptions(paneId, plan.paneOptions, (command, argv) => spawnSync(command, [...seatSocket, ...argv], { stdio: 'pipe' }));
     if (effectiveWindow || placementTargeted) {
-        spawnSync('tmux', ['select-pane', '-t', paneId, '-T', sessionDisplayName], { stdio: 'pipe' });
+        spawnSync('tmux', [...seatSocket, 'select-pane', '-t', paneId, '-T', sessionDisplayName], { stdio: 'pipe' });
     }
     if (issue) await assignIssueToRuntime(issue, runtime, paneId, worktreePath, { readyAfterMs });
 
@@ -4584,9 +4617,10 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     }
 
     if (effectiveWindow || placementTargeted) {
-        if (placement.layout) spawnSync('tmux', ['select-layout', '-t', paneId, placement.layout], { stdio: 'pipe' });
-        // One line, same shape as --no-attach: <caller session>:<pane_id>.
-        process.stdout.write(`${placement.session ?? windowIdentity?.sessionName ?? windowIdentity?.sessionId ?? ''}:${paneId}\n`);
+        if (placement.layout) spawnSync('tmux', [...seatSocket, 'select-layout', '-t', paneId, placement.layout], { stdio: 'pipe' });
+        // One line, same shape as --no-attach: <caller session>:<pane_id>. CORE-2802: the
+        // resolved session may be an id ($N), so the observed name is what the caller reads.
+        process.stdout.write(`${windowIdentity?.sessionName ?? placement.session ?? windowIdentity?.sessionId ?? ''}:${paneId}\n`);
         process.exit(0);
     }
 
@@ -4595,7 +4629,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // session_name:pane_id text, or the opt-in versioned JSON object.
         if (structuredOutput) {
             const sessionIdResult = spawnSync('tmux', [
-                'list-sessions', '-F', '#{session_name}\t#{session_id}',
+                ...seatSocket, 'list-sessions', '-F', '#{session_name}\t#{session_id}',
             ], { stdio: 'pipe', encoding: 'utf8' });
             const sessionIdentity = parseLiveTmuxSessionListing(
                 sessionIdResult.status,
@@ -4637,7 +4671,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
     }
 
     const attachCmd = chooseAttachCommand(plan.sessionName, insideTmux);
-    const attachResult = spawnSync('tmux', attachCmd, {
+    const attachResult = spawnSync('tmux', [...seatSocket, ...attachCmd], {
         stdio: 'inherit',
     });
     process.exit(attachResult.status ?? 0);

@@ -16,7 +16,7 @@ export function createCodexCommand(): Command {
         .option('--json', 'With --no-attach: emit one xtrm.command-outcome.v1 JSON object')
         .option('--yolo', 'Disable sandboxing and approval prompts (default)', true)
         .option('--no-yolo', 'Use workspace-write sandboxing with on-request approval')
-        .option('--window', 'Inside $TMUX: open the worker as a detached new window in the current tmux session; prints <session>:<pane_id>')
+        .option('--window', 'Open the worker as a detached new window in the caller\'s tmux session (from $TMUX, or the session the placement rule resolves); prints <session>:<pane_id>')
         .option('--base <ref>', 'Start the worktree branch at <ref> (e.g. origin/stable for hotfixes). Default: fresh origin/<default>, fetched first (CORE-2340)')
         .allowExcessArguments(true)
         .allowUnknownOption(true)
