@@ -95,6 +95,15 @@ export function parseLiveTmuxSessionId(status: number | null, stdout: string):
         : { ok: false, error: 'detached tmux session returned an invalid identity' };
 }
 
+/**
+ * The tmux listing format for a live session's identity (CORE-2811).
+ *
+ * '|' and not a TAB: tmux rewrites a control character inside a format argument
+ * to '_' under a non-UTF-8 locale (CORE-2802), so a tab-separated listing arrives
+ * collapsed and the detached-output path reports a live session as gone.
+ */
+export const LIVE_SESSION_LISTING_FORMAT = '#{session_name}|#{session_id}';
+
 export function parseLiveTmuxSessionListing(
     status: number | null,
     stdout: string,
@@ -102,7 +111,8 @@ export function parseLiveTmuxSessionListing(
 ): ReturnType<typeof parseLiveTmuxSessionId> {
     if (status !== 0) return { ok: false, error: 'detached tmux session is no longer live' };
     const matches = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-        const separator = line.indexOf('\t');
+        // The id is the last field, so a session name that itself contains '|' still parses.
+        const separator = line.lastIndexOf('|');
         if (separator < 1 || line.slice(0, separator) !== expectedName) return [];
         return [line.slice(separator + 1)];
     });

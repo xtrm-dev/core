@@ -38,7 +38,12 @@ import {
 } from './worktree-release.js';
 import type { KeybindingProbe, ReleaseBlocker } from './worktree-release.js';
 
-const FIELD_SEP = '\u001f';
+/**
+ * '|' and not U+001F or a TAB: under a non-UTF-8 locale tmux rewrites a control
+ * character inside a format argument to '_' (CORE-2802), so a control-separated
+ * row collapses into one field and the pane reads as unbound (CORE-2811).
+ */
+const FIELD_SEP = '|';
 
 /** Same expectations the binding resolves, read in one round trip. */
 const PANE_FORMAT = [

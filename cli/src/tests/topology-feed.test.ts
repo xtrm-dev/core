@@ -15,7 +15,9 @@ import {
 import type { CommandRunner } from '../core/topology-projection.js';
 import { agentSessionsByPane } from '../core/agent-host.js';
 
-const SEP = '\t';
+// '|' and not a TAB: tmux rewrites a control character inside a format argument
+// to '_' under a non-UTF-8 locale, so a TAB-joined row never splits again (CORE-2811).
+const SEP = '|';
 const line = (pane: string, session: string, window = 'zsh', state = '', command = 'zsh') =>
     [pane, '$1', session, '@1', command, '/home/op', state, '', '', '', '', '', '', '', '', '', '0', '0', '1', '1', window].join(SEP);
 

@@ -63,7 +63,7 @@ function install(repoRoot: string, cap: Capture): void {
                 live = true;
                 return ok();
             }
-            if (args[0] === 'list-sessions') return ok(`${sessionName}\t$3\n`);
+            if (args[0] === 'list-sessions') return ok(`${sessionName}|$3\n`);
             if (args[0] === 'display-message') return ok('$3\n');
             if (args[0] === 'list-panes') return ok('%5\n');
             return ok();

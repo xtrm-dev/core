@@ -26,6 +26,7 @@ import { buildSessionIdentityEnv, resolveCurrentTmuxSessionIdentity, type TmuxSe
 import {
     checkStructuredLaunchOptions,
     checkStructuredLaunchPaths,
+    LIVE_SESSION_LISTING_FORMAT,
     parseLiveTmuxSessionListing,
     sanitizeRuntimeVersion,
 } from '../core/launch-outcome.js';
@@ -595,7 +596,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         process.exit(0);
     }
 
-    const sessionQuery = spawnSync('tmux', [...seatSocket, 'list-sessions', '-F', '#{session_name}\t#{session_id}'], {
+    const sessionQuery = spawnSync('tmux', [...seatSocket, 'list-sessions', '-F', LIVE_SESSION_LISTING_FORMAT], {
         stdio: 'pipe', encoding: 'utf8',
     });
     const tmuxIdentity = parseLiveTmuxSessionListing(sessionQuery.status, sessionQuery.stdout ?? '', sessionName);

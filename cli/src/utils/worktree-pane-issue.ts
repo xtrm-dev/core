@@ -14,8 +14,13 @@
 
 import { spawnSync } from 'node:child_process';
 
-/** The tmux format: pane cwd, the worktree the launcher recorded, the issue. */
-export const PANE_LISTING_FORMAT = '#{pane_current_path}\t#{@agent_worktree}\t#{@agent_issue}\t#{@agent_bead}';
+/**
+ * The tmux format: pane cwd, the worktree the launcher recorded, the issue.
+ *
+ * '|' and not a TAB: under a non-UTF-8 locale tmux rewrites a control character
+ * inside a format argument to '_' (CORE-2802), collapsing every row (CORE-2811).
+ */
+export const PANE_LISTING_FORMAT = '#{pane_current_path}|#{@agent_worktree}|#{@agent_issue}|#{@agent_bead}';
 
 /**
  * Hard ceiling for the pane probe (CORE-2740 F3). `xt attach` waits on this
@@ -54,7 +59,7 @@ export function listAgentPanes(timeoutMs: number = PANE_PROBE_TIMEOUT_MS): strin
 export function issueFromPaneListing(listing: string, worktreePath: string): string | null {
     const beads = new Set<string>();
     for (const line of String(listing ?? '').split(/\r?\n/)) {
-        const [currentPath = '', agentWorktree = '', issueOption = '', legacyBead = ''] = line.split('\t');
+        const [currentPath = '', agentWorktree = '', issueOption = '', legacyBead = ''] = line.split('|');
         // `@agent_bead` is the read-only fallback for panes launched before CORE-2801.
         const issue = issueOption.trim() ? issueOption : legacyBead;
         if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;

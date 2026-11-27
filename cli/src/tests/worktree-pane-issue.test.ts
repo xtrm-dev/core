@@ -10,7 +10,7 @@ const WT = '/repo/.xtrm/worktrees/repo-xt-pi-worker';
 
 /** One row in the real format: pane cwd, recorded worktree, issue. */
 function row(currentPath: string, agentWorktree: string, issue: string): string {
-    return `${currentPath}\t${agentWorktree}\t${issue}`;
+    return `${currentPath}|${agentWorktree}|${issue}`;
 }
 
 describe('issueFromPaneListing: the pane issue of one worktree (CORE-2728 F7)', () => {

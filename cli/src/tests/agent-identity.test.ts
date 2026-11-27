@@ -73,13 +73,13 @@ describe('attach restore', () => {
 
 describe('pane listing legacy fallback', () => {
     it('reads @agent_issue first and @agent_bead for a pane launched before the rename', () => {
-        expect(issueFromPaneListing('/w\t/w\tCORE-2\tXTRM-9\n', '/w')).toBe('CORE-2');
-        expect(issueFromPaneListing('/w\t/w\t\tXTRM-9\n', '/w')).toBe('XTRM-9');
+        expect(issueFromPaneListing('/w|/w|CORE-2|XTRM-9\n', '/w')).toBe('CORE-2');
+        expect(issueFromPaneListing('/w|/w||XTRM-9\n', '/w')).toBe('XTRM-9');
     });
 });
 
 describe('topology pane rows', () => {
-    const SEP = '\t';
+    const SEP = '|';
     const row = (cmd: string, state: string, issue: string, legacy: string) =>
         ['%1', '$1', 's', '@1', cmd, '/r', state, 'worker', 't', issue, legacy, '', '', '', '', '', '0', '0', '1', '1', 'w'].join(SEP);
     it('reads the legacy bead column when @agent_issue is empty', () => {

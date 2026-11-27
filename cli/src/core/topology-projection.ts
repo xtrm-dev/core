@@ -53,13 +53,13 @@ const execFileAsync = promisify(execFile);
 /**
  * Field separator for the tmux format string.
  *
- * Tab, not the "obvious" ASCII unit separator: tmux escapes non-printable bytes
- * in format output as a literal backslash-octal sequence, so U+001F arrives as
- * the four characters \037 and every row fails to split. Tab passes through
- * verbatim, and git forbids control characters in ref names, so a branch can
- * never contain one.
+ * '|' and not a TAB: under a non-UTF-8 locale tmux rewrites a control character
+ * inside a format argument to '_' (CORE-2802), so a tab-separated row collapses
+ * into one field and every pane is skipped (CORE-2811). A printable separator
+ * passes through verbatim. `window_name` is the last field and is rebuilt from
+ * the tail, so a window name that itself contains '|' still parses.
  */
-const SEP = '\t';
+const SEP = '|';
 
 /**
  * tmux format fields, in argv order. `@agent_*` are the lineage pane options

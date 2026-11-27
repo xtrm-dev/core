@@ -67001,10 +67001,11 @@ function parseLiveTmuxSessionId(status2, stdout) {
   const sessionId = stdout.trim();
   return /^\$[0-9]+$/.test(sessionId) ? { ok: true, sessionId } : { ok: false, error: "detached tmux session returned an invalid identity" };
 }
+var LIVE_SESSION_LISTING_FORMAT = "#{session_name}|#{session_id}";
 function parseLiveTmuxSessionListing(status2, stdout, expectedName) {
   if (status2 !== 0) return { ok: false, error: "detached tmux session is no longer live" };
   const matches = stdout.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-    const separator = line.indexOf("	");
+    const separator = line.lastIndexOf("|");
     if (separator < 1 || line.slice(0, separator) !== expectedName) return [];
     return [line.slice(separator + 1)];
   });
@@ -70130,7 +70131,7 @@ async function launchTmuxSession(args) {
         ...seatSocket,
         "list-sessions",
         "-F",
-        "#{session_name}	#{session_id}"
+        LIVE_SESSION_LISTING_FORMAT
       ], { stdio: "pipe", encoding: "utf8" });
       const sessionIdentity = parseLiveTmuxSessionListing(
         sessionIdResult.status,
@@ -73210,7 +73211,7 @@ async function launchCodexWorktreeSession(opts) {
 `);
     process.exit(0);
   }
-  const sessionQuery = (0, import_node_child_process17.spawnSync)("tmux", [...seatSocket, "list-sessions", "-F", "#{session_name}	#{session_id}"], {
+  const sessionQuery = (0, import_node_child_process17.spawnSync)("tmux", [...seatSocket, "list-sessions", "-F", LIVE_SESSION_LISTING_FORMAT], {
     stdio: "pipe",
     encoding: "utf8"
   });
@@ -79288,7 +79289,7 @@ function readTextIfExists(path100) {
 }
 
 // src/core/worktree-release-pane.ts
-var FIELD_SEP = "";
+var FIELD_SEP = "|";
 var PANE_FORMAT = [
   "#{@agent_worktree}",
   "#{@agent_branch}",
@@ -81147,7 +81148,7 @@ init_pi_runtime();
 
 // src/utils/worktree-pane-issue.ts
 var import_node_child_process26 = require("child_process");
-var PANE_LISTING_FORMAT = "#{pane_current_path}	#{@agent_worktree}	#{@agent_issue}	#{@agent_bead}";
+var PANE_LISTING_FORMAT = "#{pane_current_path}|#{@agent_worktree}|#{@agent_issue}|#{@agent_bead}";
 var PANE_PROBE_TIMEOUT_MS = 2e3;
 function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
   try {
@@ -81165,7 +81166,7 @@ function listAgentPanes(timeoutMs = PANE_PROBE_TIMEOUT_MS) {
 function issueFromPaneListing(listing, worktreePath) {
   const beads = /* @__PURE__ */ new Set();
   for (const line of String(listing ?? "").split(/\r?\n/)) {
-    const [currentPath = "", agentWorktree = "", issueOption = "", legacyBead = ""] = line.split("	");
+    const [currentPath = "", agentWorktree = "", issueOption = "", legacyBead = ""] = line.split("|");
     const issue2 = issueOption.trim() ? issueOption : legacyBead;
     if (currentPath !== worktreePath && agentWorktree !== worktreePath) continue;
     const candidate = issue2.trim();
@@ -90751,7 +90752,7 @@ var import_node_os40 = require("os");
 var import_node_path80 = __toESM(require("path"), 1);
 var import_node_util3 = require("util");
 var execFileAsync = (0, import_node_util3.promisify)(import_node_child_process48.execFile);
-var SEP2 = "	";
+var SEP2 = "|";
 var PANE_FIELDS = [
   "pane_id",
   "session_id",

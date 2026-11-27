@@ -365,7 +365,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
         return { status: 0, stdout: '%42\n', stderr: '' };
       }
       if (command === 'tmux' && args[0] === 'list-sessions') {
-        return { status: 0, stdout: 'pi-json\t$7\n', stderr: '' };
+        return { status: 0, stdout: 'pi-json|$7\n', stderr: '' };
       }
       if (command === path.join(repoRoot, 'bin', 'pi') && args[0] === '--version') {
         return { status: 0, stdout: 'pi 0.74.2\u001b[31m\n', stderr: '' };
@@ -543,7 +543,7 @@ describe('worktree session .beads handling (no symlink; skip-worktree only)', ()
         return { status: 0, stdout: '%42\n', stderr: '' };
       }
       if (command === 'tmux' && args[0] === 'list-sessions') {
-        return { status: 0, stdout: 'pi-missingmeta\t$7\n', stderr: '' };
+        return { status: 0, stdout: 'pi-missingmeta|$7\n', stderr: '' };
       }
       if (command === 'pi' && args[0] === '--version') {
         return { status: 0, stdout: 'pi 0.74.2\n', stderr: '' };

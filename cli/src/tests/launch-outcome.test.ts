@@ -137,15 +137,25 @@ describe('detached launch command outcome', () => {
             ok: false,
             error: 'detached tmux session returned an invalid identity',
         });
-        expect(parseLiveTmuxSessionListing(0, 'other\t$41\nexact\t$42\n', 'exact')).toEqual({
+        expect(parseLiveTmuxSessionListing(0, 'other|$41\nexact|$42\n', 'exact')).toEqual({
             ok: true,
             sessionId: '$42',
         });
-        expect(parseLiveTmuxSessionListing(0, 'exact-suffix\t$41\n', 'exact')).toEqual({
+        // A session name that itself contains the separator still resolves: the id is last.
+        expect(parseLiveTmuxSessionListing(0, 'team|exact|$42\n', 'team|exact')).toEqual({
+            ok: true,
+            sessionId: '$42',
+        });
+        // CORE-2811: tmux 3.8 rewrites the old TAB separator, so a collapsed row is not a match.
+        expect(parseLiveTmuxSessionListing(0, 'exact_$42\n', 'exact')).toEqual({
             ok: false,
             error: 'detached tmux session is no longer live',
         });
-        expect(parseLiveTmuxSessionListing(0, 'exact\thostile\n', 'exact')).toEqual({
+        expect(parseLiveTmuxSessionListing(0, 'exact-suffix|$41\n', 'exact')).toEqual({
+            ok: false,
+            error: 'detached tmux session is no longer live',
+        });
+        expect(parseLiveTmuxSessionListing(0, 'exact|hostile\n', 'exact')).toEqual({
             ok: false,
             error: 'detached tmux session returned an invalid identity',
         });

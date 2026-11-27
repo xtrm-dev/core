@@ -21,6 +21,7 @@ import {
     buildDetachedLaunchOutcome,
     checkStructuredLaunchPaths,
     checkStructuredLaunchOptions,
+    LIVE_SESSION_LISTING_FORMAT,
     parseLiveTmuxSessionListing,
     sanitizeRuntimeVersion,
 } from '../core/launch-outcome.js';
@@ -4629,7 +4630,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // session_name:pane_id text, or the opt-in versioned JSON object.
         if (structuredOutput) {
             const sessionIdResult = spawnSync('tmux', [
-                ...seatSocket, 'list-sessions', '-F', '#{session_name}\t#{session_id}',
+                ...seatSocket, 'list-sessions', '-F', LIVE_SESSION_LISTING_FORMAT,
             ], { stdio: 'pipe', encoding: 'utf8' });
             const sessionIdentity = parseLiveTmuxSessionListing(
                 sessionIdResult.status,

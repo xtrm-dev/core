@@ -16,7 +16,7 @@ import {
     type RunOutcome,
 } from '../core/topology-projection.js';
 
-const SEP = '\t';
+const SEP = '|';
 const SCHEMA = 'xtrm.topology.projection.v1';
 
 const paneLine = (fields: Partial<Record<string, string>>) =>
