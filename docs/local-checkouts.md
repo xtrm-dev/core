@@ -19,7 +19,7 @@ domain: [install, development, operations]
 | [A new machine](#a-new-machine) | The shim needs `git`, Node 24 or later and `npm` |
 | [The server over ssh](#the-server-over-ssh) | The phase is machine-local and read-only under `--check`: |
 | [Troubleshooting](#troubleshooting) | Each finding names the repository and the action that resolves it; none of them requires a force |
-| [Why this is not `xt bootstrap`](#why-this-is-not-xt-bootstrap) | `xt bootstrap` is the deprecated payload refresh, retained as an alias of |
+| [Why not `xt bootstrap` or `xt install`](#why-not-xt-bootstrap-or-xt-install) | `xt bootstrap` is the deprecated payload refresh, retained as an alias of |
 | [Tests](#tests) | The suite owns temporary homes and temporary git origins: no network, no real |
 <!-- END INDEX -->
 
@@ -36,8 +36,9 @@ registry. Four repositories supply the binaries:
 | `specialists` | `@jaggerxtrm/specialists` | `specialists`, `sp` (from committed `dist`) |
 
 One surface installs and updates all four, per the XTRM build order: every
-component is installed by `xt install`, updated by `xt update`, and checked by
-`xt doctor`, from one manifest. There is no second tool.
+component is installed by `xt init`, updated by `xt update`, and checked by
+`xt doctor`, from one manifest. There is no second tool and no `xt install`
+command: the root command surface is guarded by `cli/test/install-surface.test.ts`.
 
 ## Where it lives
 
@@ -45,11 +46,11 @@ One surface installs and updates all four checkouts, per the XTRM build order.
 
 | Surface | File | Behaviour |
 |---|---|---|
-| `xt install [--from-checkouts]` | `cli/src/commands/install.ts` | Machine bootstrap (runtimes, payloads) plus the checkout phase |
-| `xt install --check [--from-checkouts]` | same | Checkout phase only; writes nothing |
-| `xt update` | `cli/src/commands/update.ts` | Applies the phase on `--apply`, reports it read-only otherwise; silent on a machine with no configuration |
+| `xt init --from-checkouts` | `cli/src/commands/init.ts` | First install: machine bootstrap, then clone/fast-forward, install and link the checkouts |
+| `xt update --from-checkouts` | `cli/src/commands/update.ts` | Routine refresh: the same phase, with the built-in defaults when the machine has no configuration |
+| `xt update` | same | Applies the phase on `--apply`, reports it read-only otherwise; silent on a machine with no configuration |
 | `xt doctor` | `cli/src/commands/doctor.ts` | Reports the phase read-only in its own section; fails only with `--check-drift` |
-| `scripts/bootstrap.sh` | repository script | Entry point for a machine that has no `xt` yet: clones `core`, then runs `xt install --from-checkouts` |
+| `scripts/bootstrap.sh` | repository script | Entry point for a machine that has no `xt` yet: clones `core`, then runs `xt update --from-checkouts` |
 
 The phase itself is `cli/src/core/checkout-bootstrap.ts`; it has no dependencies
 outside Node and git.
@@ -73,9 +74,9 @@ A machine opts in with a configuration file at `~/.xtrm/config/checkouts.json`.
 - `enabled: false` — keep the configuration but skip the phase.
 
 Without this file the phase is off: `xt update` never touches links, and
-`xt doctor` prints no checkout section. `xt install --from-checkouts` runs it
-once with the built-in defaults (`~/dev`, the four remotes) and changes nothing
-in the configuration.
+`xt doctor` prints no checkout section. `xt update --from-checkouts` (or
+`xt init --from-checkouts`) runs it once with the built-in defaults (`~/dev`,
+the four remotes) and changes nothing in the configuration.
 
 The `core` entry defaults to the **main worktree** of the running CLI, so a run
 from `.xtrm/worktrees/<name>/` never treats the worktree as the checkout.
@@ -85,11 +86,10 @@ from `.xtrm/worktrees/<name>/` never treats the worktree as the checkout.
 Run the check form first on a machine you have not updated recently, then the apply form.
 
 ```bash
-xt install --check --from-checkouts   # report drift; change nothing (exit 1 on drift)
-xt install --from-checkouts           # clone/fast-forward, install, link, install the guard, report
-xt install                            # the same, but only when the machine is configured
-xt update                             # routine refresh; reports checkouts when configured
+xt update --from-checkouts            # clone/fast-forward, install, link, install the guard, report
+xt update                             # routine refresh; reports checkouts read-only when configured
 xt update --apply                     # routine refresh; applies the checkout phase too
+xt init --from-checkouts              # first install on a new machine
 xt doctor                             # diagnosis; checkouts section, read-only
 ```
 
@@ -97,14 +97,15 @@ Flags:
 
 | Flag | Effect |
 |---|---|
-| `--from-checkouts` | Run the phase even when no `checkouts.json` exists |
-| `--check` | Report only; the only write is the network `git fetch` |
-| `--home <dir>` | Install against another home (npm prefix, `~/.local/bin`, installer state, Pi settings) — rehearsal and tests |
-| `--dry-run` | Preview the machine-bootstrap part; the checkout phase is not applied |
-| `--json` | Machine-readable report |
+| `--from-checkouts` | Run the phase even when no `checkouts.json` exists, and apply it |
+| `--apply` (`xt update`) | Apply the phase on a configured machine; without it the phase reports only |
+| `--json` | Machine-readable report (the `checkouts` key of the update payload) |
+| `--dry-run` (`xt init`) | Preview the machine-bootstrap part; the checkout phase is not applied |
 
 Environment: `XTRM_BOOTSTRAP_NPM` selects the npm binary, `XTRM_BOOTSTRAP_ROOT`
 and `XTRM_BOOTSTRAP_CORE_REMOTE` configure the `scripts/bootstrap.sh` shim.
+`XTRM_BOOTSTRAP_HOME_OVERRIDE` rehearses an apply against another home (npm
+prefix, `~/.local/bin`, installer state, Pi settings); the tests use it.
 
 ## Report
 
@@ -125,7 +126,7 @@ drift (2)
   - xtmux: 1 commit(s) behind origin/main
   - xtmux: ~/.pi/agent/settings.json loads xtmux from the checkout directly (1 entry); the installer would add a second grouped entry
 
-drift found: 2 finding(s), 0 problem(s); run xt install --from-checkouts to update
+drift found: 2 finding(s), 0 problem(s); run xt update --apply to update
 ```
 
 The report names, for every linked binary, the checkout, commit and package
@@ -148,7 +149,7 @@ version it resolves to, plus the first entry on `PATH` when that differs.
   `git config --unset core.hooksPath` in that checkout.
 - No `tmux kill-server`, no restart of running agents. The `tmux` kill guard is
   installed by xtmux's own installer, not by this phase.
-- `--check` writes nothing except the network fetch.
+- A report run (`xt update` without `--apply`, `xt doctor`) writes nothing except the network fetch.
 
 ## A new machine
 
@@ -159,7 +160,7 @@ git clone git@github.com:xtrm-dev/core.git core
 ```
 
 The shim needs `git`, Node 24 or later and `npm`. It clones `core` when the
-machine has none, then runs `xt install --from-checkouts`, which clones or
+machine has none, then runs `xt update --from-checkouts`, which clones or
 fast-forwards the other three, installs dependencies, links the packages,
 installs the tmux guard, and prints the report. Write
 `~/.xtrm/config/checkouts.json` so later `xt update` runs keep the checkouts
@@ -170,7 +171,7 @@ current.
 The phase is machine-local and read-only under `--check`:
 
 ```bash
-ssh <server> '~/dev/core/cli/dist/index.cjs install --check'
+ssh <server> '~/dev/core/cli/dist/index.cjs update --json'
 ```
 
 Run it with the CLI that is already on the server; do not copy a build there to
@@ -191,16 +192,18 @@ Each finding names the repository and the action that resolves it; none of them 
 | `lockfile-rewritten` | committed lockfile out of sync with `package.json` | fix the lockfile in that repository |
 | `installer-refused` | xtmux refused to overwrite a file it does not own | resolve the file by hand; nothing was forced |
 | `pi-entry-conflict` | Pi settings load the xtmux checkout directly | remove the duplicate Pi entry before re-running the installer |
-| `link-missing` / `link-mismatch` | a binary is not linked, or resolves to another checkout | re-run `xt install --from-checkouts` |
+| `link-missing` / `link-mismatch` | a binary is not linked, or resolves to another checkout | re-run `xt update --from-checkouts` |
 | `installer-missing` / `installer-version` | xtmux installer state is absent or stale | re-run the phase; it runs `install.sh` |
 | `not-a-git-checkout` | the directory exists but is not a checkout | move it aside and re-run |
 
-## Why this is not `xt bootstrap`
+## Why not `xt bootstrap` or `xt install`
 
 `xt bootstrap` is the deprecated payload refresh, retained as an alias of
-`xt update`; it does not touch checkouts. The build order puts the install story
-in one surface (`xt install` / `xt update` / `xt doctor`), and this phase is that
-surface's local-checkout half.
+`xt update`; it does not touch checkouts. `xt install` does not exist: the root
+command surface is guarded by `cli/test/install-surface.test.ts` and
+`cli/test/command-migration.test.ts`, which require `xt install` to fail. The
+build order puts the install story in one surface (`xt init` / `xt update` /
+`xt doctor`), and this phase is that surface's local-checkout half.
 
 ## Tests
 

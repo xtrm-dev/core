@@ -31,13 +31,6 @@ import {
 } from '../core/registry-scaffold.js';
 import { syncPiMcpConfig, syncProjectMcpConfig } from '../core/project-mcp-sync.js';
 import { ensureBeadsSharedServerEnabled } from '../core/beads-shared-server.js';
-import { Command } from 'commander';
-import {
-    checkoutConfigPath,
-    renderCheckoutReport,
-    runCheckoutPhase,
-    type CheckoutReport,
-} from '../core/checkout-bootstrap.js';
 
 export interface InstallOpts {
     dryRun?: boolean;
@@ -53,6 +46,8 @@ export interface InstallOpts {
     packageRoot?: string;
     /** Skip machine bootstrap (sb/pi/pnpm/...) — used by the init orchestrator which handles it in a dedicated phase. */
     skipMachineBootstrap?: boolean;
+    /** Run the local-checkout phase (clone/fast-forward/link core, xtrm, xtmux, specialists) even when unconfigured. */
+    fromCheckouts?: boolean;
     /** Skip Claude runtime sync (hooks/settings wiring). */
     skipClaudeRuntimeSync?: boolean;
     /** Update performs global Pi package assurance once after all repo reconciliations. */
@@ -118,101 +113,6 @@ async function renderSummaryCard(stats: InstallStats, isDryRun: boolean): Promis
 }
 
 export { isSbInstalled, isDeepwikiInstalled } from '../core/machine-bootstrap.js';
-
-/**
- * Local-checkout phase entry point shared by `xt install`, `xt update` and
- * `xt doctor`. Silent when the machine has no checkout configuration and the
- * caller did not ask for it. Returns null when the phase did not run.
- */
-export function runCheckoutPhaseForCli(opts: {
-    fromCheckouts?: boolean;
-    check?: boolean;
-    home?: string | null;
-    quiet?: boolean;
-}): CheckoutReport | null {
-    let report: CheckoutReport | null;
-    try {
-        report = runCheckoutPhase({
-            fromCheckouts: opts.fromCheckouts,
-            check: opts.check,
-            home: opts.home ?? null,
-            log: (line) => {
-                if (!opts.quiet) console.log(kleur.dim(`  • ${line}`));
-            },
-        });
-    } catch (error) {
-        console.error(kleur.red(`  ✗ checkout phase: ${(error as Error).message}`));
-        throw error;
-    }
-    if (!report) return null;
-    if (!opts.quiet) {
-        console.log('');
-        for (const line of renderCheckoutReport(report)) console.log(line);
-        console.log('');
-    }
-    return report;
-}
-
-export interface InstallCommandOpts {
-    fromCheckouts?: boolean;
-    check?: boolean;
-    home?: string;
-    dryRun?: boolean;
-    yes?: boolean;
-    json?: boolean;
-}
-
-/**
- * `xt install` — the machine bootstrap verb of the build order. It runs the
- * same machine → runtime payload engine as `xt init` and, when the machine is
- * configured for local checkouts (or `--from-checkouts` is passed), the
- * checkout phase that clones/fast-forwards/links them.
- *
- * `--check` runs the checkout phase alone and writes nothing.
- */
-export function createInstallCommand(): Command {
-    return new Command('install')
-        .description('Machine bootstrap: runtimes and payloads, plus local checkouts (clone, fast-forward, npm link)')
-        .option('--from-checkouts', 'Run the local-checkout phase even when this machine has no checkouts.json', false)
-        .option('--check', 'Report checkout drift only; change nothing', false)
-        .option('--home <dir>', 'Install against this home instead of the current one (rehearsal)')
-        .option('--dry-run', 'Preview changes without making any modifications', false)
-        .option('-y, --yes', 'Skip confirmation prompts', false)
-        .option('--json', 'Print the checkout report as JSON', false)
-        .action(async (opts: InstallCommandOpts) => {
-            if (opts.check) {
-                const report = runCheckoutPhaseForCli({
-                    fromCheckouts: opts.fromCheckouts,
-                    check: true,
-                    home: opts.home ?? null,
-                    quiet: Boolean(opts.json),
-                });
-                if (!report) {
-                    console.error(kleur.yellow(`  ○ no checkout configuration at ${checkoutConfigPath()}; nothing to check`));
-                    console.error(kleur.dim('    add one, or run: xt install --from-checkouts --check'));
-                    process.exitCode = 1;
-                    return;
-                }
-                if (opts.json) console.log(JSON.stringify(report, null, 2));
-                if (!report.ok) process.exitCode = 1;
-                return;
-            }
-
-            await runInstall({ dryRun: opts.dryRun, yes: opts.yes, projectRoot: getProjectRoot() });
-            const report = runCheckoutPhaseForCli({
-                fromCheckouts: opts.fromCheckouts,
-                check: false,
-                home: opts.home ?? null,
-                quiet: Boolean(opts.json),
-            });
-            if (!report) {
-                console.log(kleur.dim('  checkouts: not configured on this machine (see docs/local-checkouts.md)'));
-                return;
-            }
-            if (opts.json) console.log(JSON.stringify(report, null, 2));
-            if (!report.ok) process.exitCode = 1;
-        });
-}
 
 export async function runMachineBootstrap(opts: { yes?: boolean } = {}): Promise<void> {
     await runMachineBootstrapPhase({ dryRun: false });

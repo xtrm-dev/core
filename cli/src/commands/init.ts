@@ -884,6 +884,23 @@ export async function runProjectInit(opts: InstallOpts = {}): Promise<void> {
     // depend on. Uses the pre-computed plan from Phase 1 inventory.
     await runMachineBootstrapPhase({ dryRun: false });
 
+    // CORE-2810: on a machine that installs from local checkouts, `init` is the
+    // install verb of the build order — it clones/fast-forwards and links them.
+    if (opts.fromCheckouts) {
+        const { renderCheckoutReport, runCheckoutPhase } = await import('../core/checkout-bootstrap.js');
+        const report = runCheckoutPhase({
+            fromCheckouts: true,
+            check: false,
+            log: (line) => console.log(kleur.dim(`  • ${line}`)),
+        });
+        if (report) {
+            console.log('');
+            for (const line of renderCheckoutReport(report)) console.log(line);
+            console.log('');
+            if (!report.ok) process.exitCode = 1;
+        }
+    }
+
     // ── Phase 5: Claude Runtime Sync (.xtrm hooks wiring) ───────────────────
     await runClaudeRuntimeSyncPhase({ repoRoot: projectRoot, dryRun: false, isGlobal: false });
 

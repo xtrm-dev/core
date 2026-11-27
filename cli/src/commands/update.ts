@@ -57,6 +57,7 @@ interface UpdateOpts {
     allRepos?: boolean;
     strictRegistry?: boolean;
     force?: boolean;
+    fromCheckouts?: boolean;
 }
 
 interface ResolvedTargets {
@@ -479,6 +480,7 @@ export function createUpdateCommand(): Command {
         .option('--all-repos', 'Sweep ~/dev and ~/projects for xtrm-managed repos (dry-run by default; --apply patches and commits each changed repo)', false)
         .option('--repo <path>', 'Target one repo path instead of cwd')
         .option('--json', 'Print JSON output', false)
+        .option('--from-checkouts', 'Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts', false)
         .action(async (opts) => {
             const typedOpts = opts as UpdateOpts;
             const { targets, incomplete } = await resolveTargetRepos(typedOpts);
@@ -560,11 +562,14 @@ export function createUpdateCommand(): Command {
             // CORE-2810: local checkouts are part of the update story on a
             // machine that installs from them. Configured machines apply the
             // phase on `--apply` and report it read-only otherwise; an
-            // unconfigured machine never has its links touched.
+            // unconfigured machine never has its links touched unless
+            // `--from-checkouts` asks for the built-in defaults.
+            const applyCheckouts = Boolean(typedOpts.apply || typedOpts.fromCheckouts);
             let checkouts: CheckoutReport | null = null;
             try {
                 checkouts = runCheckoutPhase({
-                    check: !typedOpts.apply,
+                    fromCheckouts: Boolean(typedOpts.fromCheckouts),
+                    check: !applyCheckouts,
                     log: (line) => {
                         if (!opts.json) console.log(kleur.dim(`  • ${line}`));
                     },
@@ -603,7 +608,7 @@ export function createUpdateCommand(): Command {
                 || packageAssurance.failed.length > 0
                 || piStartupSmoke?.status === 'failed'
                 || piStartupSmoke?.status === 'inconclusive'
-                || (checkouts !== null && !checkouts.ok && (typedOpts.apply || checkouts.check))) {
+                || (checkouts !== null && !checkouts.ok && (applyCheckouts || checkouts.check))) {
                 process.exitCode = 1;
             }
         });

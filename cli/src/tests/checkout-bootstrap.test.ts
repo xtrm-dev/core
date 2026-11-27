@@ -28,7 +28,10 @@ function tmp(prefix: string): string {
 }
 
 function git(cwd: string, ...args: string[]): string {
-    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    // A CI runner has no global git identity; commit identity is per invocation
+    // so the fixture never depends on the machine's git configuration.
+    const identity = ['-c', 'user.name=xtrm-checkout-test', '-c', 'user.email=checkout-test@example.invalid'];
+    const result = spawnSync('git', [...identity, ...args], { cwd, encoding: 'utf8' });
     if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
     return result.stdout.trim();
 }
@@ -108,6 +111,8 @@ process.exit(0);
 
 function fakeEnv(dir: string, behaviour: 'rewrite-lock' | 'ok' = 'ok'): NodeJS.ProcessEnv {
     return {
+        // The fake npm is a `#!/usr/bin/env node` script: it needs PATH.
+        PATH: process.env.PATH ?? '',
         XTRM_BOOTSTRAP_NPM: fakeNpm(dir, behaviour),
         FAKE_NPM_DIR: dir,
         ...(behaviour === 'rewrite-lock' ? { FAKE_NPM_REWRITE_LOCK: '1' } : {}),

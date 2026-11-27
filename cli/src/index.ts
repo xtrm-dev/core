@@ -12,7 +12,6 @@ import { createClaudeCommand } from './commands/claude.js';
 import { createPiCommand } from './commands/pi.js';
 import { createCodexCommand } from './commands/codex.js';
 import { runProjectInit } from './commands/init.js';
-import { createInstallCommand } from './commands/install.js';
 import { createStatusCommand } from './commands/status.js';
 import { createResetCommand } from './commands/reset.js';
 import { createHelpCommand } from './commands/help.js';
@@ -69,10 +68,10 @@ program
     .option('--global', 'Install tooling to user-global scope instead of project-local', false)
     .option('--prune', 'Remove plugin-era artifacts (Claude plugin cache, stale settings keys)', false)
     .option('--substrate-dir <path>', 'Authorized local @jaggerxtrm/substrate checkout for sb provision and integration enrollment')
+    .option('--from-checkouts', 'Also clone/fast-forward and link the local core, xtrm, xtmux and specialists checkouts', false)
     .action(async (opts) => {
         await runProjectInit(opts);
     });
-program.addCommand(createInstallCommand());
 program.addCommand(createStatusCommand());
 program.addCommand(createResetCommand());
 program.addCommand(createCleanCommand());
