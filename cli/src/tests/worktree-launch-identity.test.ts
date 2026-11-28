@@ -5,7 +5,8 @@
  * output at all: the pane carried the caller's directory and the agent exported no
  * XTMUX_AGENT_*, while every test passed. This exercises the built CLI against a
  * real tmux server and a fake `pi` that records its own environment, so both halves
- * of the fix — the pane option and the exported variables — are asserted.
+ * of the fix are asserted: the pane option the launcher publishes, and the environment
+ * the agent it spawns actually receives.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -71,19 +72,17 @@ it.skipIf(!canRun)('a plain xt pi publishes the created worktree as the pane ide
     created.push(binDir);
     fs.writeFileSync(path.join(binDir, 'pi'), `#!/bin/sh\nenv > ${JSON.stringify(outFile)}\nsleep 120\n`, { mode: 0o755 });
 
-    tmuxBin(socket, ['new-session', '-d', '-s', 't', '-x', '200', '-y', '50', '-c', repoRoot]);
+    // A bare `sh` pane, not the login shell: typing into zsh here raced the new-user
+    // prompt (it ate the `e` of `export`, so `pi` resolved to the real binary and this
+    // assertion had nothing to read). `sh` has no rc files, and the PATH is set both on
+    // the typed command and globally: the launcher resolves `pi` from its own
+    // environment, while its tmux plan opens the agent session from the SERVER's.
+    tmuxBin(socket, ['new-session', '-d', '-s', 't', '-x', '200', '-y', '50', '-c', repoRoot, 'sh']);
     const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
+    const pathWithBin = `${binDir}:${process.env.PATH ?? ''}`;
+    tmuxBin(socket, ['set-environment', '-g', 'PATH', pathWithBin]);
     try {
-        // The pane's shell needs the stand-in runtime on its PATH: the launcher resolves
-        // `pi` from the launching environment, and a real pi would rewrite the pane
-        // through its own extension before the assertion could run.
-        tmuxBin(socket, ['send-keys', '-t', paneId, `export PATH=${binDir}:$PATH`, 'Enter']);
-        sleep(1500);
-        // Prove the shell really resolves the stand-in before the launch spends a tree.
-        tmuxBin(socket, ['send-keys', '-t', paneId, 'command -v pi', 'Enter']);
-        sleep(500);
-        tmuxBin(socket, ['send-keys', '-t', paneId, `${CLI} pi`, 'Enter']);
-
+        tmuxBin(socket, ['send-keys', '-t', paneId, `PATH=${pathWithBin} ${CLI} pi`, 'Enter']);
         let worktree = '';
         for (let attempt = 0; attempt < 60 && !worktree; attempt += 1) {
             sleep(500);
@@ -99,10 +98,23 @@ it.skipIf(!canRun)('a plain xt pi publishes the created worktree as the pane ide
         const branch = tmuxBin(socket, ['show-options', '-p', '-qv', '-t', paneId, '@agent_branch']);
         expect(branch.startsWith('xt/')).toBe(true);
 
-        // The exported half (XTMUX_AGENT_*, PWD) is asserted by the release tests, which
-        // read an agent's environment directly; here a real runtime is not launched, so the
-        // launcher's own observable output — the pane label — is what this case pins.
         expect(tmuxBin(socket, ['show-options', '-p', '-qv', '-t', paneId, '@agent_worktree'])).toBe(worktree);
+
+        // The exported half: labelling the pane is not enough, the spawn must carry the
+        // same identity, or the agent's own tooling resolves the caller's checkout. The
+        // stand-in `pi` dumps its environment to agent-env.txt before it sleeps, so this
+        // reads the launcher's real spawn env, not a reconstruction of it. The label lands
+        // before the runtime is spawned, so the dump is polled for, not read once.
+        for (let attempt = 0; attempt < 40 && !fs.existsSync(outFile); attempt += 1) sleep(500);
+        if (!fs.existsSync(outFile)) {
+            console.log('DIAG pane:\n' + (spawnSync('tmux', ['-L', socket, 'capture-pane', '-p', '-t', paneId], { encoding: 'utf8' }).stdout ?? '').slice(-2500));
+            console.log('DIAG which:', tmuxBin(socket, ['show-environment', '-g', 'PATH']));
+            console.log('DIAG bin:', binDir, fs.readdirSync(binDir));
+        }
+        const agentEnv = fs.readFileSync(outFile, 'utf8');
+        expect(agentEnv).toContain(`XTMUX_AGENT_WORKTREE=${worktree}`);
+        expect(agentEnv).toContain(`XTMUX_AGENT_BRANCH=${branch}`);
+        expect(agentEnv).toContain(`PWD=${worktree}`);
     } finally {
         spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
         // Remove exactly the tree this test created, never a pattern.
