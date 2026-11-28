@@ -5524,7 +5524,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile2 = universalify.fromPromise(_readFile);
-    function readFileSync29(file2, options = {}) {
+    function readFileSync30(file2, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -5556,7 +5556,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile: readFile2,
-      readFileSync: readFileSync29,
+      readFileSync: readFileSync30,
       writeFile: writeFile2,
       writeFileSync: writeFileSync17
     };
@@ -80468,8 +80468,8 @@ function readAgentIdentity(panePid, procRoot = "/proc") {
 }
 function processRunsIn(pid, worktree, procRoot) {
   try {
-    const cwd = (0, import_node_fs24.readlinkSync)(`${procRoot}/${pid}/cwd`);
-    return (0, import_node_path48.resolve)(cwd) === (0, import_node_path48.resolve)(worktree);
+    const cwd = (0, import_node_fs25.readlinkSync)(`${procRoot}/${pid}/cwd`);
+    return (0, import_node_path49.resolve)(cwd) === (0, import_node_path49.resolve)(worktree);
   } catch {
     return false;
   }
@@ -80477,7 +80477,7 @@ function processRunsIn(pid, worktree, procRoot) {
 function readIdentityEnv(pid, procRoot) {
   let raw;
   try {
-    raw = (0, import_node_fs24.readFileSync)(`${procRoot}/${pid}/environ`, "utf8");
+    raw = (0, import_node_fs25.readFileSync)(`${procRoot}/${pid}/environ`, "utf8");
   } catch {
     return {};
   }
@@ -80590,7 +80590,7 @@ async function releasePane(opts) {
   if (!labelled && !exported) {
     return refuse("pane has no agent identity \u2014 start it with `xt` for this checkout, or run `xt attach <slug>` to restore it");
   }
-  if (labelled && exported && (0, import_node_path48.resolve)(labelled) !== (0, import_node_path48.resolve)(exported)) {
+  if (labelled && exported && (0, import_node_path49.resolve)(labelled) !== (0, import_node_path49.resolve)(exported)) {
     return refuse(`identity-mismatch: option=${labelled} agent=${exported}`, labelled);
   }
   pane.worktree = labelled || exported;
