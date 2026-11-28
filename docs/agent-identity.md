@@ -51,7 +51,7 @@ The environment variable of each option is `XTMUX_AGENT_<NAME>`. The launcher de
 
 1. The owner writes the option. A component that is not the owner never overwrites it.
 2. `XTMUX_AGENT_*` variables are frozen at launch. They seed an option only when the option is empty. A transition never overwrites a non-empty option from the environment.
-3. A reader reads the live pane option first, then the environment, then the legacy name (`@agent_bead`, `XTMUX_AGENT_BEAD`).
+3. A reader reads the live pane option first, then the environment, then the legacy name (`@agent_bead`, `XTMUX_AGENT_BEAD`). `xt worktree release` refuses an `identity-mismatch` when the two disagree, because a stale path is what must never be removed.
 4. A legacy name is read-only. No component writes `@agent_bead` or `XTMUX_AGENT_BEAD`.
 5. `@agent_parent_session` is the only parent source. `XTRM_PARENT_SESSION_ID` is derived from the same resolution at launch and carries the same value.
 
