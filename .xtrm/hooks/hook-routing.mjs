@@ -12,10 +12,11 @@ export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 
 /**
  * Tools the PreToolUse guards apply to: worktree-boundary on EDIT_TOOLS,
- * specialists-agent-guard on Agent. `dispatch.mjs pre` runs for every tool
- * (agent host presence, XTRM-592); this set gates the guard work.
+ * specialists-agent-guard on Agent, worktree-guard on Bash (CORE-2814).
+ * `dispatch.mjs pre` runs for every tool (agent host presence, XTRM-592); this
+ * set gates the guard work.
  */
-export const PRE_TOOLS = [...EDIT_TOOLS, 'Agent'];
+export const PRE_TOOLS = [...EDIT_TOOLS, 'Agent', 'Bash'];
 
 /**
  * Tools routed to gitnexus enrichment. The canonical matcher was

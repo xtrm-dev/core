@@ -418,6 +418,52 @@ describe('applyCleanRemoval', () => {
         expect(result.becameLive).toEqual(['/tmp/a']);
     });
 
+    // Audit F8: the last read is the probe taken after the confirmation prompt, and
+    // it must see a pane holder the process table alone would miss.
+    it('uses the fresh probe, panes included, as the last read before removal', () => {
+        const removed: string[] = [];
+        const probed: string[] = [];
+        const result = applyCleanRemoval('/repo', [target('/tmp/a')], {
+            readCwds: () => new Map(),
+            liveness: (path) => {
+                probed.push(path);
+                return {
+                    path,
+                    live: true,
+                    holders: [{ kind: 'pane', pid: 42, command: 'bash', pane: '%3', path, socket: '/tmp/tmux-1000/default' }],
+                    warnings: [],
+                };
+            },
+            remove: (p) => {
+                removed.push(p);
+                return { ok: true, message: p };
+            },
+        });
+
+        expect(probed).toEqual(['/tmp/a']);
+        expect(removed).toEqual([]);
+        expect(result.becameLive).toEqual(['/tmp/a']);
+    });
+
+    it('exempts the caller ancestry even when the fresh probe reports it', () => {
+        const removed: string[] = [];
+        const result = applyCleanRemoval('/repo', [target('/tmp/a')], {
+            liveness: (path) => ({
+                path,
+                live: true,
+                holders: [{ kind: 'process', pid: 42, command: 'xt worktree clean', path }],
+                warnings: [],
+            }),
+            exemptPids: new Set([42]),
+            remove: (p) => {
+                removed.push(p);
+                return { ok: true, message: p };
+            },
+        });
+
+        expect(removed).toEqual(['/tmp/a']);
+    });
+
     it('refuses rather than assumes when the re-read cannot enumerate processes', () => {
         const removed: string[] = [];
         const result = applyCleanRemoval('/repo', [target('/tmp/a')], {

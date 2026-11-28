@@ -26,6 +26,10 @@
 //                                                the guards below
 //           Edit|Write|MultiEdit|NotebookEdit → worktree-boundary check
 //           Agent                              → specialists-agent-guard check
+//           Bash                               → worktree-guard check (CORE-2814:
+//                                                refuse a removal aimed at a
+//                                                worktree a live process or
+//                                                tmux pane is using)
 //   post    (all)                              → xtrm-tool-logger (in-process)
 //           Bash|Grep|Read|Glob + Serena tools → gitnexus enrichment (augment
 //                                                child only when a pattern is
@@ -251,6 +255,20 @@ async function runPre(input) {
       const decision = agentGuardDecision(input);
       if (decision.block) {
         writeSync(1, JSON.stringify({ decision: 'block', reason: decision.reason }) + '\n');
+      }
+    } catch { /* fail-open, same as the standalone hook */ }
+    return 0;
+  }
+
+  // CORE-2814: refuse to remove a worktree a live process is using. The guard
+  // returns early for a command with no removal shape, so an ordinary Bash call
+  // pays only the module import.
+  if (toolName === 'Bash') {
+    try {
+      const { worktreeGuardDecision } = await import('./worktree-guard.mjs');
+      const reason = worktreeGuardDecision(input);
+      if (reason) {
+        writeSync(1, JSON.stringify({ decision: 'block', reason }) + '\n');
       }
     } catch { /* fail-open, same as the standalone hook */ }
     return 0;

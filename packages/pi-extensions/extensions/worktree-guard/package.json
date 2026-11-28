@@ -1,0 +1,27 @@
+{
+  "name": "@xtrm/pi-worktree-guard",
+  "version": "0.1.0",
+  "description": "Refuse to remove a worktree another live process is using (CORE-2814)",
+  "type": "module",
+  "exports": {
+    "./index.ts": "./index.ts"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "xtrm",
+    "worktree",
+    "guard",
+    "guardrails"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

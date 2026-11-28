@@ -4,6 +4,7 @@ import manifest from "./manifest.json" with { type: "json" };
 import compactHeaderExtension from "./extensions/compact-header.ts";
 import customFooterExtension from "./extensions/custom-footer.ts";
 import gitCheckpointExtension from "./extensions/git-checkpoint.ts";
+import worktreeGuardExtension from "./extensions/worktree-guard.ts";
 import pythonKernelExtension from "./extensions/python-kernel.ts";
 import readLineNumbersExtension from "./extensions/read-line-numbers.ts";
 import spTerminalOverlayExtension from "./extensions/sp-terminal-overlay.ts";
@@ -25,6 +26,7 @@ const availableManagedPiExtensions: readonly ManagedPiExtension[] = [
   { id: "compact-header", register: compactHeaderExtension },
   { id: "custom-footer", register: customFooterExtension },
   { id: "git-checkpoint", register: gitCheckpointExtension },
+  { id: "worktree-guard", register: worktreeGuardExtension },
   { id: "python-kernel", register: pythonKernelExtension },
   { id: "read-line-numbers", register: readLineNumbersExtension },
   { id: "sp-terminal-overlay", register: spTerminalOverlayExtension },

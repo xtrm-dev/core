@@ -12,7 +12,7 @@
 
 import { spawnSync } from 'node:child_process';
 import type { Dirent, Stats } from 'node:fs';
-import { lstatSync, readdirSync, readlinkSync } from 'node:fs';
+import { lstatSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 
 /**
@@ -175,6 +175,9 @@ export function readProcessCwds(procRoot = '/proc', options: { strict?: boolean 
         } catch {
             continue; // not ours, or exited between readdir and readlink
         }
+        // The kernel renders a cwd whose directory was removed as "<path> (deleted)",
+        // which would never equal the real directory.
+        if (target.endsWith(' (deleted)')) target = target.slice(0, -' (deleted)'.length);
 
         const existing = cwds.get(target);
         if (existing) existing.push(pid);
@@ -190,7 +193,14 @@ function isInside(child: string, parent: string): boolean {
 
 /** Pids whose cwd is inside `worktreePath`. */
 export function livePidsFor(worktreePath: string, cwds: Map<string, number[]>): number[] {
-    const root = resolve(worktreePath);
+    // /proc reports kernel-real paths, so a symlinked repo root must be resolved
+    // before the prefix comparison or every holder looks absent.
+    let root: string;
+    try {
+        root = realpathSync(worktreePath);
+    } catch {
+        root = resolve(worktreePath);
+    }
     const pids: number[] = [];
 
     for (const [cwd, cwdPids] of cwds) {

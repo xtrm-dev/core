@@ -23,8 +23,9 @@ describe('hook routing tables (.xtrm/hooks/hook-routing.mjs)', () => {
     it('PRE_TOOLS keeps the guard tools of the former PreToolUse matcher', () => {
         // Until XTRM-592 the compiled matcher was $WRITE_TOOLS|Agent. The agent host
         // reporter needs every tool, so the matcher is now empty and PRE_TOOLS alone
-        // decides which tools pay for guard work inside `dispatch.mjs pre`.
-        expect([...PRE_TOOLS].sort()).toEqual([...EDIT_TOOLS, 'Agent'].sort());
+        // decides which tools pay for guard work inside `dispatch.mjs pre`. CORE-2814
+        // adds Bash: the worktree liveness guard has to see a `git worktree remove`.
+        expect([...PRE_TOOLS].sort()).toEqual([...EDIT_TOOLS, 'Agent', 'Bash'].sort());
         const hooks = fs.readJsonSync(path.join(resolvePackageRoot(), '.xtrm', 'config', 'hooks.json')) as {
             hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;
         };
