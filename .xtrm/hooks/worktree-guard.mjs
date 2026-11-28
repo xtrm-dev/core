@@ -60,6 +60,9 @@ import {
 
 /** A removal further than this in a shell/script nest is out of scope: the
  * guard blocks the outer command anyway, and unbounded recursion is a hazard. */
+/** How deep a nested program is followed: `bash -c "bash -c '...'"`. Past this
+ * depth the text is not parsed again, so a removal verb in it blocks as an
+ * unbounded target: the parser cannot see what it names (audit round 3). */
 const MAX_NESTING = 3;
 const MAX_SCRIPT_BYTES = 64 * 1024;
 /** Total time spent following script files in one command: a fan-out of scripts
@@ -93,6 +96,9 @@ const WRAPPER_OPERAND_FLAGS = {
 };
 
 function wrapperSkipsOperand(wrapper, token) {
+  // A directory flag takes a value on every wrapper, so the value is not the
+  // command word (audit round 3).
+  if (token === '-C' || token === '--chdir' || token === '-D') return true;
   const flags = WRAPPER_OPERAND_FLAGS[wrapper];
   return flags ? flags.has(token) : false;
 }
@@ -108,12 +114,29 @@ export function hasRemovalVerb(text) {
   return removalOperations(String(text ?? ''), MAX_NESTING, null).some(op => op.kind !== 'warning');
 }
 
+/** The escapes `$'...'` decodes; enough that a removal verb and a path inside
+ * one survive, and every other escape keeps its character. */
+function ansiEscape(ch) {
+  switch (ch) {
+    case 'n': return '\n';
+    case 't': return '\t';
+    case 'r': return '\r';
+    case 'a': return '\x07';
+    case 'b': return '\b';
+    case 'f': return '\f';
+    case 'v': return '\v';
+    case 'e': return '\x1b';
+    default: return ch;
+  }
+}
+
 function tokenize(command) {
   const segments = [];
   let tokens = [];
   let token = '';
   let hasToken = false;
   let quote = null;
+  let quoteAnsi = false;
   let i = 0;
 
   const pushToken = () => {
@@ -134,13 +157,24 @@ function tokenize(command) {
     if (quote) {
       if (ch === quote) {
         quote = null;
-      } else if (ch === '\\' && quote === '"' && i + 1 < command.length) {
-        token += command[i + 1];
+        quoteAnsi = false;
+      } else if (ch === '\\' && (quote === '"' || quoteAnsi) && i + 1 < command.length) {
+        token += quoteAnsi ? ansiEscape(command[i + 1]) : command[i + 1];
         i += 1;
       } else {
         token += ch;
       }
       i += 1;
+      continue;
+    }
+    // `$'...'` (ANSI-C) and `$"..."` (locale) are one quoted word, and the
+    // prefix is not part of its text: reading `$'...'` as a word beginning with
+    // `$` let `bash -c $'git worktree remove --force <live>'` through.
+    if (ch === '$' && (command[i + 1] === "'" || command[i + 1] === '"')) {
+      quote = command[i + 1];
+      quoteAnsi = quote === "'";
+      hasToken = true;
+      i += 2;
       continue;
     }
     if (ch === "'" || ch === '"') {
@@ -397,7 +431,6 @@ function gitRemovalOperations(tokens, start, record, operations, depth, cwd, ctx
   const args = tokens.slice(subcommandAt + 1);
   const aliasValue = aliases.get(subcommand);
   if (aliasValue !== undefined) {
-    if (depth >= MAX_NESTING) return operations;
     const program = aliasValue.startsWith('!')
       ? `${aliasValue.slice(1)} ${args.join(' ')}`
       : `git ${aliasValue} ${args.join(' ')}`;
@@ -493,7 +526,7 @@ function operationsFromSegment(raw, depth, state) {
       else groups[groups.length - 1].push(token);
     }
     for (const group of groups) {
-      if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
+      if (group.length > 0) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
     }
     return operations;
   }
@@ -518,8 +551,11 @@ function operationsFromSegment(raw, depth, state) {
       opCwd = changeDirectory(opCwd, token.slice('--chdir='.length));
       continue;
     }
-    const flag = (wrapperName === 'env' && token === '-C') || token === '--chdir' || (wrapperName === 'sudo' && token === '-D');
-    if (flag) opCwd = changeDirectory(opCwd, unfiltered[i + 1]);
+    // Every wrapper may name the directory the wrapped command runs in:
+    // `env -C`, `command -C`, `sudo -D`, `--chdir[=dir]` (audit round 3).
+    if (token === '-C' || token === '--chdir' || (wrapperName === 'sudo' && token === '-D')) {
+      opCwd = changeDirectory(opCwd, unfiltered[i + 1]);
+    }
   }
   const record = (kind, targets, extra = {}, at = opCwd) => {
     operations.push({ kind, targets, raw: raw.join(' '), cwd: at, ...extra });
@@ -542,19 +578,19 @@ function operationsFromSegment(raw, depth, state) {
     const cIndex = name === 'eval' ? -1 : rest.findIndex(token => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
     if (name === 'eval' || cIndex >= 0) {
       const program = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
-      if (program && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
       return operations;
     }
     // `bash < script`, `bash script`: the program text comes from a file.
     const scriptToken = rest.find(token => !token.startsWith('-') && !token.startsWith('<'));
     const program = readScriptProgram(inputRedirect(raw) ?? scriptToken, state.cwd, state, operations);
-    if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
     return operations;
   }
 
   if (name === 'source' || name === '.') {
     const program = readScriptProgram(rest.find(token => !token.startsWith('-')), state.cwd, state, operations);
-    if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
     return operations;
   }
 
@@ -566,12 +602,12 @@ function operationsFromSegment(raw, depth, state) {
       else groups[groups.length - 1].push(token);
     }
     for (const group of groups) {
-      if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
+      if (group.length > 0) operations.push(...removalOperations(group.join(' '), depth + 1, opCwd, state.ctx));
     }
     return operations;
   }
 
-  if (name === 'git') return gitRemovalOperations(unfiltered, start, record, operations, depth, state.cwd, state.ctx);
+  if (name === 'git') return gitRemovalOperations(unfiltered, start, record, operations, depth, opCwd, state.ctx);
 
   if (name === 'rm') {
     const args = rest;
@@ -599,7 +635,7 @@ function operationsFromSegment(raw, depth, state) {
   // One it cannot read is allowed: an unknown executable is not a removal (N4).
   if (commandName.includes('/')) {
     const program = readScriptProgram(commandName, state.cwd, state, operations);
-    if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
   }
   return operations;
 }
@@ -612,14 +648,50 @@ function operationsFromSegment(raw, depth, state) {
 export function removalOperations(command, depth = 0, cwd = null, ctx = null) {
   const context = ctx ?? { visited: new Set(), deadline: Date.now() + PARSE_BUDGET_MS, expired: false };
   const operations = [];
+  // Past the cap the text is checked for a removal verb but not parsed, so a
+  // literal target deeper than the cap blocks as an unbounded one instead of
+  // slipping through (audit round 3).
+  if (depth > MAX_NESTING) {
+    if (mentionsRemovalVerb(command)) {
+      operations.push({ kind: 'rm', targets: [], raw: String(command), cwd: cwd ?? undefined });
+    }
+    return operations;
+  }
   const state = { cwd, ctx: context };
   for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth, state));
-  if (depth < MAX_NESTING) {
-    for (const program of substitutionPrograms(command)) {
-      operations.push(...removalOperations(program, depth + 1, cwd, context));
-    }
+  for (const program of substitutionPrograms(command)) {
+    operations.push(...removalOperations(program, depth + 1, cwd, context));
   }
   return operations;
+}
+
+/** Token-level removal check on text that is not parsed further (the nesting
+ * cap). It asks whether the words name a removal, so a quoted argument still
+ * does not count (N3). */
+function mentionsRemovalVerb(text) {
+  let remaining = String(text ?? '');
+  // A `bash -c` at the cap hides one more level, so follow the wrapper chain a
+  // bounded number of rounds without parsing the rest of the command.
+  for (let round = 0; round < 8 && remaining; round += 1) {
+    let program = null;
+    for (const raw of tokenize(remaining)) {
+      const tokens = stripRedirections(raw);
+      const start = commandIndex(tokens);
+      const name = (tokens[start] ?? '').split('/').pop() ?? '';
+      const rest = tokens.slice(start + 1);
+      if (name === 'rm' && rest.some(arg => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg))) return true;
+      if (name === 'find' && (rest.includes('-delete') || (rest.includes('rm') && rest.some(arg => EXEC_ACTIONS.has(arg))))) return true;
+      if (name === 'git' && rest.some((arg, index) => arg === 'worktree' && rest[index + 1] === 'remove')) return true;
+      if (SHELLS.has(name) || name === 'eval') {
+        const cIndex = name === 'eval' ? -1 : rest.findIndex(arg => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+        const nested = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
+        if (nested) program = nested;
+      }
+    }
+    if (!program) return false;
+    remaining = program;
+  }
+  return false;
 }
 
 function gitIn(cwd, args) {

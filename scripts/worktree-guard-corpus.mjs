@@ -18,6 +18,14 @@
 export function buildCorpus(paths) {
   const { repo, live, idle, script, missing, outside } = paths;
   const name = live.slice(live.lastIndexOf('/') + 1);
+  const relative = live.slice(repo.length + 1);
+  /** `bash -c "<program>"` repeated `levels` times, quoted so each level decodes
+   * to the next program exactly. */
+  const nest = (program, levels) => {
+    let text = program;
+    for (let level = 0; level < levels; level += 1) text = /['"\\]/.test(text) ? `bash -c ${JSON.stringify(text)}` : `bash -c '${text}'`;
+    return text;
+  };
   const cases = [];
   /** @param {string} id @param {string} command @param {'ALLOW'|'BLOCK'} expect @param {string} why */
   const add = (id, command, expect, why) => cases.push({ id, command, expect, why });
@@ -78,6 +86,17 @@ export function buildCorpus(paths) {
   add('dot-script', `. ${script}`, 'BLOCK', '. runs the script');
   add('script-executable', `${script}`, 'BLOCK', 'a readable script as the command word');
   add('heredoc', `cat <<EOF\nrm -rf ${live}\nEOF`, 'BLOCK', 'a here-doc body is still a command line');
+
+  // --- audit round 3: quoting, nesting depth, wrapper directories ----------
+  add('ansi-c-quote', `bash -c $'git worktree remove --force ${live}'`, 'BLOCK', "a $'...' payload is one quoted word (round 3)");
+  add('ansi-c-quote-rm', `bash -c $'rm -rf ${live}'`, 'BLOCK', "a $'...' rm payload (round 3)");
+  add('locale-quote', `bash -c $"git worktree remove --force ${live}"`, 'BLOCK', 'a $"..." payload is one quoted word');
+  add('depth-four', nest(`rm -rf ${live}`, 4), 'BLOCK', 'nesting past the cap still blocks on a removal verb (round 3)');
+  add('depth-five', nest(`git worktree remove --force ${live}`, 5), 'BLOCK', 'depth five is past the cap and still blocks');
+  add('env-chdir-git', `env -C ${repo} git worktree remove --force ${relative}`, 'BLOCK', 'env -C applies to git (round 3)');
+  add('env-chdir-eq-rm', `env --chdir=${repo} rm -rf ${relative}`, 'BLOCK', '--chdir=dir applies to rm');
+  add('env-chdir-slashed', `env -C ${repo} /bin/rm -rf ${relative}`, 'BLOCK', 'env -C applies to a slashed rm');
+  add('command-chdir', `command -C ${repo} git worktree remove ${relative}`, 'BLOCK', 'every wrapper may name the directory');
 
   // --- the incident shapes ------------------------------------------------
   add('incident-loop', `git worktree list | awk '/xt-pi-/{print $1}' | while read w; do git worktree remove --force "$w"; done`, 'BLOCK', 'the exact 2026-11-28 loop');
@@ -145,4 +164,4 @@ export function buildCorpus(paths) {
 }
 
 /** The number the report quotes: every case runs against all three copies. */
-export const CORPUS_CASE_COUNT = 101;
+export const CORPUS_CASE_COUNT = 110;

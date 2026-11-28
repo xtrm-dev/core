@@ -63,7 +63,7 @@
           "version": "0.15.3"
         },
         "worktree-guard.mjs": {
-          "hash": "f0998785d05d7e8c9e302907ad2629a0c2510c35f65b305ccd0a0dcbca1be1d7",
+          "hash": "fc5840ae366b163e8674aff5292c67475d9861c44ae9395ea02ed0681b2657f8",
           "version": "0.15.3"
         },
         "worktree-liveness.mjs": {
