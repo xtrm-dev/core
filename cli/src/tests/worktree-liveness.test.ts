@@ -120,7 +120,8 @@ describe('worktreeInUse (cli/src/core/worktree-liveness.ts)', () => {
         const none = worktreeInUse(worktree, { cwds, skipTmux: true, exemptPids: new Set([first.pid, second.pid] as number[]) });
         expect(none).toMatchObject({ live: false, holders: [] });
 
-        await waitForExit(first, second);
+        await waitForExit(first);
+        await waitForExit(second);
     });
 
     it.skipIf(!hasTmux)('reports a tmux pane whose path is inside the worktree, and not-live after it is gone', async () => {
@@ -195,6 +196,14 @@ describe('removal command parsing', () => {
         ['bash scripts/reap.sh', [{ kind: 'script', targets: ['scripts/reap.sh'] }]],
         ['git worktree remove 2>/dev/null --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         ['rm -rf /tmp/wt > /dev/null 2>&1', [{ kind: 'rm', targets: ['/tmp/wt'] }]],
+        [`git -c alias.x='worktree remove --force' x /tmp/wt`, [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['git --config-env=alias.x=ALIAS x /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        [`git -c core.alias.y='worktree remove' y /tmp/wt`, [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        [`git -c alias.x='log --oneline' x`, []],
+        ['command -p git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['sudo -p prompt git worktree remove /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['env -u FOO git worktree remove /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['timeout -s KILL 5 git worktree remove /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
     ];
 
     it.each(cases)('parses %s', (command, expected) => {

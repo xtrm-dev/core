@@ -177,6 +177,27 @@ describe('Pi worktree guard', () => {
 		await stop(child);
 	});
 
+	test('expands a git alias and keeps wrapper flags per wrapper', async () => {
+		const { repo, worktree } = fixture();
+		const child = spawnSleeping(worktree);
+		await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+		const blocked = [
+			`git -c alias.x='worktree remove --force' x ${worktree}`,
+			`git --config-env=alias.x=ALIAS x ${worktree}`,
+			`git -c core.alias.y='worktree remove' y ${worktree}`,
+			`command -p git worktree remove --force ${worktree}`,
+			`sudo -p prompt git worktree remove --force ${worktree}`,
+		];
+		for (const command of blocked) {
+			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
+			expect(reason, command).toBeTruthy();
+			expect(reason, command).toContain(`pid ${child.pid}`);
+		}
+		expect(worktreeGuardReason(`git -c alias.x='status' x`, repo, { tmuxSockets: [] })).toBeNull();
+		await stop(child);
+	});
+
 	test('exempts the caller tree through a symlink', () => {
 		const { repo, worktree } = fixture();
 		const link = join(repo, 'own-link');

@@ -138,8 +138,27 @@ function stripRedirections(tokens) {
   return out;
 }
 
-/** Wrapper options that take a value, so the value is not read as the command. */
-const WRAPPER_OPERAND_FLAGS = new Set(['-u', '-g', '-p', '-C', '-h', '-n', '-I', '-L', '-P', '-s', '-E', '-d', '-a', '-i', '-o', '-e', '--unset', '--user', '--group']);
+/** Wrapper options that take a separate value, per wrapper: `sudo -p prompt` takes
+ * one, `command -p` does not, so a shared table hides the wrapped command. */
+const WRAPPER_OPERAND_FLAGS = {
+  command: new Set(),
+  builtin: new Set(),
+  exec: new Set(['-a']),
+  nohup: new Set(),
+  time: new Set(['-f', '-o', '--format', '--output']),
+  env: new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string']),
+  sudo: new Set(['-u', '-g', '-p', '-C', '-h', '-r', '-t', '-U', '-T', '-D', '-R', '-a', '--user', '--group', '--prompt', '--close-from', '--host', '--role', '--type', '--other-user', '--chdir', '--auth-type']),
+  xargs: new Set(['-a', '-d', '-E', '-I', '-L', '-n', '-P', '-s', '--arg-file', '--delimiter', '--eof', '--replace', '--max-lines', '--max-args', '--max-procs', '--max-chars']),
+  nice: new Set(['-n', '--adjustment']),
+  timeout: new Set(['-s', '-k', '--signal', '--kill-after']),
+  stdbuf: new Set(['-i', '-o', '-e', '--input', '--output', '--error']),
+  ionice: new Set(['-c', '-n', '-p', '-P', '-u']),
+};
+
+function wrapperSkipsOperand(wrapper, token) {
+  const flags = WRAPPER_OPERAND_FLAGS[wrapper];
+  return flags ? flags.has(token) : false;
+}
 
 /** Index of the command word after wrappers, their options and assignments. */
 function commandIndex(tokens) {
@@ -156,11 +175,89 @@ function commandIndex(tokens) {
         continue;
       }
       if (!token.startsWith('-')) break;
-      start += WRAPPER_OPERAND_FLAGS.has(token) ? 2 : 1;
+      start += wrapperSkipsOperand(base, token) ? 2 : 1;
     }
   }
   while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
   return start;
+}
+
+/** The git config key that defines an alias: `alias.<name>`, or a qualified form. */
+const ALIAS_KEY = /^(?:.*\.)?alias\.([^.=]+)$/;
+/** Git global options that take a separate value before the subcommand. */
+const GIT_GLOBAL_OPERAND_FLAGS = new Set(['-c', '--config', '--config-env', '-C', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix', '--shallow-file', '--attr-source']);
+
+function addGitAlias(config, aliases, envAliases, fromEnv = false) {
+  const eq = config.indexOf('=');
+  if (eq <= 0) return;
+  const match = ALIAS_KEY.exec(config.slice(0, eq));
+  if (!match) return;
+  if (fromEnv) {
+    // `--config-env=<key>=<VAR>` keeps the value in the environment, so an
+    // invocation of that alias cannot be resolved statically.
+    envAliases.add(match[1]);
+    return;
+  }
+  aliases.set(match[1], config.slice(eq + 1));
+}
+
+/** Walk the git global options; return the subcommand position and alias table. */
+function parseGitPrefix(tokens, from) {
+  const aliases = new Map();
+  const envAliases = new Set();
+  let i = from;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (token === '-c' || token === '--config') {
+      addGitAlias(tokens[i + 1] ?? '', aliases, envAliases);
+      i += 2;
+      continue;
+    }
+    if (token.startsWith('-c') && token.length > 2) {
+      addGitAlias(token.slice(2), aliases, envAliases);
+      i += 1;
+      continue;
+    }
+    if (token === '--config-env') {
+      addGitAlias(tokens[i + 1] ?? '', aliases, envAliases, true);
+      i += 2;
+      continue;
+    }
+    if (token.startsWith('--config-env=')) {
+      addGitAlias(token.slice('--config-env='.length), aliases, envAliases, true);
+      i += 1;
+      continue;
+    }
+    if (!token.startsWith('-')) break;
+    i += GIT_GLOBAL_OPERAND_FLAGS.has(token) ? 2 : 1;
+  }
+  return { subcommandAt: i, aliases, envAliases };
+}
+
+/** `git -c alias.x='worktree remove --force' x <path>` removes <path>: expand the
+ * alias defined in the same command, and treat an environment-supplied alias as
+ * unresolved. */
+function gitRemovalOperations(tokens, start, record, operations, depth, raw) {
+  const { subcommandAt, aliases, envAliases } = parseGitPrefix(tokens, start + 1);
+  const subcommand = tokens[subcommandAt] ?? '';
+  const args = tokens.slice(subcommandAt + 1);
+  const aliasValue = aliases.get(subcommand);
+  if (aliasValue !== undefined) {
+    if (depth >= MAX_NESTING) return operations;
+    const program = aliasValue.startsWith('!')
+      ? `${aliasValue.slice(1)} ${args.join(' ')}`
+      : `git ${aliasValue} ${args.join(' ')}`;
+    operations.push(...removalOperations(program, depth + 1));
+    return operations;
+  }
+  if (envAliases.has(subcommand)) {
+    record('git-worktree-remove', args.filter((token) => !token.startsWith('-')));
+    return operations;
+  }
+  if (subcommand !== 'worktree' || args[0] !== 'remove') return operations;
+  const target = args.slice(1).find((token) => !token.startsWith('-'));
+  record('git-worktree-remove', target ? [target] : []);
+  return operations;
 }
 
 function operationsFromSegment(raw, depth = 0) {
@@ -191,11 +288,7 @@ function operationsFromSegment(raw, depth = 0) {
   }
 
   if (name === 'git') {
-    const worktreeAt = tokens.indexOf('worktree', start + 1);
-    if (worktreeAt < 0 || tokens[worktreeAt + 1] !== 'remove') return operations;
-    const target = tokens.slice(worktreeAt + 2).find((token) => !token.startsWith('-'));
-    record('git-worktree-remove', target ? [target] : []);
-    return operations;
+    return gitRemovalOperations(tokens, start, record, operations, depth, raw);
   }
 
   if (name === 'rm') {

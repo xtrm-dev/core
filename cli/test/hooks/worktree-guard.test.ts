@@ -215,6 +215,35 @@ describe('Claude PreToolUse worktree guard', () => {
         await stop(child);
     });
 
+    it('expands a git alias defined in the same command and keeps wrapper flags per wrapper', async () => {
+        const { repo, worktree } = fixture();
+        const child = spawnSleeping(worktree);
+        await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+        const blocked = [
+            `git -c alias.x='worktree remove --force' x ${worktree}`,
+            `git -c alias.x="worktree remove --force" x ${worktree}`,
+            `git -c "alias.x=worktree remove --force" x ${worktree}`,
+            `git --config-env=alias.x=ALIAS x ${worktree}`,
+            `git -c core.alias.y='worktree remove' y ${worktree}`,
+            `command -p git worktree remove --force ${worktree}`,
+            `command git worktree remove --force ${worktree}`,
+            `sudo -p prompt git worktree remove --force ${worktree}`,
+            `env -u FOO git worktree remove --force ${worktree}`,
+            `timeout -s KILL 5 git worktree remove --force ${worktree}`,
+        ];
+        for (const command of blocked) {
+            const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
+            expect(reason, command).toBeTruthy();
+            expect(reason, command).toContain(`pid ${child.pid}`);
+        }
+
+        // An alias that is not a removal stays allowed.
+        expect(worktreeGuardDecision(bashPayload(`git -c alias.x='status' x`, repo), { tmuxSockets: [] })).toBeNull();
+        expect(worktreeGuardDecision(bashPayload(`git -c alias.x='log --oneline' x`, repo), { tmuxSockets: [] })).toBeNull();
+        await stop(child);
+    });
+
     it('exempts the caller tree through a symlink and reports canonical holders', async () => {
         const { repo, worktree } = fixture();
         const link = join(repo, 'own-link');
@@ -264,7 +293,18 @@ describe('the three liveness copies answer identically on one fixture', () => {
     });
 
     it('parses removal commands identically', () => {
-        for (const command of [INCIDENT_LOOP, 'git worktree prune', 'rm -rf /tmp/wt', 'find /tmp/wt -delete', 'rm -f x']) {
+        for (const command of [
+            INCIDENT_LOOP,
+            'git worktree prune',
+            'rm -rf /tmp/wt',
+            'find /tmp/wt -delete',
+            'rm -f x',
+            `git -c alias.x='worktree remove --force' x /tmp/wt`,
+            'git --config-env=alias.x=ALIAS x /tmp/wt',
+            'command -p git worktree remove /tmp/wt',
+            'sudo -p prompt git worktree remove /tmp/wt',
+            'env -u FOO git worktree remove /tmp/wt',
+        ]) {
             expect(piRemovalOperations(command)).toEqual(hookRemovalOperations(command));
         }
     });
