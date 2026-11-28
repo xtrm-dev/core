@@ -5524,7 +5524,7 @@ var require_jsonfile = __commonJS({
       return obj;
     }
     var readFile2 = universalify.fromPromise(_readFile);
-    function readFileSync29(file2, options = {}) {
+    function readFileSync30(file2, options = {}) {
       if (typeof options === "string") {
         options = { encoding: options };
       }
@@ -5556,7 +5556,7 @@ var require_jsonfile = __commonJS({
     }
     module2.exports = {
       readFile: readFile2,
-      readFileSync: readFileSync29,
+      readFileSync: readFileSync30,
       writeFile: writeFile2,
       writeFileSync: writeFileSync17
     };
@@ -69688,13 +69688,25 @@ var LAUNCH_IDENTITY_KEYS = [
   "@agent_dispatcher",
   "@agent_parent_pane"
 ];
-function applyPaneOptions(paneId, options, run5 = (command, args) => (0, import_node_child_process11.spawnSync)(command, args, { stdio: "pipe" })) {
+function applyPaneOptions(paneId, options, run5 = (command, args) => (0, import_node_child_process11.spawnSync)(command, args, { stdio: "pipe" }), guard = {}) {
   const written = new Set(options.map((option) => option.key));
   for (const key of LAUNCH_IDENTITY_KEYS) {
     if (!written.has(key)) run5("tmux", ["set-option", "-p", "-u", "-t", paneId, key]);
   }
   for (const { key, value } of options) {
+    if (key === "@agent_worktree" && guard.mainRoot && samePath(value, guard.mainRoot)) {
+      process.stderr.write(`  ! refusing to label ${paneId} with the main checkout (${value}); pane option left unchanged
+`);
+      continue;
+    }
     run5("tmux", ["set-option", "-p", "-t", paneId, key, value]);
+  }
+}
+function samePath(left, right) {
+  try {
+    return import_node_path24.default.resolve(left) === import_node_path24.default.resolve(right);
+  } catch {
+    return false;
   }
 }
 function relationshipPaneOptions(input2) {
@@ -69986,13 +69998,13 @@ function checkSubordinateRole(args) {
   }
   return { ok: true };
 }
+function callerPaneId(env3 = process.env) {
+  const paneId = (env3.TMUX_PANE ?? "").trim();
+  if (!env3.TMUX || !/^%[0-9]+$/.test(paneId)) return null;
+  return paneId;
+}
 function currentPaneRole() {
-  if (!process.env.TMUX) return "";
-  const r = (0, import_node_child_process11.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
-    stdio: "pipe",
-    encoding: "utf8"
-  });
-  const paneId = (r.stdout ?? "").trim();
+  const paneId = callerPaneId();
   if (!paneId) return "";
   const option = (0, import_node_child_process11.spawnSync)("tmux", ["show-options", "-p", "-t", paneId, "-qv", "@agent_role"], {
     stdio: "pipe",
@@ -70490,10 +70502,20 @@ async function launchWorktreeSession(opts) {
   }
   const directSessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
   const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
+  const directPaneOptions = [
+    { key: "@agent_worktree", value: worktreePath },
+    { key: "@agent_branch", value: branchName },
+    ...roleName ? [{ key: "@agent_role", value: roleName }] : [],
+    ...issue2 ? [{ key: "@agent_issue", value: issue2 }] : [],
+    { key: "@agent_holder", value: slug }
+  ];
+  const directAgentEnv = buildAgentEnv(directPaneOptions);
+  const directPane = callerPaneId();
+  if (directPane) applyPaneOptions(directPane, directPaneOptions, void 0, { mainRoot: mainRepoRoot });
   const launchResult2 = (0, import_node_child_process11.spawnSync)(runtimeCmd, runtimeArgs, {
     cwd: worktreePath,
     stdio: "inherit",
-    env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) }
+    env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...directAgentEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: import_node_path24.default.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt), PWD: worktreePath }
   });
   process.exit(launchResult2.status ?? 0);
 }
@@ -70676,11 +70698,7 @@ async function launchTmuxSession(args) {
   const initialPromptEnv = piInitialPromptEnv(runtime, hasInitialPrompt);
   if (currentPaneMode) {
     const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
-    const paneQuery = (0, import_node_child_process11.spawnSync)("tmux", ["display-message", "-p", "#{pane_id}"], {
-      stdio: "pipe",
-      encoding: "utf8"
-    });
-    const paneId2 = (paneQuery.stdout ?? "").trim();
+    const paneId2 = callerPaneId();
     if (!paneId2) {
       process.stderr.write(kleur_default.red("\n  \u2717 Could not resolve current pane id\n"));
       process.exit(1);
@@ -70689,7 +70707,7 @@ async function launchTmuxSession(args) {
       encoding: "utf8",
       stdio: "pipe"
     }).stdout ?? "").trim() : "";
-    applyPaneOptions(paneId2, plan.paneOptions);
+    applyPaneOptions(paneId2, plan.paneOptions, void 0, { mainRoot: args.repoRoot });
     if (args.mode === "role") {
       emitAgentRoleLaunched({
         pane: paneId2,
@@ -70708,7 +70726,7 @@ async function launchTmuxSession(args) {
       const runtimeResult = (0, import_node_child_process11.spawnSync)(runtimeExecutable, plan.runtimeArgs, {
         cwd: worktreePath,
         stdio: "inherit",
-        env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
+        env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv, PWD: worktreePath }
       });
       process.exit(runtimeResult.status ?? 0);
     }
@@ -70716,7 +70734,7 @@ async function launchTmuxSession(args) {
     const runtimeProcess = (0, import_node_child_process11.spawn)(runtimeExecutable, plan.runtimeArgs, {
       cwd: worktreePath,
       stdio: "inherit",
-      env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv }
+      env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv, PWD: worktreePath }
     });
     const runtimeExit = new Promise((resolve11) => {
       runtimeProcess.once("error", () => resolve11(1));
@@ -70791,7 +70809,12 @@ async function launchTmuxSession(args) {
     // CORE-2524.4: the server's PATH need not hold the gh shim directory, so
     // the pane gets the launcher's PATH with the shim directory first. Without
     // this, a launched review posts as the operator instead of the App.
-    PATH: panePath()
+    PATH: panePath(),
+    // CORE-2816: the runtime inherits this process's environment through
+    // tmux, and this process was started from the caller's directory. A
+    // stale PWD is what made the agent-host extension label panes with the
+    // caller's cwd; it is also what any PWD-reading tool would act on.
+    PWD: worktreePath
   };
   const envArgs = [];
   for (const [k, v] of Object.entries(paneEnv)) envArgs.push("-e", `${k}=${v}`);
@@ -73925,7 +73948,9 @@ async function launchCodexWorktreeSession(opts) {
     ...agentEnv,
     // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
     // not hold the gh shim directory; forward the launcher's PATH with it first.
-    PATH: panePath()
+    PATH: panePath(),
+    // CORE-2816: the pane must not inherit the launcher's directory as PWD.
+    PWD: worktreePath
   };
   const envArgs = Object.entries(paneEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
   let windowPaneId = "";
@@ -73981,7 +74006,7 @@ async function launchCodexWorktreeSession(opts) {
     encoding: "utf8"
   }).stdout ?? "").trim().split(/\r?\n/, 1)[0] ?? "";
   if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail("Could not resolve Codex pane id");
-  applyPaneOptions(paneId, paneOptions, (command, argv) => (0, import_node_child_process17.spawnSync)(command, [...seatSocket, ...argv], { stdio: "pipe" }));
+  applyPaneOptions(paneId, paneOptions, (command, argv) => (0, import_node_child_process17.spawnSync)(command, [...seatSocket, ...argv], { stdio: "pipe" }), { mainRoot });
   const session = await waitForCodexSession(import_node_path32.default.join(codexHome, "sessions"), worktreePath, launchedAfterMs);
   const launchedAt = new Date(launchedAfterMs).toISOString();
   const launchRecord = compactLaunchMeta({
@@ -80413,6 +80438,59 @@ function notify(text, paneId) {
   args.push(text);
   tmux(args);
 }
+function readAgentIdentity(panePid, procRoot = "/proc") {
+  if (!Number.isFinite(panePid) || panePid <= 0) return {};
+  let ppids;
+  try {
+    ppids = readPpidMap(procRoot);
+  } catch {
+    return {};
+  }
+  const childrenOf = /* @__PURE__ */ new Map();
+  for (const [pid, ppid] of ppids) {
+    const list = childrenOf.get(ppid) ?? [];
+    list.push(pid);
+    childrenOf.set(ppid, list);
+  }
+  const queue = [panePid];
+  const seen = /* @__PURE__ */ new Set([panePid]);
+  while (queue.length > 0) {
+    const pid = queue.shift();
+    const identity = readIdentityEnv(pid, procRoot);
+    if (identity.worktree && processRunsIn(pid, identity.worktree, procRoot)) return identity;
+    for (const child of childrenOf.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  return {};
+}
+function processRunsIn(pid, worktree, procRoot) {
+  try {
+    const cwd = (0, import_node_fs25.readlinkSync)(`${procRoot}/${pid}/cwd`);
+    return (0, import_node_path49.resolve)(cwd) === (0, import_node_path49.resolve)(worktree);
+  } catch {
+    return false;
+  }
+}
+function readIdentityEnv(pid, procRoot) {
+  let raw;
+  try {
+    raw = (0, import_node_fs25.readFileSync)(`${procRoot}/${pid}/environ`, "utf8");
+  } catch {
+    return {};
+  }
+  const env3 = {};
+  for (const entry of raw.split("\0")) {
+    const eq = entry.indexOf("=");
+    if (eq > 0) env3[entry.slice(0, eq)] = entry.slice(eq + 1);
+  }
+  return {
+    worktree: env3.XTMUX_AGENT_WORKTREE?.trim() || void 0,
+    branch: env3.XTMUX_AGENT_BRANCH?.trim() || void 0
+  };
+}
 function readPaneInfo(paneId) {
   const result = tmux(["display-message", "-p", "-t", paneId, "-F", PANE_FORMAT2]);
   if (!result.ok) return { error: result.err || "tmux could not read the pane" };
@@ -80506,9 +80584,17 @@ async function releasePane(opts) {
   }
   const pane = info.pane;
   if (pane.dead) return refuse("pane is dead; nothing to release", pane.worktree);
-  if (!pane.worktree) {
-    return refuse("pane has no @agent_worktree \u2014 it is not an xt agent worktree");
+  const agent = readAgentIdentity(pane.panePid, opts.procRoot ?? "/proc");
+  const labelled = pane.worktree;
+  const exported = agent.worktree;
+  if (!labelled && !exported) {
+    return refuse("pane has no agent identity \u2014 start it with `xt` for this checkout, or run `xt attach <slug>` to restore it");
   }
+  if (labelled && exported && (0, import_node_path49.resolve)(labelled) !== (0, import_node_path49.resolve)(exported)) {
+    return refuse(`identity-mismatch: option=${labelled} agent=${exported}`, labelled);
+  }
+  pane.worktree = labelled || exported;
+  pane.branch = pane.branch || agent.branch || "";
   const repoRoot = mainRootFor(pane.worktree);
   if (!repoRoot) {
     return refuse(`cannot resolve the main checkout for ${pane.worktree}`, pane.worktree);
@@ -84158,7 +84244,7 @@ function parseInvocation(argv, options = {}) {
 }
 
 // src/commands/identity.ts
-function readIdentityEnv(env3 = process.env, cwd = process.cwd(), appDeps2 = {}) {
+function readIdentityEnv2(env3 = process.env, cwd = process.cwd(), appDeps2 = {}) {
   const holder = (env3[SUBSTRATE_HOLDER_VAR] ?? "").trim() || null;
   if (!holder) return { holder: null, role: null, env: {} };
   const map2 = loadRoleMap({ home: appDeps2.home });
@@ -84281,7 +84367,7 @@ function runSb(args) {
 function createIdentityCommand() {
   const identity = new Command("identity").description("Agent identity: git author env, role App tokens, the gh shim, review posting and the merge guard");
   identity.command("env").description("Print this agent session's identity env (git author + role), or nothing for an operator session").option("--json", "Emit {holder, role, env} as JSON", false).action((opts) => {
-    const report = readIdentityEnv();
+    const report = readIdentityEnv2();
     if (opts.json) {
       console.log(JSON.stringify(report, null, 2));
       return;

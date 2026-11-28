@@ -772,7 +772,17 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
 
   async function buildIdentity(current: ExtensionContext, id: string, generation: number): Promise<AgentSessionIdentity> {
     const pane = env.TMUX && /^%[0-9]+$/.test(env.TMUX_PANE ?? "") ? (env.TMUX_PANE as string) : null;
-    const cwd = current.cwd;
+    // CORE-2816: `current.cwd` comes from the harness context and followed the
+    // launcher's directory (inherited PWD), not the directory the agent runs in,
+    // so a plain `xt pi` published the main checkout onto a worktree pane.
+    // process.cwd() is the directory the runtime actually chdir'd into.
+    const cwd = process.cwd() || current.cwd;
+    // CORE-2816: when the launcher exported its identity, the launcher owns
+    // @agent_worktree / @agent_branch. A second writer is how a wrong value
+    // survived: the publish guard below could never disagree with itself.
+    const launcherWorktree = bounded(env.XTMUX_AGENT_WORKTREE, 4096);
+    const launcherBranch = bounded(env.XTMUX_AGENT_BRANCH);
+    const launcherOwnsIdentity = launcherWorktree !== undefined;
     let tmuxSession: string | undefined;
     let tmuxWindow: string | undefined;
     let role = bounded(env.XTMUX_AGENT_ROLE);
@@ -806,8 +816,8 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
       parentTmux = bounded(parent);
       paneWorktree = bounded(observedWorktree, 4096);
       paneBranch = bounded(observedBranch);
-      worktree = paneWorktree;
-      branch = paneBranch;
+      worktree = paneWorktree ?? launcherWorktree;
+      branch = paneBranch ?? launcherBranch;
     }
     const [gitTop, gitCommonDir] = gitOut.split("\n");
     worktree ??= bounded(gitTop, 4096);
@@ -824,12 +834,19 @@ export function createAgentHostBridge(pi: ExtensionAPI, options: AgentHostBridge
     // while `#{pane_current_path}` keeps the last OSC 7 value the SHELL reported:
     // an agent working in a worktree it did not start in would otherwise render
     // the wrong worktree name and branch (CORE-2586). Publish the observed truth
-    // only when the pane disagrees, so the launcher's own values stay untouched.
-    if (pane && worktree && worktree !== paneWorktree) {
-      void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_worktree", worktree]);
-    }
-    if (pane && branch && branch !== paneBranch) {
-      void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_branch", branch]);
+    // only when this process is the only writer and the pane disagrees.
+    // CORE-2816: never publish the main checkout — that is the launcher's
+    // directory leaking in, not a worktree the agent moved to.
+    const mainCheckout = gitTop && repositoryPath && path.resolve(gitTop) === path.resolve(repositoryPath);
+    const observedGitTop = bounded(gitTop, 4096);
+    const observedGitBranch = bounded(branchOut.trim());
+    if (pane && !launcherOwnsIdentity && !mainCheckout) {
+      if (observedGitTop && observedGitTop !== paneWorktree) {
+        void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_worktree", observedGitTop]);
+      }
+      if (observedGitBranch && observedGitBranch !== paneBranch) {
+        void exec("tmux", ["set-option", "-p", "-t", pane, "@agent_branch", observedGitBranch]);
+      }
     }
 
     // @agent_parent_session holds the parent's tmux session id; the parent's bridge publishes

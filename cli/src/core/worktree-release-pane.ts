@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
@@ -95,6 +95,77 @@ export interface PaneInfo {
     dead: boolean;
     inMode: boolean;
     currentPath: string;
+}
+
+/**
+ * The identity the launched runtime carries in its own environment (CORE-2816).
+ *
+ * The pane option alone is not authority: a launch that resolved its worktree
+ * from the caller's directory labelled the pane with the main checkout, and the
+ * pane option is also caller-supplied through `tmux set-option`. The agent's
+ * environment is written by the launcher after the worktree exists, so it is
+ * read first and a disagreement is a refusal, never a guess.
+ */
+export function readAgentIdentity(panePid: number, procRoot = '/proc'): { worktree?: string; branch?: string } {
+    if (!Number.isFinite(panePid) || panePid <= 0) return {};
+    let ppids: Map<number, number>;
+    try {
+        ppids = readPpidMap(procRoot);
+    } catch {
+        return {};
+    }
+    const childrenOf = new Map<number, number[]>();
+    for (const [pid, ppid] of ppids) {
+        const list = childrenOf.get(ppid) ?? [];
+        list.push(pid);
+        childrenOf.set(ppid, list);
+    }
+    // Breadth-first, so the shallowest carrier wins: the runtime is the pane's
+    // direct child, and a nested tool that inherited the same environment is deeper.
+    const queue: number[] = [panePid];
+    const seen = new Set<number>([panePid]);
+    while (queue.length > 0) {
+        const pid = queue.shift() as number;
+        const identity = readIdentityEnv(pid, procRoot);
+        // A tmux pane inherits the tmux SERVER's environment, so an unrelated
+        // stale XTMUX_AGENT_WORKTREE can reach a hand-started process. The value
+        // is only this process's identity when the process runs in it.
+        if (identity.worktree && processRunsIn(pid, identity.worktree, procRoot)) return identity;
+        for (const child of childrenOf.get(pid) ?? []) {
+            if (seen.has(child)) continue;
+            seen.add(child);
+            queue.push(child);
+        }
+    }
+    return {};
+}
+
+function processRunsIn(pid: number, worktree: string, procRoot: string): boolean {
+    try {
+        const cwd = readlinkSync(`${procRoot}/${pid}/cwd`);
+        return resolve(cwd) === resolve(worktree);
+    } catch {
+        // A deleted directory leaves "path (deleted)", which never resolves.
+        return false;
+    }
+}
+
+function readIdentityEnv(pid: number, procRoot: string): { worktree?: string; branch?: string } {
+    let raw: string;
+    try {
+        raw = readFileSync(`${procRoot}/${pid}/environ`, 'utf8');
+    } catch {
+        return {};
+    }
+    const env: Record<string, string> = {};
+    for (const entry of raw.split('\u0000')) {
+        const eq = entry.indexOf('=');
+        if (eq > 0) env[entry.slice(0, eq)] = entry.slice(eq + 1);
+    }
+    return {
+        worktree: env.XTMUX_AGENT_WORKTREE?.trim() || undefined,
+        branch: env.XTMUX_AGENT_BRANCH?.trim() || undefined,
+    };
 }
 
 export function readPaneInfo(paneId: string): { pane?: PaneInfo; error?: string } {
@@ -271,9 +342,22 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
     const pane = info.pane;
 
     if (pane.dead) return refuse('pane is dead; nothing to release', pane.worktree);
-    if (!pane.worktree) {
-        return refuse('pane has no @agent_worktree — it is not an xt agent worktree');
+    // CORE-2816: the pane option is the documented authority; the agent's own
+    // environment is frozen at launch and seeds only an EMPTY option. A disagreement
+    // means one of the two is stale, and a stale path is exactly what must not be
+    // removed, so the operator gets a refusal instead of a guess. No identity at all
+    // means the pane was not started by this code: name the migration path.
+    const agent = readAgentIdentity(pane.panePid, opts.procRoot ?? '/proc');
+    const labelled = pane.worktree;
+    const exported = agent.worktree;
+    if (!labelled && !exported) {
+        return refuse('pane has no agent identity — start it with `xt` for this checkout, or run `xt attach <slug>` to restore it');
     }
+    if (labelled && exported && resolve(labelled) !== resolve(exported)) {
+        return refuse(`identity-mismatch: option=${labelled} agent=${exported}`, labelled);
+    }
+    pane.worktree = labelled || (exported as string);
+    pane.branch = pane.branch || agent.branch || '';
 
     const repoRoot = mainRootFor(pane.worktree);
     if (!repoRoot) {

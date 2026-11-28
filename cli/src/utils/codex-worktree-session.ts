@@ -488,6 +488,8 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
         // CORE-2524.4: a tmux-created pane inherits the SERVER's PATH, which need
         // not hold the gh shim directory; forward the launcher's PATH with it first.
         PATH: panePath(),
+        // CORE-2816: the pane must not inherit the launcher's directory as PWD.
+        PWD: worktreePath,
     };
     const envArgs = Object.entries(paneEnv).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
     let windowPaneId = '';
@@ -550,7 +552,7 @@ export async function launchCodexWorktreeSession(opts: CodexWorktreeSessionOptio
             stdio: 'pipe', encoding: 'utf8',
         }).stdout ?? '').trim().split(/\r?\n/, 1)[0] ?? '';
     if (!/^%[0-9]+$/.test(paneId)) cleanupAndFail('Could not resolve Codex pane id');
-    applyPaneOptions(paneId, paneOptions, (command, argv) => spawnSync(command, [...seatSocket, ...argv], { stdio: 'pipe' }));
+    applyPaneOptions(paneId, paneOptions, (command, argv) => spawnSync(command, [...seatSocket, ...argv], { stdio: 'pipe' }), { mainRoot });
 
     // Codex only writes a rollout record once a thread opens, which does not
     // happen until the first turn. A bare launch therefore has nothing to

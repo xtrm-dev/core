@@ -2647,18 +2647,40 @@ export const LAUNCH_IDENTITY_KEYS = [
     '@agent_issue', '@agent_bead', '@agent_role', '@agent_holder', '@agent_dispatcher', '@agent_parent_pane',
 ] as const;
 
-/** Write a launch's pane options onto `paneId`, first unsetting every identity key the launch does not write. */
+/**
+ * Write a launch's pane options onto `paneId`, first unsetting every identity key the launch does not write.
+ *
+ * CORE-2816: `@agent_worktree` is never written when it equals the repo's main
+ * checkout. A launch that resolves the worktree from anything but the created
+ * directory used to label the pane with the caller's cwd, and every reader then
+ * treated the main checkout as a releasable worktree. Skipping the write fails
+ * closed: the pane keeps its previous value (absent on a fresh pane), and
+ * `worktree release` refuses instead of removing something else.
+ */
 export function applyPaneOptions(
     paneId: string,
     options: ReadonlyArray<{ key: string; value: string }>,
     run: (command: string, args: string[]) => unknown = (command, args) => spawnSync(command, args, { stdio: 'pipe' }),
+    guard: { mainRoot?: string } = {},
 ): void {
     const written = new Set(options.map(option => option.key));
     for (const key of LAUNCH_IDENTITY_KEYS) {
         if (!written.has(key)) run('tmux', ['set-option', '-p', '-u', '-t', paneId, key]);
     }
     for (const { key, value } of options) {
+        if (key === '@agent_worktree' && guard.mainRoot && samePath(value, guard.mainRoot)) {
+            process.stderr.write(`  ! refusing to label ${paneId} with the main checkout (${value}); pane option left unchanged\n`);
+            continue;
+        }
         run('tmux', ['set-option', '-p', '-t', paneId, key, value]);
+    }
+}
+
+function samePath(left: string, right: string): boolean {
+    try {
+        return path.resolve(left) === path.resolve(right);
+    } catch {
+        return false;
     }
 }
 
@@ -3253,12 +3275,23 @@ export function checkSubordinateRole(args: {
  * no tmux, no pane option, or tmux is unavailable. Absence is always benign:
  * these checks are launch guardrails, not a security boundary.
  */
+/**
+ * The pane the launcher was invoked from, from `$TMUX_PANE` alone (CORE-2816).
+ *
+ * An untargeted `display-message -p '#{pane_id}'` answers with tmux's default
+ * target, which is the server's current pane and has nothing to do with the
+ * caller: with two attached clients it labelled a different session's pane.
+ * Returns null when there is no tmux, no `$TMUX_PANE`, or the value is not a
+ * pane id, so every caller can fail closed instead of guessing.
+ */
+export function callerPaneId(env: NodeJS.ProcessEnv = process.env): string | null {
+    const paneId = (env.TMUX_PANE ?? '').trim();
+    if (!env.TMUX || !/^%[0-9]+$/.test(paneId)) return null;
+    return paneId;
+}
+
 function currentPaneRole(): string {
-    if (!process.env.TMUX) return '';
-    const r = spawnSync('tmux', ['display-message', '-p', '#{pane_id}'], {
-        stdio: 'pipe', encoding: 'utf8',
-    });
-    const paneId = (r.stdout ?? '').trim();
+    const paneId = callerPaneId();
     if (!paneId) return '';
     const option = spawnSync('tmux', ['show-options', '-p', '-t', paneId, '-qv', '@agent_role'], {
         stdio: 'pipe', encoding: 'utf8',
@@ -3996,10 +4029,26 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // and an installation for the repo owner. Otherwise the launch keeps the
     // operator identity (no XTRM_ROLE, no transport rewrite).
     const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
+    // CORE-2816: the direct path is a real launch, so it publishes the same
+    // identity the tmux plan does. Without this a plain `xt pi` wrote no pane
+    // option and exported no XTMUX_AGENT_*, and the pi extension labelled the
+    // pane from the inherited PWD (the caller's directory) instead.
+    // A reused pane keeps the role it hosted; wiping those keys on a launch that never
+    // named them would silently drop the identity of the agent that is still running.
+    const directPaneOptions = [
+        { key: '@agent_worktree', value: worktreePath },
+        { key: '@agent_branch', value: branchName },
+        ...(roleName ? [{ key: '@agent_role', value: roleName }] : []),
+        ...(issue ? [{ key: '@agent_issue', value: issue }] : []),
+        { key: '@agent_holder', value: slug },
+    ];
+    const directAgentEnv = buildAgentEnv(directPaneOptions);
+    const directPane = callerPaneId();
+    if (directPane) applyPaneOptions(directPane, directPaneOptions, undefined, { mainRoot: mainRepoRoot });
     const launchResult = spawnSync(runtimeCmd, runtimeArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
-        env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt) },
+        env: { ...stripInheritedLaunchEnv(stripDispatcherEnv(opts.identityEnv ?? process.env)), ...launcherModelResolution(runtime, runtimeArgs, { worktreePath, mainRepoRoot, env: process.env, refuse: refuseModelAfterRollback({ mainRepoRoot, worktreePath, branchName, branchCreatedByLauncher }) }), ...claudeMcpEnv(runtime), ...directSessionEnv, ...directAgentEnv, ...buildDispatcherEnv(slug, { ...opts.dispatcherDeps, gitEmail: resolveGitEmail({ cwd: worktreePath }), agentName: path.basename(worktreePath) }), ...directIdentity.env, ...piInitialPromptEnv(runtime, hasInitialPrompt), PWD: worktreePath },
     });
 
     process.exit(launchResult.status ?? 0);
@@ -4307,11 +4356,9 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const sessionEnv = buildSessionIdentityEnv(resolveCurrentTmuxSessionIdentity());
         // Resolve the current pane id (the pane the launcher was invoked
         // from). All @agent_* pane options get written here; pi then runs
-        // in this same pane with stdio inherited.
-        const paneQuery = spawnSync('tmux', ['display-message', '-p', '#{pane_id}'], {
-            stdio: 'pipe', encoding: 'utf8',
-        });
-        const paneId = (paneQuery.stdout ?? '').trim();
+        // in this same pane with stdio inherited. CORE-2816: from $TMUX_PANE
+        // only — an untargeted query answers with tmux's default target.
+        const paneId = callerPaneId();
         if (!paneId) {
             process.stderr.write(kleur.red('\n  ✗ Could not resolve current pane id\n'));
             process.exit(1);
@@ -4322,7 +4369,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
                 encoding: 'utf8', stdio: 'pipe',
             }).stdout ?? '').trim()
             : '';
-        applyPaneOptions(paneId, plan.paneOptions);
+        applyPaneOptions(paneId, plan.paneOptions, undefined, { mainRoot: args.repoRoot });
 
         if (args.mode === 'role') {
             emitAgentRoleLaunched({
@@ -4343,7 +4390,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
             const runtimeResult = spawnSync(runtimeExecutable, plan.runtimeArgs, {
                 cwd: worktreePath,
                 stdio: 'inherit',
-                env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+                env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv, PWD: worktreePath },
             });
             process.exit(runtimeResult.status ?? 0);
         }
@@ -4354,7 +4401,7 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         const runtimeProcess = spawn(runtimeExecutable, plan.runtimeArgs, {
             cwd: worktreePath,
             stdio: 'inherit',
-            env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv },
+            env: { ...launchEnv, ...modelEnv, ...claudeMcpEnv(runtime), ...agentEnv, ...sessionEnv, ...dispatcherEnv, ...launchIdentity.env, ...initialPromptEnv, PWD: worktreePath },
         });
         const runtimeExit = new Promise<number>((resolve) => {
             runtimeProcess.once('error', () => resolve(1));
@@ -4463,6 +4510,11 @@ async function launchTmuxSession(args: TmuxLaunchArgs): Promise<never> {
         // the pane gets the launcher's PATH with the shim directory first. Without
         // this, a launched review posts as the operator instead of the App.
         PATH: panePath(),
+        // CORE-2816: the runtime inherits this process's environment through
+        // tmux, and this process was started from the caller's directory. A
+        // stale PWD is what made the agent-host extension label panes with the
+        // caller's cwd; it is also what any PWD-reading tool would act on.
+        PWD: worktreePath,
     };
     const envArgs: string[] = [];
     for (const [k, v] of Object.entries(paneEnv)) envArgs.push('-e', `${k}=${v}`);
