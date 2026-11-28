@@ -46,6 +46,8 @@ export interface InstallOpts {
     packageRoot?: string;
     /** Skip machine bootstrap (sb/pi/pnpm/...) — used by the init orchestrator which handles it in a dedicated phase. */
     skipMachineBootstrap?: boolean;
+    /** Run the local-checkout phase (clone/fast-forward/link core, xtrm, xtmux, specialists) even when unconfigured. */
+    fromCheckouts?: boolean;
     /** Skip Claude runtime sync (hooks/settings wiring). */
     skipClaudeRuntimeSync?: boolean;
     /** Update performs global Pi package assurance once after all repo reconciliations. */

@@ -25,6 +25,7 @@ import { resolveMainProjectRoot } from '../utils/repo-root.js';
 import { ghShimStatus, installGhShim } from '../core/gh-shim.js';
 import { printNudgeOnce } from '../utils/nudge.js';
 import { stageMigrationChanges } from '../utils/git-staging.js';
+import { renderCheckoutReport, runCheckoutPhase, type CheckoutReport } from '../core/checkout-bootstrap.js';
 
 type UpdateStatus = 'refreshed' | 'already-current' | 'failed' | 'skipped' | 'incomplete';
 
@@ -56,6 +57,8 @@ interface UpdateOpts {
     allRepos?: boolean;
     strictRegistry?: boolean;
     force?: boolean;
+    fromCheckouts?: boolean;
+    fetch?: boolean;
 }
 
 interface ResolvedTargets {
@@ -478,6 +481,8 @@ export function createUpdateCommand(): Command {
         .option('--all-repos', 'Sweep ~/dev and ~/projects for xtrm-managed repos (dry-run by default; --apply patches and commits each changed repo)', false)
         .option('--repo <path>', 'Target one repo path instead of cwd')
         .option('--json', 'Print JSON output', false)
+        .option('--from-checkouts', 'Apply the local-checkout phase (clone or fast-forward, install, link) even when no checkouts.json exists', false)
+        .option('--fetch', 'Fetch each checkout from origin before comparing; check mode does not fetch by default', false)
         .action(async (opts) => {
             const typedOpts = opts as UpdateOpts;
             const { targets, incomplete } = await resolveTargetRepos(typedOpts);
@@ -556,12 +561,43 @@ export function createUpdateCommand(): Command {
                 }
             }
 
+            // CORE-2810: local checkouts are part of the update story on a
+            // machine that installs from them. Configured machines apply the
+            // phase on `--apply` and report it read-only otherwise; an
+            // unconfigured machine never has its links touched unless
+            // `--from-checkouts` asks for the built-in defaults.
+            const applyCheckouts = Boolean(typedOpts.apply || typedOpts.fromCheckouts);
+            let checkouts: CheckoutReport | null = null;
+            let checkoutsError: string | null = null;
+            try {
+                checkouts = runCheckoutPhase({
+                    fromCheckouts: Boolean(typedOpts.fromCheckouts),
+                    check: !applyCheckouts,
+                    fetch: Boolean(typedOpts.fetch),
+                    log: (line) => {
+                        if (!opts.json) console.log(kleur.dim(`  • ${line}`));
+                    },
+                });
+            } catch (error) {
+                // A broken checkouts.json or an unreadable checkout must fail the
+                // run the same way init does; swallowing it reported success.
+                checkoutsError = (error as Error).message;
+                console.error(kleur.red(`  ✗ checkouts: ${checkoutsError}`));
+            }
+            if (checkouts && !opts.json) {
+                console.log('');
+                for (const line of renderCheckoutReport(checkouts)) console.log(line);
+                console.log('');
+            }
+
             if (opts.json) {
                 console.log(JSON.stringify({
                     repos: rows,
                     packages: packageAssurance,
                     piStartupSmoke,
                     promptSync,
+                    ...(checkouts ? { checkouts } : {}),
+                    ...(checkoutsError ? { checkoutsError } : {}),
                     ...([...fleetBlocked.keys()].length > 0 ? { fleetPreflightBlocked: [...fleetBlocked.keys()] } : {}),
                 }, null, 2));
             } else {
@@ -579,7 +615,11 @@ export function createUpdateCommand(): Command {
             if (rows.some(row => row.status === 'failed' || row.status === 'incomplete')
                 || packageAssurance.failed.length > 0
                 || piStartupSmoke?.status === 'failed'
-                || piStartupSmoke?.status === 'inconclusive') {
+                || piStartupSmoke?.status === 'inconclusive'
+                || checkoutsError !== null
+                // A report on a routine refresh is information, not a failure;
+                // only a phase that applied and did not finish fails the run.
+                || (applyCheckouts && checkouts !== null && !checkouts.ok)) {
                 process.exitCode = 1;
             }
         });

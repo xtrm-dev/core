@@ -372,6 +372,19 @@ xt doctor
 
 Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exact flags and runtime-specific capabilities.
 
+## Local checkouts
+
+On a machine that runs XTRM from local git checkouts (the operator's laptop and the server) instead of npm, the checkout phase of the machine bootstrap sets up or updates the four checkouts, their links and the tmux guard:
+
+```bash
+xt update --from-checkouts   # clone/fast-forward, install, link, install the tmux guard, report
+xt init --from-checkouts     # the same on a first install
+```
+
+A machine opts in with `~/.xtrm/config/checkouts.json` (`{ "root": "~/dev" }`); after that, `xt update` reports drift read-only, `xt update --apply` keeps the checkouts current, and `xt doctor` reports their drift. It never discards uncommitted work: a dirty, diverged or wrong-branch checkout stops that repository and is reported. The report names every binary, the checkout, commit and version it resolves to.
+
+On a machine with no `xt` yet, `scripts/bootstrap.sh` clones `core` and then runs the same command. See [docs/local-checkouts.md](docs/local-checkouts.md).
+
 | [XTRM-GUIDE.md](XTRM-GUIDE.md) | full architecture and workflow reference |
 | [docs/worktrees.md](docs/worktrees.md) | `xt` worktrees, attach/end/reap and isolation |
 | [docs/xt-pi-role.md](docs/xt-pi-role.md) | role launcher and Specialist behavior |
@@ -386,6 +399,7 @@ Use live `xt <command> --help`, `sp help`, and `specialists list --full` for exa
 | [docs/mcp-servers.md](docs/mcp-servers.md) | managed MCP servers including Exa research |
 | [docs/policies.md](docs/policies.md) | policy compiler and runtime parity |
 | [docs/cli-architecture.md](docs/cli-architecture.md) | install/update/composition internals |
+| [docs/local-checkouts.md](docs/local-checkouts.md) | `xt update`/`xt init`/`xt doctor` handling of the local `core`/`xtrm`/`xtmux`/`specialists` checkouts, links and tmux guard |
 | [docs/testing.md](docs/testing.md) | validation checklist |
 | [docs/release.md](docs/release.md) | release/publish contract |
 | [CHANGELOG.md](CHANGELOG.md) | version history |
