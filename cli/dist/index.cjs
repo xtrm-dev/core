@@ -79345,6 +79345,7 @@ function livenessReport(liveness) {
     ...liveness.warnings.map((warning) => `warning: ${warning}`)
   ];
 }
+var MAX_SCRIPT_BYTES = 64 * 1024;
 
 // src/commands/end.ts
 function worktreeHoldsWork(cwd) {

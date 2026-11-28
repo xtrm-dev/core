@@ -22,10 +22,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
 	callerProcessIds,
+	canonicalPath,
 	formatWorktreeHolders,
 	readProcessCwds,
 	readTmuxPanes,
@@ -75,55 +77,84 @@ export interface WorktreeGuardOptions {
 	tmuxSockets?: string[];
 }
 
-export function worktreeGuardReason(
-	command: string,
-	cwd: string = process.cwd(),
-	options: WorktreeGuardOptions = {},
-): string | null {
-	if (!command) return null;
-	const operations = removalOperations(command);
-	if (operations.length === 0) return null;
+interface EvaluationContext {
+	cwd: string;
+	ownWorktree: string | null;
+	ownPids: Set<number>;
+	panes: Awaited<ReturnType<typeof readTmuxPanes>>["panes"];
+	warnings: string[];
+	notes: string[];
+	probe: (path: string) => ReturnType<typeof worktreeInUse>;
+}
 
-	const ownWorktree = worktreeRoot(cwd);
-	const ownPids = callerProcessIds();
-	const cwds = readProcessCwds("/proc");
-	const { panes, warnings } = readTmuxPanes({ procRoot: "/proc", tmuxSockets: options.tmuxSockets });
-	const probe = (path: string) => worktreeInUse(path, { cwds, panes, skipTmux: true });
+const MAX_NESTING = 3;
+const MAX_SCRIPT_BYTES = 64 * 1024;
 
+/** Read a script the command would run; null when unreadable or not a file. */
+function readScript(path: string): string | null {
+	try {
+		if (!statSync(path).isFile()) return null;
+		return readFileSync(path, "utf8").slice(0, MAX_SCRIPT_BYTES);
+	} catch {
+		return null;
+	}
+}
+
+function warningLines(ctx: EvaluationContext): string[] {
+	return [...ctx.warnings, ...ctx.notes].map((warning) => `warning: ${warning}`);
+}
+
+function evaluateCommand(command: string, ctx: EvaluationContext, depth = 0): string | null {
+	const operations = removalOperations(command, depth);
 	const literalTargets: string[] = [];
 	const unresolved: string[] = [];
+
 	for (const operation of operations) {
+		if (operation.kind === "script") {
+			for (const target of operation.targets) {
+				const scriptPath = resolve(ctx.cwd, target);
+				const contents = readScript(scriptPath);
+				if (contents === null) {
+					ctx.notes.push(`could not read script ${scriptPath}`);
+					continue;
+				}
+				const inner = evaluateCommand(contents, ctx, depth + 1);
+				if (inner) return inner;
+			}
+			continue;
+		}
 		if (operation.targets.length === 0) unresolved.push(operation.raw);
 		for (const target of operation.targets) {
 			if (targetIsUnresolved(target)) unresolved.push(target);
-			else literalTargets.push(resolve(cwd, target));
+			else literalTargets.push(resolve(ctx.cwd, target));
 		}
 	}
 
 	const holderLines: string[] = [];
 	for (const target of [...new Set(literalTargets)]) {
-		if (ownWorktree && target === ownWorktree) continue;
-		const liveness = probe(target);
-		const others = liveness.holders.filter((holder) => !ownPids.has(holder.pid));
+		const canonical = canonicalPath(target);
+		if (ctx.ownWorktree && canonical === ctx.ownWorktree) continue;
+		const liveness = ctx.probe(canonical);
+		const others = liveness.holders.filter((holder) => !ctx.ownPids.has(holder.pid));
 		if (others.length === 0) continue;
 		holderLines.push(
 			...formatWorktreeHolders(others).map((line) => `${target}: ${line}`),
 			...liveness.warnings.map((warning) => `${target}: warning: ${warning}`),
 		);
 	}
-	if (holderLines.length > 0) return blockReason(holderLines);
+	if (holderLines.length > 0) return blockReason([...holderLines, ...warningLines(ctx)]);
 
 	if (unresolved.length > 0) {
-		const candidates = new Set(registeredWorktrees(cwd));
-		for (const pane of panes) {
-			if (pane.agentWorktree) candidates.add(resolve(pane.agentWorktree));
+		const candidates = new Set(registeredWorktrees(ctx.cwd).map((candidate) => canonicalPath(candidate)));
+		for (const pane of ctx.panes) {
+			if (pane.agentWorktree) candidates.add(canonicalPath(pane.agentWorktree));
 		}
 
 		const liveLines: string[] = [];
 		for (const candidate of candidates) {
-			if (ownWorktree && candidate === ownWorktree) continue;
-			const liveness = probe(candidate);
-			const others = liveness.holders.filter((holder) => !ownPids.has(holder.pid));
+			if (ctx.ownWorktree && candidate === ctx.ownWorktree) continue;
+			const liveness = ctx.probe(candidate);
+			const others = liveness.holders.filter((holder) => !ctx.ownPids.has(holder.pid));
 			if (others.length === 0) continue;
 			liveLines.push(...formatWorktreeHolders(others).map((line) => `${candidate}: ${line}`));
 		}
@@ -132,12 +163,41 @@ export function worktreeGuardReason(
 			return blockReason([
 				`the command removes a path it resolves at run time (${unresolved[0]})`,
 				...liveLines,
-				...warnings.map((warning) => `warning: ${warning}`),
+				...warningLines(ctx),
 			]);
 		}
 	}
 
 	return null;
+}
+
+/**
+ * Decide one Bash command. Returns null to allow, or the block reason.
+ * Exported so the tests exercise the guard without a Pi runtime.
+ */
+export function worktreeGuardReason(
+	command: string,
+	cwd: string = process.cwd(),
+	options: WorktreeGuardOptions = {},
+): string | null {
+	if (!command) return null;
+	if (removalOperations(command).length === 0) return null;
+
+	const ownWorktreeRoot = worktreeRoot(cwd);
+	const ownPids = callerProcessIds();
+	const cwds = readProcessCwds("/proc");
+	const { panes, warnings } = readTmuxPanes({ procRoot: "/proc", tmuxSockets: options.tmuxSockets });
+	const ctx: EvaluationContext = {
+		cwd,
+		ownWorktree: ownWorktreeRoot ? canonicalPath(ownWorktreeRoot) : null,
+		ownPids,
+		panes,
+		warnings,
+		notes: [],
+		probe: (path) => worktreeInUse(path, { cwds, panes, skipTmux: true }),
+	};
+
+	return evaluateCommand(command, ctx);
 }
 
 export default function worktreeGuardExtension(pi: ExtensionAPI): void {

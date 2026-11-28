@@ -13,7 +13,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 
 export interface WorktreeHolder {
@@ -255,8 +255,16 @@ export function callerProcessIds(start = process.pid, procRoot = "/proc"): Set<n
 // Removal-command parsing
 // ---------------------------------------------------------------------------
 
+const MAX_NESTING = 3;
 const SHELL_KEYWORDS = new Set(["do", "then", "else", "elif", "if", "while", "until", "!", "{", "}", "done", "fi"]);
-const WRAPPERS = new Set(["command", "builtin", "nohup", "time", "exec"]);
+/** Wrappers that run another command; the real command follows them. */
+const WRAPPERS = new Set(["command", "builtin", "nohup", "time", "exec", "env", "sudo", "xargs", "nice", "timeout", "stdbuf", "ionice"]);
+const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh"]);
+/** Wrapper options that take a value, so the value is not read as the command. */
+const WRAPPER_OPERAND_FLAGS = new Set(["-u", "-g", "-p", "-C", "-h", "-n", "-I", "-L", "-P", "-s", "-E", "-d", "-a", "-i", "-o", "-e", "--unset", "--user", "--group"]);
+/** A redirection token consumes its operand, which is a file, never a target:
+ * `git worktree remove 2>/dev/null --force <path>` removes <path>. */
+const REDIRECTION = /^(\d*|&)(>>?|<<?)(.*)$/;
 
 function tokenize(command: string): string[][] {
 	const segments: string[][] = [];
@@ -333,48 +341,121 @@ export function targetIsUnresolved(target: string | undefined): boolean {
 }
 
 export interface RemovalOperation {
-	kind: "git-worktree-remove" | "rm" | "find-delete";
+	kind: "git-worktree-remove" | "rm" | "find-delete" | "script" | "shell";
 	targets: string[];
 	raw: string;
+	/** The nested program of a `sh -c` / `eval` operation. */
+	program?: string;
 }
 
-/** Removal operations in a shell command, in execution order. */
-export function removalOperations(command: string): RemovalOperation[] {
-	const operations: RemovalOperation[] = [];
+/** Filesystem identity: a symlinked target and a trailing slash both resolve to
+ * the directory the process actually uses. Missing paths fall back to resolve(). */
+export function canonicalPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+}
 
-	for (const raw of tokenize(command)) {
-		const tokens = raw.filter((token) => !SHELL_KEYWORDS.has(token));
-		let start = 0;
-		while (start < tokens.length && WRAPPERS.has(tokens[start])) start += 1;
-		while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
-		const commandName = tokens[start];
-		if (!commandName) continue;
-
-		const name = basename(commandName);
-
-		if (name === "git") {
-			const worktreeAt = tokens.indexOf("worktree", start + 1);
-			if (worktreeAt < 0 || tokens[worktreeAt + 1] !== "remove") continue;
-			const target = tokens.slice(worktreeAt + 2).find((token) => !token.startsWith("-"));
-			operations.push({ kind: "git-worktree-remove", targets: target ? [target] : [], raw: raw.join(" ") });
+function stripRedirections(tokens: string[]): string[] {
+	const out: string[] = [];
+	for (let i = 0; i < tokens.length; i += 1) {
+		const token = tokens[i];
+		if (token === "&>" || token === "&>>") {
+			i += 1;
 			continue;
 		}
-
-		if (name === "rm") {
-			const args = tokens.slice(start + 1);
-			const recursive = args.some((arg) => arg === "--recursive" || /^-[A-Za-z]*[rR]/.test(arg));
-			if (!recursive) continue;
-			operations.push({ kind: "rm", targets: args.filter((arg) => !arg.startsWith("-")), raw: raw.join(" ") });
+		const match = REDIRECTION.exec(token);
+		if (match) {
+			if (!match[3] && i + 1 < tokens.length) i += 1;
 			continue;
 		}
+		out.push(token);
+	}
+	return out;
+}
 
-		if (name === "find") {
-			const args = tokens.slice(start + 1);
-			if (!args.includes("-delete")) continue;
-			const root = args.find((token) => !token.startsWith("-"));
-			operations.push({ kind: "find-delete", targets: root ? [root] : [], raw: raw.join(" ") });
+/** Index of the command word after wrappers, their options and assignments. */
+function commandIndex(tokens: string[]): number {
+	let start = 0;
+	for (;;) {
+		if (start >= tokens.length) return start;
+		const base = basename(tokens[start]);
+		if (!WRAPPERS.has(base)) break;
+		start += 1;
+		while (start < tokens.length) {
+			const token = tokens[start];
+			if (/^\d+[smhd]?$/.test(token) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+				start += 1;
+				continue;
+			}
+			if (!token.startsWith("-")) break;
+			start += WRAPPER_OPERAND_FLAGS.has(token) ? 2 : 1;
 		}
 	}
+	while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
+	return start;
+}
 
+function operationsFromSegment(raw: string[], depth: number): RemovalOperation[] {
+	const operations: RemovalOperation[] = [];
+	const tokens = stripRedirections(raw.filter((token) => !SHELL_KEYWORDS.has(token)));
+	const start = commandIndex(tokens);
+	const commandName = tokens[start];
+	if (!commandName) return operations;
+	const name = basename(commandName);
+	const rest = tokens.slice(start + 1);
+	const record = (kind: RemovalOperation["kind"], targets: string[], extra: Partial<RemovalOperation> = {}): void => {
+		operations.push({ kind, targets, raw: raw.join(" "), ...extra });
+	};
+
+	if (SHELLS.has(name) || name === "eval") {
+		const cIndex = name === "eval" ? -1 : rest.findIndex((token) => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
+		if (name === "eval" || cIndex >= 0) {
+			const program = name === "eval" ? rest.join(" ") : rest[cIndex + 1];
+			if (program) {
+				record("shell", [], { program });
+				if (depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1));
+			}
+			return operations;
+		}
+		const script = rest.find((token) => !token.startsWith("-"));
+		if (script) record("script", [script]);
+		return operations;
+	}
+
+	if (name === "git") {
+		const worktreeAt = tokens.indexOf("worktree", start + 1);
+		if (worktreeAt < 0 || tokens[worktreeAt + 1] !== "remove") return operations;
+		const target = tokens.slice(worktreeAt + 2).find((token) => !token.startsWith("-"));
+		record("git-worktree-remove", target ? [target] : []);
+		return operations;
+	}
+
+	if (name === "rm") {
+		const args = stripRedirections(rest);
+		const recursive = args.some((arg) => arg === "--recursive" || /^-[A-Za-z]*[rR]/.test(arg));
+		if (recursive) record("rm", args.filter((arg) => !arg.startsWith("-")));
+		return operations;
+	}
+
+	if (name === "find") {
+		const args = stripRedirections(rest);
+		if (!args.includes("-delete")) return operations;
+		const root = args.find((token) => !token.startsWith("-"));
+		record("find-delete", root ? [root] : []);
+	}
+	return operations;
+}
+
+/**
+ * Removal operations in a shell command, in execution order.
+ * `targets` is always an array; an empty array or an unresolved entry means the
+ * path is not statically known.
+ */
+export function removalOperations(command: string, depth = 0): RemovalOperation[] {
+	const operations: RemovalOperation[] = [];
+	for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth));
 	return operations;
 }

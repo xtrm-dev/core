@@ -20,7 +20,7 @@
 // blocks on a failure to look.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,8 +32,14 @@ import {
   worktreeInUse,
 } from './worktree-liveness.mjs';
 
+/** A removal further than this in a shell/script nest is out of scope: the
+ * guard blocks the outer command anyway, and unbounded recursion is a hazard. */
+const MAX_NESTING = 3;
+const MAX_SCRIPT_BYTES = 64 * 1024;
 const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}', 'done', 'fi']);
-const WRAPPERS = new Set(['command', 'builtin', 'nohup', 'time', 'exec']);
+/** Wrappers that run another command; the real command follows them. */
+const WRAPPERS = new Set(['command', 'builtin', 'nohup', 'time', 'exec', 'env', 'sudo', 'xargs', 'nice', 'timeout', 'stdbuf', 'ionice']);
+const SHELLS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
 
 function tokenize(command) {
   const segments = [];
@@ -110,49 +116,134 @@ export function targetIsUnresolved(target) {
   return /[$`*?[\]{}~]/.test(target) || target === '~';
 }
 
+/** A redirection token consumes its operand, which is a file, never a target:
+ * `git worktree remove 2>/dev/null --force <path>` removes <path>. */
+const REDIRECTION = /^(\d*|&)(>>?|<<?)(.*)$/;
+
+function stripRedirections(tokens) {
+  const out = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token === '&>' || token === '&>>') {
+      i += 1;
+      continue;
+    }
+    const match = REDIRECTION.exec(token);
+    if (match) {
+      if (!match[3] && i + 1 < tokens.length) i += 1;
+      continue;
+    }
+    out.push(token);
+  }
+  return out;
+}
+
+/** Wrapper options that take a value, so the value is not read as the command. */
+const WRAPPER_OPERAND_FLAGS = new Set(['-u', '-g', '-p', '-C', '-h', '-n', '-I', '-L', '-P', '-s', '-E', '-d', '-a', '-i', '-o', '-e', '--unset', '--user', '--group']);
+
+/** Index of the command word after wrappers, their options and assignments. */
+function commandIndex(tokens) {
+  let start = 0;
+  for (;;) {
+    if (start >= tokens.length) return start;
+    const base = basename(tokens[start]);
+    if (!WRAPPERS.has(base)) break;
+    start += 1;
+    while (start < tokens.length) {
+      const token = tokens[start];
+      if (/^\d+[smhd]?$/.test(token) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+        start += 1;
+        continue;
+      }
+      if (!token.startsWith('-')) break;
+      start += WRAPPER_OPERAND_FLAGS.has(token) ? 2 : 1;
+    }
+  }
+  while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
+  return start;
+}
+
+function operationsFromSegment(raw, depth = 0) {
+  const operations = [];
+  const tokens = stripRedirections(raw.filter((token) => !SHELL_KEYWORDS.has(token)));
+  const start = commandIndex(tokens);
+  const commandName = tokens[start];
+  if (!commandName) return operations;
+  const name = basename(commandName);
+  const rest = tokens.slice(start + 1);
+  const record = (kind, targets, extra = {}) => operations.push({ kind, targets, raw: raw.join(' '), ...extra });
+
+  if (SHELLS.has(name) || name === 'eval') {
+    const cIndex = name === 'eval' ? -1 : rest.findIndex((token) => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
+    if (name === 'eval' || cIndex >= 0) {
+      const program = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
+      if (program && depth < MAX_NESTING) {
+        record('shell', [], { program });
+        operations.push(...removalOperations(program, depth + 1));
+      } else if (program) {
+        record('shell', [], { program });
+      }
+      return operations;
+    }
+    const script = rest.find((token) => !token.startsWith('-'));
+    if (script) record('script', [script]);
+    return operations;
+  }
+
+  if (name === 'git') {
+    const worktreeAt = tokens.indexOf('worktree', start + 1);
+    if (worktreeAt < 0 || tokens[worktreeAt + 1] !== 'remove') return operations;
+    const target = tokens.slice(worktreeAt + 2).find((token) => !token.startsWith('-'));
+    record('git-worktree-remove', target ? [target] : []);
+    return operations;
+  }
+
+  if (name === 'rm') {
+    const args = stripRedirections(rest);
+    const recursive = args.some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
+    if (recursive) record('rm', args.filter((arg) => !arg.startsWith('-')));
+    return operations;
+  }
+
+  if (name === 'find') {
+    const args = stripRedirections(rest);
+    if (!args.includes('-delete')) return operations;
+    const root = args.find((token) => !token.startsWith('-'));
+    record('find-delete', root ? [root] : []);
+  }
+  return operations;
+}
+
 /**
  * Removal operations in a shell command, in execution order.
  * `targets` is always an array; an empty array or an unresolved entry means the
- * path is not statically known.
+ * path is not statically known. `kind: 'shell'` carries the nested `program`.
  */
-export function removalOperations(command) {
+export function removalOperations(command, depth = 0) {
   const operations = [];
-
-  for (const raw of tokenize(command)) {
-    const tokens = raw.filter((token) => !SHELL_KEYWORDS.has(token));
-    let start = 0;
-    while (start < tokens.length && WRAPPERS.has(tokens[start])) start += 1;
-    while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
-    const commandName = tokens[start];
-    if (!commandName) continue;
-
-    const name = basename(commandName);
-
-    if (name === 'git') {
-      const worktreeAt = tokens.indexOf('worktree', start + 1);
-      if (worktreeAt < 0 || tokens[worktreeAt + 1] !== 'remove') continue;
-      const target = tokens.slice(worktreeAt + 2).find((token) => !token.startsWith('-'));
-      operations.push({ kind: 'git-worktree-remove', targets: target ? [target] : [], raw: raw.join(' ') });
-      continue;
-    }
-
-    if (name === 'rm') {
-      const args = tokens.slice(start + 1);
-      const recursive = args.some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
-      if (!recursive) continue;
-      operations.push({ kind: 'rm', targets: args.filter((arg) => !arg.startsWith('-')), raw: raw.join(' ') });
-      continue;
-    }
-
-    if (name === 'find') {
-      const args = tokens.slice(start + 1);
-      if (!args.includes('-delete')) continue;
-      const root = args.find((token) => !token.startsWith('-'));
-      operations.push({ kind: 'find-delete', targets: root ? [root] : [], raw: raw.join(' ') });
-    }
-  }
-
+  for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth));
   return operations;
+}
+
+/** Filesystem identity: a symlinked target and a trailing slash both resolve to
+ * the directory the process actually uses. Missing paths fall back to resolve(). */
+export function canonicalPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/** Read a script the command would run; null when unreadable or not a file. */
+function readScript(path) {
+  try {
+    const canonical = canonicalPath(path);
+    if (!statSync(canonical).isFile()) return null;
+    return readFileSync(canonical, 'utf8').slice(0, MAX_SCRIPT_BYTES);
+  } catch {
+    return null;
+  }
 }
 
 function worktreeRoot(cwd) {
@@ -191,12 +282,80 @@ function blockReason(lines) {
 function literalBlockers(targets, probe, ownWorktree, ownPids) {
   const blockers = [];
   for (const target of [...new Set(targets)]) {
-    if (ownWorktree && target === ownWorktree) continue;
-    const liveness = probe(target);
+    const canonical = canonicalPath(target);
+    if (ownWorktree && canonical === ownWorktree) continue;
+    const liveness = probe(canonical);
     const others = liveness.holders.filter((holder) => !ownPids.has(holder.pid));
     if (others.length > 0) blockers.push({ target, holders: others, warnings: liveness.warnings });
   }
   return blockers;
+}
+
+function warningLines(ctx) {
+  return [...ctx.warnings, ...ctx.notes].map((warning) => `warning: ${warning}`);
+}
+
+/** Evaluate one command text against the live-process snapshot in `ctx`. */
+function evaluateCommand(command, ctx, depth = 0) {
+  const operations = removalOperations(command, depth);
+  const literalTargets = [];
+  const unresolved = [];
+
+  for (const operation of operations) {
+    if (operation.kind === 'script') {
+      for (const target of operation.targets) {
+        const scriptPath = resolve(ctx.cwd, target);
+        const contents = readScript(scriptPath);
+        if (contents === null) {
+          ctx.notes.push(`could not read script ${scriptPath}`);
+          continue;
+        }
+        const inner = evaluateCommand(contents, ctx, depth + 1);
+        if (inner) return inner;
+      }
+      continue;
+    }
+    for (const target of operation.targets) {
+      if (targetIsUnresolved(target)) unresolved.push({ target, operation });
+      else literalTargets.push(resolve(ctx.cwd, target));
+    }
+    if (operation.targets.length === 0) unresolved.push({ target: '', operation });
+  }
+
+  const blockers = literalBlockers(literalTargets, ctx.probe, ctx.ownWorktree, ctx.ownPids);
+  if (blockers.length > 0) {
+    const lines = blockers.flatMap((blocker) => {
+      const holderLines = formatWorktreeHolders(blocker.holders).map((line) => `${blocker.target}: ${line}`);
+      const blockerWarnings = blocker.warnings.map((warning) => `${blocker.target}: warning: ${warning}`);
+      return [...holderLines, ...blockerWarnings];
+    });
+    return blockReason([...lines, ...warningLines(ctx)]);
+  }
+
+  if (unresolved.length > 0) {
+    const live = [];
+    const candidates = new Set(registeredWorktrees(ctx.cwd).map((candidate) => canonicalPath(candidate)));
+    for (const pane of ctx.panes) {
+      if (pane.agentWorktree) candidates.add(canonicalPath(pane.agentWorktree));
+    }
+    for (const candidate of candidates) {
+      if (ctx.ownWorktree && candidate === ctx.ownWorktree) continue;
+      const liveness = ctx.probe(candidate);
+      const others = liveness.holders.filter((holder) => !ctx.ownPids.has(holder.pid));
+      if (others.length > 0) live.push({ target: candidate, holders: others });
+    }
+
+    if (live.length > 0) {
+      const lines = [
+        `the command removes a path it resolves at run time (${unresolved[0].target || 'no literal target'})`,
+        ...live.flatMap((entry) => formatWorktreeHolders(entry.holders).map((line) => `${entry.target}: ${line}`)),
+        ...warningLines(ctx),
+      ];
+      return blockReason(lines);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -216,60 +375,25 @@ export function worktreeGuardDecision(input = {}, options = {}) {
   const command = input?.tool_input?.command ?? input?.toolInput?.command ?? '';
   if (typeof command !== 'string' || !command) return null;
 
-  const operations = removalOperations(command);
-  if (operations.length === 0) return null;
+  if (removalOperations(command).length === 0) return null;
 
   const cwd = input?.cwd ?? process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
-  const ownWorktree = worktreeRoot(cwd);
+  const ownWorktreeRoot = worktreeRoot(cwd);
+  const ownWorktree = ownWorktreeRoot ? canonicalPath(ownWorktreeRoot) : null;
   const ownPids = callerProcessIds();
   const cwds = readProcessCwds('/proc');
   const { panes, warnings } = readTmuxPanes({ procRoot: '/proc', tmuxSockets: options.tmuxSockets });
-  const probe = (path) => worktreeInUse(path, { cwds, panes, skipTmux: true });
+  const ctx = {
+    cwd,
+    ownWorktree,
+    ownPids,
+    panes,
+    warnings,
+    notes: [],
+    probe: (path) => worktreeInUse(path, { cwds, panes, skipTmux: true }),
+  };
 
-  const literalTargets = [];
-  const unresolved = [];
-  for (const operation of operations) {
-    for (const target of operation.targets) {
-      if (targetIsUnresolved(target)) unresolved.push({ target, operation });
-      else literalTargets.push(resolve(cwd, target));
-    }
-    if (operation.targets.length === 0) unresolved.push({ target: '', operation });
-  }
-
-  const blockers = literalBlockers(literalTargets, probe, ownWorktree, ownPids);
-  if (blockers.length > 0) {
-    const lines = blockers.flatMap((blocker) => {
-      const holderLines = formatWorktreeHolders(blocker.holders).map((line) => `${blocker.target}: ${line}`);
-      const warningLines = blocker.warnings.map((warning) => `${blocker.target}: warning: ${warning}`);
-      return [...holderLines, ...warningLines];
-    });
-    return blockReason(lines);
-  }
-
-  if (unresolved.length > 0) {
-    const live = [];
-    const candidates = new Set(registeredWorktrees(cwd));
-    for (const pane of panes) {
-      if (pane.agentWorktree) candidates.add(pane.agentWorktree);
-    }
-    for (const candidate of candidates) {
-      if (ownWorktree && resolve(candidate) === ownWorktree) continue;
-      const liveness = probe(candidate);
-      const others = liveness.holders.filter((holder) => !ownPids.has(holder.pid));
-      if (others.length > 0) live.push({ target: candidate, holders: others });
-    }
-
-    if (live.length > 0) {
-      const lines = [
-        `the command removes a path it resolves at run time (${unresolved[0].target || 'no literal target'})`,
-        ...live.flatMap((entry) => formatWorktreeHolders(entry.holders).map((line) => `${entry.target}: ${line}`)),
-        ...warnings.map((warning) => `warning: ${warning}`),
-      ];
-      return blockReason(lines);
-    }
-  }
-
-  return null;
+  return evaluateCommand(command, ctx);
 }
 
 function main() {

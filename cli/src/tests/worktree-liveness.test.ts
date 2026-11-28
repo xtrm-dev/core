@@ -1,11 +1,12 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     callerProcessIds,
+    canonicalPath,
     createLivenessProbe,
     discoverTmuxSockets,
     formatWorktreeHolders,
@@ -164,6 +165,14 @@ describe('removal command parsing', () => {
         ['command rm -Rf /tmp/wt', [{ kind: 'rm', targets: ['/tmp/wt'] }]],
         ['echo hi # git worktree remove x', []],
         ['git worktree add /tmp/wt -b feature', []],
+        ['env git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['sudo -u root git worktree remove /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['xargs -0 git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        [`bash -c 'rm -rf /tmp/wt'`, [{ kind: 'shell', targets: [] }, { kind: 'rm', targets: ['/tmp/wt'] }]],
+        [`sh -lc "find /tmp/wt -delete"`, [{ kind: 'shell', targets: [] }, { kind: 'find-delete', targets: ['/tmp/wt'] }]],
+        ['bash scripts/reap.sh', [{ kind: 'script', targets: ['scripts/reap.sh'] }]],
+        ['git worktree remove 2>/dev/null --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
+        ['rm -rf /tmp/wt > /dev/null 2>&1', [{ kind: 'rm', targets: ['/tmp/wt'] }]],
     ];
 
     it.each(cases)('parses %s', (command, expected) => {
@@ -172,6 +181,17 @@ describe('removal command parsing', () => {
 
     it('never reports a removal for git worktree prune', () => {
         expect(removalOperations('git worktree prune')).toEqual([]);
+    });
+
+    it('canonicalises a symlink and a trailing slash to the same directory', () => {
+        const root = tempDir('xtrm-liveguard-canon-');
+        const target = join(root, 'wt');
+        mkdirSync(target);
+        const link = join(root, 'link');
+        symlinkSync(target, link);
+        expect(canonicalPath(link)).toBe(realpathSync(target));
+        expect(canonicalPath(`${link}/`)).toBe(realpathSync(target));
+        expect(canonicalPath(join(root, 'missing'))).toBe(join(root, 'missing'));
     });
 
     it('flags every shell-resolved target as unresolved', () => {

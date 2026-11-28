@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -178,6 +178,49 @@ describe('Claude PreToolUse worktree guard', () => {
         expect(reason).toBeTruthy();
         expect(reason).toContain('tmux pane');
         expect(reason).toContain(worktree);
+    });
+
+    // The review's HIGH finding: nine commands got past the first version.
+    // Every one of them names a live worktree the guard must refuse.
+    it('blocks the bypass shapes: symlink, wrappers, nested shells, scripts, redirections', async () => {
+        const { repo, worktree } = fixture();
+        const link = join(repo, 'live-link');
+        symlinkSync(worktree, link);
+        const script = join(repo, 'kill.sh');
+        writeFileSync(script, `#!/bin/bash\nrm -rf ${worktree}\n`);
+        const safeScript = join(repo, 'safe.sh');
+        writeFileSync(safeScript, `#!/bin/bash\nls ${worktree}\n`);
+
+        const child = spawnSleeping(worktree);
+        await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+        const blocked = [
+            `rm -rf ${link}/`,
+            `find ${link} -delete`,
+            `env git worktree remove --force ${worktree}`,
+            `sudo git worktree remove --force ${worktree}`,
+            `xargs git worktree remove --force ${worktree}`,
+            `bash -c 'rm -rf ${worktree}'`,
+            `sh -c "git worktree remove --force ${worktree}"`,
+            `sh -lc 'rm -rf ${worktree}'`,
+            `bash ${script}`,
+            `git worktree remove 2>/dev/null --force ${worktree}`,
+        ];
+        for (const command of blocked) {
+            const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
+            expect(reason, command).toBeTruthy();
+            expect(reason, command).toContain(`pid ${child.pid}`);
+        }
+        expect(worktreeGuardDecision(bashPayload(`bash ${safeScript}`, repo), { tmuxSockets: [] })).toBeNull();
+        await stop(child);
+    });
+
+    it('exempts the caller tree through a symlink and reports canonical holders', async () => {
+        const { repo, worktree } = fixture();
+        const link = join(repo, 'own-link');
+        symlinkSync(worktree, link);
+        expect(worktreeGuardDecision(bashPayload(`rm -rf ${link}/`, worktree), { tmuxSockets: [] })).toBeNull();
+        expect(worktreeGuardDecision(bashPayload(`git worktree remove --force ${link}`, worktree), { tmuxSockets: [] })).toBeNull();
     });
 
     it('allows removing the worktree the caller is standing in', async () => {
