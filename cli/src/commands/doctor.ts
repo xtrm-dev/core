@@ -758,16 +758,12 @@ function renderClaudeRoute(report: ClaudeRouteDoctorSection): void {
 function renderLocalCheckouts(report: CheckoutReport | null): number {
   if (!report) return 0;
   section('Local checkouts');
-  // One renderer for every surface: doctor prints the same report `xt update`
-  // prints, so the two can never disagree again.
-  const lines = renderCheckoutReport(report, { allBins: false })
-    .filter((line) => line.trim().length > 0 && !line.startsWith('checkouts'));
-  for (const line of lines) {
-    const text = line.trim();
-    const isFinding = text.startsWith('- ') || text.startsWith('drift (') || text.startsWith('problems (');
-    if (isFinding) warn(text);
-    else if (text.startsWith('no drift') || text.startsWith('drift found') || text.startsWith('incomplete') || text.startsWith('remote refs')) fix(text);
-    else console.log(kleur.dim(line));
+  // One renderer for every surface: doctor prints the block `xt update` prints,
+  // verbatim, including the `read-only, no fetch` mode line. Doctor does not
+  // re-derive severity from line prefixes — the report already states it, and
+  // a prefix guess would drift from the renderer.
+  for (const line of renderCheckoutReport(report, { allBins: false })) {
+    if (line.trim().length > 0) console.log(kleur.dim(line));
   }
   return report.drift.length + report.problems.length;
 }

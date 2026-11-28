@@ -161,6 +161,10 @@ removed and long text is capped before it is printed or serialised.
   does not fetch: it compares against the remote refs from the last fetch, so a
   commit pushed since then is not seen. `--fetch` opts into the network, which
   writes objects and remote refs, and never moves a branch.
+- A report never contacts the remote to learn the default branch either: it
+  reads `origin/HEAD`, the configured refspec and the tracking branches that
+  already exist. Every child process has a deadline, so an unreachable or 404
+  origin cannot hang the phase.
 
 ## A new machine
 
@@ -198,7 +202,7 @@ Each finding names the repository and the action that resolves it; none of them 
 | `dirty` | tracked files modified or staged | commit, stash or discard in that checkout; nothing was changed |
 | `diverged` / `ahead` | local commits not on the remote | rebase or push deliberately; the phase never rewrites history |
 | `wrong-branch` / `detached` | checkout is not on the default branch | check out the default branch |
-| `fetch-failed` | the `--fetch` refresh could not reach the remote | fix credentials or network; other repositories still update |
+| `fetch-failed` | the `--fetch` refresh could not reach the remote, or timed out at 60 s | fix credentials or network; other repositories still update |
 | `beads-hooks` | `core.hooksPath` points at the retired Beads hooks | `git config --unset core.hooksPath` in that checkout |
 | `lockfile-rewritten` | committed lockfile out of sync with `package.json` | fix the lockfile in that repository |
 | `installer-refused` | xtmux refused to overwrite a file it does not own | resolve the file by hand; nothing was forced |

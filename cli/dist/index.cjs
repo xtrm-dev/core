@@ -42636,31 +42636,45 @@ function realpathOrNull(file2) {
   }
 }
 function runCommand(cmd, args, options = {}) {
+  const timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
   const result = (0, import_node_child_process21.spawnSync)(cmd, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
     encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
   });
+  const timedOut = result.signal === "SIGKILL" || result.error?.code === "ETIMEDOUT";
   return {
     status: result.status,
     stdout: (result.stdout ?? "").trim(),
     stderr: (result.stderr ?? "").trim(),
-    error: result.error ? String(result.error.message) : null
+    error: result.error ? String(result.error.message) : timedOut ? `timed out after ${Math.round(timeoutMs / 1e3)}s` : null
   };
 }
 function tail(text, lines = 12) {
   if (!text) return "";
   return text.split("\n").slice(-lines).join("\n");
 }
+function scrub(text) {
+  let out = text.replace(CREDENTIAL_IN_URL_WITH_COLON, "$1").replace(CREDENTIAL_IN_URL, "$1").replace(QUERY_SECRET, "$1[redacted]");
+  for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, "[redacted]");
+  out = out.replace(
+    AUTH_HEADER,
+    (_match, key, separator, scheme, newline) => `${key}${separator}${scheme ?? ""}${newline ?? ""}[redacted]`
+  );
+  return out.replace(
+    SECRET_ASSIGNMENT,
+    (_match, key, separator, newline) => `${key}${separator}${newline ?? ""}[redacted]`
+  );
+}
 function redactRemote(remote) {
-  return remote.replace(CREDENTIAL_IN_URL, "$1");
+  return scrub(remote);
 }
 function redactText(text, options = {}) {
   if (!text) return "";
-  let out = text.replace(CREDENTIAL_IN_URL, "$1");
-  for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, "[redacted]");
-  out = out.replace(SECRET_ASSIGNMENT, (_match, key, separator) => `${key}${separator}[redacted]`);
+  let out = scrub(text);
   const maxLines = options.maxLines ?? 6;
   const lines = out.split("\n");
   if (lines.length > maxLines) {
@@ -42691,7 +42705,7 @@ function shortError(result) {
   return detail ? ` (${detail.split("\n")[0]})` : "";
 }
 function git2(cwd, args, ctx) {
-  return runCommand("git", args, { cwd, env: { ...ctx.env, HOME: import_node_os23.default.homedir() } });
+  return runCommand("git", args, { cwd, env: { ...ctx.env, HOME: import_node_os23.default.homedir() }, timeoutMs: GIT_TIMEOUT_MS });
 }
 function resolveNpm(ctx) {
   if (ctx.env.XTRM_BOOTSTRAP_NPM) return ctx.env.XTRM_BOOTSTRAP_NPM;
@@ -42725,15 +42739,26 @@ function stateHome(ctx) {
   if (ctx.env.XTRM_BOOTSTRAP_HOME_OVERRIDE) return import_node_path44.default.join(ctx.home, ".local", "state");
   return ctx.env.XDG_STATE_HOME || import_node_path44.default.join(ctx.home, ".local", "state");
 }
+function originTrackingPrefix(dir, ctx) {
+  const refspec = git2(dir, ["config", "--get-all", "remote.origin.fetch"], ctx);
+  for (const line of refspec.status === 0 ? refspec.stdout.split("\n") : []) {
+    const destination = line.split(":")[1];
+    const star = destination ? destination.indexOf("*") : -1;
+    if (star > 0) return destination.slice(0, star);
+  }
+  return "refs/remotes/origin/";
+}
 function detectDefaultBranch(dir, ctx) {
   const symbolic = git2(dir, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], ctx);
   if (symbolic.status === 0 && symbolic.stdout) return symbolic.stdout.replace(/^origin\//, "");
-  const remote = git2(dir, ["remote", "show", "origin"], ctx);
-  if (remote.status === 0) {
-    const match = /HEAD branch:\s*(\S+)/.exec(remote.stdout);
-    if (match) return match[1];
+  const prefix = originTrackingPrefix(dir, ctx);
+  const listing = git2(dir, ["for-each-ref", "--format=%(refname)", prefix], ctx);
+  if (listing.status !== 0 || !listing.stdout) return null;
+  const names = listing.stdout.split("\n").map((ref) => ref.slice(prefix.length)).filter((name) => name.length > 0);
+  for (const candidate of ["main", "master"]) {
+    if (names.includes(candidate)) return candidate;
   }
-  return null;
+  return names.length === 1 ? names[0] : null;
 }
 function inspectCheckoutRepo(repo, ctx, options = {}) {
   const state = {
@@ -43020,7 +43045,8 @@ function runCheckoutPhase(options = {}) {
   if (!options.fromCheckouts && (!config3 || config3.enabled === false)) return null;
   const repos = resolveCheckoutRepos(config3, home, options.cwd);
   const npm2 = resolveNpm(ctx);
-  const log = options.log;
+  const rawLog = options.log;
+  const log = rawLog ? (line) => rawLog(redactText(line, { maxLines: 8, maxChars: 800 })) : void 0;
   const check2 = options.check === true;
   const fetch2 = !check2 || options.fetch === true;
   const drift = [];
@@ -43196,7 +43222,7 @@ function renderCheckoutReport(report, options = {}) {
   } else lines.push(`incomplete: ${report.problems.length} problem(s); resolve the checkouts above and re-run`);
   return lines;
 }
-var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL, CREDENTIAL_IN_URL, TOKEN_PATTERNS, SECRET_ASSIGNMENT;
+var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL, GIT_TIMEOUT_MS, COMMAND_TIMEOUT_MS, CREDENTIAL_IN_URL_WITH_COLON, CREDENTIAL_IN_URL, QUERY_SECRET, TOKEN_PATTERNS, AUTH_HEADER, SECRET_ASSIGNMENT;
 var init_checkout_bootstrap = __esm({
   "src/core/checkout-bootstrap.ts"() {
     "use strict";
@@ -43233,7 +43259,11 @@ var init_checkout_bootstrap = __esm({
     BLOCKING = /* @__PURE__ */ new Set(["not-a-git-checkout", "unknown", "detached", "wrong-branch", "dirty", "diverged", "ahead"]);
     LOCKFILES = ["package-lock.json", "bun.lock", "bun.lockb", "yarn.lock", "pnpm-lock.yaml"];
     REFUSAL = /\brefus(e|ed|es|ing|al)\b|not overwrit|already exists and differs|declin/i;
+    GIT_TIMEOUT_MS = 6e4;
+    COMMAND_TIMEOUT_MS = 10 * 6e4;
+    CREDENTIAL_IN_URL_WITH_COLON = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"]*?:[^\s'"]*?@/gi;
     CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
+    QUERY_SECRET = /([?&;][a-z0-9_.-]*(?:token|secret|password|passwd|key|auth)[a-z0-9_.-]*=)[^&\s'"#]+/gi;
     TOKEN_PATTERNS = [
       /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
       /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
@@ -43243,7 +43273,8 @@ var init_checkout_bootstrap = __esm({
       /\b(AKIA[0-9A-Z]{16})\b/g,
       /\bBearer\s+[A-Za-z0-9._-]{16,}/gi
     ];
-    SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|authorization|auth)\b(\s*[:=]\s*)([^\s'"]+)/gi;
+    AUTH_HEADER = /\b((?:proxy-)?authorization)\b(\s*[:=]\s*)([a-z][a-z0-9._-]*\s+)?(\r?\n\s*)?([^\s'"]+)/gi;
+    SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|auth)\b(\s*[:=]\s*)(\r?\n\s*)?([^\s'"]+)/gi;
   }
 });
 
@@ -88215,13 +88246,8 @@ function renderClaudeRoute(report) {
 function renderLocalCheckouts(report) {
   if (!report) return 0;
   section2("Local checkouts");
-  const lines = renderCheckoutReport(report, { allBins: false }).filter((line) => line.trim().length > 0 && !line.startsWith("checkouts"));
-  for (const line of lines) {
-    const text = line.trim();
-    const isFinding = text.startsWith("- ") || text.startsWith("drift (") || text.startsWith("problems (");
-    if (isFinding) warn(text);
-    else if (text.startsWith("no drift") || text.startsWith("drift found") || text.startsWith("incomplete") || text.startsWith("remote refs")) fix(text);
-    else console.log(kleur_default.dim(line));
+  for (const line of renderCheckoutReport(report, { allBins: false })) {
+    if (line.trim().length > 0) console.log(kleur_default.dim(line));
   }
   return report.drift.length + report.problems.length;
 }
@@ -95249,7 +95275,7 @@ var SUBMIT_BUDGET_BYTES = 96 * KB;
 var MAX_REFERENCES_PER_REQUEST = 64;
 var MAX_FILE_BYTES = 16 * 1024 * KB;
 var FILE_EXCERPT_LINES = 200;
-var GIT_TIMEOUT_MS = 5e3;
+var GIT_TIMEOUT_MS2 = 5e3;
 var GIT_MAX_BUFFER = 4 * 1024 * KB;
 var BOUNDED_MAX_CHARS = 1024;
 var CONTROL_CHARS2 = /[\u0000-\u001F\u007F]+/g;
@@ -95468,7 +95494,7 @@ function git7(cwd, args) {
       ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args],
       {
         cwd,
-        timeout: GIT_TIMEOUT_MS,
+        timeout: GIT_TIMEOUT_MS2,
         maxBuffer: GIT_MAX_BUFFER,
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_PAGER: "cat", GIT_OPTIONAL_LOCKS: "0" }
       },

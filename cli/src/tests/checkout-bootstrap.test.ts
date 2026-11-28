@@ -442,6 +442,48 @@ describe('report redaction', () => {
         expect(redactText('x'.repeat(900)).length).toBeLessThanOrEqual(601);
     });
 
+    it('redacts query parameters, a wrapped Authorization header and a slashy password', () => {
+        // A password that contains '/' used to end the URL match early.
+        expect(redactRemote('https://user:pa/ss@example.invalid/r.git')).toBe('https://example.invalid/r.git');
+        expect(redactRemote('https://tok@example.invalid/r.git')).toBe('https://example.invalid/r.git');
+
+        const query = redactText('clone https://example.invalid/r.git?private_token=abc123&access_token=def456&page=2');
+        expect(query).not.toContain('abc123');
+        expect(query).not.toContain('def456');
+        expect(query).toContain('page=2');
+
+        const wrapped = redactText(['GET /r.git', 'Authorization: Basic', 'dXNlcjpzM2NyZXQ='].join('\n'));
+        expect(wrapped).not.toContain('dXNlcjpzM2NyZXQ=');
+        expect(wrapped).toContain('Authorization: Basic');
+        expect(wrapped.split('\n')[0]).toBe('GET /r.git');
+    });
+
+    it('redacts the live log lines as well as the report', () => {
+        const f = fixture('xtmux', { name: 'xtmux-fixture', version: '1.0.0' });
+        clone(f, 'xtmux');
+        fs.writeFileSync(path.join(f.dir, 'install.sh'), [
+            '#!/usr/bin/env bash',
+            'echo "fetching https://x-access-token:live-token@example.invalid/xtmux.git" >&2',
+            'echo "access_token=ghp_cccccccccccccccccccc" >&2',
+            'exit 0',
+            '',
+        ].join('\n'));
+        git(f.dir, 'add', '.');
+        git(f.dir, 'commit', '-m', 'installer');
+        git(f.dir, 'push');
+        writeConfig(f.home, {
+            ...idleRepos(f.home, ['core', 'xtrm', 'specialists']),
+            xtmux: { dir: f.dir, remote: f.origin, links: [], installer: 'install.sh' },
+        });
+
+        const lines: string[] = [];
+        phase(f.home, { env: fakeEnv(f.home), log: (line) => lines.push(line) });
+        const log = lines.join('\n');
+        expect(log).toContain('install xtmux/install.sh');
+        expect(log).not.toContain('live-token');
+        expect(log).not.toContain('ghp_cccc');
+    });
+
     it('redacts a credentialed remote and a refusal diagnostic in the report', () => {
         const f = fixture('xtmux', { name: 'xtmux-fixture', version: '1.0.0' });
         clone(f, 'xtmux');
@@ -471,6 +513,43 @@ describe('report redaction', () => {
         const refused = report?.drift.find((item) => item.kind === 'installer-refused');
         expect(refused?.diagnostic?.split('\n').length).toBeLessThanOrEqual(7);
         expect(refused?.diagnostic).toContain('refusing to overwrite');
+    });
+});
+
+describe('default branch detection', () => {
+    it('uses local refs only when origin/HEAD is gone and the origin is unreachable', () => {
+        const f = fixture('xtrm');
+        clone(f, 'xtrm');
+        // No origin/HEAD, and an origin that cannot be reached: the old
+        // `git remote show origin` fallback hung for minutes here.
+        git(f.dir, 'remote', 'set-head', 'origin', '--delete');
+        fs.writeFileSync(path.join(f.seed, 'package.json'), `${JSON.stringify({ name: 'xtrm', version: '1.0.1' })}\n`);
+        git(f.seed, 'commit', '-am', 'bump');
+        git(f.seed, 'push');
+        writeConfig(f.home, {
+            ...idleRepos(f.home, ['core', 'xtmux', 'specialists']),
+            xtrm: { dir: f.dir, remote: 'http://127.0.0.1:9/unreachable.git', links: [] },
+        });
+
+        const started = Date.now();
+        const report = phase(f.home, { check: true, env: fakeEnv(f.home) });
+        expect(Date.now() - started).toBeLessThan(10_000);
+        const xtrm = report?.repos.find((repo) => repo.name === 'xtrm');
+        expect(xtrm?.defaultBranch).toBe('main');
+        // No fetch, so the local origin/main ref is the stale one from the
+        // clone: a report must say 'ok', not claim drift it never looked for.
+        expect(xtrm?.fetched).toBe(false);
+        expect(xtrm?.status).toBe('ok');
+
+        // An explicit --fetch against the same unreachable origin still returns
+        // fast and reports the failed refresh instead of hanging. The reported
+        // `remote` is report metadata; the checkout's own URL is what git uses.
+        git(f.dir, 'remote', 'set-url', 'origin', 'http://127.0.0.1:9/unreachable.git');
+        const fetchedStarted = Date.now();
+        const fetched = phase(f.home, { check: true, fetch: true, env: fakeEnv(f.home) });
+        expect(Date.now() - fetchedStarted).toBeLessThan(10_000);
+        expect(fetched?.repos.find((repo) => repo.name === 'xtrm')?.status).toBe('unknown');
+        expect(fetched?.drift.some((item) => item.kind === 'fetch-failed')).toBe(true);
     });
 });
 

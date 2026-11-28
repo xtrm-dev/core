@@ -257,22 +257,38 @@ function realpathOrNull(file: string): string | null {
     }
 }
 
+/**
+ * A hung child would hang the whole phase: `git remote show origin` against an
+ * unreachable URL once blocked for close to five minutes. Every child gets a
+ * deadline, git the shortest one.
+ */
+const GIT_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = 10 * 60_000;
+
 function runCommand(
     cmd: string,
     args: string[],
-    options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+    options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): CommandResult {
+    const timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
     const result = spawnSync(cmd, args, {
         cwd: options.cwd,
         env: options.env ?? process.env,
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL',
     });
+    const timedOut = result.signal === 'SIGKILL' || (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
     return {
         status: result.status,
         stdout: (result.stdout ?? '').trim(),
         stderr: (result.stderr ?? '').trim(),
-        error: result.error ? String(result.error.message) : null,
+        error: result.error
+            ? String(result.error.message)
+            : timedOut
+                ? `timed out after ${Math.round(timeoutMs / 1000)}s`
+                : null,
     };
 }
 
@@ -281,7 +297,14 @@ function tail(text: string, lines = 12): string {
     return text.split('\n').slice(-lines).join('\n');
 }
 
+// Userinfo, including a password that itself contains `/` (`user:pa/ss@host`).
+// The colon form runs first so a slash never ends the match early, and the
+// plain form still catches a bare token (`https://tok@host`).
+const CREDENTIAL_IN_URL_WITH_COLON = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"]*?:[^\s'"]*?@/gi;
 const CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
+// Query and form parameters whose name says secret: `?private_token=`,
+// `&access_token=`, `client_secret=`.
+const QUERY_SECRET = /([?&;][a-z0-9_.-]*(?:token|secret|password|passwd|key|auth)[a-z0-9_.-]*=)[^&\s'"#]+/gi;
 const TOKEN_PATTERNS: RegExp[] = [
     /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
     /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
@@ -291,11 +314,31 @@ const TOKEN_PATTERNS: RegExp[] = [
     /\b(AKIA[0-9A-Z]{16})\b/g,
     /\bBearer\s+[A-Za-z0-9._-]{16,}/gi,
 ];
-const SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|authorization|auth)\b(\s*[:=]\s*)([^\s'"]+)/gi;
+// `Authorization: Basic <value>` puts the credential after a scheme, and a
+// wrapped header puts it on the following line: both are consumed.
+const AUTH_HEADER = /\b((?:proxy-)?authorization)\b(\s*[:=]\s*)([a-z][a-z0-9._-]*\s+)?(\r?\n\s*)?([^\s'"]+)/gi;
+const SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|auth)\b(\s*[:=]\s*)(\r?\n\s*)?([^\s'"]+)/gi;
+
+function scrub(text: string): string {
+    let out = text
+        .replace(CREDENTIAL_IN_URL_WITH_COLON, '$1')
+        .replace(CREDENTIAL_IN_URL, '$1')
+        .replace(QUERY_SECRET, '$1[redacted]');
+    for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, '[redacted]');
+    out = out.replace(
+        AUTH_HEADER,
+        (_match, key: string, separator: string, scheme: string | undefined, newline: string | undefined) =>
+            `${key}${separator}${scheme ?? ''}${newline ?? ''}[redacted]`,
+    );
+    return out.replace(
+        SECRET_ASSIGNMENT,
+        (_match, key: string, separator: string, newline: string | undefined) => `${key}${separator}${newline ?? ''}[redacted]`,
+    );
+}
 
 /** Strips userinfo from a URL, keeping scheme, host and path. */
 export function redactRemote(remote: string): string {
-    return remote.replace(CREDENTIAL_IN_URL, '$1');
+    return scrub(remote);
 }
 
 /**
@@ -306,9 +349,7 @@ export function redactRemote(remote: string): string {
  */
 export function redactText(text: string, options: { maxLines?: number; maxChars?: number } = {}): string {
     if (!text) return '';
-    let out = text.replace(CREDENTIAL_IN_URL, '$1');
-    for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, '[redacted]');
-    out = out.replace(SECRET_ASSIGNMENT, (_match, key: string, separator: string) => `${key}${separator}[redacted]`);
+    let out = scrub(text);
     const maxLines = options.maxLines ?? 6;
     const lines = out.split('\n');
     if (lines.length > maxLines) {
@@ -349,7 +390,7 @@ interface Context {
 function git(cwd: string, args: string[], ctx: Context): CommandResult {
     // Git reads machine identity and global config from the real HOME even when
     // the install itself is rehearsed against another home.
-    return runCommand('git', args, { cwd, env: { ...ctx.env, HOME: os.homedir() } });
+    return runCommand('git', args, { cwd, env: { ...ctx.env, HOME: os.homedir() }, timeoutMs: GIT_TIMEOUT_MS });
 }
 
 function resolveNpm(ctx: Context): string {
@@ -389,15 +430,38 @@ function stateHome(ctx: Context): string {
     return ctx.env.XDG_STATE_HOME || path.join(ctx.home, '.local', 'state');
 }
 
+/** The local remote-tracking prefix, from `remote.origin.fetch` when it exists. */
+function originTrackingPrefix(dir: string, ctx: Context): string {
+    const refspec = git(dir, ['config', '--get-all', 'remote.origin.fetch'], ctx);
+    for (const line of refspec.status === 0 ? refspec.stdout.split('\n') : []) {
+        const destination = line.split(':')[1];
+        const star = destination ? destination.indexOf('*') : -1;
+        if (star > 0) return destination.slice(0, star);
+    }
+    return 'refs/remotes/origin/';
+}
+
+/**
+ * Detects the default branch from local refs only. `git remote show origin`
+ * looked like a harmless fallback but contacts the network, and an unreachable
+ * or 404 origin hung a read-only report for minutes. A report must never fetch,
+ * so this reads `origin/HEAD`, the configured refspec and the tracking branches
+ * that already exist.
+ */
 function detectDefaultBranch(dir: string, ctx: Context): string | null {
     const symbolic = git(dir, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], ctx);
     if (symbolic.status === 0 && symbolic.stdout) return symbolic.stdout.replace(/^origin\//, '');
-    const remote = git(dir, ['remote', 'show', 'origin'], ctx);
-    if (remote.status === 0) {
-        const match = /HEAD branch:\s*(\S+)/.exec(remote.stdout);
-        if (match) return match[1];
+    const prefix = originTrackingPrefix(dir, ctx);
+    const listing = git(dir, ['for-each-ref', '--format=%(refname)', prefix], ctx);
+    if (listing.status !== 0 || !listing.stdout) return null;
+    const names = listing.stdout
+        .split('\n')
+        .map((ref) => ref.slice(prefix.length))
+        .filter((name) => name.length > 0);
+    for (const candidate of ['main', 'master']) {
+        if (names.includes(candidate)) return candidate;
     }
-    return null;
+    return names.length === 1 ? names[0] : null;
 }
 
 export function inspectCheckoutRepo(
@@ -728,7 +792,10 @@ export function runCheckoutPhase(options: CheckoutPhaseOptions = {}): CheckoutRe
 
     const repos = resolveCheckoutRepos(config, home, options.cwd);
     const npm = resolveNpm(ctx);
-    const log = options.log;
+    // Progress lines carry subprocess output as well, so they are scrubbed by
+    // the same rules as the report: a token in a trace must not reach a tty.
+    const rawLog = options.log;
+    const log = rawLog ? (line: string) => rawLog(redactText(line, { maxLines: 8, maxChars: 800 })) : undefined;
     const check = options.check === true;
     // Applying must see origin; a report only touches the network on request.
     const fetch = !check || options.fetch === true;
