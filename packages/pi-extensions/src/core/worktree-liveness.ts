@@ -106,6 +106,14 @@ export function readProcessCwds(procRoot = '/proc'): Map<string, number[]> {
 }
 
 /** Read a process command line for a holder message. Best effort and bounded. */
+export function isDirectory(path: string): boolean {
+    try {
+        return statSync(path).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
 export function readProcessCommand(pid: number, procRoot = '/proc'): string {
     try {
         const raw = readFileSync(join(procRoot, String(pid), 'cmdline'), 'utf8');
@@ -122,9 +130,9 @@ export function readProcessCommand(pid: number, procRoot = '/proc'): string {
 }
 
 /** Total time a hook may spend asking tmux. Three hung sockets stay bounded. */
-export const TMUX_QUERY_BUDGET_MS = 55;
+export const TMUX_QUERY_BUDGET_MS = 40;
 /** Slice per socket, so several sockets still get an answer inside the budget. */
-const TMUX_SOCKET_SLICE_MS = 20;
+const TMUX_SOCKET_SLICE_MS = 15;
 
 /** A socket this process may trust: it is a socket, this uid owns it, and its
  * directory is owner-only. A world-writable directory can point a guard at a
@@ -493,8 +501,10 @@ interface ParseContext {
 interface ParseState {
     cwd: string | null;
     ctx: ParseContext;
-    /** The environment the shell runs with: `HOME=` changes what `~` means (R7). */
+    /** Expands `~` for the command being parsed: `export HOME=` changes it. */
     env: NodeJS.ProcessEnv;
+    /** What a nested program (shell, script, find -exec) sees. */
+    childEnv: NodeJS.ProcessEnv;
 }
 
 type RecordOperation = (
@@ -741,6 +751,20 @@ export function targetIsUnresolved(target: string | undefined): boolean {
  * `out/x$Y` to `out`, `.xtrm/worktrees/*` to `.xtrm/worktrees`. Null means
  * unbounded: a bare `$X`, `~` or a path with no known cwd could be anything.
  * A partial last component is dropped, never used as the bound (N5). */
+/**
+ * The directory a final-component glob searches: `*` and `./*` bound to the
+ * working directory, so `rm -rf *` has a bound even though it starts unresolved
+ * (F-1). null when the directory part is itself unresolved.
+ */
+export function globBoundDir(target: string, cwd: string | null): string | null {
+  const cleaned = target.replace(/\/+$/, '') || '/';
+  const slash = cleaned.lastIndexOf('/');
+  const dirPart = slash < 0 ? '.' : cleaned.slice(0, slash) || '/';
+  if (targetIsUnresolved(dirPart)) return null;
+  if (isAbsolute(dirPart)) return canonicalPath(dirPart);
+  return cwd ? canonicalPath(resolve(cwd, dirPart)) : null;
+}
+
 export function targetBound(target: string | undefined, cwd: string | null): string | null {
   if (!target) return cwd ?? null;
   const unresolvedAt = target.search(/[$`*?[\]{}~]/);
@@ -1040,21 +1064,23 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
       const template = command.join(' ');
       if (args.length > 0 && template.includes('{}')) {
         for (const arg of args) {
-          operations.push(...removalOperations(template.split('{}').join(arg), depth + 1, state.cwd, state.ctx));
+          operations.push(...removalOperations(template.split('{}').join(arg), depth + 1, state.cwd, state.ctx, state.childEnv));
         }
       } else {
-        operations.push(...removalOperations(template, depth + 1, state.cwd, state.ctx));
+        operations.push(...removalOperations(template, depth + 1, state.cwd, state.ctx, state.childEnv));
       }
     }
     return operations;
   }
 
-  // `HOME=/x rm -rf ~` changes what `~` means for this command (R7).
-  for (const token of unfiltered) {
-    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(token);
-    if (!assignment) break;
-    if (assignment[1] === 'HOME') state.env = { ...state.env, HOME: assignment[2] };
-  }
+  // `HOME=/x rm -rf ~` sets the environment of the child only: `~` in this
+// command still expands with the shell's own HOME, while a nested
+// `bash -c 'rm -rf ~'` inherits the new one (F-3).
+    for (const token of unfiltered) {
+        const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(token);
+        if (!assignment) break;
+        if (assignment[1] === 'HOME') state.childEnv = { ...state.childEnv, HOME: assignment[2] };
+    }
 
   // `env -S "<command>"` runs the string as a command, so the string is the
   // command word and the flags before it are env's own (R5).
@@ -1065,7 +1091,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
         ? unfiltered[i + 1]
         : (token.startsWith('-S') && token.length > 2 ? token.slice(2) : null);
       if (program) {
-        operations.push(...removalOperations(program, depth + 1, state.cwd, state.ctx));
+        operations.push(...removalOperations(program, depth + 1, state.cwd, state.ctx, state.childEnv));
         return operations;
       }
       if (!token.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) break;
@@ -1110,7 +1136,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
     // `env -S "<command>"` runs the string as a command (R5).
     if (wrapperName === 'env' && (token === '-S' || token === '--split-string' || token.startsWith('-S'))) {
       const program = token === '-S' || token === '--split-string' ? unfiltered[i + 1] : token.slice(2);
-      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx, state.childEnv));
     }
   }
   const record: RecordOperation = (kind, targets, extra = {}, at = opCwd) => {
@@ -1126,7 +1152,10 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
   if (name === 'export') {
     for (const token of rest) {
       const assignment = /^HOME=(.*)$/.exec(token);
-      if (assignment) state.env = { ...state.env, HOME: assignment[1] };
+            if (assignment) {
+                state.env = { ...state.env, HOME: assignment[1] };
+                state.childEnv = { ...state.childEnv, HOME: assignment[1] };
+            }
     }
     return operations;
   }
@@ -1142,7 +1171,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
   // A command word that is more than one word is a command string, not a
   // program path (`env -S "<command>"` leaves it as the command word) (R5).
   if (/\s/.test(commandName)) {
-    operations.push(...removalOperations(commandName, depth + 1, opCwd, state.ctx));
+    operations.push(...removalOperations(commandName, depth + 1, opCwd, state.ctx, state.childEnv));
     return operations;
   }
 
@@ -1150,19 +1179,19 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
     const cIndex = name === 'eval' ? -1 : rest.findIndex(token => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
     if (name === 'eval' || cIndex >= 0) {
       const program = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
-      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx, state.childEnv));
       return operations;
     }
     // `bash < script`, `bash script`: the program text comes from a file.
     const scriptToken = rest.find(token => !token.startsWith('-') && !token.startsWith('<'));
     const program = readScriptProgram(inputRedirect(raw) ?? scriptToken, state.cwd, state, operations);
-    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx, state.childEnv));
     return operations;
   }
 
   if (name === 'source' || name === '.') {
     const program = readScriptProgram(rest.find(token => !token.startsWith('-')), state.cwd, state, operations);
-    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx, state.childEnv));
     return operations;
   }
 
@@ -1174,7 +1203,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
       else groups[groups.length - 1].push(token);
     }
     for (const group of groups) {
-      if (group.length > 0) operations.push(...removalOperations(group.join(' '), depth + 1, opCwd, state.ctx));
+      if (group.length > 0) operations.push(...removalOperations(group.join(' '), depth + 1, opCwd, state.ctx, state.childEnv));
     }
     return operations;
   }
@@ -1204,7 +1233,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
         payload.push(token.split('{}').join(root));
       }
       if (payload.length === 0) continue;
-      const nested = operationsFromSegment(payload, depth, { cwd: opCwd, ctx: state.ctx, env: state.env });
+      const nested = operationsFromSegment(payload, depth, { cwd: opCwd, ctx: state.ctx, env: state.childEnv, childEnv: state.childEnv });
       if (nested.some(op => op.kind !== 'warning') || payload.some(isDeleteWord)) record('find-delete', [root]);
     }
   }
@@ -1215,7 +1244,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
   // One it cannot read is allowed: an unknown executable is not a removal (N4).
   if (commandName.includes('/')) {
     const program = readScriptProgram(commandName, state.cwd, state, operations);
-    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
+    if (program !== null) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx, state.childEnv));
   }
   return operations;
 }
@@ -1230,6 +1259,7 @@ export function removalOperations(
     depth = 0,
     cwd: string | null = null,
     ctx: ParseContext | null = null,
+    env: NodeJS.ProcessEnv | null = null,
 ): RemovalOperation[] {
   const context: ParseContext = ctx ?? { visited: new Set<string>(), deadline: Date.now() + PARSE_BUDGET_MS, expired: false };
   const operations: RemovalOperation[] = [];
@@ -1242,10 +1272,12 @@ export function removalOperations(
     }
     return operations;
   }
-  const state: ParseState = { cwd, ctx: context, env: { ...process.env } };
+  const inherited = env ?? { ...process.env };
+    // `env` expands `~` for this shell; `childEnv` is what a nested program sees.
+    const state: ParseState = { cwd, ctx: context, env: inherited, childEnv: inherited };
   for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth, state));
   for (const program of substitutionPrograms(command)) {
-    operations.push(...removalOperations(program, depth + 1, cwd, context));
+    operations.push(...removalOperations(program, depth + 1, cwd, context, state.childEnv));
   }
   return operations;
 }
@@ -1332,10 +1364,13 @@ function globMatch(pattern: string, name: string): boolean {
  * it is not that shape and the bound rule applies.
  */
 export function expandTrailingGlob(target: string, cwd: string | null): string[] | null {
-  if (!/[*?]/.test(target)) return null;
-  const slash = target.lastIndexOf('/');
-  const dirPart = slash < 0 ? '.' : (target.slice(0, slash) || '/');
-  const pattern = target.slice(slash + 1);
+    // `<d>/out/*/` names directories: expanding the cleaned target and resolving
+    // each match through realpath follows any symlinked match (F-4).
+    const cleaned = target.replace(/\/+$/, '') || '/';
+    if (!/[*?]/.test(cleaned)) return null;
+    const slash = cleaned.lastIndexOf('/');
+    const dirPart = slash < 0 ? '.' : (cleaned.slice(0, slash) || '/');
+    const pattern = cleaned.slice(slash + 1);
   if (!pattern || targetIsUnresolved(dirPart) || /[$`[\]{}]/.test(pattern)) return null;
   const dir = isAbsolute(dirPart) ? canonicalPath(dirPart) : (cwd ? canonicalPath(resolve(cwd, dirPart)) : null);
   if (!dir) return null;

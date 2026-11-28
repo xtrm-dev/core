@@ -105,6 +105,25 @@ function corpusFixture(): CorpusFixture {
 	const selfScript = join(root, 'self.sh');
 	writeFileSync(selfScript, `source ${selfScript}\n`);
 	writeFileSync(join(repo, 'a.log'), 'log\n');
+	// F-1 needs a directory inside the live tree for a trailing-slash glob, and
+	// F-2 needs a second repository whose own worktree is live.
+	mkdirSync(join(live, 'sub', 'inner'), { recursive: true });
+	const otherRepo = join(root, 'other');
+	spawnSync('git', ['init', '-q', '-b', 'main', otherRepo], { encoding: 'utf8' });
+	git(otherRepo, ['config', 'user.email', 'corpus@example.invalid']);
+	git(otherRepo, ['config', 'user.name', 'corpus test']);
+	spawnSync('git', ['-C', otherRepo, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+	const otherLive = join(otherRepo, '.xtrm', 'worktrees', 'live');
+	git(otherRepo, ['worktree', 'add', '-q', '-b', 'other-live', otherLive]);
+	// A repository root with no worktree of its own: a holder there must still make
+	// a directory match at its root risky (F-1), and it is the idle caller repo (F-2).
+	const plainRepo = join(root, 'plain');
+	spawnSync('git', ['init', '-q', '-b', 'main', plainRepo], { encoding: 'utf8' });
+	git(plainRepo, ['config', 'user.email', 'corpus@example.invalid']);
+	git(plainRepo, ['config', 'user.name', 'corpus test']);
+	spawnSync('git', ['-C', plainRepo, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+	writeFileSync(join(plainRepo, 'a.log'), 'log\n');
+	mkdirSync(join(plainRepo, 'sub'));
 	git(repo, ['config', 'alias.rmlive', 'worktree remove --force']);
 const outside = join(root, 'outside');
 	mkdirSync(outside);
@@ -115,8 +134,11 @@ const outside = join(root, 'outside');
 		idle: realpathSync(idle),
 		script: realpathSync(script),
 		selfScript: realpathSync(selfScript),
-	missing: join(root, 'missing.sh'),
+		missing: join(root, 'missing.sh'),
 		outside: realpathSync(outside),
+		otherRepo: realpathSync(otherRepo),
+		otherLive: realpathSync(otherLive),
+		plainRepo: realpathSync(plainRepo),
 	};
 }
 
@@ -128,7 +150,12 @@ describe('Pi worktree guard', () => {
 	test(`answers the ${CORPUS.length}-case review corpus`, async () => {
 		const paths = corpusFixture();
 		const child = spawnSleeping(paths.live);
-		await waitFor(() => readCwd(child.pid as number) === paths.live);
+		// A holder at the main-checkout root (F-1) and one in the other repo (F-2).
+		const rootChild = spawnSleeping(paths.plainRepo);
+		const otherChild = spawnSleeping(paths.otherLive);
+		await waitFor(() => readCwd(child.pid as number) === paths.live
+			&& readCwd(rootChild.pid as number) === paths.plainRepo
+			&& readCwd(otherChild.pid as number) === paths.otherLive);
 		const mismatches: string[] = [];
 		for (const testCase of buildCorpus(paths)) {
 			const reason = worktreeGuardReason(testCase.command, testCase.cwd ?? paths.repo, { tmuxSockets: [] });
@@ -138,6 +165,8 @@ describe('Pi worktree guard', () => {
 			}
 		}
 		await stop(child);
+		await stop(rootChild);
+		await stop(otherChild);
 		expect(mismatches.join('\n')).toBe('');
 	}, 60000);
 
@@ -146,14 +175,21 @@ describe('Pi worktree guard', () => {
 		const child = spawnSleeping(worktree);
 		await waitFor(() => readCwd(child.pid as number) === worktree);
 
-		const reason = worktreeGuardReason(INCIDENT_LOOP, repo, { tmuxSockets: [] });
+		const reason = worktreeGuardReason(INCIDENT_LOOP, repo, {
+			tmuxSockets: [],
+			cwds: new Map([[worktree, [child.pid as number]]]),
+			panes: [],
+		});
 		expect(reason).toBeTruthy();
 		expect(reason).toContain('CORE-2814');
 		expect(reason).toContain(`pid ${child.pid}`);
 		expect(reason).toContain(worktree);
 
 		await stop(child);
-		await waitFor(() => worktreeGuardReason(INCIDENT_LOOP, repo, { tmuxSockets: [] }) === null);
+		// An unbounded target is judged against every live tree (F-2), so the view is
+		// injected: this host runs other sessions' worktrees.
+		const empty = { tmuxSockets: [], cwds: new Map<string, number[]>(), panes: [] };
+		await waitFor(() => worktreeGuardReason(INCIDENT_LOOP, repo, empty) === null);
 	}, 20000);
 
 	test('blocks git worktree remove with and without --force', async () => {

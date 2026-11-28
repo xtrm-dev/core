@@ -9,14 +9,18 @@
 //
 // Usage (see cli/test/hooks/worktree-guard.test.ts and
 // packages/pi-extensions/tests/worktree-guard.test.ts):
-//   buildCorpus({ repo, live, idle, script, missing, outside, selfScript })
+//   buildCorpus({ repo, live, idle, script, missing, outside, selfScript,
+//                 otherRepo, otherLive, plainRepo })
+// The fixture also holds a child process at `plainRepo` (a repository root with
+// no worktree of its own) and one at `otherLive` inside a second repository
+// `otherRepo` (F-1, F-2).
 
 /**
- * @param {{ repo: string, live: string, idle: string, script: string, missing: string, outside: string, selfScript: string }} paths
+ * @param {{ repo: string, live: string, idle: string, script: string, missing: string, outside: string, selfScript: string, otherRepo: string, otherLive: string, plainRepo: string }} paths
  * @returns {{ id: string, command: string, expect: 'ALLOW' | 'BLOCK', why: string, cwd?: string }[]}
  */
 export function buildCorpus(paths) {
-  const { repo, live, idle, script, missing, outside, selfScript } = paths;
+  const { repo, live, idle, script, missing, outside, selfScript, otherRepo, otherLive, plainRepo } = paths;
   const name = live.slice(live.lastIndexOf('/') + 1);
   const relative = live.slice(repo.length + 1);
   /** `bash -c "<program>"` repeated `levels` times, quoted so each level decodes
@@ -200,12 +204,29 @@ export function buildCorpus(paths) {
   add('env-split-string', `env -S "git worktree remove --force ${live}"`, 'BLOCK', 'env -S runs a command (R5)');
   add('env-chdir-joined', `env -C${repo} rm -rf .xtrm/worktrees/${name}`, 'BLOCK', 'the joined -C<dir> form (R6)');
   add('sudo-chdir-joined', `sudo -D${repo} rm -rf .xtrm/worktrees/${name}`, 'BLOCK', 'the joined sudo -D<dir> form (R6)');
-  add('home-assignment', `HOME=${repo} rm -rf ~/.xtrm/worktrees/${name}`, 'BLOCK', 'HOME= before the command expands ~ (R7)');
+  add('home-assignment', `HOME=${repo} rm -rf ~/.xtrm/worktrees/${name}`, 'ALLOW', 'HOME= applies to the child only: ~ here is the real home (F-3)');
+  add('home-assignment-child', `HOME=${repo} bash -c 'rm -rf ~/.xtrm/worktrees/${name}'`, 'BLOCK', 'the child shell inherits the assigned HOME (F-3)');
   add('home-export', `export HOME=${repo}; rm -rf ~/.xtrm/worktrees/${name}`, 'BLOCK', 'export HOME changes the following command (R7)');
-  add('home-assignment-scratch', `HOME=/tmp/xtrm-corpus-home rm -rf ~/nothing-here`, 'ALLOW', 'the assignment bounds ~ outside every worktree (R7)');
+  add('home-assignment-scratch', `HOME=/tmp/xtrm-corpus-home rm -rf ~/nothing-here`, 'ALLOW', 'the assignment bounds the child, not this command (F-3)');
+
+  // --- final round F-1: a target under the live holder's own directory ------
+  add('f1-star-at-live-root', 'rm -rf ./*', 'BLOCK', 'a holder works in this directory and a match is a directory (F-1)', plainRepo);
+  add('f1-cd-star-at-live-root', `cd ${plainRepo} && rm -rf *`, 'BLOCK', 'the same through cd (F-1)', plainRepo);
+  add('f1-file-glob-at-live-root', 'rm -rf ./*.log', 'ALLOW', 'every match is a plain file (F-1)', plainRepo);
+  add('f1-literal-file-at-live-root', 'rm -rf ./a.log', 'ALLOW', 'a file, not a worktree (F-1)', plainRepo);
+  add('f1-file-glob-near-nested-tree', 'rm -rf ./*.log', 'ALLOW', 'a nested live tree does not make its parent live (deepseek MED)', repo);
+  add('f1-trailing-slash-glob', `rm -rf ${live}/sub/*/`, 'BLOCK', 'directories matched by a glob with a trailing slash (F-4)');
+
+  // --- final round F-2: the operation runs in another repository ------------
+  add('f2-loop-from-other-repo',
+    `git -C ${repo} worktree list | while read w; do git -C ${repo} worktree remove --force "$w"; done`,
+    'BLOCK',
+    'the repo the operation runs in decides what is reachable (F-2)',
+    plainRepo);
+  add('f2-unbounded-rm-from-other-repo', `rm -rf "$X"`, 'BLOCK', 'an unbounded target reaches the other repo\'s live trees (F-2)', plainRepo);
 
   return cases;
 }
 
 /** The number the report quotes: every case runs against all three copies. */
-export const CORPUS_CASE_COUNT = 146;
+export const CORPUS_CASE_COUNT = 155;

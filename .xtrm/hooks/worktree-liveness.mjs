@@ -77,9 +77,9 @@ export function readProcessCommand(pid, procRoot = '/proc') {
 }
 
 /** Total time a hook may spend asking tmux. Three hung sockets stay bounded. */
-export const TMUX_QUERY_BUDGET_MS = 55;
+export const TMUX_QUERY_BUDGET_MS = 40;
 /** Slice per socket, so several sockets still get an answer inside the budget. */
-const TMUX_SOCKET_SLICE_MS = 20;
+const TMUX_SOCKET_SLICE_MS = 15;
 
 /** A socket this process may trust: it is a socket, this uid owns it, and its
  * directory is owner-only. A world-writable directory can point a guard at a

@@ -79179,8 +79179,8 @@ function readProcessCommand(pid, procRoot = "/proc") {
     return "(unknown)";
   }
 }
-var TMUX_QUERY_BUDGET_MS = 55;
-var TMUX_SOCKET_SLICE_MS = 20;
+var TMUX_QUERY_BUDGET_MS = 40;
+var TMUX_SOCKET_SLICE_MS = 15;
 var TMUX_QUERY_BUDGET_CLI_MS = 2e3;
 function trustedSocket(socket, uid) {
   try {

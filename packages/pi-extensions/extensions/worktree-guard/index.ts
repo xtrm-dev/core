@@ -52,11 +52,13 @@ import {
 	expandHome,
 	expandTrailingGlob,
 	formatWorktreeHolders,
+	globBoundDir,
 	readProcessCommand,
 	readProcessCwds,
 	readTmuxPanes,
 	removalOperations,
 	targetBound,
+	isDirectory,
 	targetIsUnresolved,
 	type WorktreeHolder,
 } from "../../src/core/worktree-liveness.ts";
@@ -102,6 +104,9 @@ function blockReason(holderLines: readonly string[], detail: string | null, warn
 export interface WorktreeGuardOptions {
 	/** tmux sockets to read; tests pass `[]` so ambient servers cannot decide the answer. */
 	tmuxSockets?: string[];
+	/** Tests inject a private process view; production reads /proc. */
+	cwds?: Map<string, number[]>;
+	panes?: Array<{ paneId?: string; panePid?: number; paneCommand?: string; panePath?: string; agentWorktree?: string; socket?: string }>;
 }
 
 interface EvaluationContext {
@@ -111,7 +116,9 @@ interface EvaluationContext {
 	describe: (holders: readonly WorktreeHolder[]) => string[];
 	holdersInside: (path: string) => WorktreeHolder[];
 	atRisk: (bound: string) => WorktreeHolder[];
-	liveTreeHolders: WorktreeHolder[];
+	livePaths: string[];
+	globalLiveHolders: WorktreeHolder[];
+	liveTreeHolders: (dir: string | null) => WorktreeHolder[];
 	warnings: string[];
 }
 
@@ -127,18 +134,35 @@ function evaluateCommand(command: string, ctx: EvaluationContext): string | null
 		if (targetIsUnresolved(target)) {
 			// A glob in the final component names real files: each match is a literal.
 			const matches = expandTrailingGlob(target ?? "", opCwd);
-			if (matches !== null) {
+			const bound = matches !== null ? globBoundDir(target ?? "", opCwd) : targetBound(target, opCwd);
+			if (matches !== null && matches.length > 0) {
+				// A holder whose cwd IS the glob's bound directory loses whatever the
+				// glob matches there: removing a directory takes that session's work
+				// with it, while plain files are only files (F-1). This separates
+				// `rm -rf ./*` (blocks) from `rm -rf ./*.log` (allows) at a live root.
+				const atBound = bound === null ? [] : ctx.holders.filter((holder) => holder.path === bound);
+				if (atBound.length > 0) {
+					const directories = matches.filter(isDirectory);
+					if (directories.length > 0) {
+						return blockReason(
+							ctx.describe(atBound),
+							`${kind} would remove ${directories.length} director${directories.length === 1 ? "y" : "ies"} inside ${bound}, where a live process is working.`,
+							ctx.warnings,
+						);
+					}
+					return null;
+				}
 				for (const match of matches) {
-					const found = ctx.holdersInside(match);
-					if (found.length > 0) return blockReason(ctx.describe(found), `${kind} would remove ${match}.`, ctx.warnings);
+					const reason = check(match, opCwd, kind);
+					if (reason !== null) return reason;
 				}
 				return null;
 			}
-			const bound = targetBound(target, opCwd);
 			if (bound === null) {
-				if (ctx.liveTreeHolders.length === 0) return null;
+				// A target with no bound can reach any tree (F-2).
+				if (ctx.globalLiveHolders.length === 0) return null;
 				return blockReason(
-					ctx.describe(ctx.liveTreeHolders),
+					ctx.describe(ctx.globalLiveHolders),
 					`The target ${JSON.stringify(target)} cannot be bounded statically: use a literal path, or stop the live holder first.`,
 					ctx.warnings,
 				);
@@ -151,7 +175,8 @@ function evaluateCommand(command: string, ctx: EvaluationContext): string | null
 		}
 		const resolved = isAbsolute(target ?? "") ? canonicalPath(target ?? "") : opCwd ? canonicalPath(resolve(opCwd, target ?? "")) : null;
 		if (!resolved) {
-			if (ctx.liveTreeHolders.length === 0) return null;
+			const liveTreeHolders = ctx.liveTreeHolders(opCwd);
+			if (liveTreeHolders.length === 0) return null;
 			return blockReason(
 				[],
 				`The target ${JSON.stringify(target)} is relative to a directory the guard could not resolve: use a literal path.`,
@@ -162,15 +187,21 @@ function evaluateCommand(command: string, ctx: EvaluationContext): string | null
 		// caller's own worktree: only an empty own worktree may be removed.
 		const found = ctx.holdersInside(resolved);
 		if (found.length > 0) return blockReason(ctx.describe(found), `${kind} would remove ${resolved}.`, ctx.warnings);
+		// A path inside a live worktree is that session's working tree too.
+		const insideLive = ctx.livePaths.filter((path) => isInside(resolved, path));
+		const nested = insideLive.flatMap((path) => ctx.holdersInside(path));
+		if (nested.length > 0) {
+			return blockReason(ctx.describe(nested), `${kind} would remove ${resolved}, inside the live worktree ${insideLive.join(", ")}.`, ctx.warnings);
+		}
 		return null;
 	};
 
 	for (const operation of operations) {
 		const opCwd = operation.cwd === undefined ? ctx.cwd : operation.cwd;
 		if (operation.targets.length === 0) {
-			if (ctx.liveTreeHolders.length === 0) continue;
+			if (ctx.globalLiveHolders.length === 0) continue;
 			return blockReason(
-				ctx.describe(ctx.liveTreeHolders),
+				ctx.describe(ctx.globalLiveHolders),
 				`${operation.kind} has no statically known target: use a literal path.`,
 				ctx.warnings,
 			);
@@ -199,8 +230,10 @@ export function worktreeGuardReason(
 
 	const ownPids = callerProcessIds();
 	const ownRoot = worktreeRoot(cwd);
-	const cwds = readProcessCwds("/proc");
-	const { panes, warnings } = readTmuxPanes({ procRoot: "/proc", tmuxSockets: options.tmuxSockets });
+	const cwds = options.cwds ?? readProcessCwds("/proc");
+	const { panes, warnings } = options.panes
+		? { panes: options.panes, warnings: [] as string[] }
+		: readTmuxPanes({ procRoot: "/proc", tmuxSockets: options.tmuxSockets });
 	// Every holder, whatever repository it works in: a target is judged against the
 	// holders themselves, never against a list from the caller's repo, so a
 	// removal aimed at another repo's worktrees is judged the same (R1).
@@ -258,16 +291,36 @@ export function worktreeGuardReason(
 		}
 	};
 	const managed = (path: string) => isLinked(path) || derived.some((worktree) => canonicalPath(worktree) === path);
-	const candidates = [...new Set([...registeredWorktrees(cwd), ...[...worktreePaths], ...derived])].map((path) => canonicalPath(path));
-	const livePaths = candidates.filter((path) => managed(path) && holders.some((holder) => isInside(holder.path, path)));
+	const registeredCache = new Map<string, string[]>();
+	const ownRootCache = new Map<string, string | null>();
+	const registeredFor = (dir: string) => {
+		if (!registeredCache.has(dir)) registeredCache.set(dir, registeredWorktrees(dir).map((path) => canonicalPath(path)));
+		return registeredCache.get(dir) ?? [];
+	};
+	const ownRootFor = (dir: string) => {
+		if (!ownRootCache.has(dir)) ownRootCache.set(dir, worktreeRoot(dir));
+		return ownRootCache.get(dir) ?? null;
+	};
+	const candidates = [...new Set([...registeredFor(cwd), ...[...worktreePaths], ...derived])].map((path) => canonicalPath(path));
+	// The caller's own worktrees are never another session's work: a process there
+	// is the caller's own tooling. Only the roots themselves are excluded, never a
+	// different worktree nested inside the repository.
+	const selfRoots = [...new Set([ownRootFor(cwd), ownRootFor(process.cwd())].filter(Boolean))].map((root) => canonicalPath(root as string));
+	const livePaths = candidates.filter((path) => managed(path)
+		&& !selfRoots.includes(path)
+		&& holders.some((holder) => isInside(holder.path, path)));
+	const globalLiveHolders = [...new Set(livePaths.flatMap((path) => holdersInside(path)))];
 	// A target with no bound is checked against the worktrees the command itself
-	// reaches: this repo's list and the panes. Outside a repo there is no list, so
-	// any live managed worktree is reachable (R1).
-	const registered = registeredWorktrees(cwd).map((path) => canonicalPath(path));
-	const localLive = registered.length > 0 || ownRoot !== null
-		? livePaths.filter((path) => registered.includes(path) || worktreePaths.has(path))
-		: livePaths;
-	const liveTreeHolders = [...new Set(localLive.flatMap((path) => holdersInside(path)))];
+	// reaches: the list of the repo it runs in (`git -C other`, `env -C`) and the
+	// panes. Outside a repo there is no list, so any live managed worktree is
+	// reachable (R1, F-2).
+	const liveTreeHolders = (dir: string | null) => {
+		const registered = registeredFor(dir ?? cwd);
+		const localLive = registered.length > 0 || ownRootFor(dir ?? cwd) !== null
+			? livePaths.filter((path) => registered.includes(path) || worktreePaths.has(path))
+			: livePaths;
+		return [...new Set(localLive.flatMap((path) => holdersInside(path)))];
+	};
 	// A bound is at risk when a holder works under it, or when it is, contains, or
 	// is contained by a live worktree (R1). A tree that only contains a nested live
 	// worktree is not at risk: `rm -rf dist/*` is allowed anywhere.
@@ -276,7 +329,18 @@ export function worktreeGuardReason(
 			isInside(holder.path, bound)
 			|| livePaths.some((path) => (isInside(bound, path) || isInside(path, bound)) && isInside(holder.path, path)));
 
-	const ctx: EvaluationContext = { cwd, ownRoot, holders, describe, holdersInside, atRisk, liveTreeHolders, warnings };
+	const ctx: EvaluationContext = {
+		cwd,
+		ownRoot,
+		holders,
+		describe,
+		holdersInside,
+		atRisk,
+		livePaths,
+		globalLiveHolders,
+		liveTreeHolders,
+		warnings,
+	};
 	return evaluateCommand(command, ctx);
 }
 
