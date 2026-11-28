@@ -79179,8 +79179,8 @@ function readProcessCommand(pid, procRoot = "/proc") {
     return "(unknown)";
   }
 }
-var TMUX_QUERY_BUDGET_MS = 250;
-var TMUX_SOCKET_SLICE_MS = 60;
+var TMUX_QUERY_BUDGET_MS = 55;
+var TMUX_SOCKET_SLICE_MS = 20;
 function trustedSocket(socket, uid) {
   try {
     const stat3 = (0, import_node_fs22.lstatSync)(socket);
@@ -79239,17 +79239,23 @@ function readTmuxPanes(options = {}) {
   const panes = [];
   const warnings = [];
   const deadline = Date.now() + (options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS);
+  const readSocket = (socket, slice) => (0, import_node_child_process23.spawnSync)("tmux", ["-S", socket, "list-panes", "-a", "-F", PANE_FORMAT], {
+    encoding: "utf8",
+    timeout: slice,
+    env: { ...options.env ?? process.env, TMUX: "" }
+  });
   for (const socket of sockets) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       warnings.push(`tmux query budget of ${options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS} ms exhausted; ${socket} not queried`);
       continue;
     }
-    const result = (0, import_node_child_process23.spawnSync)("tmux", ["-S", socket, "list-panes", "-a", "-F", PANE_FORMAT], {
-      encoding: "utf8",
-      timeout: Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining),
-      env: { ...options.env ?? process.env, TMUX: "" }
-    });
+    const slice = Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining);
+    let result = readSocket(socket, slice);
+    if (result.error && result.error.code === "ETIMEDOUT" && slice >= TMUX_SOCKET_SLICE_MS) {
+      const again = deadline - Date.now();
+      if (again > 0) result = readSocket(socket, again);
+    }
     if (result.error || result.status !== 0) {
       const detail = result.error?.message ?? (result.stderr ?? "").trim() ?? `exit ${result.status ?? "unknown"}`;
       warnings.push(`tmux list-panes on ${socket} failed: ${sanitizeHolderText(detail.split("\n")[0])}`);

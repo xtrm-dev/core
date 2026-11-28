@@ -101,9 +101,9 @@ export function readProcessCommand(pid: number, procRoot = '/proc'): string {
 }
 
 /** Total time a hook may spend asking tmux. Three hung sockets stay bounded. */
-export const TMUX_QUERY_BUDGET_MS = 250;
+export const TMUX_QUERY_BUDGET_MS = 55;
 /** Slice per socket, so several sockets still get an answer inside the budget. */
-const TMUX_SOCKET_SLICE_MS = 60;
+const TMUX_SOCKET_SLICE_MS = 20;
 
 /** A socket this process may trust: it is a socket, this uid owns it, and its
  * directory is owner-only. A world-writable directory can point a guard at a
@@ -204,17 +204,27 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
     const warnings: string[] = [];
     const deadline = Date.now() + (options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS);
 
+    const readSocket = (socket: string, slice: number) => spawnSync('tmux', ['-S', socket, 'list-panes', '-a', '-F', PANE_FORMAT], {
+        encoding: 'utf8',
+        timeout: slice,
+        env: { ...(options.env ?? process.env), TMUX: '' },
+    });
+
     for (const socket of sockets) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) {
             warnings.push(`tmux query budget of ${options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS} ms exhausted; ${socket} not queried`);
             continue;
         }
-        const result = spawnSync('tmux', ['-S', socket, 'list-panes', '-a', '-F', PANE_FORMAT], {
-            encoding: 'utf8',
-            timeout: Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining),
-            env: { ...(options.env ?? process.env), TMUX: '' },
-        });
+        const slice = Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining);
+        let result = readSocket(socket, slice);
+        // A real server can miss a 20 ms slice on a loaded host, so one retry may use
+        // the rest of the budget: a cold server answers, a hung one is reported as a
+        // warning when the budget runs out. The deadline still caps the whole read.
+        if (result.error && (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' && slice >= TMUX_SOCKET_SLICE_MS) {
+            const again = deadline - Date.now();
+            if (again > 0) result = readSocket(socket, again);
+        }
         if (result.error || result.status !== 0) {
             const detail = result.error?.message
                 ?? (result.stderr ?? '').trim()
