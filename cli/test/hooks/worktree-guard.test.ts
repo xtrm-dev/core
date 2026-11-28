@@ -255,6 +255,11 @@ describe('the three liveness copies answer identically on one fixture', () => {
 
         expect(shape(hookLiveness.worktreeInUse(worktree, options))).toEqual(shape(worktreeInUse(worktree, options)));
         expect(shape(piWorktreeInUse(worktree, options))).toEqual(shape(worktreeInUse(worktree, options)));
+
+        // An exempt set is the release API: the three copies must drop the same holder.
+        const exempt = { ...options, exemptPids: new Set([child.pid as number]) };
+        expect(shape(hookLiveness.worktreeInUse(worktree, exempt))).toEqual({ live: false, holders: [] });
+        expect(shape(piWorktreeInUse(worktree, exempt))).toEqual({ live: false, holders: [] });
         await stop(child);
     });
 

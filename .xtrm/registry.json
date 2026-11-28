@@ -67,7 +67,7 @@
           "version": "0.15.3"
         },
         "worktree-liveness.mjs": {
-          "hash": "cae2fefcabde8b8122c751cc56a7de1d7a88b288f940d1bbdaccf6cd224a0c3d",
+          "hash": "94a0a96035cee1b66c340fdadda172fafb46a3839fbdcbae5239df8e01fad0ad",
           "version": "0.15.3"
         },
         "worktree-reap-sweep.mjs": {

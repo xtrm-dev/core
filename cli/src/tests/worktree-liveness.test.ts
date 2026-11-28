@@ -14,6 +14,7 @@ import {
     targetIsUnresolved,
     worktreeInUse,
 } from '../core/worktree-liveness.js';
+import { readProcessCwds } from '../core/worktree-reap.js';
 
 // CORE-2814: one liveness answer, three consumers (the CLI, the Claude
 // PreToolUse hook, the Pi extension). The three copies exist because none can
@@ -99,6 +100,27 @@ describe('worktreeInUse (cli/src/core/worktree-liveness.ts)', () => {
 
         await waitForExit(child);
         await waitFor(() => !worktreeInUse(worktree).live);
+    });
+
+    it('exempts the holders a caller names, and still reports the others', async () => {
+        const worktree = tempDir('xtrm-liveguard-wt-');
+        const first = spawnSleeping(worktree);
+        const second = spawnSleeping(worktree);
+        await waitFor(() => processCwd(first.pid as number) === worktree && processCwd(second.pid as number) === worktree);
+
+        const cwds = readProcessCwds();
+        const all = worktreeInUse(worktree, { cwds, skipTmux: true });
+        expect(all.holders.map(holder => holder.pid).sort()).toEqual([first.pid, second.pid].sort());
+
+        // A release names its own pane tree: those holders are legitimate, the rest block.
+        const own = worktreeInUse(worktree, { cwds, skipTmux: true, exemptPids: new Set([first.pid as number]) });
+        expect(own.live).toBe(true);
+        expect(own.holders.map(holder => holder.pid)).toEqual([second.pid]);
+
+        const none = worktreeInUse(worktree, { cwds, skipTmux: true, exemptPids: new Set([first.pid, second.pid] as number[]) });
+        expect(none).toMatchObject({ live: false, holders: [] });
+
+        await waitForExit(first, second);
     });
 
     it.skipIf(!hasTmux)('reports a tmux pane whose path is inside the worktree, and not-live after it is gone', async () => {

@@ -280,19 +280,24 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         return refuse(`cannot resolve the main checkout for ${pane.worktree}`, pane.worktree);
     }
 
-    const allowed = new Set<number>();
-    try {
-        const ppids = readPpidMap(opts.procRoot ?? '/proc');
-        addAllowed(pane.panePid, allowed, ppids);
-        for (const pid of selfAncestry(ppids)) allowed.add(pid);
-    } catch {
-        // checkRelease reports an unreadable table as a blocker; nothing to add here.
-    }
+    // A fresh exempt set per check: the pane's process tree and our own ancestry are
+    // legitimate holders of this tree, and nothing is cached between the calls.
+    const exemptPids = (): Set<number> => {
+        const pids = new Set<number>();
+        try {
+            const ppids = readPpidMap(opts.procRoot ?? '/proc');
+            addAllowed(pane.panePid, pids, ppids);
+            for (const pid of selfAncestry(ppids)) pids.add(pid);
+        } catch {
+            // checkRelease reports an unreadable table as a blocker; nothing to add here.
+        }
+        return pids;
+    };
 
     const check = checkRelease({
         worktree: pane.worktree,
         repoRoot,
-        allowedPids: allowed,
+        allowedPids: exemptPids(),
         procRoot: opts.procRoot,
     });
 
@@ -394,7 +399,7 @@ export async function releasePane(opts: ReleaseOptions): Promise<ReleaseOutcome>
         worktree: pane.worktree,
         repoRoot,
         expectHead: head,
-        allowedPids: allowed,
+        allowedPids: exemptPids(),
         procRoot: opts.procRoot,
     });
     if (!reconfirm.ok) {

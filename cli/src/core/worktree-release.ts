@@ -568,13 +568,13 @@ export function checkRelease(opts: ReleaseCheckOptions): ReleaseCheck {
     }
 
     if (cwds) {
-        // One predicate for "someone is inside this tree": process cwd (CORE-2814). Panes
-        // are not consulted here — a live pane's shell is itself a process with that cwd,
-        // and release must keep #995's contract, which allowed only the pressing pane.
-        const liveness = worktreeInUse(worktree, { procRoot: opts.procRoot, cwds, skipTmux: true });
-        facts.livePids = liveness.holders
-            .filter(holder => !allowed.has(holder.pid))
-            .map(holder => holder.pid);
+        // One predicate for "someone else is inside this tree" (CORE-2814). Panes are not
+        // consulted here — a live pane's shell is itself a process with that cwd, and
+        // release must keep #995's contract: only the pressing pane's tree is exempt.
+        const liveness = worktreeInUse(worktree, {
+            procRoot: opts.procRoot, cwds, skipTmux: true, exemptPids: allowed,
+        });
+        facts.livePids = [...new Set(liveness.holders.map(holder => holder.pid))];
         if (facts.livePids.length > 0) {
             blockers.push({
                 kind: 'held-by-process',

@@ -146,6 +146,15 @@ export function readTmuxPanes(options = {}) {
   return { panes, warnings };
 }
 
+/**
+ * Find the processes and panes that live inside `worktreePath`.
+ *
+ * It answers "does another process use this tree". It is not an identity authority:
+ * whether a pane owns a tree stays with `readAgentIdentity` in
+ * `worktree-release-pane.ts`. `exemptPids` names the holders whose presence is
+ * legitimate — `xt worktree release` runs while its pane's agent and its own ancestry
+ * sit inside — and only the remaining holders make the tree live.
+ */
 export function worktreeInUse(worktreePath, options = {}) {
   const path = resolve(worktreePath);
   const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? '/proc');
@@ -182,8 +191,10 @@ export function worktreeInUse(worktreePath, options = {}) {
     });
   }
 
-  holders.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
-  return { path, live: holders.length > 0, holders, warnings };
+  const exempt = options.exemptPids ? new Set(options.exemptPids) : null;
+  const blocking = exempt && exempt.size > 0 ? holders.filter((holder) => !exempt.has(holder.pid)) : holders;
+  blocking.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
+  return { path, live: blocking.length > 0, holders: blocking, warnings };
 }
 
 export function formatWorktreeHolders(holders) {

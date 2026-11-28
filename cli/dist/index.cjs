@@ -79271,8 +79271,10 @@ function worktreeInUse(worktreePath, options = {}) {
       socket: pane.socket
     });
   }
-  holders.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
-  return { path: path101, live: holders.length > 0, holders, warnings };
+  const exempt = options.exemptPids ? new Set(options.exemptPids) : null;
+  const blocking = exempt && exempt.size > 0 ? holders.filter((holder) => !exempt.has(holder.pid)) : holders;
+  blocking.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
+  return { path: path101, live: blocking.length > 0, holders: blocking, warnings };
 }
 function formatWorktreeHolders(holders) {
   return holders.map((holder) => {
@@ -80228,8 +80230,13 @@ function checkRelease(opts) {
     });
   }
   if (cwds) {
-    const liveness = worktreeInUse(worktree, { procRoot: opts.procRoot, cwds, skipTmux: true });
-    facts.livePids = liveness.holders.filter((holder) => !allowed.has(holder.pid)).map((holder) => holder.pid);
+    const liveness = worktreeInUse(worktree, {
+      procRoot: opts.procRoot,
+      cwds,
+      skipTmux: true,
+      exemptPids: allowed
+    });
+    facts.livePids = [...new Set(liveness.holders.map((holder) => holder.pid))];
     if (facts.livePids.length > 0) {
       blockers.push({
         kind: "held-by-process",
@@ -80461,17 +80468,20 @@ async function releasePane(opts) {
   if (!repoRoot) {
     return refuse(`cannot resolve the main checkout for ${pane.worktree}`, pane.worktree);
   }
-  const allowed = /* @__PURE__ */ new Set();
-  try {
-    const ppids = readPpidMap(opts.procRoot ?? "/proc");
-    addAllowed(pane.panePid, allowed, ppids);
-    for (const pid of selfAncestry(ppids)) allowed.add(pid);
-  } catch {
-  }
+  const exemptPids = () => {
+    const pids = /* @__PURE__ */ new Set();
+    try {
+      const ppids = readPpidMap(opts.procRoot ?? "/proc");
+      addAllowed(pane.panePid, pids, ppids);
+      for (const pid of selfAncestry(ppids)) pids.add(pid);
+    } catch {
+    }
+    return pids;
+  };
   const check2 = checkRelease({
     worktree: pane.worktree,
     repoRoot,
-    allowedPids: allowed,
+    allowedPids: exemptPids(),
     procRoot: opts.procRoot
   });
   const base = {
@@ -80585,7 +80595,7 @@ async function releasePane(opts) {
     worktree: pane.worktree,
     repoRoot,
     expectHead: head,
-    allowedPids: allowed,
+    allowedPids: exemptPids(),
     procRoot: opts.procRoot
   });
   if (!reconfirm.ok) {

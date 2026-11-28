@@ -68,6 +68,8 @@ export interface WorktreeInUseOptions {
     uid?: number;
     readCommand?: (pid: number) => string;
     commandTimeoutMs?: number;
+    /** Holders whose presence is legitimate (a release's own pane and ancestry). */
+    exemptPids?: Iterable<number>;
 }
 
 const PANE_FORMAT = ['#{pane_id}', '#{pane_pid}', '#{pane_current_command}', '#{pane_current_path}', '#{@agent_worktree}'].join('\t');
@@ -195,6 +197,12 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
 /**
  * Find the processes and panes that live inside `worktreePath`.
  *
+ * It answers "does another process use this tree". It is not an identity authority:
+ * whether a pane owns a tree stays with `readAgentIdentity` in
+ * `worktree-release-pane.ts`. `exemptPids` names the holders whose presence is
+ * legitimate — `xt worktree release` runs while its pane's agent and its own ancestry
+ * sit inside — and only the remaining holders make the tree live.
+ *
  * Passing `cwds` and `panes` makes the answer depend only on that evidence, which
  * is what tests use. A probe created once and reused for many paths is the cheap
  * shape for `clean` and `reap`; a removal re-reads right before it acts.
@@ -235,8 +243,10 @@ export function worktreeInUse(worktreePath: string, options: WorktreeInUseOption
         });
     }
 
-    holders.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
-    return { path, live: holders.length > 0, holders, warnings };
+    const exempt = options.exemptPids ? new Set(options.exemptPids) : null;
+    const blocking = exempt && exempt.size > 0 ? holders.filter(holder => !exempt.has(holder.pid)) : holders;
+    blocking.sort((a, b) => a.pid - b.pid || a.kind.localeCompare(b.kind));
+    return { path, live: blocking.length > 0, holders: blocking, warnings };
 }
 
 /** One human line per holder, for a refusal message that names who is there. */
