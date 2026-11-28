@@ -43,6 +43,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
+import { lstatSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 
 import {
@@ -237,15 +238,43 @@ export function worktreeGuardReason(
 	const describe = (list: readonly WorktreeHolder[]) =>
 		formatWorktreeHolders(list.map((holder) => (holder.command ? holder : { ...holder, command: readProcessCommand(holder.pid) })));
 	const holdersInside = (path: string) => holders.filter((holder) => isInside(holder.path, path));
-	// The trees an unknowable target can reach: the worktrees this repo registers
-	// and every pane's agent worktree. Outside a repo there is no list, so any
-	// managed worktree holder is reachable (R1).
+	// The worktrees that are live now: this repo's registered worktrees, every
+	// pane's agent worktree, and any worktree a holder's cwd names. A worktree is
+	// live when a holder works inside it, and a holder in a nested worktree does
+	// not make its parent live (N1).
 	const worktreePaths = new Set(panes.map((pane) => pane.agentWorktree).filter(Boolean));
-	const reachable = [...registeredWorktrees(cwd).map((path) => canonicalPath(path)), ...worktreePaths];
-	const liveTreeHolders = reachable.length > 0 || ownRoot !== null
-		? holders.filter((holder) => reachable.some((tree) => isInside(holder.path, tree)))
-		: holders.filter((holder) => holder.kind === "pane" || holder.path.includes("/.xtrm/worktrees/"));
-	const atRisk = (bound: string) => holders.filter((holder) => isInside(holder.path, bound) || isInside(bound, holder.path));
+	const derived: string[] = [];
+	for (const holder of holders) {
+		const match = holder.path.match(/^(.*\/\.xtrm\/worktrees\/[^/]+)(?:\/|$)/);
+		if (match) derived.push(match[1]);
+	}
+	// A linked worktree has a `.git` file; a main checkout has a `.git` directory
+	// and is never disposable, so it is not live for a bounded target (N1).
+	const isLinked = (path: string) => {
+		try {
+			return lstatSync(`${path}/.git`).isFile();
+		} catch {
+			return false;
+		}
+	};
+	const managed = (path: string) => isLinked(path) || derived.some((worktree) => canonicalPath(worktree) === path);
+	const candidates = [...new Set([...registeredWorktrees(cwd), ...[...worktreePaths], ...derived])].map((path) => canonicalPath(path));
+	const livePaths = candidates.filter((path) => managed(path) && holders.some((holder) => isInside(holder.path, path)));
+	// A target with no bound is checked against the worktrees the command itself
+	// reaches: this repo's list and the panes. Outside a repo there is no list, so
+	// any live managed worktree is reachable (R1).
+	const registered = registeredWorktrees(cwd).map((path) => canonicalPath(path));
+	const localLive = registered.length > 0 || ownRoot !== null
+		? livePaths.filter((path) => registered.includes(path) || worktreePaths.has(path))
+		: livePaths;
+	const liveTreeHolders = [...new Set(localLive.flatMap((path) => holdersInside(path)))];
+	// A bound is at risk when a holder works under it, or when it is, contains, or
+	// is contained by a live worktree (R1). A tree that only contains a nested live
+	// worktree is not at risk: `rm -rf dist/*` is allowed anywhere.
+	const atRisk = (bound: string) =>
+		holders.filter((holder) =>
+			isInside(holder.path, bound)
+			|| livePaths.some((path) => (isInside(bound, path) || isInside(path, bound)) && isInside(holder.path, path)));
 
 	const ctx: EvaluationContext = { cwd, ownRoot, holders, describe, holdersInside, atRisk, liveTreeHolders, warnings };
 	return evaluateCommand(command, ctx);

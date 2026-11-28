@@ -45,7 +45,7 @@
 // blocks on a failure to look.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -852,8 +852,10 @@ function expandTrailingGlob(target, cwd) {
   let entries;
   try {
     entries = readdirSync(dir);
-  } catch {
-    return null;
+  } catch (error) {
+    // A directory that does not exist has nothing to remove; any other failure is
+    // unknown, so the bound is used instead.
+    return error?.code === 'ENOENT' ? [] : null;
   }
   const source = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
   const matcher = new RegExp(`^${source}$`);
@@ -941,28 +943,58 @@ export function worktreeGuardDecision(input = {}, options = {}) {
     holder.command ? holder : { ...holder, command: readProcessCommand(holder.pid) }
   )));
   const holdersInside = path => holders.filter(holder => isInside(holder.path, path));
-  // A target the shell decides (`$w`, a bare `$X`) can reach any worktree, so it
-  // blocks while a holder sits in a managed worktree, whatever the repo (R1).
-  // A holder under an ordinary directory is not a worktree and does not count.
+  // The worktrees that are live now: this repo's registered worktrees, every
+  // pane's agent worktree, and any worktree a holder's cwd names. A worktree is
+  // live when a holder works inside it, and a holder in a nested worktree does
+  // not make its parent live (N1).
   const worktreePaths = new Set(tmux.panes.map(pane => pane.agentWorktree).filter(Boolean));
-  // The trees an unknowable target can reach: the worktrees this repo registers,
-  // and every pane's agent worktree. Outside a repo there is no list, so any
-  // managed worktree holder is reachable (R1).
-  const registered = registeredWorktrees(cwd);
-  const reachable = [...registered, ...[...worktreePaths]];
-  const liveTreeHolders = reachable.length > 0 || ownRoot !== null
-    ? holders.filter(holder => reachable.some(tree => isInside(holder.path, tree)))
-    : holders.filter(holder => holder.kind === 'pane' || holder.path.includes('/.xtrm/worktrees/'));
-  const atRisk = bound => holders.filter(holder => isInside(holder.path, bound) || isInside(bound, holder.path));
+  const derived = [];
+  for (const holder of holders) {
+    const match = holder.path.match(/^(.*\/\.xtrm\/worktrees\/[^/]+)(?:\/|$)/);
+    if (match) derived.push(match[1]);
+  }
+  // A main checkout is a registered worktree but not a disposable one: it contains
+  // the managed worktrees, and a shell parked at its root must not make every
+  // bound under it risky (N1). Only worktrees that a session is given are live
+  // for a bounded target; any holder still counts for a literal one.
+  // A linked worktree has a `.git` file; a main checkout has a `.git` directory
+  // and is never disposable, so it is not live for a bounded target (N1).
+  const isLinked = path => {
+    try {
+      return lstatSync(`${path}/.git`).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const managed = path => isLinked(path) || derived.some(worktree => canonicalPath(worktree) === path);
+  const candidates = [...new Set([...registeredWorktrees(cwd), ...[...worktreePaths], ...derived])].map(canonicalPath);
+  const livePaths = candidates.filter(path => managed(path) && holders.some(holder => isInside(holder.path, path)));
+  // A target with no bound is checked against the worktrees the command itself
+  // reaches: this repo's list and the panes. Outside a repo there is no list, so
+  // any live managed worktree is reachable (R1).
+  const registered = registeredWorktrees(cwd).map(canonicalPath);
+  const localLive = registered.length > 0 || ownRoot !== null
+    ? livePaths.filter(path => registered.includes(path) || worktreePaths.has(path))
+    : livePaths;
+  const liveTreeHolders = [...new Set(localLive.flatMap(path => holdersInside(path)))];
+  // A bound is at risk when a holder works under it, or when it is, contains, or
+  // is contained by a live worktree (R1). A tree that only contains a nested live
+  // worktree is not at risk: `rm -rf dist/*` is allowed anywhere.
+  const atRisk = bound => holders.filter(holder =>
+    isInside(holder.path, bound)
+    || livePaths.some(path => (isInside(bound, path) || isInside(path, bound)) && isInside(holder.path, path)));
 
   const check = (rawTarget, opCwd, op) => {
     const target = expandHome(rawTarget);
     if (targetIsUnresolved(target)) {
       const matches = expandTrailingGlob(target, opCwd);
-      if (matches !== null) {
+      // A glob that matches nothing removes nothing, but its bound still decides:
+      // `<live>/dist/*` with no dist directory is bounded by `<live>/dist`, which
+      // lies inside a live tree (R1).
+      if (matches !== null && matches.length > 0) {
         for (const match of matches) {
-          const found = holdersInside(match);
-          if (found.length > 0) return blockReason(describe(found), `${op.kind} would remove ${match}.`, warnings);
+          const reason = check(match, opCwd, op);
+          if (reason !== null) return reason;
         }
         return null;
       }
@@ -989,6 +1021,13 @@ export function worktreeGuardDecision(input = {}, options = {}) {
     // caller's own worktree: only an empty own worktree may be removed.
     const found = holdersInside(resolved);
     if (found.length > 0) return blockReason(describe(found), `${op.kind} would remove ${resolved}.`, warnings);
+    // A path inside a live worktree is that session's working tree too: removing
+    // a subtree destroys its work even though no holder sits exactly there.
+    const insideLive = livePaths.filter(path => isInside(resolved, path));
+    const nested = insideLive.flatMap(path => holdersInside(path));
+    if (nested.length > 0) {
+      return blockReason(describe(nested), `${op.kind} would remove ${resolved}, inside the live worktree ${insideLive.join(', ')}.`, warnings);
+    }
     return null;
   };
 
