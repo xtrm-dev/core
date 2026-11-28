@@ -9,14 +9,14 @@
 //
 // Usage (see cli/test/hooks/worktree-guard.test.ts and
 // packages/pi-extensions/tests/worktree-guard.test.ts):
-//   buildCorpus({ repo, live, idle, script, missing, outside })
+//   buildCorpus({ repo, live, idle, script, missing, outside, selfScript })
 
 /**
- * @param {{ repo: string, live: string, idle: string, script: string, missing: string, outside: string }} paths
- * @returns {{ id: string, command: string, expect: 'ALLOW' | 'BLOCK', why: string }[]}
+ * @param {{ repo: string, live: string, idle: string, script: string, missing: string, outside: string, selfScript: string }} paths
+ * @returns {{ id: string, command: string, expect: 'ALLOW' | 'BLOCK', why: string, cwd?: string }[]}
  */
 export function buildCorpus(paths) {
-  const { repo, live, idle, script, missing, outside } = paths;
+  const { repo, live, idle, script, missing, outside, selfScript } = paths;
   const name = live.slice(live.lastIndexOf('/') + 1);
   const relative = live.slice(repo.length + 1);
   /** `bash -c "<program>"` repeated `levels` times, quoted so each level decodes
@@ -27,8 +27,9 @@ export function buildCorpus(paths) {
     return text;
   };
   const cases = [];
-  /** @param {string} id @param {string} command @param {'ALLOW'|'BLOCK'} expect @param {string} why */
-  const add = (id, command, expect, why) => cases.push({ id, command, expect, why });
+  /** @param {string} id @param {string} command @param {'ALLOW'|'BLOCK'} expect @param {string} why
+   * @param {string} [cwd] the directory the command runs in; the repo by default */
+  const add = (id, command, expect, why, cwd) => cases.push(cwd ? { id, command, expect, why, cwd } : { id, command, expect, why });
 
   // --- a literal target inside a live worktree -----------------------------
   add('git-remove', `git worktree remove ${live}`, 'BLOCK', 'git worktree remove of a live tree');
@@ -160,8 +161,51 @@ export function buildCorpus(paths) {
   add('worktrees-dir', `rm -rf ${repo}/.xtrm/worktrees`, 'BLOCK', 'the worktrees directory itself');
   add('repo-root', `rm -rf ${repo}`, 'BLOCK', 'the repository root contains the live tree');
 
+
+  // --- audit round 2: shell shapes that used to slip through ---------------
+  add('backtick', `echo \`git worktree remove --force ${live}\``, 'BLOCK', 'a backtick substitution runs the removal');
+  add('dollar-which', `$(which rm) -rf ${live}`, 'BLOCK', 'a computed command word with a removal flag');
+  add('bash-stdin', `bash < ${script}`, 'BLOCK', 'a program read from a file through stdin');
+  add('relative-cd-chain', `cd ${repo} && cd .xtrm && cd worktrees && rm -rf ${name}`, 'BLOCK', 'three relative cd steps');
+  add('subshell-cd', `(cd ${repo}/.xtrm/worktrees && rm -rf ${name})`, 'BLOCK', 'a cd inside a subshell');
+  add('partial-glob', `rm -rf ${repo}/.xtrm/worktrees/li*`, 'BLOCK', 'a glob that matches the live tree (R1)');
+  add('brace', `rm -rf ${repo}/.xtrm/worktrees/{${name},idle}`, 'BLOCK', 'a brace list bounded by the worktrees directory');
+  add('xargs-i', `printf '%s\n' ${live} | xargs -I{} rm -rf {}`, 'BLOCK', 'xargs -I runs the removal');
+  add('self-script', `bash ${selfScript}`, 'ALLOW', 'a self-sourcing script terminates and removes nothing');
+  add('alias-persistent', `git rmlive ${live}`, 'BLOCK', 'a persisted alias is authoritative (R8)');
+  add('alias-persistent-idle', `git rmlive ${idle}`, 'ALLOW', 'the alias resolves to an idle tree (R8)');
+  add('bash-c-safe', `bash -c 'npm test'`, 'ALLOW', 'bash -c running tests (round 2 allows)');
+  add('sh-c-safe', `sh -c 'echo hello'`, 'ALLOW', 'sh -c printing (round 2 allows)');
+  add('eval-safe', `eval 'true'`, 'ALLOW', 'eval of a no-op (round 2 allows)');
+  add('gh-body', `gh pr create --title t --body "git worktree remove ${live}"`, 'ALLOW', 'a quoted argument is not a command (N3)');
+  add('home-executable', `~/bin/reap`, 'ALLOW', 'an executable the guard cannot read is allowed (N4)');
+  add('quoted-repo-executable', `"$REPO/reap.sh"`, 'ALLOW', 'an unresolved executable is allowed (N4)');
+  add('node-modules', `rm -rf ${repo}/node_modules/.cache`, 'ALLOW', 'a dependency cache beside nested worktrees');
+  add('sibling-prefix', `rm -rf ${live}-copy`, 'ALLOW', 'a sibling name that only shares a prefix');
+  add('sibling-prefix-short', `rm -rf ${repo}/.xtrm/worktrees/liv`, 'ALLOW', 'a prefix of the name is not the tree');
+
+  // --- audit round 3 R1: judgement follows holders, not the caller repo ----
+  add('cross-repo-worktrees-glob', `rm -rf ${repo}/.xtrm/worktrees/*`, 'BLOCK', 'another repo worktrees from outside it (R1)', outside);
+  add('cross-repo-incident-loop', `git worktree list | awk '/xtrm\\/worktrees\\//{print $1}' | while read w; do git worktree remove --force "$w"; done`, 'BLOCK', 'the incident loop from a directory outside every repo (R1)', outside);
+  add('cross-repo-git-c', `git -C ${repo} worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2 | xargs -r git -C ${repo} worktree remove --force`, 'BLOCK', 'git -C into another repo from outside it (R1)', outside);
+  add('glob-dot-log', `rm -rf ./*.log`, 'ALLOW', 'a glob that matches only a log file at the repo root (R1)', repo);
+  add('glob-dot-worktrees', `rm -rf .xtrm/worktrees/*`, 'BLOCK', 'the same glob where it matches the live tree (R1)', repo);
+
+  // --- audit round 3 R2-R8 -------------------------------------------------
+  add('rm-recursive-abbrev', `rm -rf --recur ${live}`, 'BLOCK', 'GNU accepts an unambiguous --recursive (R2)');
+  add('rm-recursive-abbrev-var', `rm --recursiv ${live}`, 'BLOCK', 'the shortest unambiguous abbreviation (R2)');
+  add('find-exec-sh-c', `find ${repo} -exec sh -c 'rm -rf "$1"' _ {} \;`, 'BLOCK', 'the -exec payload is a shell program (R3)');
+  add('find-exec-bash-c', `find ${repo} -name x -exec bash -c 'rm -rf {}' \;`, 'BLOCK', '{} is find start path inside the payload (R3)');
+  add('find-exec-echo', `find ${repo} -exec echo {} \;`, 'ALLOW', 'a print payload removes nothing (R3)');
+  add('env-split-string', `env -S "git worktree remove --force ${live}"`, 'BLOCK', 'env -S runs a command (R5)');
+  add('env-chdir-joined', `env -C${repo} rm -rf .xtrm/worktrees/${name}`, 'BLOCK', 'the joined -C<dir> form (R6)');
+  add('sudo-chdir-joined', `sudo -D${repo} rm -rf .xtrm/worktrees/${name}`, 'BLOCK', 'the joined sudo -D<dir> form (R6)');
+  add('home-assignment', `HOME=${repo} rm -rf ~/.xtrm/worktrees/${name}`, 'BLOCK', 'HOME= before the command expands ~ (R7)');
+  add('home-export', `export HOME=${repo}; rm -rf ~/.xtrm/worktrees/${name}`, 'BLOCK', 'export HOME changes the following command (R7)');
+  add('home-assignment-scratch', `HOME=/tmp/xtrm-corpus-home rm -rf ~/nothing-here`, 'ALLOW', 'the assignment bounds ~ outside every worktree (R7)');
+
   return cases;
 }
 
 /** The number the report quotes: every case runs against all three copies. */
-export const CORPUS_CASE_COUNT = 110;
+export const CORPUS_CASE_COUNT = 146;

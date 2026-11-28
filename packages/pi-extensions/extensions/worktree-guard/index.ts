@@ -49,13 +49,15 @@ import {
 	callerProcessIds,
 	canonicalPath,
 	expandHome,
+	expandTrailingGlob,
 	formatWorktreeHolders,
+	readProcessCommand,
 	readProcessCwds,
 	readTmuxPanes,
 	removalOperations,
 	targetBound,
 	targetIsUnresolved,
-	worktreeInUse,
+	type WorktreeHolder,
 } from "../../src/core/worktree-liveness.ts";
 
 function gitOutput(args: string[], cwd: string): string | null {
@@ -103,12 +105,13 @@ export interface WorktreeGuardOptions {
 
 interface EvaluationContext {
 	cwd: string;
-	ownPids: Set<number>;
-	panes: Awaited<ReturnType<typeof readTmuxPanes>>["panes"];
+	ownRoot: string | null;
+	holders: WorktreeHolder[];
+	describe: (holders: readonly WorktreeHolder[]) => string[];
+	holdersInside: (path: string) => WorktreeHolder[];
+	atRisk: (bound: string) => WorktreeHolder[];
+	liveTreeHolders: WorktreeHolder[];
 	warnings: string[];
-	probe: (path: string) => ReturnType<typeof worktreeInUse>;
-	holdersOutside: (path: string) => ReturnType<typeof worktreeInUse>["holders"];
-	livePaths: string[];
 }
 
 function evaluateCommand(command: string, ctx: EvaluationContext): string | null {
@@ -117,53 +120,56 @@ function evaluateCommand(command: string, ctx: EvaluationContext): string | null
 	ctx.warnings.push(...parsed.filter((operation) => operation.kind === "warning").map((operation) => operation.warning ?? "parse warning"));
 	const operations = parsed.filter((operation) => operation.kind !== "warning");
 	if (operations.length === 0) return null;
-	const liveHolders = (paths: readonly string[]) => paths.flatMap((path) => ctx.holdersOutside(path));
 
 	const check = (rawTarget: string, opCwd: string | null, kind: string): string | null => {
-		const target = expandHome(rawTarget) ?? rawTarget;
+		const target = expandHome(rawTarget);
 		if (targetIsUnresolved(target)) {
+			// A glob in the final component names real files: each match is a literal.
+			const matches = expandTrailingGlob(target ?? "", opCwd);
+			if (matches !== null) {
+				for (const match of matches) {
+					const found = ctx.holdersInside(match);
+					if (found.length > 0) return blockReason(ctx.describe(found), `${kind} would remove ${match}.`, ctx.warnings);
+				}
+				return null;
+			}
 			const bound = targetBound(target, opCwd);
 			if (bound === null) {
-				if (ctx.livePaths.length === 0) return null;
-				const holders = liveHolders(ctx.livePaths);
+				if (ctx.liveTreeHolders.length === 0) return null;
 				return blockReason(
-					holders.length > 0 ? formatWorktreeHolders(holders) : [],
+					ctx.describe(ctx.liveTreeHolders),
 					`The target ${JSON.stringify(target)} cannot be bounded statically: use a literal path, or stop the live holder first.`,
 					ctx.warnings,
 				);
 			}
-			// Equal to a live worktree, inside one, or an ancestor of one. A bound
-			// that merely contains a nested live worktree is not at risk (N1, N5).
-			const atRisk = ctx.livePaths.filter((path) => isInside(path, bound) || isInside(bound, path));
-			if (atRisk.length === 0) return null;
-			return blockReason(
-				formatWorktreeHolders(liveHolders(atRisk)),
-				`The target ${JSON.stringify(target)} resolves inside or around ${atRisk.join(", ")}.`,
-				ctx.warnings,
-			);
+			// Any holder under the bound, or a live worktree inside it, is at risk.
+			// A bound that merely contains a nested live worktree is not (N1, N5, R1).
+			const found = ctx.atRisk(bound);
+			if (found.length === 0) return null;
+			return blockReason(ctx.describe(found), `The target ${JSON.stringify(target)} resolves inside or around ${bound}.`, ctx.warnings);
 		}
-		const resolved = isAbsolute(target) ? canonicalPath(target) : opCwd ? canonicalPath(resolve(opCwd, target)) : null;
+		const resolved = isAbsolute(target ?? "") ? canonicalPath(target ?? "") : opCwd ? canonicalPath(resolve(opCwd, target ?? "")) : null;
 		if (!resolved) {
-			if (ctx.livePaths.length === 0) return null;
+			if (ctx.liveTreeHolders.length === 0) return null;
 			return blockReason(
 				[],
 				`The target ${JSON.stringify(target)} is relative to a directory the guard could not resolve: use a literal path.`,
 				ctx.warnings,
 			);
 		}
-		// A literal target blocks on any holder inside it, even one attributed to a
-		// nested worktree: removing the parent tree destroys that worktree too.
-		const holders = ctx.holdersOutside(resolved);
-		if (holders.length === 0) return null;
-		return blockReason(formatWorktreeHolders(holders), `${kind} would remove ${resolved}.`, ctx.warnings);
+		// Another holder inside the target blocks, even when the target is the
+		// caller's own worktree: only an empty own worktree may be removed.
+		const found = ctx.holdersInside(resolved);
+		if (found.length > 0) return blockReason(ctx.describe(found), `${kind} would remove ${resolved}.`, ctx.warnings);
+		return null;
 	};
 
 	for (const operation of operations) {
 		const opCwd = operation.cwd === undefined ? ctx.cwd : operation.cwd;
 		if (operation.targets.length === 0) {
-			if (ctx.livePaths.length === 0) continue;
+			if (ctx.liveTreeHolders.length === 0) continue;
 			return blockReason(
-				formatWorktreeHolders(liveHolders(ctx.livePaths)),
+				ctx.describe(ctx.liveTreeHolders),
 				`${operation.kind} has no statically known target: use a literal path.`,
 				ctx.warnings,
 			);
@@ -187,33 +193,61 @@ export function worktreeGuardReason(
 	options: WorktreeGuardOptions = {},
 ): string | null {
 	if (!command || command.trim() === "") return null;
+	// Fast path: no removal shape, so /proc and tmux are never touched.
 	if (removalOperations(command, 0, cwd).length === 0) return null;
 
 	const ownPids = callerProcessIds();
+	const ownRoot = worktreeRoot(cwd);
 	const cwds = readProcessCwds("/proc");
 	const { panes, warnings } = readTmuxPanes({ procRoot: "/proc", tmuxSockets: options.tmuxSockets });
-	const probe = (path: string) => worktreeInUse(path, { cwds, panes, skipTmux: true });
-	const holdersOutside = (path: string) =>
-		probe(path).holders.filter((holder) => !ownPids.has(holder.pid));
+	// Every holder, whatever repository it works in: a target is judged against the
+	// holders themselves, never against a list from the caller's repo, so a
+	// removal aimed at another repo's worktrees is judged the same (R1).
+	const holders: WorktreeHolder[] = [];
+	const seen = new Set<string>();
+	const addHolder = (holder: WorktreeHolder) => {
+		// A pane holder and its process holder share pid and path; the kind keeps both.
+		const key = `${holder.kind}\0${holder.pid}\0${holder.path}`;
+		if (seen.has(key)) return;
+		seen.add(key);
+		holders.push(holder);
+	};
+	// readProcessCwds keys by cwd path and holds the pids seen there.
+	for (const [path, pids] of cwds) {
+		for (const pid of pids) {
+			if (ownPids.has(pid)) continue;
+			addHolder({ kind: "process", pid, command: "", path });
+		}
+	}
+	for (const pane of panes) {
+		if (pane.panePid && ownPids.has(pane.panePid)) continue;
+		for (const path of [pane.panePath, pane.agentWorktree]) {
+			if (!path) continue;
+			addHolder({
+				kind: "pane",
+				pid: pane.panePid ?? 0,
+				command: pane.paneCommand ?? "",
+				pane: pane.paneId,
+				path,
+				socket: pane.socket,
+			});
+		}
+	}
+	// The command line of a holder is read only when a block is built.
+	const describe = (list: readonly WorktreeHolder[]) =>
+		formatWorktreeHolders(list.map((holder) => (holder.command ? holder : { ...holder, command: readProcessCommand(holder.pid) })));
+	const holdersInside = (path: string) => holders.filter((holder) => isInside(holder.path, path));
+	// The trees an unknowable target can reach: the worktrees this repo registers
+	// and every pane's agent worktree. Outside a repo there is no list, so any
+	// managed worktree holder is reachable (R1).
+	const worktreePaths = new Set(panes.map((pane) => pane.agentWorktree).filter(Boolean));
+	const reachable = [...registeredWorktrees(cwd).map((path) => canonicalPath(path)), ...worktreePaths];
+	const liveTreeHolders = reachable.length > 0 || ownRoot !== null
+		? holders.filter((holder) => reachable.some((tree) => isInside(holder.path, tree)))
+		: holders.filter((holder) => holder.kind === "pane" || holder.path.includes("/.xtrm/worktrees/"));
+	const atRisk = (bound: string) => holders.filter((holder) => isInside(holder.path, bound) || isInside(bound, holder.path));
 
-	const candidates = [
-		...new Set([
-			...registeredWorktrees(cwd).map((path) => canonicalPath(path)),
-			...panes.map((pane) => pane.agentWorktree).filter(Boolean).map((path) => canonicalPath(path)),
-		]),
-	];
-	// A holder inside a nested worktree belongs to that worktree, not to the tree
-	// that contains it: the main checkout is not live because a session runs in
-	// its .xtrm/worktrees/* (N1).
-	const ownerOf = (holderPath: string) =>
-		candidates
-			.filter((path) => isInside(holderPath, path))
-			.sort((a, b) => b.length - a.length)[0];
-	const livePaths = candidates.filter((path) =>
-		holdersOutside(path).some((holder) => ownerOf(holder.path) === path),
-	);
-	const ctx: EvaluationContext = { cwd, ownPids, panes, warnings, probe, holdersOutside, livePaths };
-
+	const ctx: EvaluationContext = { cwd, ownRoot, holders, describe, holdersInside, atRisk, liveTreeHolders, warnings };
 	return evaluateCommand(command, ctx);
 }
 

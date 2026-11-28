@@ -81,6 +81,7 @@ interface CorpusFixture {
 	idle: string;
 	script: string;
 	missing: string;
+	selfScript: string;
 	outside: string;
 }
 
@@ -101,7 +102,11 @@ function corpusFixture(): CorpusFixture {
 	const script = join(root, 'reap.sh');
 	writeFileSync(script, `rm -rf ${live}\n`);
 	chmodSync(script, 0o755);
-	const outside = join(root, 'outside');
+	const selfScript = join(root, 'self.sh');
+	writeFileSync(selfScript, `source ${selfScript}\n`);
+	writeFileSync(join(repo, 'a.log'), 'log\n');
+	git(repo, ['config', 'alias.rmlive', 'worktree remove --force']);
+const outside = join(root, 'outside');
 	mkdirSync(outside);
 	symlinkSync(live, join(outside, 'link'));
 	return {
@@ -109,7 +114,8 @@ function corpusFixture(): CorpusFixture {
 		live: realpathSync(live),
 		idle: realpathSync(idle),
 		script: realpathSync(script),
-		missing: join(root, 'missing.sh'),
+		selfScript: realpathSync(selfScript),
+	missing: join(root, 'missing.sh'),
 		outside: realpathSync(outside),
 	};
 }
@@ -125,7 +131,7 @@ describe('Pi worktree guard', () => {
 		await waitFor(() => readCwd(child.pid as number) === paths.live);
 		const mismatches: string[] = [];
 		for (const testCase of buildCorpus(paths)) {
-			const reason = worktreeGuardReason(testCase.command, paths.repo, { tmuxSockets: [] });
+			const reason = worktreeGuardReason(testCase.command, testCase.cwd ?? paths.repo, { tmuxSockets: [] });
 			const got = reason ? 'BLOCK' : 'ALLOW';
 			if (got !== testCase.expect) {
 				mismatches.push(`${testCase.id}: expected ${testCase.expect}, got ${got} — ${testCase.why}\n  ${testCase.command}`);

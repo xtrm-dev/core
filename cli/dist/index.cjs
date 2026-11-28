@@ -79385,14 +79385,14 @@ function livenessReport(liveness) {
     ...liveness.warnings.map((warning) => `warning: ${warning}`)
   ];
 }
-var MAX_SCRIPT_BYTES = 64 * 1024;
-function canonicalPath(path101) {
+function canonicalPath(target) {
   try {
-    return (0, import_node_fs22.realpathSync)(path101);
+    return (0, import_node_fs22.realpathSync)(target);
   } catch {
-    return (0, import_node_path46.resolve)(path101);
+    return (0, import_node_path46.resolve)(target);
   }
 }
+var MAX_SCRIPT_BYTES = 64 * 1024;
 
 // src/commands/end.ts
 function worktreeHoldsWork(cwd) {

@@ -45,7 +45,7 @@
 // blocks on a failure to look.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,13 +53,11 @@ import {
   callerProcessIds,
   canonicalPath,
   formatWorktreeHolders,
+  readProcessCommand,
   readProcessCwds,
   readTmuxPanes,
-  worktreeInUse,
 } from './worktree-liveness.mjs';
 
-/** A removal further than this in a shell/script nest is out of scope: the
- * guard blocks the outer command anyway, and unbounded recursion is a hazard. */
 /** How deep a nested program is followed: `bash -c "bash -c '...'"`. Past this
  * depth the text is not parsed again, so a removal verb in it blocks as an
  * unbounded target: the parser cannot see what it names (audit round 3). */
@@ -68,6 +66,20 @@ const MAX_SCRIPT_BYTES = 64 * 1024;
 /** Total time spent following script files in one command: a fan-out of scripts
  * that each source the next must not turn the hook into a scanner (N7). */
 const PARSE_BUDGET_MS = 40;
+/** Scripts a spent fan-out budget may still check for a verb before it blocks
+ * the unknown remainder instead (R4). */
+const MAX_UNCHECKED_SCRIPTS = 8;
+/** Git subcommands that are not aliases: a lookup runs only for an unknown one,
+ * so `git status` never costs a spawn (R8). */
+const KNOWN_GIT_SUBCOMMANDS = new Set([
+  'add', 'am', 'apply', 'archive', 'bisect', 'blame', 'branch', 'bundle', 'checkout',
+  'cherry-pick', 'clean', 'clone', 'commit', 'config', 'describe', 'diff', 'fetch',
+  'format-patch', 'fsck', 'gc', 'grep', 'help', 'init', 'log', 'ls-files', 'maintenance',
+  'merge', 'mv', 'notes', 'prune', 'pull', 'push', 'range-diff', 'rebase', 'reflog', 'remote',
+  'reset', 'restore', 'revert', 'rev-parse', 'rm', 'shortlog', 'show', 'sparse-checkout',
+  'stash', 'status', 'submodule', 'switch', 'symbolic-ref', 'tag', 'update-index',
+  'update-ref', 'version', 'whatchanged', 'worktree',
+]);
 const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}', 'done', 'fi']);
 /** Wrappers that run another command; the real command follows them. */
 const WRAPPERS = new Set([
@@ -95,6 +107,12 @@ const WRAPPER_OPERAND_FLAGS = {
   parallel: new Set(['-j', '--jobs', '-S', '--sshlogin', '--sshloginfile', '--colsep', '--delimiter', '-n', '--max-args', '-L', '--max-lines', '--header', '--results', '--tmpdir', '--joblog', '--timeout', '--retries', '--delay', '--load', '--memfree', '-I', '--replace', '--block', '-N']),
 };
 
+/** GNU rm accepts every unambiguous abbreviation of `--recursive` (R2). */
+function isRecursiveFlag(arg) {
+  if (/^-[A-Za-z]*[rR]/.test(arg)) return true;
+  return arg.length >= 4 && arg.startsWith('--') && '--recursive'.startsWith(arg);
+}
+
 function wrapperSkipsOperand(wrapper, token) {
   // A directory flag takes a value on every wrapper, so the value is not the
   // command word (audit round 3).
@@ -107,6 +125,12 @@ function wrapperSkipsOperand(wrapper, token) {
 const REDIRECTION = /^(\d*|&)(>>?|<<?)(.*)$/;
 /** find actions that run a command; a `rm` inside one removes the searched tree. */
 const EXEC_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
+/** Commands that delete the file they are given, so `find ... -exec <word>` still
+ * removes the tree's contents even without a recursive flag (R3). */
+const DELETE_WORDS = new Set(['rm', 'rmdir', 'unlink', 'shred', 'srm', 'trash', 'trash-put']);
+function isDeleteWord(word) {
+  return DELETE_WORDS.has(word.split('/').pop() ?? word);
+}
 /** True when text names a removal, matched at token level: a raw-text scan
  * blocks `git push --delete`, `git branch --delete` and a quoted argument that
  * happens to say "worktree remove" (N3). */
@@ -288,8 +312,8 @@ export function targetBound(target, cwd) {
 
 /** The directory a `git -C` / `env -C` / `sudo -D` operand names; null when it
  * cannot be known, so everything after it is unresolvable too (N2). */
-function changeDirectory(cwd, dir) {
-  const expanded = expandHome(dir);
+function changeDirectory(cwd, dir, env = process.env) {
+  const expanded = expandHome(dir, env);
   if (!expanded || targetIsUnresolved(expanded)) return null;
   if (expanded.startsWith('/')) return canonicalPath(expanded);
   return cwd ? canonicalPath(resolve(cwd, expanded)) : null;
@@ -422,11 +446,11 @@ function parseGitPrefix(tokens, from) {
   return { subcommandAt: i, aliases, envAliases, chdirs };
 }
 
-function gitRemovalOperations(tokens, start, record, operations, depth, cwd, ctx) {
+function gitRemovalOperations(tokens, start, record, operations, depth, cwd, ctx, env = process.env) {
   const { subcommandAt, aliases, envAliases, chdirs } = parseGitPrefix(tokens, start + 1);
   // `git -C <dir> worktree remove <relative>` removes a path relative to <dir>.
   let gitCwd = cwd;
-  for (const dir of chdirs) gitCwd = changeDirectory(gitCwd, dir);
+  for (const dir of chdirs) gitCwd = changeDirectory(gitCwd, dir, env);
   const subcommand = tokens[subcommandAt] ?? '';
   const args = tokens.slice(subcommandAt + 1);
   const aliasValue = aliases.get(subcommand);
@@ -441,7 +465,26 @@ function gitRemovalOperations(tokens, start, record, operations, depth, cwd, ctx
     record('git-worktree-remove', args.filter(token => !token.startsWith('-')), {}, gitCwd);
     return operations;
   }
-  if (subcommand !== 'worktree' || args[0] !== 'remove') return operations;
+  if (subcommand !== 'worktree' || args[0] !== 'remove') {
+    // A persisted alias is authoritative too: `git rmlive <path>` in a repo that
+    // sets `alias.rmlive` (R8). Only an unknown subcommand costs a lookup, and
+    // the lookup is bounded by the parse budget.
+    if (ctx && subcommand && !KNOWN_GIT_SUBCOMMANDS.has(subcommand) && Date.now() <= ctx.deadline) {
+      const key = `git-alias\0${gitCwd ?? ''}\0${subcommand}`;
+      if (!ctx.visited.has(key)) {
+        ctx.visited.add(key);
+        const value = gitIn(gitCwd, ['config', '--get', `alias.${subcommand}`]);
+        const alias = value ? value.trim() : '';
+        if (alias) {
+          const program = alias.startsWith('!')
+            ? `${alias.slice(1)} ${args.join(' ')}`
+            : `git ${alias} ${args.join(' ')}`;
+          operations.push(...removalOperations(program, depth + 1, gitCwd, ctx));
+        }
+      }
+    }
+    return operations;
+  }
   const target = args.slice(1).find(token => !token.startsWith('-'));
   record('git-worktree-remove', target ? [target] : [], {}, gitCwd);
   return operations;
@@ -472,14 +515,21 @@ function readScriptProgram(token, cwd, state, operations) {
   const program = readScript(path);
   if (program === null) return null;
   if (Date.now() > state.ctx.deadline) {
+    state.ctx.unchecked = (state.ctx.unchecked ?? 0) + 1;
     if (!state.ctx.expired) {
       state.ctx.expired = true;
+      // The budget is spent, so the rest is not parsed. It is still checked for a
+      // removal verb, and a chain longer than MAX_UNCHECKED_SCRIPTS blocks the
+      // unknown remainder instead of allowing it (R4).
       operations.push({
         kind: 'warning',
         targets: [],
         raw: '',
-        warning: `script fan-out budget spent (${PARSE_BUDGET_MS} ms): unread scripts were not parsed`,
+        warning: `script fan-out budget spent (${PARSE_BUDGET_MS} ms): remaining scripts were checked for a removal verb only`,
       });
+    }
+    if (mentionsRemovalVerb(program) || state.ctx.unchecked > MAX_UNCHECKED_SCRIPTS) {
+      operations.push({ kind: 'rm', targets: [], raw: '', cwd: state.cwd ?? undefined });
     }
     return null;
   }
@@ -525,10 +575,44 @@ function operationsFromSegment(raw, depth, state) {
       if (token === ':::') groups.push([]);
       else groups[groups.length - 1].push(token);
     }
-    for (const group of groups) {
-      if (group.length > 0) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
+    // The first group is the command; `{}` stands for each argument of the
+    // others, so `parallel rm -rf {} ::: <live>` removes <live> (R1).
+    const [command, ...arguments_] = groups;
+    if (command && command.length > 0) {
+      const args = arguments_.flat();
+      const template = command.join(' ');
+      if (args.length > 0 && template.includes('{}')) {
+        for (const arg of args) {
+          operations.push(...removalOperations(template.split('{}').join(arg), depth + 1, state.cwd, state.ctx));
+        }
+      } else {
+        operations.push(...removalOperations(template, depth + 1, state.cwd, state.ctx));
+      }
     }
     return operations;
+  }
+
+  // `HOME=/x rm -rf ~` changes what `~` means for this command (R7).
+  for (const token of unfiltered) {
+    const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(token);
+    if (!assignment) break;
+    if (assignment[1] === 'HOME') state.env = { ...state.env, HOME: assignment[2] };
+  }
+
+  // `env -S "<command>"` runs the string as a command, so the string is the
+  // command word and the flags before it are env's own (R5).
+  if ((unfiltered[0] ?? '').split('/').pop() === 'env') {
+    for (let i = 1; i < unfiltered.length; i += 1) {
+      const token = unfiltered[i];
+      const program = token === '-S' || token === '--split-string'
+        ? unfiltered[i + 1]
+        : (token.startsWith('-S') && token.length > 2 ? token.slice(2) : null);
+      if (program) {
+        operations.push(...removalOperations(program, depth + 1, state.cwd, state.ctx));
+        return operations;
+      }
+      if (!token.startsWith('-') && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) break;
+    }
   }
 
   const start = commandIndex(unfiltered);
@@ -548,17 +632,32 @@ function operationsFromSegment(raw, depth, state) {
       continue;
     }
     if (token.startsWith('--chdir=')) {
-      opCwd = changeDirectory(opCwd, token.slice('--chdir='.length));
+      opCwd = changeDirectory(opCwd, token.slice('--chdir='.length), state.env);
       continue;
     }
     // Every wrapper may name the directory the wrapped command runs in:
-    // `env -C`, `command -C`, `sudo -D`, `--chdir[=dir]` (audit round 3).
+    // `env -C`, `command -C`, `sudo -D`, `--chdir[=dir]`, and the joined forms
+    // `env -C<dir>` / `sudo -D<dir>` (audit round 3, R6).
+    if (token.startsWith('-C') && token.length > 2) {
+      opCwd = changeDirectory(opCwd, token.slice(2), state.env);
+      continue;
+    }
+    if (wrapperName === 'sudo' && token.startsWith('-D') && token.length > 2) {
+      opCwd = changeDirectory(opCwd, token.slice(2), state.env);
+      continue;
+    }
     if (token === '-C' || token === '--chdir' || (wrapperName === 'sudo' && token === '-D')) {
-      opCwd = changeDirectory(opCwd, unfiltered[i + 1]);
+      opCwd = changeDirectory(opCwd, unfiltered[i + 1], state.env);
+      continue;
+    }
+    // `env -S "<command>"` runs the string as a command (R5).
+    if (wrapperName === 'env' && (token === '-S' || token === '--split-string' || token.startsWith('-S'))) {
+      const program = token === '-S' || token === '--split-string' ? unfiltered[i + 1] : token.slice(2);
+      if (program) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
     }
   }
   const record = (kind, targets, extra = {}, at = opCwd) => {
-    operations.push({ kind, targets, raw: raw.join(' '), cwd: at, ...extra });
+    operations.push({ kind, targets: targets.map(target => expandHome(target, state.env)), raw: raw.join(' '), cwd: at, ...extra });
   };
 
   if (name === 'cd' || name === 'pushd') {
@@ -566,11 +665,27 @@ function operationsFromSegment(raw, depth, state) {
     return operations;
   }
 
+  // `export HOME=/x` changes it for the commands that follow (R7).
+  if (name === 'export') {
+    for (const token of rest) {
+      const assignment = /^HOME=(.*)$/.exec(token);
+      if (assignment) state.env = { ...state.env, HOME: assignment[1] };
+    }
+    return operations;
+  }
+
   // A command word the shell computes, such as `$(which rm) -rf live`: the
   // executable is unknown, so a removal flag in the arguments makes it a removal
   // of the literal arguments.
-  if (/[$`]/.test(name) && rest.some(token => token === '--recursive' || /^-[A-Za-z]*[rR]/.test(token))) {
+  if (/[$`]/.test(name) && rest.some(token => isRecursiveFlag(token))) {
     record('rm', rest.filter(token => !token.startsWith('-') && !/[$`]/.test(token)));
+    return operations;
+  }
+
+  // A command word that is more than one word is a command string, not a
+  // program path (`env -S "<command>"` leaves it as the command word) (R5).
+  if (/\s/.test(commandName)) {
+    operations.push(...removalOperations(commandName, depth + 1, opCwd, state.ctx));
     return operations;
   }
 
@@ -607,11 +722,11 @@ function operationsFromSegment(raw, depth, state) {
     return operations;
   }
 
-  if (name === 'git') return gitRemovalOperations(unfiltered, start, record, operations, depth, opCwd, state.ctx);
+  if (name === 'git') return gitRemovalOperations(unfiltered, start, record, operations, depth, opCwd, state.ctx, state.env);
 
   if (name === 'rm') {
     const args = rest;
-    const recursive = args.some(arg => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
+    const recursive = args.some(arg => isRecursiveFlag(arg));
     if (recursive) record('rm', args.filter(arg => !arg.startsWith('-')));
     return operations;
   }
@@ -622,10 +737,18 @@ function operationsFromSegment(raw, depth, state) {
     if (args.includes('-delete')) record('find-delete', [root]);
     for (let i = 0; i < args.length; i += 1) {
       if (!EXEC_ACTIONS.has(args[i])) continue;
-      const sub = args.slice(i + 1).filter(token => token !== '{}' && token !== '+' && token !== ';');
-      if (sub.some(token => token === 'rm' || token.endsWith('/rm')) || hasRemovalVerb(sub.join(' '))) {
-        record('find-delete', [root]);
+      // The payload is a command, parsed the same way as any other. `{}` is the
+      // file find selected, so it stands for find's start path: the search root
+      // is what a removal there would destroy (R3).
+      const payload = [];
+      for (let j = i + 1; j < args.length; j += 1) {
+        const token = args[j];
+        if (token === ';' || token === '+' || token === '\\;') break;
+        payload.push(token.split('{}').join(root));
       }
+      if (payload.length === 0) continue;
+      const nested = operationsFromSegment(payload, depth, { cwd: opCwd, ctx: state.ctx, env: state.env });
+      if (nested.some(op => op.kind !== 'warning') || payload.some(isDeleteWord)) record('find-delete', [root]);
     }
   }
 
@@ -657,7 +780,7 @@ export function removalOperations(command, depth = 0, cwd = null, ctx = null) {
     }
     return operations;
   }
-  const state = { cwd, ctx: context };
+  const state = { cwd, ctx: context, env: { ...process.env } };
   for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth, state));
   for (const program of substitutionPrograms(command)) {
     operations.push(...removalOperations(program, depth + 1, cwd, context));
@@ -679,7 +802,7 @@ function mentionsRemovalVerb(text) {
       const start = commandIndex(tokens);
       const name = (tokens[start] ?? '').split('/').pop() ?? '';
       const rest = tokens.slice(start + 1);
-      if (name === 'rm' && rest.some(arg => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg))) return true;
+      if (name === 'rm' && rest.some(arg => isRecursiveFlag(arg))) return true;
       if (name === 'find' && (rest.includes('-delete') || (rest.includes('rm') && rest.some(arg => EXEC_ACTIONS.has(arg))))) return true;
       if (name === 'git' && rest.some((arg, index) => arg === 'worktree' && rest[index + 1] === 'remove')) return true;
       if (SHELLS.has(name) || name === 'eval') {
@@ -700,14 +823,41 @@ function gitIn(cwd, args) {
   return result.stdout ?? '';
 }
 
-/** Every registered worktree of the repository the command runs in. */
+/** Every worktree the repository the command runs in registers. Used only to
+ * bound a target whose path the shell decides; a literal target is judged
+ * against the holders themselves, whatever repo they work in (R1). */
 function registeredWorktrees(cwd) {
-  const output = gitIn(cwd, ['worktree', 'list', '--porcelain']);
-  if (output === null) return [];
+  const output = cwd ? gitIn(cwd, ['worktree', 'list', '--porcelain']) : null;
+  if (!output) return [];
   return output.split('\n')
     .filter(line => line.startsWith('worktree '))
-    .map(line => line.slice('worktree '.length).trim())
+    .map(line => canonicalPath(line.slice('worktree '.length).trim()))
     .filter(Boolean);
+}
+
+/**
+ * A target whose only unresolved part is a glob in its final component is
+ * expanded against the filesystem, so `./*.log` is judged by the files it
+ * matches while `.xtrm/worktrees/*` still matches a live tree (R1). null means
+ * it is not that shape and the bound rule applies.
+ */
+function expandTrailingGlob(target, cwd) {
+  if (!/[*?]/.test(target)) return null;
+  const slash = target.lastIndexOf('/');
+  const dirPart = slash < 0 ? '.' : (target.slice(0, slash) || '/');
+  const pattern = target.slice(slash + 1);
+  if (!pattern || targetIsUnresolved(dirPart) || /[$`[\]{}]/.test(pattern)) return null;
+  const dir = isAbsolute(dirPart) ? canonicalPath(dirPart) : (cwd ? canonicalPath(resolve(cwd, dirPart)) : null);
+  if (!dir) return null;
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return null;
+  }
+  const source = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
+  const matcher = new RegExp(`^${source}$`);
+  return entries.filter(entry => matcher.test(entry)).map(entry => canonicalPath(`${dir}/${entry}`));
 }
 
 function ownWorktree(cwd) {
@@ -759,61 +909,94 @@ export function worktreeGuardDecision(input = {}, options = {}) {
   const cwds = readProcessCwds('/proc');
   const tmux = readTmuxPanes({ procRoot: '/proc', tmuxSockets: options.tmuxSockets });
   warnings.push(...tmux.warnings);
-  const panes = tmux.panes;
-  const probe = path => worktreeInUse(path, { cwds, panes, skipTmux: true });
-  // Inside your own worktree only your own pid ancestry is exempt; another
-  // holder in the same tree still blocks.
-  const holdersOutside = path => probe(path).holders.filter(holder => !ownPids.has(holder.pid));
-
-  const candidates = [...new Set([
-    ...registeredWorktrees(cwd),
-    ...panes.map(pane => pane.agentWorktree).filter(Boolean),
-  ])].map(canonicalPath);
-  // A holder inside a nested worktree belongs to that worktree, not to the tree
-  // that contains it: the main checkout is not live because a session runs in
-  // its .xtrm/worktrees/* (N1).
-  const ownerOf = holderPath => candidates
-    .filter(path => isInside(holderPath, path))
-    .sort((a, b) => b.length - a.length)[0];
-  const livePaths = candidates.filter(path => holdersOutside(path).some(holder => ownerOf(holder.path) === path));
-  const liveHolders = paths => paths.flatMap(path => holdersOutside(path));
+  // Every holder, whatever repository it works in: a target is judged against
+  // the holders themselves, never against a candidate list from the caller's
+  // repo, so a removal aimed at another repo's worktrees is judged the same
+  // (R1). Own pid ancestry stays exempt; another holder in your own tree blocks.
+  const holders = [];
+  const seen = new Set();
+  const addHolder = holder => {
+    // A pane holder and its process holder share pid and path; the kind keeps both.
+    const key = `${holder.kind}\0${holder.pid}\0${holder.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    holders.push(holder);
+  };
+  // readProcessCwds keys by cwd path and holds the pids seen there.
+  for (const [path, pids] of cwds) {
+    for (const pid of pids) {
+      if (ownPids.has(pid)) continue;
+      addHolder({ kind: 'process', pid, command: '', path });
+    }
+  }
+  for (const pane of tmux.panes) {
+    if (pane.panePid && ownPids.has(pane.panePid)) continue;
+    for (const path of [pane.panePath, pane.agentWorktree]) {
+      if (!path) continue;
+      addHolder({ kind: 'pane', pid: pane.panePid ?? 0, command: pane.paneCommand ?? '', pane: pane.paneId, path, socket: pane.socket });
+    }
+  }
+  // The command line of a holder is read only when a block is built.
+  const describe = list => formatWorktreeHolders(list.map(holder => (
+    holder.command ? holder : { ...holder, command: readProcessCommand(holder.pid) }
+  )));
+  const holdersInside = path => holders.filter(holder => isInside(holder.path, path));
+  // A target the shell decides (`$w`, a bare `$X`) can reach any worktree, so it
+  // blocks while a holder sits in a managed worktree, whatever the repo (R1).
+  // A holder under an ordinary directory is not a worktree and does not count.
+  const worktreePaths = new Set(tmux.panes.map(pane => pane.agentWorktree).filter(Boolean));
+  // The trees an unknowable target can reach: the worktrees this repo registers,
+  // and every pane's agent worktree. Outside a repo there is no list, so any
+  // managed worktree holder is reachable (R1).
+  const registered = registeredWorktrees(cwd);
+  const reachable = [...registered, ...[...worktreePaths]];
+  const liveTreeHolders = reachable.length > 0 || ownRoot !== null
+    ? holders.filter(holder => reachable.some(tree => isInside(holder.path, tree)))
+    : holders.filter(holder => holder.kind === 'pane' || holder.path.includes('/.xtrm/worktrees/'));
+  const atRisk = bound => holders.filter(holder => isInside(holder.path, bound) || isInside(bound, holder.path));
 
   const check = (rawTarget, opCwd, op) => {
     const target = expandHome(rawTarget);
     if (targetIsUnresolved(target)) {
+      const matches = expandTrailingGlob(target, opCwd);
+      if (matches !== null) {
+        for (const match of matches) {
+          const found = holdersInside(match);
+          if (found.length > 0) return blockReason(describe(found), `${op.kind} would remove ${match}.`, warnings);
+        }
+        return null;
+      }
       const bound = targetBound(target, opCwd);
       if (bound === null) {
-        if (livePaths.length === 0) return null;
-        const holders = liveHolders(livePaths);
+        if (liveTreeHolders.length === 0) return null;
         return blockReason(
-          holders.length ? formatWorktreeHolders(holders) : [],
+          describe(liveTreeHolders),
           `The target ${JSON.stringify(target)} cannot be bounded statically: use a literal path, or stop the live holder first.`,
           warnings,
         );
       }
-      // Equal to a live worktree, inside one, or an ancestor of one. A bound
-      // that merely contains a nested live worktree is not at risk (N1, N5).
-      const atRisk = livePaths.filter(path => isInside(path, bound) || isInside(bound, path));
-      if (atRisk.length === 0) return null;
-      return blockReason(formatWorktreeHolders(liveHolders(atRisk)), `The target ${JSON.stringify(target)} resolves inside or around ${atRisk.join(', ')}.`, warnings);
+      // Any holder under the bound, or a live tree inside it, is at risk (R1).
+      const found = atRisk(bound);
+      if (found.length === 0) return null;
+      return blockReason(describe(found), `The target ${JSON.stringify(target)} resolves inside or around ${bound}.`, warnings);
     }
     const resolved = isAbsolute(target) ? canonicalPath(target) : (opCwd ? canonicalPath(resolve(opCwd, target)) : null);
     if (!resolved) {
-      if (livePaths.length === 0) return null;
+      if (liveTreeHolders.length === 0) return null;
       return blockReason([], `The target ${JSON.stringify(target)} is relative to a directory the guard could not resolve: use a literal path.`, warnings);
     }
-    // A literal target blocks on any holder inside it, even one attributed to a
-    // nested worktree: removing the parent tree destroys that worktree too.
-    const holders = holdersOutside(resolved);
-    if (holders.length === 0) return null;
-    return blockReason(formatWorktreeHolders(holders), `${op.kind} would remove ${resolved}.`, warnings);
+    // Another holder inside the target blocks, even when the target is the
+    // caller's own worktree: only an empty own worktree may be removed.
+    const found = holdersInside(resolved);
+    if (found.length > 0) return blockReason(describe(found), `${op.kind} would remove ${resolved}.`, warnings);
+    return null;
   };
 
   for (const op of operations) {
     const opCwd = op.cwd === undefined ? cwd : op.cwd;
     if (op.targets.length === 0) {
-      if (livePaths.length === 0) continue;
-      return blockReason(formatWorktreeHolders(liveHolders(livePaths)), `${op.kind} has no statically known target: use a literal path.`, warnings);
+      if (liveTreeHolders.length === 0) continue;
+      return blockReason(describe(liveTreeHolders), `${op.kind} has no statically known target: use a literal path.`, warnings);
     }
     for (const target of op.targets) {
       const reason = check(target, opCwd, op);

@@ -110,6 +110,7 @@ interface CorpusFixture {
     idle: string;
     script: string;
     missing: string;
+    selfScript: string;
     outside: string;
 }
 
@@ -130,7 +131,11 @@ function corpusFixture(): CorpusFixture {
     const script = join(root, 'reap.sh');
     writeFileSync(script, `rm -rf ${live}\n`);
     chmodSync(script, 0o755);
-    const outside = join(root, 'outside');
+    const selfScript = join(root, 'self.sh');
+    writeFileSync(selfScript, `source ${selfScript}\n`);
+    writeFileSync(join(repo, 'a.log'), 'log\n');
+    git(repo, ['config', 'alias.rmlive', 'worktree remove --force']);
+const outside = join(root, 'outside');
     mkdirSync(outside);
     symlinkSync(live, join(outside, 'link'));
     return {
@@ -138,7 +143,8 @@ function corpusFixture(): CorpusFixture {
         live: realpathSync(live),
         idle: realpathSync(idle),
         script: realpathSync(script),
-        missing: join(root, 'missing.sh'),
+        selfScript: realpathSync(selfScript),
+    missing: join(root, 'missing.sh'),
         outside: realpathSync(outside),
     };
 }
@@ -170,7 +176,7 @@ describe('Claude PreToolUse worktree guard', () => {
         await waitFor(() => readCwd(child.pid as number) === paths.live);
         const mismatches: string[] = [];
         for (const testCase of buildCorpus(paths)) {
-            const reason = worktreeGuardDecision(bashPayload(testCase.command, paths.repo), { tmuxSockets: [] });
+            const reason = worktreeGuardDecision(bashPayload(testCase.command, testCase.cwd ?? paths.repo), { tmuxSockets: [] });
             const got = reason ? 'BLOCK' : 'ALLOW';
             if (got !== testCase.expect) {
                 mismatches.push(`${testCase.id}: expected ${testCase.expect}, got ${got} — ${testCase.why}\n  ${testCase.command}`);
@@ -178,6 +184,21 @@ describe('Claude PreToolUse worktree guard', () => {
         }
         child.kill('SIGKILL');
         expect(mismatches.join('\n')).toBe('');
+    });
+
+    it('blocks the unknown script remainder when the fan-out budget is spent (R4)', () => {
+        const paths = corpusFixture();
+        // A spent budget stands for a fan-out of scripts too large to parse: the
+        // text of the next script is still checked for a removal verb.
+        const spent = { visited: new Set<string>(), deadline: Date.now() - 1, expired: false };
+        const blocked = hookRemovalOperations(`bash ${paths.script}`, 0, paths.repo, spent);
+        expect(blocked.map(op => op.kind)).toContain('rm');
+        const warned = hookRemovalOperations(`bash ${paths.selfScript}`, 0, paths.repo, {
+            visited: new Set<string>(),
+            deadline: Date.now() - 1,
+            expired: false,
+        });
+        expect(warned.map(op => op.kind)).toEqual(['warning']);
     });
 
     it('is routed for Bash tool calls', () => {
