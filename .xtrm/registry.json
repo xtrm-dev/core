@@ -15,7 +15,7 @@
           "version": "0.15.3"
         },
         "dispatch.mjs": {
-          "hash": "297effbf4c45397f3643d2e5fa46370d408569c041a321b27fbbf34916114b63",
+          "hash": "e4e6e53c2279187dcbe6c84817382d50a45b71b5f7ce6b9bb140ccd0cff09331",
           "version": "0.15.3"
         },
         "gitnexus/gitnexus-hook.cjs": {
@@ -23,7 +23,7 @@
           "version": "0.15.3"
         },
         "hook-routing.mjs": {
-          "hash": "acc0edb6381fb001b8c05fdbac4814c96a10db2d7a7d8c5f8e89e5e7014d8b7f",
+          "hash": "a654da51403c1f455b40710a97d22137fd7671e827e539901072363f2d6fe43f",
           "version": "0.15.3"
         },
         "inbox-reminder-stop.mjs": {
@@ -60,6 +60,14 @@
         },
         "worktree-boundary.mjs": {
           "hash": "dc9dec5cebc336bbf7da7c5642c2b8f29a55bdd93b35f08d87e1c2b87bae82ce",
+          "version": "0.15.3"
+        },
+        "worktree-guard.mjs": {
+          "hash": "11f207e1f43c3022362f517f352b239737c87f76190a48f8240faa3ec766b666",
+          "version": "0.15.3"
+        },
+        "worktree-liveness.mjs": {
+          "hash": "cae2fefcabde8b8122c751cc56a7de1d7a88b288f940d1bbdaccf6cd224a0c3d",
           "version": "0.15.3"
         },
         "worktree-reap-sweep.mjs": {
