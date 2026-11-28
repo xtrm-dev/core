@@ -19,7 +19,14 @@ const COMMAND = "xtprompt";
 const DEFAULT_SHORTCUT = "alt+m";
 const SENTINEL_OPEN = "<xtprompt>";
 const SENTINEL_CLOSE = "</xtprompt>";
-const ENHANCER_MAX_OUTPUT_TOKENS = 1600;
+// Thinking shares this budget with the answer on reasoning-by-default models.
+// Measured against opencode-go/deepseek-v4.1-flash with a 1.7k-character draft:
+// a complete rewrite needs 1.35k-2.1k output tokens, and 1600 stopped on
+// "length" in every run, several times with no text at all. Asking for
+// `reasoning: "off"` or `"minimal"` does not suppress the thinking block on
+// that model and costs more (off 2099, minimal 3070, low 1668 output tokens for
+// the same request), so the level stays "low" and the budget carries the rest.
+const ENHANCER_MAX_OUTPUT_TOKENS = 8192;
 const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_CONTEXT_ITEMS = 3;
 const MAX_CONTEXT_CHARS = 480;
@@ -198,13 +205,17 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
         if (primary === null) return null;
         const parsed = parseSentinel(extractText(primary));
         if (parsed !== undefined) return parsed;
+        // A "length" stop is a budget failure, not a compliance failure: the
+        // identical retry below would be cut off at the same place for the same
+        // reason, after another full timeout.
+        if (primary.stopReason === "length") throw truncatedBlockError(answerBudget(model));
         const retried = await callModel(ctx, model, retryRequest(request), signal);
         if (retried === null) return null;
         const retriedParsed = parseSentinel(extractText(retried));
         if (retriedParsed !== undefined) return retriedParsed;
-        throw new Error(
-          `${EXTENSION}: model did not return ${SENTINEL_OPEN} block. Leaving editor unchanged.`,
-        );
+        // The retry can also be cut off — a compliance nudge does not buy room.
+        if (retried.stopReason === "length") throw truncatedBlockError(answerBudget(model));
+        throw missingBlockError(retried);
       },
     ).catch((error: unknown) => {
       ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
@@ -536,10 +547,11 @@ function escapeXml(text: string): string {
 // takes the provider-neutral SimpleStreamOptions shape (per-API `complete` has
 // no portable reasoning level) and resolves request-time auth (key, headers,
 // env). `reasoning: "low"` bounds thinking-by-default models, where reasoning
-// shares maxTokens with the answer: a XTRM-588 run with opencode-go/
-// deepseek-v4.1-flash truncated at 1600 output tokens on a thinking block
-// alone. Non-reasoning models clamp the level to "off" (no parameter sent),
-// so cost is unchanged for them.
+// shares maxTokens with the answer: XTRM-588 truncated at 1600 output tokens on
+// a thinking block alone. "low" is also the cheapest level this model honours:
+// "off" and "minimal" do not suppress the block (see the budget constant above).
+// Non-reasoning models clamp the level to "off" (no parameter sent), so cost is
+// unchanged for them.
 async function callModel(
   ctx: ExtensionContext,
   model: Model<Api>,
@@ -554,7 +566,7 @@ async function callModel(
       signal: mergedSignal,
       // Session-routed providers (e.g. opencode-go) reject calls without it.
       sessionId: ctx.sessionManager.getSessionId(),
-      maxTokens: Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS),
+      maxTokens: answerBudget(model),
       reasoning: "low",
     });
     return await Promise.race<AssistantMessage | null>([
@@ -601,6 +613,25 @@ export function parseSentinel(text: string): string | undefined {
   if (start === -1 || end === -1 || end <= start) return undefined;
   const inner = text.slice(start + SENTINEL_OPEN.length, end).trim();
   return inner || undefined;
+}
+
+// The budget a call actually gets: the constant is a ceiling, a small model
+// clamps it. Reporting the constant when the call was capped lower names a
+// limit that was never applied.
+function answerBudget(model: Model<Api>): number {
+  return Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS);
+}
+
+function truncatedBlockError(budget: number): Error {
+  return new Error(
+    `${EXTENSION}: model output hit the ${budget}-token limit (stopReason: length) before the ${SENTINEL_OPEN} block closed. Leaving editor unchanged.`,
+  );
+}
+
+function missingBlockError(message: AssistantMessage): Error {
+  return new Error(
+    `${EXTENSION}: model did not return ${SENTINEL_OPEN} block (stopReason: ${message.stopReason ?? "unknown"}). Leaving editor unchanged.`,
+  );
 }
 
 async function runWithLoader(
