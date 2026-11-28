@@ -125,7 +125,7 @@ describe('Pi worktree guard', () => {
 		}
 	});
 
-	test('blocks a removal while a private tmux pane sits in the worktree', () => {
+	test('blocks a removal while a private tmux pane sits in the worktree', async () => {
 		const { repo, worktree } = fixture();
 		const dir = tempDir('xtrm-pi-guard-tmux-');
 		const socket = join(dir, 'private.sock');
@@ -136,7 +136,9 @@ describe('Pi worktree guard', () => {
 		const started = spawnSync('tmux', ['-S', socket, 'new-session', '-d', '-s', 'guard', '-c', worktree, 'sleep', '300'], { encoding: 'utf8' });
 		expect(started.status, String(started.stderr)).toBe(0);
 
-		const reason = worktreeGuardReason(`git worktree remove ${worktree}`, repo, { tmuxSockets: [socket] });
+		// pane_current_path is set asynchronously by the server, so wait for the read.
+		let reason: string | null = null;
+		await waitFor(() => (reason = worktreeGuardReason(`git worktree remove ${worktree}`, repo, { tmuxSockets: [socket] })) !== null);
 		expect(reason).toBeTruthy();
 		expect(reason).toContain('tmux pane');
 		expect(reason).toContain(worktree);

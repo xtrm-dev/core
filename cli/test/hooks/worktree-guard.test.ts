@@ -167,13 +167,14 @@ describe('Claude PreToolUse worktree guard', () => {
         }
     });
 
-    it.skipIf(!hasTmux)('blocks a removal while a private tmux pane sits in the worktree', () => {
+    it.skipIf(!hasTmux)('blocks a removal while a private tmux pane sits in the worktree', async () => {
         const { repo, worktree } = fixture();
         const socket = privateSocket();
         const started = spawnSync('tmux', ['-S', socket, 'new-session', '-d', '-s', 'guard', '-c', worktree, 'sleep', '300'], { encoding: 'utf8' });
         expect(started.status, String(started.stderr)).toBe(0);
 
-        const reason = worktreeGuardDecision(bashPayload(`git worktree remove ${worktree}`, repo), { tmuxSockets: [socket] });
+        let reason: string | null = null;
+        await waitFor(() => (reason = worktreeGuardDecision(bashPayload(`git worktree remove ${worktree}`, repo), { tmuxSockets: [socket] })) !== null);
         expect(reason).toBeTruthy();
         expect(reason).toContain('tmux pane');
         expect(reason).toContain(worktree);

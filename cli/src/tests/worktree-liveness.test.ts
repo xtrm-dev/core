@@ -106,8 +106,10 @@ describe('worktreeInUse (cli/src/core/worktree-liveness.ts)', () => {
         const started = tmux(socket, ['new-session', '-d', '-s', 'liveguard', '-c', worktree, 'sleep', '300']);
         expect(started.status, String(started.stderr)).toBe(0);
 
+        // The server sets pane_current_path asynchronously, so the first read can
+        // still show the pane in the session's start directory.
+        await waitFor(() => worktreeInUse(worktree, { cwds: new Map(), tmuxSockets: [socket] }).live);
         const liveness = worktreeInUse(worktree, { cwds: new Map(), tmuxSockets: [socket] });
-        expect(liveness.live).toBe(true);
         expect(liveness.holders.some(holder => holder.kind === 'pane' && holder.path === worktree)).toBe(true);
 
         expect(tmux(socket, ['kill-server']).status).toBe(0);
