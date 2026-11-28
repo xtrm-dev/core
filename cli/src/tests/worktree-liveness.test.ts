@@ -154,6 +154,52 @@ describe('worktreeInUse (cli/src/core/worktree-liveness.ts)', () => {
         expect(liveness.holders.map(holder => holder.pid)).toEqual([11]);
     });
 
+    it('finds a holder when the worktree path is reached through a symlink', async () => {
+        const root = tempDir('xtrm-liveguard-symlink-');
+        const real = join(root, 'real');
+        const nested = join(real, 'wt');
+        mkdirSync(nested, { recursive: true });
+        const link = join(root, 'link');
+        symlinkSync(real, link);
+
+        const child = spawnSleeping(nested);
+        await waitFor(() => processCwd(child.pid as number) === nested);
+
+        // /proc reports the kernel-real path; the caller holds the symlinked one.
+        const liveness = worktreeInUse(join(link, 'wt'), { panes: [] });
+        expect(liveness.live).toBe(true);
+        expect(liveness.holders.map(holder => holder.pid)).toContain(child.pid);
+        expect(liveness.path).toBe(nested);
+
+        await waitForExit(child);
+        await waitFor(() => !worktreeInUse(join(link, 'wt'), { panes: [] }).live);
+    });
+
+    it('strips the kernel "(deleted)" suffix, and only for the same directory', async () => {
+        const root = tempDir('xtrm-liveguard-deleted-');
+        const first = join(root, 'first');
+        const second = join(root, 'second');
+        mkdirSync(first);
+        mkdirSync(second);
+        const a = spawnSleeping(first);
+        const b = spawnSleeping(second);
+        await waitFor(() => processCwd(a.pid as number) === first && processCwd(b.pid as number) === second);
+
+        rmSync(first, { recursive: true, force: true });
+        rmSync(second, { recursive: true, force: true });
+        // The kernel now reports "<path> (deleted)" for both children.
+        await waitFor(() => readProcessCwds().has(first) && readProcessCwds().has(second));
+        expect([...readProcessCwds().keys()].every(key => !key.endsWith(' (deleted)'))).toBe(true);
+
+        // The stripped path matches its own child and nothing else: no prefix match.
+        expect(worktreeInUse(first, { panes: [] }).holders.map(holder => holder.pid)).toEqual([a.pid]);
+        expect(worktreeInUse(second, { panes: [] }).holders.map(holder => holder.pid)).toEqual([b.pid]);
+        expect(worktreeInUse(join(root, 'fir'), { panes: [] }).live).toBe(false);
+
+        await waitForExit(a);
+        await waitForExit(b);
+    });
+
     it('excludes the caller process ancestry from a dedicated holder view', () => {
         const own = callerProcessIds();
         expect(own.has(process.pid)).toBe(true);

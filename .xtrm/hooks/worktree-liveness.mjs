@@ -14,7 +14,7 @@
 // The check never throws.
 
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 
 const PANE_FORMAT = ['#{pane_id}', '#{pane_pid}', '#{pane_current_command}', '#{pane_current_path}', '#{@agent_worktree}'].join('\t');
@@ -41,11 +41,22 @@ export function readProcessCwds(procRoot = '/proc') {
     } catch {
       continue;
     }
+    // The kernel renders a cwd whose directory was removed as "<path> (deleted)".
+    if (target.endsWith(' (deleted)')) target = target.slice(0, -' (deleted)'.length);
     const existing = cwds.get(target);
     if (existing) existing.push(pid);
     else cwds.set(target, [pid]);
   }
   return cwds;
+}
+
+/** The kernel-real path, so comparisons use what /proc reports. */
+export function canonicalPath(target) {
+  try {
+    return realpathSync(target);
+  } catch {
+    return resolve(target);
+  }
 }
 
 export function readProcessCommand(pid, procRoot = '/proc') {
@@ -156,7 +167,9 @@ export function readTmuxPanes(options = {}) {
  * sit inside — and only the remaining holders make the tree live.
  */
 export function worktreeInUse(worktreePath, options = {}) {
-  const path = resolve(worktreePath);
+  // /proc/<pid>/cwd is kernel-real; a repo root reached through a symlink would
+  // otherwise never match a holder.
+  const path = canonicalPath(worktreePath);
   const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? '/proc');
   const readCommand = options.readCommand ?? ((pid) => readProcessCommand(pid, options.procRoot ?? '/proc'));
   const { panes, warnings } = readTmuxPanes(options);

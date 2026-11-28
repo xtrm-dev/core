@@ -292,6 +292,28 @@ describe('the three liveness copies answer identically on one fixture', () => {
         await stop(child);
     });
 
+    it('agrees through a symlinked repo root', async () => {
+        const root = tempDir('xtrm-guard-symlink-');
+        const real = join(root, 'real');
+        const nested = join(real, 'wt');
+        spawnSync('mkdir', ['-p', nested]);
+        const link = join(root, 'link');
+        symlinkSync(real, link);
+        const child = spawnSleeping(nested);
+        await waitFor(() => readCwd(child.pid as number) === nested);
+
+        const options = { cwds: hookLiveness.readProcessCwds(), panes: [] };
+        const shape = (answer: { live: boolean; holders: Array<{ pid: number }> }) => ({
+            live: answer.live,
+            pids: answer.holders.map(holder => holder.pid),
+        });
+        const target = join(link, 'wt');
+        expect(shape(hookLiveness.worktreeInUse(target, options))).toEqual({ live: true, pids: [child.pid] });
+        expect(shape(worktreeInUse(target, options))).toEqual({ live: true, pids: [child.pid] });
+        expect(shape(piWorktreeInUse(target, options))).toEqual({ live: true, pids: [child.pid] });
+        await stop(child);
+    });
+
     it('parses removal commands identically', () => {
         for (const command of [
             INCIDENT_LOOP,

@@ -208,7 +208,9 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
  * shape for `clean` and `reap`; a removal re-reads right before it acts.
  */
 export function worktreeInUse(worktreePath: string, options: WorktreeInUseOptions = {}): WorktreeLiveness {
-    const path = resolvePath(worktreePath);
+    // /proc/<pid>/cwd is kernel-real; a repo root reached through a symlink would
+    // otherwise never match a holder.
+    const path = canonicalPath(worktreePath);
     const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? '/proc');
     const readCommand = options.readCommand ?? ((pid: number) => readProcessCommand(pid, options.procRoot ?? '/proc'));
     const { panes, warnings } = readTmuxPanes(options);

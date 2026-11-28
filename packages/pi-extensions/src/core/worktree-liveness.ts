@@ -79,6 +79,9 @@ export function readProcessCwds(procRoot = "/proc"): Map<string, number[]> {
 		} catch {
 			continue;
 		}
+		// The kernel renders a cwd whose directory was removed as "<path> (deleted)",
+		// which would never equal the real directory.
+		if (target.endsWith(" (deleted)")) target = target.slice(0, -" (deleted)".length);
 		const existing = cwds.get(target);
 		if (existing) existing.push(pid);
 		else cwds.set(target, [pid]);
@@ -195,7 +198,9 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
  * sit inside — and only the remaining holders make the tree live.
  */
 export function worktreeInUse(worktreePath: string, options: WorktreeInUseOptions = {}): WorktreeLiveness {
-	const path = resolve(worktreePath);
+	// /proc/<pid>/cwd is kernel-real; a repo root reached through a symlink would
+	// otherwise never match a holder.
+	const path = canonicalPath(worktreePath);
 	const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? "/proc");
 	const readCommand = options.readCommand ?? ((pid: number) => readProcessCommand(pid, options.procRoot ?? "/proc"));
 	const { panes, warnings } = readTmuxPanes(options);

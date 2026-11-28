@@ -74339,11 +74339,11 @@ async function planProjectOperations(repoRoot) {
   const projectHooksDir = import_path9.default.join(repoRoot, ".claude", "hooks");
   for (const { legacyFile, duplicatePath } of LEGACY_PROJECT_HOOK_FILES) {
     const legacyPath = import_path9.default.join(projectHooksDir, legacyFile);
-    const canonicalPath = import_path9.default.join(repoRoot, duplicatePath);
+    const canonicalPath2 = import_path9.default.join(repoRoot, duplicatePath);
     if (!await import_fs_extra24.default.pathExists(legacyPath)) {
       continue;
     }
-    if (!await import_fs_extra24.default.pathExists(canonicalPath)) {
+    if (!await import_fs_extra24.default.pathExists(canonicalPath2)) {
       continue;
     }
     operations.push({
@@ -78900,6 +78900,7 @@ function readProcessCwds(procRoot = "/proc", options = {}) {
     } catch {
       continue;
     }
+    if (target.endsWith(" (deleted)")) target = target.slice(0, -" (deleted)".length);
     const existing = cwds.get(target);
     if (existing) existing.push(pid);
     else cwds.set(target, [pid]);
@@ -78910,7 +78911,12 @@ function isInside4(child, parent) {
   return child === parent || child.startsWith(`${parent}${import_node_path45.sep}`);
 }
 function livePidsFor(worktreePath, cwds) {
-  const root = (0, import_node_path45.resolve)(worktreePath);
+  let root;
+  try {
+    root = (0, import_node_fs21.realpathSync)(worktreePath);
+  } catch {
+    root = (0, import_node_path45.resolve)(worktreePath);
+  }
   const pids = [];
   for (const [cwd, cwdPids] of cwds) {
     if (isInside4(cwd, root)) pids.push(...cwdPids);
@@ -79240,7 +79246,7 @@ function readTmuxPanes(options = {}) {
   return { panes, warnings };
 }
 function worktreeInUse(worktreePath, options = {}) {
-  const path101 = resolvePath(worktreePath);
+  const path101 = canonicalPath(worktreePath);
   const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? "/proc");
   const readCommand = options.readCommand ?? ((pid) => readProcessCommand(pid, options.procRoot ?? "/proc"));
   const { panes, warnings } = readTmuxPanes(options);
@@ -79348,6 +79354,13 @@ function livenessReport(liveness) {
   ];
 }
 var MAX_SCRIPT_BYTES = 64 * 1024;
+function canonicalPath(path101) {
+  try {
+    return (0, import_node_fs22.realpathSync)(path101);
+  } catch {
+    return (0, import_node_path46.resolve)(path101);
+  }
+}
 
 // src/commands/end.ts
 function worktreeHoldsWork(cwd) {
