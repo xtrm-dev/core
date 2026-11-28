@@ -1280,6 +1280,33 @@ function registeredWorktrees(cwd: string | null): string[] {
     .filter(Boolean);
 }
 
+/** Match one path component against a `*`/`?` pattern, without building a
+ * RegExp from file-system text. Linear backtracking, no nested quantifiers, so a
+ * hostile file name cannot stall the guard. */
+function globMatch(pattern: string, name: string): boolean {
+	let p = 0;
+	let n = 0;
+	let star = -1;
+	let resume = 0;
+	while (n < name.length) {
+		if (p < pattern.length && (pattern[p] === '?' || pattern[p] === name[n])) {
+			p += 1;
+			n += 1;
+		} else if (p < pattern.length && pattern[p] === '*') {
+			star = p;
+			p += 1;
+			resume = n;
+		} else if (star >= 0) {
+			p = star + 1;
+			resume += 1;
+			n = resume;
+		} else {
+			return false;
+		}
+	}
+	while (p < pattern.length && pattern[p] === '*') p += 1;
+	return p === pattern.length;
+}
 /**
  * A target whose only unresolved part is a glob in its final component is
  * expanded against the filesystem, so `./*.log` is judged by the files it
@@ -1300,8 +1327,6 @@ export function expandTrailingGlob(target: string, cwd: string | null): string[]
   } catch {
     return null;
   }
-  const source = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]');
-  const matcher = new RegExp(`^${source}$`);
-  return entries.filter(entry => matcher.test(entry)).map(entry => canonicalPath(`${dir}/${entry}`));
+	return entries.filter((entry) => globMatch(pattern, entry)).map((entry) => canonicalPath(`${dir}/${entry}`));
 }
 
