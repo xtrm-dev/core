@@ -20,7 +20,7 @@
 
 import { spawnSync } from 'node:child_process';
 import type { Dirent } from 'node:fs';
-import { appendFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { appendFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import { readProcessCwds } from './worktree-reap.js';
@@ -68,6 +68,8 @@ export interface WorktreeInUseOptions {
     uid?: number;
     readCommand?: (pid: number) => string;
     commandTimeoutMs?: number;
+    /** Total budget for every tmux query; a DoS bound, not a tuning knob. */
+    tmuxBudgetMs?: number;
     /** Holders whose presence is legitimate (a release's own pane and ancestry). */
     exemptPids?: Iterable<number>;
 }
@@ -98,63 +100,101 @@ export function readProcessCommand(pid: number, procRoot = '/proc'): string {
     }
 }
 
+/** Total time a hook may spend asking tmux. Three hung sockets stay bounded. */
+export const TMUX_QUERY_BUDGET_MS = 250;
+/** Slice per socket, so several sockets still get an answer inside the budget. */
+const TMUX_SOCKET_SLICE_MS = 60;
+
+/** A socket this process may trust: it is a socket, this uid owns it, and its
+ * directory is owner-only. A world-writable directory can point a guard at a
+ * server someone else controls, and a scan of /tmp at large is the DoS the
+ * audit found. */
+function trustedSocket(socket: string, uid: number): boolean {
+    try {
+        const stat = lstatSync(socket);
+        if (!stat.isSocket()) return false;
+        if (typeof stat.uid === 'number' && stat.uid !== uid) return false;
+        return trustedOwnerOnlyDir(dirname(socket), uid);
+    } catch {
+        return false;
+    }
+}
+
+function trustedOwnerOnlyDir(dir: string, uid: number): boolean {
+    try {
+        const stat = statSync(dir);
+        if (!stat.isDirectory()) return false;
+        if (typeof stat.uid === 'number' && stat.uid !== uid) return false;
+        return (stat.mode & 0o077) === 0;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Sockets of every tmux server this user can reach.
  *
  * `$TMUX` names the server hosting the caller. Everything else is discovered by
  * listing `<TMUX_TMPDIR>/tmux-<uid>` (tmux's own layout), so a server started
- * with `-S <full path>` is found when its socket lives there. Direct children of
- * `TMUX_TMPDIR` are included too: that is where a test may put a socket.
+ * with `-S <full path>` is found when its socket lives there. A private
+ * `TMUX_TMPDIR` is scanned as given: that is where a test puts a socket.
+ *
+ * A directory is only scanned when this uid owns it and its mode is 0700. That
+ * rule alone keeps a scan out of /tmp at large, where any user may leave a
+ * socket that makes the guard wait on a server it does not control.
  */
 export function discoverTmuxSockets(
     env: NodeJS.ProcessEnv = process.env,
     uid = typeof process.getuid === 'function' ? process.getuid() : 0,
 ): string[] {
     const base = env.TMUX_TMPDIR && env.TMUX_TMPDIR.length > 0 ? env.TMUX_TMPDIR : '/tmp';
-    const isSocket = (candidate: string): boolean => {
-        try {
-            return lstatSync(candidate).isSocket();
-        } catch {
-            return false;
-        }
-    };
+    const tmuxEnv = env.TMUX?.split(',')[0];
 
     // The cheap, bounded set first: the caller's own server and this uid's
     // default server. Scanning every socket in the tmp dir means one tmux spawn
     // per stale test socket (~150 on this host) for no liveness gain, because a
     // stale socket cannot host a pane.
     const preferred: string[] = [];
-    const tmuxEnv = env.TMUX?.split(',')[0];
-    if (tmuxEnv) preferred.push(tmuxEnv);
+    if (tmuxEnv && trustedSocket(tmuxEnv, uid)) preferred.push(tmuxEnv);
     const defaultSocket = join(base, `tmux-${uid}`, 'default');
-    if (isSocket(defaultSocket)) preferred.push(defaultSocket);
+    if (trustedSocket(defaultSocket, uid)) preferred.push(defaultSocket);
+    if (preferred.length > 0) return [...new Set(preferred)];
 
-    const existing = preferred.filter(isSocket);
-    if (existing.length > 0) return [...new Set(existing)];
-
-    // No live server in the bounded set: fall back to discovery for a private
-    // socket, capped so a directory full of dead probes cannot dominate a call.
+    // No live server in the bounded set: fall back to the owner-only directories
+    // for a private socket, capped so a directory full of dead probes cannot
+    // dominate a call. /tmp itself (mode 1777) is never scanned unless the caller
+    // set TMUX_TMPDIR to a directory only they can write.
     const sockets: string[] = [];
     const addSocketEntries = (dir: string): void => {
-        let entries;
+        if (!trustedOwnerOnlyDir(dir, uid)) return;
+        let entries: Dirent[];
         try {
-            entries = readdirSync(dir);
+            entries = readdirSync(dir, { withFileTypes: true });
         } catch {
             return;
         }
-        for (const name of entries) {
+        for (const entry of entries) {
             if (sockets.length >= 20) return;
-            const full = join(dir, name);
-            if (isSocket(full)) sockets.push(full);
+            const full = join(dir, entry.name);
+            if (trustedSocket(full, uid)) sockets.push(full);
         }
     };
-    addSocketEntries(base);
     addSocketEntries(join(base, `tmux-${uid}`));
+    if (base !== '/tmp') addSocketEntries(base);
 
     return [...new Set(sockets)];
 }
 
-/** Read every pane on every reachable server. A failed server becomes a warning. */
+/** Free text from a pane, safe to print in a refusal: no control characters,
+ * bounded length. */
+export function sanitizeHolderText(value: string, max = 120): string {
+    const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}
+
+/** Read every pane on every reachable server. The whole read has one deadline:
+ * a hung socket costs its slice, never the hook's patience. A failed or skipped
+ * server becomes a warning. */
 export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: PaneRecord[]; warnings: string[] } {
     if (options.panes) return { panes: options.panes, warnings: [] };
     if (options.skipTmux) return { panes: [], warnings: [] };
@@ -162,18 +202,24 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
     const sockets = options.tmuxSockets ?? discoverTmuxSockets(options.env ?? process.env, options.uid);
     const panes: PaneRecord[] = [];
     const warnings: string[] = [];
+    const deadline = Date.now() + (options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS);
 
     for (const socket of sockets) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+            warnings.push(`tmux query budget of ${options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS} ms exhausted; ${socket} not queried`);
+            continue;
+        }
         const result = spawnSync('tmux', ['-S', socket, 'list-panes', '-a', '-F', PANE_FORMAT], {
             encoding: 'utf8',
-            timeout: options.commandTimeoutMs ?? 1500,
+            timeout: Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining),
             env: { ...(options.env ?? process.env), TMUX: '' },
         });
         if (result.error || result.status !== 0) {
             const detail = result.error?.message
                 ?? (result.stderr ?? '').trim()
                 ?? `exit ${result.status ?? 'unknown'}`;
-            warnings.push(`tmux list-panes on ${socket} failed: ${detail.split('\n')[0]}`);
+            warnings.push(`tmux list-panes on ${socket} failed: ${sanitizeHolderText(detail.split('\n')[0])}`);
             continue;
         }
 
@@ -181,11 +227,11 @@ export function readTmuxPanes(options: WorktreeInUseOptions = {}): { panes: Pane
             if (!line.trim()) continue;
             const [paneId = '', panePid = '', paneCommand = '', panePath = '', agentWorktree = ''] = line.split('\t');
             panes.push({
-                paneId,
+                paneId: sanitizeHolderText(paneId, 32),
                 panePid: Number.parseInt(panePid, 10) || 0,
-                paneCommand,
-                panePath,
-                agentWorktree,
+                paneCommand: sanitizeHolderText(paneCommand, 80),
+                panePath: sanitizeHolderText(panePath, 240),
+                agentWorktree: sanitizeHolderText(agentWorktree, 240),
                 socket,
             });
         }
@@ -255,9 +301,9 @@ export function worktreeInUse(worktreePath: string, options: WorktreeInUseOption
 export function formatWorktreeHolders(holders: readonly WorktreeHolder[]): string[] {
     return holders.map(holder => {
         if (holder.kind === 'pane') {
-            return `tmux pane ${holder.pane ?? '(unknown)'} (pid ${holder.pid}, ${holder.command}) at ${holder.path}`;
+            return `tmux pane ${sanitizeHolderText(holder.pane ?? '(unknown)', 32)} (pid ${holder.pid}, ${sanitizeHolderText(holder.command)}) at ${sanitizeHolderText(holder.path, 240)}`;
         }
-        return `pid ${holder.pid} (${holder.command}) cwd ${holder.path}`;
+        return `pid ${holder.pid} (${sanitizeHolderText(holder.command)}) cwd ${sanitizeHolderText(holder.path, 240)}`;
     });
 }
 
@@ -377,7 +423,10 @@ const MAX_NESTING = 3;
 const MAX_SCRIPT_BYTES = 64 * 1024;
 const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}', 'done', 'fi']);
 /** Wrappers that run another command; the real command follows them. */
-const WRAPPERS = new Set(['command', 'builtin', 'nohup', 'time', 'exec', 'env', 'sudo', 'xargs', 'nice', 'timeout', 'stdbuf', 'ionice']);
+const WRAPPERS = new Set([
+    'command', 'builtin', 'nohup', 'time', 'exec', 'env', 'sudo', 'xargs', 'nice', 'timeout',
+    'stdbuf', 'ionice', 'setsid', 'flock', 'parallel',
+]);
 const SHELLS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
 /** Wrapper options that take a separate value, per wrapper: `sudo -p prompt` takes
  * one, `command -p` does not, so a shared table hides the wrapped command. */
@@ -394,6 +443,9 @@ const WRAPPER_OPERAND_FLAGS: Record<string, Set<string>> = {
     timeout: new Set(['-s', '-k', '--signal', '--kill-after']),
     stdbuf: new Set(['-i', '-o', '-e', '--input', '--output', '--error']),
     ionice: new Set(['-c', '-n', '-p', '-P', '-u']),
+    setsid: new Set(),
+    flock: new Set(['-w', '-E', '--timeout', '--conflict-exit-code']),
+    parallel: new Set(['-j', '--jobs', '-S', '--sshlogin', '--sshloginfile', '--colsep', '--delimiter', '-n', '--max-args', '-L', '--max-lines', '--header', '--results', '--tmpdir', '--joblog', '--timeout', '--retries', '--delay', '--load', '--memfree', '-I', '--replace', '--block', '-N']),
 };
 
 function wrapperSkipsOperand(wrapper: string, token: string): boolean {
@@ -403,6 +455,14 @@ function wrapperSkipsOperand(wrapper: string, token: string): boolean {
 /** A redirection token consumes its operand, which is a file, never a target:
  * `git worktree remove 2>/dev/null --force <path>` removes <path>. */
 const REDIRECTION = /^(\d*|&)(>>?|<<?)(.*)$/;
+/** find actions that run a command; a `rm` inside one removes the searched tree. */
+const EXEC_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
+/** A removal verb in text the parser cannot turn into an operation. */
+const REMOVAL_VERB = /(?:^|[\s;&|(])(?:[^\s;&|()]*\/)?rm\s+(?:-[A-Za-z]*[rR]|--recursive)\b|worktree\s+remove\b|-delete\b|-exec(?:dir)?\s+(?:[^\s;&|()]*\/)?rm\b/;
+
+export function hasRemovalVerb(text: string): boolean {
+    return REMOVAL_VERB.test(text);
+}
 
 function tokenize(command: string): string[][] {
     const segments: string[][] = [];
@@ -465,12 +525,64 @@ function tokenize(command: string): string[][] {
             while (i < command.length && command[i] !== '\n') i += 1;
             continue;
         }
-        token += ch;
+                // `$(...)` is one word of the outer command, not a subshell of it: keep it
+        // whole so the command word and target stay recognisable.
+        if (ch === '$' && command[i + 1] === '(') {
+            let depth = 0;
+            let j = i + 1;
+            for (; j < command.length; j += 1) {
+                if (command[j] === '(') depth += 1;
+                else if (command[j] === ')') {
+                    depth -= 1;
+                    if (depth === 0) break;
+                }
+            }
+            if (j < command.length) {
+                token += command.slice(i, j + 1);
+                hasToken = true;
+                i = j + 1;
+                continue;
+            }
+        }
+token += ch;
         hasToken = true;
         i += 1;
     }
     pushSegment();
     return segments;
+}
+
+/** Program text of `$(...)` and `` `...` `` substitutions: they run before the
+ * command that contains them, so a removal inside one still removes. */
+function substitutionPrograms(command: string): string[] {
+    const programs: string[] = [];
+    let i = 0;
+    while (i < command.length) {
+        if (command[i] === '`') {
+            const end = command.indexOf('`', i + 1);
+            if (end < 0) break;
+            programs.push(command.slice(i + 1, end));
+            i = end + 1;
+            continue;
+        }
+        if (command[i] === '$' && command[i + 1] === '(') {
+            let depth = 0;
+            let j = i + 1;
+            for (; j < command.length; j += 1) {
+                if (command[j] === '(') depth += 1;
+                else if (command[j] === ')') {
+                    depth -= 1;
+                    if (depth === 0) break;
+                }
+            }
+            if (j >= command.length) break;
+            programs.push(command.slice(i + 2, j));
+            i = j + 1;
+            continue;
+        }
+        i += 1;
+    }
+    return programs;
 }
 
 /** True when the shell, not the text, decides the path (`$w`, `$(...)`, a glob). */
@@ -479,11 +591,28 @@ export function targetIsUnresolved(target: string | undefined): boolean {
     return /[$`*?[\]{}~]/.test(target);
 }
 
+/** The literal directory prefix of a target the shell expands: `/tmp/x/$V`
+ * bounds to `/tmp/x`, `../*` bounds to the parent. Null means unbounded: a bare
+ * `$X`, `~`, or a relative target with no known cwd could be anything. */
+export function targetBound(target: string | undefined, cwd: string | null): string | null {
+    if (!target) return cwd;
+    const unresolvedAt = target.search(/[$`*?[\]{}~]/);
+    const literal = unresolvedAt < 0 ? target : target.slice(0, unresolvedAt);
+    if (unresolvedAt === 0) return null; // `$X`, `~`, a leading glob
+    if (literal.startsWith('/')) return literal.replace(/\/+$/, '') || '/';
+    if (!cwd) return null;
+    const trimmed = literal.replace(/\/+$/, '');
+    return trimmed === '' ? cwd : resolve(cwd, trimmed);
+}
+
 export interface RemovalOperation {
-    kind: 'git-worktree-remove' | 'rm' | 'find-delete' | 'script' | 'shell';
+    kind: 'git-worktree-remove' | 'rm' | 'find-delete' | 'script';
     targets: string[];
     raw: string;
-    /** The nested program of a `sh -c` / `eval` operation. */
+    /** Working directory the targets are relative to; null when a `cd` made it
+     * unknown. */
+    cwd?: string | null;
+    /** The nested program of a `sh -c` / `eval` / script file, when it was read. */
     program?: string;
 }
 
@@ -515,13 +644,26 @@ function stripRedirections(tokens: string[]): string[] {
     return out;
 }
 
+/** The file a redirection reads as the program: `bash < script.sh`. */
+function inputRedirect(tokens: string[]): string | null {
+    for (let i = 0; i < tokens.length; i += 1) {
+        const token = tokens[i];
+        if (token === '<') return tokens[i + 1] ?? null;
+        const match = /^<(.+)$/.exec(token);
+        if (match) return match[1];
+    }
+    return null;
+}
+
 /** Index of the command word after wrappers, their options and assignments. */
 function commandIndex(tokens: string[]): number {
     let start = 0;
+    let flockOperand = false;
     for (;;) {
         if (start >= tokens.length) return start;
         const base = tokens[start].split('/').pop() ?? tokens[start];
         if (!WRAPPERS.has(base)) break;
+        if (base === 'flock') flockOperand = true;
         start += 1;
         while (start < tokens.length) {
             const token = tokens[start];
@@ -530,7 +672,12 @@ function commandIndex(tokens: string[]): number {
                 continue;
             }
             if (!token.startsWith('-')) break;
-    start += wrapperSkipsOperand(base, token) ? 2 : 1;
+            start += wrapperSkipsOperand(base, token) ? 2 : 1;
+        }
+        // flock's next positional is the lock file, not the command.
+        if (flockOperand && start < tokens.length && !tokens[start].startsWith('-')) {
+            start += 1;
+            flockOperand = false;
         }
     }
     while (start < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start])) start += 1;
@@ -604,6 +751,7 @@ function gitRemovalOperations(
     record: (kind: RemovalOperation['kind'], targets: string[], extra?: Partial<RemovalOperation>) => void,
     operations: RemovalOperation[],
     depth: number,
+    cwd: string | null,
 ): RemovalOperation[] {
     const { subcommandAt, aliases, envAliases } = parseGitPrefix(tokens, start + 1);
     const subcommand = tokens[subcommandAt] ?? '';
@@ -614,7 +762,7 @@ function gitRemovalOperations(
         const program = aliasValue.startsWith('!')
             ? `${aliasValue.slice(1)} ${args.join(' ')}`
             : `git ${aliasValue} ${args.join(' ')}`;
-        operations.push(...removalOperations(program, depth + 1));
+        operations.push(...removalOperations(program, depth + 1, cwd));
         return operations;
     }
     if (envAliases.has(subcommand)) {
@@ -627,49 +775,154 @@ function gitRemovalOperations(
     return operations;
 }
 
-function operationsFromSegment(raw: string[], depth: number): RemovalOperation[] {
+interface ParseState {
+    cwd: string | null;
+}
+
+/** A script the parser can read is parsed as its own program; one it cannot read
+ * (a missing file, a non-shell binary) is reported as a script operation. */
+function readScript(path: string | null): string | null {
+    if (!path) return null;
+    try {
+        const stat = statSync(path);
+        if (!stat.isFile() || stat.size > MAX_SCRIPT_BYTES) return null;
+        return readFileSync(path, 'utf8');
+    } catch {
+        return null;
+    }
+}
+
+function localScript(token: string | undefined, cwd: string | null): string | null {
+    if (!token || targetIsUnresolved(token)) return null;
+    if (token.startsWith('/')) return token;
+    return cwd ? resolve(cwd, token) : null;
+}
+
+/** Track `cd` / `pushd` through `&&`, `;`, `||`: a relative target after a `cd`
+ * is relative to the new directory, and an unresolvable `cd` makes it unknown. */
+function trackDirectory(name: string, rest: string[], state: ParseState): void {
+    const target = rest.find(token => token !== '-P' && token !== '-L' && !token.startsWith('-'));
+    if (!target || target === '-') {
+        state.cwd = null;
+        return;
+    }
+    if (targetIsUnresolved(target)) {
+        state.cwd = null;
+        return;
+    }
+    if (target.startsWith('/')) {
+        state.cwd = resolve(target);
+        return;
+    }
+    state.cwd = state.cwd ? resolve(state.cwd, target) : null;
+}
+
+function operationsFromSegment(raw: string[], depth: number, state: ParseState): RemovalOperation[] {
     const operations: RemovalOperation[] = [];
-    const tokens = stripRedirections(raw.filter(token => !SHELL_KEYWORDS.has(token)));
-    const start = commandIndex(tokens);
-    const commandName = tokens[start];
+    const unfiltered = stripRedirections(raw.filter(token => !SHELL_KEYWORDS.has(token)));
+
+    // `parallel rm -rf {} ::: a b`: each `:::`-separated group is a command.
+    const leading = unfiltered[0] ?? '';
+    if (leading === 'parallel' || leading.endsWith('/parallel')) {
+        const groups: string[][] = [[]];
+        for (const token of unfiltered.slice(1)) {
+            if (token === ':::') groups.push([]);
+            else groups[groups.length - 1].push(token);
+        }
+        for (const group of groups) {
+            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd));
+        }
+        return operations;
+    }
+
+    const start = commandIndex(unfiltered);
+    const commandName = unfiltered[start];
     if (!commandName) return operations;
     const name = commandName.split('/').pop() ?? commandName;
-    const rest = tokens.slice(start + 1);
+    const rest = unfiltered.slice(start + 1);
     const record = (kind: RemovalOperation['kind'], targets: string[], extra: Partial<RemovalOperation> = {}): void => {
-        operations.push({ kind, targets, raw: raw.join(' '), ...extra });
+        operations.push({ kind, targets, raw: raw.join(' '), cwd: state.cwd, ...extra });
     };
+
+    if (name === 'cd' || name === 'pushd') {
+        trackDirectory(name, rest, state);
+        return operations;
+    }
+
+    // A command word the shell computes, such as `$(which rm) -rf live`: the
+    // executable is unknown, so a removal flag in the arguments makes it a
+    // removal of the literal arguments.
+    if (/[$`]/.test(name) && rest.some(token => token === '--recursive' || /^-[A-Za-z]*[rR]/.test(token))) {
+        record('rm', rest.filter(token => !token.startsWith('-') && !/[$`]/.test(token)));
+        return operations;
+    }
 
     if (SHELLS.has(name) || name === 'eval') {
         const cIndex = name === 'eval' ? -1 : rest.findIndex(token => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
         if (name === 'eval' || cIndex >= 0) {
             const program = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
-            if (program) {
-                record('shell', [], { program });
-                if (depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1));
-            }
+            if (program && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
             return operations;
         }
-        const script = rest.find(token => !token.startsWith('-'));
-        if (script) record('script', [script]);
+        // `bash < script`, `bash script`: the program text comes from a file.
+        const scriptToken = rest.find(token => !token.startsWith('-') && !token.startsWith('<'));
+        const program = readScript(localScript(inputRedirect(raw) ?? scriptToken, state.cwd));
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+        else if (program === null && (scriptToken || inputRedirect(raw))) {
+            record('script', [scriptToken ?? inputRedirect(raw) ?? '']);
+        }
+        return operations;
+    }
+
+    if (name === 'source' || name === '.') {
+        const program = readScript(localScript(rest.find(token => !token.startsWith('-')), state.cwd));
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+        return operations;
+    }
+
+    // `./script.sh` and any other executable file the parser can read.
+    if (commandName.includes('/')) {
+        const program = readScript(localScript(commandName, state.cwd));
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+        else record('script', [commandName]);
+        return operations;
+    }
+
+    if (name === 'parallel') {
+        // `parallel rm -rf {} ::: a b`: each `:::`-separated group is a command.
+        const groups: string[][] = [[]];
+        for (const token of rest) {
+            if (token === ':::') groups.push([]);
+            else groups[groups.length - 1].push(token);
+        }
+        for (const group of groups) {
+            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd));
+        }
         return operations;
     }
 
     if (name === 'git') {
-        return gitRemovalOperations(tokens, start, record, operations, depth);
+        return gitRemovalOperations(unfiltered, start, record, operations, depth, state.cwd);
     }
 
     if (name === 'rm') {
-        const args = stripRedirections(rest);
+        const args = rest;
         const recursive = args.some(arg => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
         if (recursive) record('rm', args.filter(arg => !arg.startsWith('-')));
         return operations;
     }
 
     if (name === 'find') {
-        const args = stripRedirections(rest);
-        if (!args.includes('-delete')) return operations;
-        const root = args.find(token => !token.startsWith('-'));
-        record('find-delete', root ? [root] : []);
+        const args = rest;
+        const root = args.find(token => !token.startsWith('-') && !token.startsWith('(')) ?? '.';
+        if (args.includes('-delete')) record('find-delete', [root]);
+        for (let i = 0; i < args.length; i += 1) {
+            if (!EXEC_ACTIONS.has(args[i])) continue;
+            const sub = args.slice(i + 1).filter(token => token !== '{}' && token !== '+' && token !== ';');
+            if (sub.some(token => token === 'rm' || token.endsWith('/rm')) || hasRemovalVerb(sub.join(' '))) {
+                record('find-delete', [root]);
+            }
+        }
     }
     return operations;
 }
@@ -677,10 +930,16 @@ function operationsFromSegment(raw: string[], depth: number): RemovalOperation[]
 /**
  * Removal operations in a shell command, in execution order.
  * `targets` is always an array; an empty array or an unresolved entry means the
- * path is not statically known.
+ * path is not statically known, and `cwd` says what a relative one is relative to.
  */
-export function removalOperations(command: string, depth = 0): RemovalOperation[] {
+export function removalOperations(command: string, depth = 0, cwd: string | null = null): RemovalOperation[] {
     const operations: RemovalOperation[] = [];
-    for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth));
+    const state: ParseState = { cwd };
+    for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth, state));
+    if (depth < MAX_NESTING) {
+        for (const program of substitutionPrograms(command)) {
+            operations.push(...removalOperations(program, depth + 1, cwd));
+        }
+    }
     return operations;
 }

@@ -4951,8 +4951,8 @@ var require_copy_sync = __commonJS({
       return getStats(destStat, src, dest, opts);
     }
     function getStats(destStat, src, dest, opts) {
-      const statSync11 = opts.dereference ? fs69.statSync : fs69.lstatSync;
-      const srcStat = statSync11(src);
+      const statSync12 = opts.dereference ? fs69.statSync : fs69.lstatSync;
+      const srcStat = statSync12(src);
       if (srcStat.isDirectory()) return onDir(srcStat, destStat, src, dest, opts);
       else if (srcStat.isFile() || srcStat.isCharacterDevice() || srcStat.isBlockDevice()) return onFile(srcStat, destStat, src, dest, opts);
       else if (srcStat.isSymbolicLink()) return onLink(destStat, src, dest, opts);
@@ -79179,39 +79179,58 @@ function readProcessCommand(pid, procRoot = "/proc") {
     return "(unknown)";
   }
 }
+var TMUX_QUERY_BUDGET_MS = 250;
+var TMUX_SOCKET_SLICE_MS = 60;
+function trustedSocket(socket, uid) {
+  try {
+    const stat3 = (0, import_node_fs22.lstatSync)(socket);
+    if (!stat3.isSocket()) return false;
+    if (typeof stat3.uid === "number" && stat3.uid !== uid) return false;
+    return trustedOwnerOnlyDir((0, import_node_path46.dirname)(socket), uid);
+  } catch {
+    return false;
+  }
+}
+function trustedOwnerOnlyDir(dir, uid) {
+  try {
+    const stat3 = (0, import_node_fs22.statSync)(dir);
+    if (!stat3.isDirectory()) return false;
+    if (typeof stat3.uid === "number" && stat3.uid !== uid) return false;
+    return (stat3.mode & 63) === 0;
+  } catch {
+    return false;
+  }
+}
 function discoverTmuxSockets(env3 = process.env, uid = typeof process.getuid === "function" ? process.getuid() : 0) {
   const base = env3.TMUX_TMPDIR && env3.TMUX_TMPDIR.length > 0 ? env3.TMUX_TMPDIR : "/tmp";
-  const isSocket = (candidate) => {
-    try {
-      return (0, import_node_fs22.lstatSync)(candidate).isSocket();
-    } catch {
-      return false;
-    }
-  };
-  const preferred = [];
   const tmuxEnv = env3.TMUX?.split(",")[0];
-  if (tmuxEnv) preferred.push(tmuxEnv);
+  const preferred = [];
+  if (tmuxEnv && trustedSocket(tmuxEnv, uid)) preferred.push(tmuxEnv);
   const defaultSocket = (0, import_node_path46.join)(base, `tmux-${uid}`, "default");
-  if (isSocket(defaultSocket)) preferred.push(defaultSocket);
-  const existing = preferred.filter(isSocket);
-  if (existing.length > 0) return [...new Set(existing)];
+  if (trustedSocket(defaultSocket, uid)) preferred.push(defaultSocket);
+  if (preferred.length > 0) return [...new Set(preferred)];
   const sockets = [];
   const addSocketEntries = (dir) => {
+    if (!trustedOwnerOnlyDir(dir, uid)) return;
     let entries;
     try {
-      entries = (0, import_node_fs22.readdirSync)(dir);
+      entries = (0, import_node_fs22.readdirSync)(dir, { withFileTypes: true });
     } catch {
       return;
     }
-    for (const name of entries) {
+    for (const entry of entries) {
       if (sockets.length >= 20) return;
-      const full = (0, import_node_path46.join)(dir, name);
-      if (isSocket(full)) sockets.push(full);
+      const full = (0, import_node_path46.join)(dir, entry.name);
+      if (trustedSocket(full, uid)) sockets.push(full);
     }
   };
-  addSocketEntries(base);
   addSocketEntries((0, import_node_path46.join)(base, `tmux-${uid}`));
+  if (base !== "/tmp") addSocketEntries(base);
   return [...new Set(sockets)];
+}
+function sanitizeHolderText(value, max = 120) {
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.length > max ? `${cleaned.slice(0, max - 1)}\u2026` : cleaned;
 }
 function readTmuxPanes(options = {}) {
   if (options.panes) return { panes: options.panes, warnings: [] };
@@ -79219,26 +79238,32 @@ function readTmuxPanes(options = {}) {
   const sockets = options.tmuxSockets ?? discoverTmuxSockets(options.env ?? process.env, options.uid);
   const panes = [];
   const warnings = [];
+  const deadline = Date.now() + (options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS);
   for (const socket of sockets) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      warnings.push(`tmux query budget of ${options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS} ms exhausted; ${socket} not queried`);
+      continue;
+    }
     const result = (0, import_node_child_process23.spawnSync)("tmux", ["-S", socket, "list-panes", "-a", "-F", PANE_FORMAT], {
       encoding: "utf8",
-      timeout: options.commandTimeoutMs ?? 1500,
+      timeout: Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining),
       env: { ...options.env ?? process.env, TMUX: "" }
     });
     if (result.error || result.status !== 0) {
       const detail = result.error?.message ?? (result.stderr ?? "").trim() ?? `exit ${result.status ?? "unknown"}`;
-      warnings.push(`tmux list-panes on ${socket} failed: ${detail.split("\n")[0]}`);
+      warnings.push(`tmux list-panes on ${socket} failed: ${sanitizeHolderText(detail.split("\n")[0])}`);
       continue;
     }
     for (const line of (result.stdout ?? "").split("\n")) {
       if (!line.trim()) continue;
       const [paneId = "", panePid = "", paneCommand = "", panePath2 = "", agentWorktree = ""] = line.split("	");
       panes.push({
-        paneId,
+        paneId: sanitizeHolderText(paneId, 32),
         panePid: Number.parseInt(panePid, 10) || 0,
-        paneCommand,
-        panePath: panePath2,
-        agentWorktree,
+        paneCommand: sanitizeHolderText(paneCommand, 80),
+        panePath: sanitizeHolderText(panePath2, 240),
+        agentWorktree: sanitizeHolderText(agentWorktree, 240),
         socket
       });
     }
@@ -79285,9 +79310,9 @@ function worktreeInUse(worktreePath, options = {}) {
 function formatWorktreeHolders(holders) {
   return holders.map((holder) => {
     if (holder.kind === "pane") {
-      return `tmux pane ${holder.pane ?? "(unknown)"} (pid ${holder.pid}, ${holder.command}) at ${holder.path}`;
+      return `tmux pane ${sanitizeHolderText(holder.pane ?? "(unknown)", 32)} (pid ${holder.pid}, ${sanitizeHolderText(holder.command)}) at ${sanitizeHolderText(holder.path, 240)}`;
     }
-    return `pid ${holder.pid} (${holder.command}) cwd ${holder.path}`;
+    return `pid ${holder.pid} (${sanitizeHolderText(holder.command)}) cwd ${sanitizeHolderText(holder.path, 240)}`;
   });
 }
 function callerProcessIds(start = process.pid, procRoot = "/proc") {
@@ -81032,7 +81057,8 @@ function applyCleanRemoval(repoRoot, targets, options = {}) {
   for (const target of targets) {
     let liveNow;
     try {
-      liveNow = livePidsFor(target.path, readCwds());
+      const liveness = options.liveness?.(target.path);
+      liveNow = liveness ? liveness.holders.filter((holder) => !options.exemptPids?.has(holder.pid)).map((holder) => holder.pid) : livePidsFor(target.path, readCwds());
     } catch (error62) {
       const message = error62 instanceof Error ? error62.message : String(error62);
       console.log(kleur_default.yellow(`  \u26A0 Kept ${target.path}: ${message}`));
@@ -82102,11 +82128,28 @@ function createWorktreeCommand() {
       console.log(kleur_default.dim("  Cancelled\n"));
       return;
     }
-    const removal = applyCleanRemoval(repoRoot, merged, { forceLive: opts.forceLive });
+    const lateProbe = createLivenessProbe();
+    const stillAllowed = new Set(keepLivePaths(merged.map((target) => target.path), {
+      command: "xt worktree clean",
+      repoRoot,
+      forceLive: opts.forceLive
+    }, lateProbe));
+    const lateMerged = merged.filter((target) => stillAllowed.has(target.path));
+    const lateOrphans = { removable: orphanPlan.removable.filter((target) => stillAllowed.has(target.path)) };
+    if (lateMerged.length + lateOrphans.removable.length < merged.length + orphanPlan.removable.length) {
+      console.log(kleur_default.yellow("\n  Some targets became live while waiting for confirmation and were kept\n"));
+    }
+    const removal = applyCleanRemoval(repoRoot, lateMerged, {
+      forceLive: opts.forceLive,
+      liveness: lateProbe,
+      exemptPids: callerProcessIds()
+    });
     let removedCount = removal.removed.length;
     if (opts.orphans) {
-      const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+      const orphanRemoval = applyCleanRemoval(repoRoot, lateOrphans.removable, {
         forceLive: opts.forceLive,
+        liveness: lateProbe,
+        exemptPids: callerProcessIds(),
         remove: (path101) => {
           if (!(0, import_node_fs26.existsSync)(path101)) return { ok: true, message: `Removed orphan directory ${path101}` };
           try {
@@ -82287,6 +82330,18 @@ ${result.messages.join("\n")}`);
     if (!doRemove) {
       console.log(kleur_default.dim("  Cancelled\n"));
       return;
+    }
+    const recheck = keepLivePaths([target.path], {
+      command: "xt worktree remove",
+      repoRoot,
+      forceLive: opts.forceLive
+    }, createLivenessProbe());
+    if (recheck.length === 0) {
+      console.error(kleur_default.red(`
+  \u2717 Refused: ${target.path} became live while waiting for confirmation
+`));
+      console.error(kleur_default.dim("  Stop the holder, or add --force-live to remove it anyway.\n"));
+      process.exit(1);
     }
     const result = removeWorktreeEntry(repoRoot, target.path);
     if (!result.ok) {

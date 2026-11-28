@@ -536,6 +536,10 @@ export interface CleanRemovalOptions {
     remove?: (path: string) => { ok: boolean; message: string };
     /** The caller already decided and logged an explicit live override. */
     forceLive?: boolean;
+    /** Fresh liveness read per target, panes included. Takes precedence over `readCwds`. */
+    liveness?: (path: string) => WorktreeLiveness;
+    /** Pids of the caller's own ancestry, never a reason to keep a tree. */
+    exemptPids?: ReadonlySet<number>;
 }
 
 /**
@@ -559,7 +563,10 @@ export function applyCleanRemoval(
     for (const target of targets) {
         let liveNow: number[];
         try {
-            liveNow = livePidsFor(target.path, readCwds());
+            const liveness = options.liveness?.(target.path);
+            liveNow = liveness
+                ? liveness.holders.filter(holder => !options.exemptPids?.has(holder.pid)).map(holder => holder.pid)
+                : livePidsFor(target.path, readCwds());
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             console.log(kleur.yellow(`  ⚠ Kept ${target.path}: ${message}`));
@@ -1999,12 +2006,33 @@ export function createWorktreeCommand(): Command {
                 return;
             }
 
-            const removal = applyCleanRemoval(repoRoot, merged, { forceLive: opts.forceLive });
+            // TOCTOU (CORE-2814): re-read processes and panes after the prompt. The
+            // probe is built here, so both reads are fresh. applyCleanRemoval keeps its
+            // own last-moment process check below this one.
+            const lateProbe = createLivenessProbe();
+            const stillAllowed = new Set(keepLivePaths(merged.map(target => target.path), {
+                command: 'xt worktree clean',
+                repoRoot,
+                forceLive: opts.forceLive,
+            }, lateProbe));
+            const lateMerged = merged.filter(target => stillAllowed.has(target.path));
+            const lateOrphans = { removable: orphanPlan.removable.filter(target => stillAllowed.has(target.path)) };
+            if (lateMerged.length + lateOrphans.removable.length < merged.length + orphanPlan.removable.length) {
+                console.log(kleur.yellow('\n  Some targets became live while waiting for confirmation and were kept\n'));
+            }
+
+            const removal = applyCleanRemoval(repoRoot, lateMerged, {
+                forceLive: opts.forceLive,
+                liveness: lateProbe,
+                exemptPids: callerProcessIds(),
+            });
             let removedCount = removal.removed.length;
 
             if (opts.orphans) {
-                const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+                const orphanRemoval = applyCleanRemoval(repoRoot, lateOrphans.removable, {
                     forceLive: opts.forceLive,
+                    liveness: lateProbe,
+                    exemptPids: callerProcessIds(),
                     remove: (path) => {
                         if (!existsSync(path)) return { ok: true, message: `Removed orphan directory ${path}` };
                         try {
@@ -2248,6 +2276,19 @@ export function createWorktreeCommand(): Command {
             if (!doRemove) {
                 console.log(kleur.dim('  Cancelled\n'));
                 return;
+            }
+
+            // TOCTOU (CORE-2814): a holder can appear while the prompt waits, so the
+            // last read happens here, immediately before the removal.
+            const recheck = keepLivePaths([target.path], {
+                command: 'xt worktree remove',
+                repoRoot,
+                forceLive: opts.forceLive,
+            }, createLivenessProbe());
+            if (recheck.length === 0) {
+                console.error(kleur.red(`\n  ✗ Refused: ${target.path} became live while waiting for confirmation\n`));
+                console.error(kleur.dim('  Stop the holder, or add --force-live to remove it anyway.\n'));
+                process.exit(1);
             }
 
             const result = removeWorktreeEntry(repoRoot, target.path);

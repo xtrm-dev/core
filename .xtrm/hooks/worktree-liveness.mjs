@@ -14,8 +14,8 @@
 // The check never throws.
 
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
-import { join, resolve, sep } from 'node:path';
+import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 
 const PANE_FORMAT = ['#{pane_id}', '#{pane_pid}', '#{pane_current_command}', '#{pane_current_path}', '#{@agent_worktree}'].join('\t');
 
@@ -74,51 +74,97 @@ export function readProcessCommand(pid, procRoot = '/proc') {
   }
 }
 
+/** Total time a hook may spend asking tmux. Three hung sockets stay bounded. */
+export const TMUX_QUERY_BUDGET_MS = 250;
+/** Slice per socket, so several sockets still get an answer inside the budget. */
+const TMUX_SOCKET_SLICE_MS = 60;
+
+/** A socket this process may trust: it is a socket, this uid owns it, and its
+ * directory is owner-only. A world-writable directory can point a guard at a
+ * server someone else controls. */
+function trustedSocket(socket, uid) {
+    try {
+        const stat = lstatSync(socket);
+        if (!stat.isSocket()) return false;
+        if (typeof stat.uid === 'number' && stat.uid !== uid) return false;
+        return trustedOwnerOnlyDir(dirname(socket), uid);
+    } catch {
+        return false;
+    }
+}
+
+function trustedOwnerOnlyDir(dir, uid) {
+    try {
+        const stat = statSync(dir);
+        if (!stat.isDirectory()) return false;
+        if (typeof stat.uid === 'number' && stat.uid !== uid) return false;
+        return (stat.mode & 0o077) === 0;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Sockets of every tmux server this user can reach.
+ *
+ * `$TMUX` names the server hosting the caller. Everything else is discovered by
+ * listing `<TMUX_TMPDIR>/tmux-<uid>` (tmux's own layout), so a server started
+ * with `-S <full path>` is found when its socket lives there. A private
+ * `TMUX_TMPDIR` is scanned as given: that is where a test puts a socket.
+ *
+ * A directory is only scanned when this uid owns it and its mode is 0700. That
+ * keeps a scan out of /tmp at large, where any user may leave a socket that
+ * makes the guard wait on a server it does not control.
+ */
 export function discoverTmuxSockets(env = process.env, uid = typeof process.getuid === 'function' ? process.getuid() : 0) {
     const base = env.TMUX_TMPDIR && env.TMUX_TMPDIR.length > 0 ? env.TMUX_TMPDIR : '/tmp';
-    const isSocket = (candidate) => {
-        try {
-            return lstatSync(candidate).isSocket();
-        } catch {
-            return false;
-        }
-    };
+    const tmuxEnv = env.TMUX?.split(',')[0];
 
     // The cheap, bounded set first: the caller's own server and this uid's
     // default server. Scanning every socket in the tmp dir means one tmux spawn
     // per stale test socket (~150 on this host) for no liveness gain, because a
     // stale socket cannot host a pane.
     const preferred = [];
-    const tmuxEnv = env.TMUX?.split(',')[0];
-    if (tmuxEnv) preferred.push(tmuxEnv);
+    if (tmuxEnv && trustedSocket(tmuxEnv, uid)) preferred.push(tmuxEnv);
     const defaultSocket = join(base, `tmux-${uid}`, 'default');
-    if (isSocket(defaultSocket)) preferred.push(defaultSocket);
+    if (trustedSocket(defaultSocket, uid)) preferred.push(defaultSocket);
+    if (preferred.length > 0) return [...new Set(preferred)];
 
-    const existing = preferred.filter(isSocket);
-    if (existing.length > 0) return [...new Set(existing)];
-
-    // No live server in the bounded set: fall back to discovery for a private
-    // socket, capped so a directory full of dead probes cannot dominate a call.
+    // No live server in the bounded set: fall back to the owner-only directories
+    // for a private socket, capped so a directory full of dead probes cannot
+    // dominate a call. /tmp itself (mode 1777) is never scanned unless the caller
+    // set TMUX_TMPDIR to a directory only they can write.
     const sockets = [];
     const addSocketEntries = (dir) => {
+        if (!trustedOwnerOnlyDir(dir, uid)) return;
         let entries;
         try {
-            entries = readdirSync(dir);
+            entries = readdirSync(dir, { withFileTypes: true });
         } catch {
             return;
         }
-        for (const name of entries) {
+        for (const entry of entries) {
             if (sockets.length >= 20) return;
-            const full = join(dir, name);
-            if (isSocket(full)) sockets.push(full);
+            const full = join(dir, entry.name);
+            if (trustedSocket(full, uid)) sockets.push(full);
         }
     };
-    addSocketEntries(base);
     addSocketEntries(join(base, `tmux-${uid}`));
+    if (base !== '/tmp') addSocketEntries(base);
 
     return [...new Set(sockets)];
 }
 
+/** Free text from a pane, safe to print in a refusal: no control characters,
+ * bounded length. */
+export function sanitizeHolderText(value, max = 120) {
+    const cleaned = String(value).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}
+
+/** Read every pane on every reachable server. The whole read has one deadline:
+ * a hung socket costs its slice, never the hook's patience. A failed or skipped
+ * server becomes a warning. */
 export function readTmuxPanes(options = {}) {
   if (options.panes) return { panes: options.panes, warnings: [] };
   if (options.skipTmux) return { panes: [], warnings: [] };
@@ -126,29 +172,35 @@ export function readTmuxPanes(options = {}) {
   const sockets = options.tmuxSockets ?? discoverTmuxSockets(options.env ?? process.env, options.uid);
   const panes = [];
   const warnings = [];
+  const deadline = Date.now() + (options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS);
 
   for (const socket of sockets) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      warnings.push(`tmux query budget of ${options.tmuxBudgetMs ?? TMUX_QUERY_BUDGET_MS} ms exhausted; ${socket} not queried`);
+      continue;
+    }
     const result = spawnSync('tmux', ['-S', socket, 'list-panes', '-a', '-F', PANE_FORMAT], {
       encoding: 'utf8',
-      timeout: options.commandTimeoutMs ?? 1500,
+      timeout: Math.min(options.commandTimeoutMs ?? TMUX_SOCKET_SLICE_MS, remaining),
       env: { ...(options.env ?? process.env), TMUX: '' },
     });
     if (result.error || result.status !== 0) {
       const detail = (result.error && result.error.message)
         || (result.stderr || '').trim()
         || `exit ${result.status ?? 'unknown'}`;
-      warnings.push(`tmux list-panes on ${socket} failed: ${String(detail).split('\n')[0]}`);
+      warnings.push(`tmux list-panes on ${socket} failed: ${sanitizeHolderText(String(detail).split('\n')[0])}`);
       continue;
     }
     for (const line of (result.stdout || '').split('\n')) {
       if (!line.trim()) continue;
       const [paneId = '', panePid = '', paneCommand = '', panePath = '', agentWorktree = ''] = line.split('\t');
       panes.push({
-        paneId,
+        paneId: sanitizeHolderText(paneId, 32),
         panePid: Number.parseInt(panePid, 10) || 0,
-        paneCommand,
-        panePath,
-        agentWorktree,
+        paneCommand: sanitizeHolderText(paneCommand, 80),
+        panePath: sanitizeHolderText(panePath, 240),
+        agentWorktree: sanitizeHolderText(agentWorktree, 240),
         socket,
       });
     }

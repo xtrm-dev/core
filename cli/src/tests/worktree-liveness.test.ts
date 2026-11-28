@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:net';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -10,7 +11,9 @@ import {
     createLivenessProbe,
     discoverTmuxSockets,
     formatWorktreeHolders,
+    readTmuxPanes,
     removalOperations,
+    sanitizeHolderText,
     targetIsUnresolved,
     worktreeInUse,
 } from '../core/worktree-liveness.js';
@@ -237,8 +240,8 @@ describe('removal command parsing', () => {
         ['env git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         ['sudo -u root git worktree remove /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         ['xargs -0 git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
-        [`bash -c 'rm -rf /tmp/wt'`, [{ kind: 'shell', targets: [] }, { kind: 'rm', targets: ['/tmp/wt'] }]],
-        [`sh -lc "find /tmp/wt -delete"`, [{ kind: 'shell', targets: [] }, { kind: 'find-delete', targets: ['/tmp/wt'] }]],
+        [`bash -c 'rm -rf /tmp/wt'`, [{ kind: 'rm', targets: ['/tmp/wt'] }]],
+        [`sh -lc "find /tmp/wt -delete"`, [{ kind: 'find-delete', targets: ['/tmp/wt'] }]],
         ['bash scripts/reap.sh', [{ kind: 'script', targets: ['scripts/reap.sh'] }]],
         ['git worktree remove 2>/dev/null --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         ['rm -rf /tmp/wt > /dev/null 2>&1', [{ kind: 'rm', targets: ['/tmp/wt'] }]],
@@ -277,5 +280,53 @@ describe('removal command parsing', () => {
         expect(targetIsUnresolved('/tmp/*')).toBe(true);
         expect(targetIsUnresolved('~/wt')).toBe(true);
         expect(targetIsUnresolved('/tmp/wt')).toBe(false);
+    });
+});
+
+describe('CORE-2814 audit: tmux discovery and read are bounded and trusted', () => {
+    /** A socket that accepts and never answers: it hangs any client that waits. */
+    function hungSocket(dir: string, name: string): { socket: string; server: Server } {
+        const socket = join(dir, name);
+        const server = createServer(() => {
+            // Accept and stay silent: the client waits for a reply that never comes.
+        });
+        server.listen(socket);
+        cleanup.push(() => {
+            server.close();
+        });
+        return { socket, server };
+    }
+
+    it('never scans a world-writable directory for sockets', () => {
+        const dir = tempDir('xtrm-liveguard-open-');
+        chmodSync(dir, 0o777);
+        const socket = join(dir, 'open.sock');
+        const server = createServer();
+        server.listen(socket);
+        cleanup.push(() => server.close());
+
+        expect(discoverTmuxSockets({ TMUX_TMPDIR: dir } as NodeJS.ProcessEnv)).toEqual([]);
+    });
+
+    it('keeps a hung socket inside the 250 ms budget and reports it', () => {
+        const dir = tempDir('xtrm-liveguard-hung-');
+        const sockets = ['a', 'b', 'c'].map(name => hungSocket(dir, `${name}.sock`).socket);
+        const started = Date.now();
+        const { panes, warnings } = readTmuxPanes({ tmuxSockets: sockets });
+        const elapsed = Date.now() - started;
+
+        expect(panes).toHaveLength(0);
+        expect(warnings.length).toBeGreaterThan(0);
+        expect(elapsed).toBeLessThan(1000);
+    });
+
+    it('strips control characters and caps a pane string in a holder line', () => {
+        expect(sanitizeHolderText('a\u0007b\nc', 10)).toBe('a b c');
+        expect(sanitizeHolderText('x'.repeat(500), 20)).toHaveLength(20);
+        const line = formatWorktreeHolders([
+            { kind: 'pane', pid: 7, command: 'bash\u001b[31m', pane: '%1', path: '/tmp/wt\u0000x' },
+        ])[0];
+        expect(line).not.toContain('\u001b');
+        expect(line).not.toContain('\u0000');
     });
 });

@@ -235,3 +235,108 @@ describe('Pi worktree guard', () => {
 		expect(removalOperations('find /tmp/wt -delete').map((op) => op.kind)).toEqual(['find-delete']);
 	});
 });
+
+// Audit F1/F2/F3/F4: the same ruling the Claude hook follows. A live worktree
+// elsewhere must not block a command that cannot reach it; a removal that hides
+// its target behind a shell construct still blocks.
+describe('Pi worktree guard audit shapes', () => {
+	test('allows unparseable and unbounded-looking commands that cannot remove a live worktree', async () => {
+		const { repo, worktree } = fixture();
+		const root = repo.slice(0, repo.lastIndexOf('/'));
+		const child = spawnSleeping(worktree);
+		await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+		for (const command of [
+			`bash -c 'npm test'`,
+			`sh -c 'echo hello'`,
+			`node -e "console.log(1)"`,
+			`python3 -c "print(1)"`,
+			`rm -rf /tmp/xtrm-nothing-here/$VAR`,
+			`rm -rf /tmp/xtrm-nothing-here/*`,
+			`find /tmp/xtrm-nothing-here -name x -delete`,
+			`git worktree prune`,
+		]) {
+			expect(worktreeGuardReason(command, repo, { tmuxSockets: [] }), command).toBeNull();
+		}
+
+		const glob = worktreeGuardReason(`rm -rf ${root}/*`, repo, { tmuxSockets: [] });
+		expect(glob).toBeTruthy();
+		expect(glob).toContain(`pid ${child.pid}`);
+
+		for (const command of [`rm -rf "$UNKNOWN_TARGET"`, 'rm -rf ~', `find "$X" -delete`]) {
+			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
+			expect(reason, command).toBeTruthy();
+			expect(reason, command).toContain('use a literal path');
+		}
+		await stop(child);
+	});
+
+	test('tracks cd through && and ; and resolves a relative target against it', async () => {
+		const { repo, worktree } = fixture();
+		const root = repo.slice(0, repo.lastIndexOf('/'));
+		const child = spawnSleeping(worktree);
+		await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+		for (const command of [
+			`cd ${root} && rm -rf wt`,
+			`cd ${root}; rm -rf wt`,
+			`cd ${root} || rm -rf wt`,
+			`cd ${worktree} && rm -rf .`,
+			`pushd ${root} && rm -rf wt`,
+		]) {
+			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
+			expect(reason, command).toBeTruthy();
+			expect(reason, command).toContain(`pid ${child.pid}`);
+		}
+
+		expect(worktreeGuardReason(`cd ${root} && rm -rf repo/nothing`, repo, { tmuxSockets: [] })).toBeNull();
+		const unresolvedCd = worktreeGuardReason('cd $SOMEWHERE && rm -rf wt', repo, { tmuxSockets: [] });
+		expect(unresolvedCd).toBeTruthy();
+		expect(unresolvedCd).toContain('use a literal path');
+		await stop(child);
+	});
+
+	test('blocks find -exec, local scripts, source, bash < file, backticks, setsid, flock, parallel and $(which rm)', async () => {
+		const { repo, worktree } = fixture();
+		const child = spawnSleeping(worktree);
+		await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+		const kill = join(repo, 'kill.sh');
+		writeFileSync(kill, `#!/bin/bash\nrm -rf ${worktree}\n`);
+		const feed = join(repo, 'feed.sh');
+		writeFileSync(feed, `rm -rf ${worktree}\n`);
+
+		const blocked = [
+			`find ${worktree} -exec rm -rf {} +`,
+			`find ${worktree} -execdir rm -rf {} \\;`,
+			`./kill.sh`,
+			`source ./kill.sh`,
+			`. ./kill.sh`,
+			`bash < ${feed}`,
+			`sh < ${feed}`,
+			`echo \`rm -rf ${worktree}\``,
+			`setsid git worktree remove --force ${worktree}`,
+			`flock /tmp/xtrm.lock git worktree remove --force ${worktree}`,
+			`parallel rm -rf {} ::: ${worktree}`,
+			`$(which rm) -rf ${worktree}`,
+		];
+		for (const command of blocked) {
+			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
+			expect(reason, command).toBeTruthy();
+			expect(reason, command).toContain(`pid ${child.pid}`);
+		}
+		await stop(child);
+	});
+
+	test('blocks a second holder in the caller own worktree', async () => {
+		const { repo } = fixture();
+		const ours = spawnSleeping(process.cwd());
+		const other = spawnSleeping(repo);
+		await waitFor(() => readCwd(other.pid as number) === realpathSync(repo));
+
+		const reason = worktreeGuardReason(`rm -rf ${repo}`, process.cwd(), { tmuxSockets: [] });
+		expect(reason).toBeTruthy();
+		expect(reason).toContain(`pid ${other.pid}`);
+		await stop(other);
+		await stop(ours);
+	});
+});

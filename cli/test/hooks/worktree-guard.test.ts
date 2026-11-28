@@ -215,6 +215,115 @@ describe('Claude PreToolUse worktree guard', () => {
         await stop(child);
     });
 
+    // Audit F1: a live worktree elsewhere must not turn every unpredictable
+    // command into a block. Only a removal that could reach a live tree blocks.
+    it('allows unparseable and unbounded-looking commands that cannot remove a live worktree', async () => {
+        const { repo, worktree } = fixture();
+        const root = repo.slice(0, repo.lastIndexOf('/'));
+        const child = spawnSleeping(worktree);
+        await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+        for (const command of [
+            `bash -c 'npm test'`,
+            `sh -c 'echo hello'`,
+            `node -e "console.log(1)"`,
+            `python3 -c "print(1)"`,
+            `rm -rf /tmp/xtrm-nothing-here/$VAR`,
+            `rm -rf /tmp/xtrm-nothing-here/*`,
+            `find /tmp/xtrm-nothing-here -name x -delete`,
+            `git worktree prune`,
+        ]) {
+            expect(worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] }), command).toBeNull();
+        }
+
+        // A glob whose literal prefix contains the live tree blocks.
+        const glob = worktreeGuardDecision(bashPayload(`rm -rf ${root}/*`, repo), { tmuxSockets: [] });
+        expect(glob).toBeTruthy();
+        expect(glob).toContain(`pid ${child.pid}`);
+
+        // Targets the guard cannot bound inside the tree block and say so.
+        for (const command of [`rm -rf "$UNKNOWN_TARGET"`, 'rm -rf ~', `find "$X" -delete`]) {
+            const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
+            expect(reason, command).toBeTruthy();
+            expect(reason, command).toContain('use a literal path');
+        }
+        await stop(child);
+    });
+
+    // Audit F2: the working directory a relative target is relative to.
+    it('tracks cd through && and ; and resolves a relative target against it', async () => {
+        const { repo, worktree } = fixture();
+        const root = repo.slice(0, repo.lastIndexOf('/'));
+        const child = spawnSleeping(worktree);
+        await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+        for (const command of [
+            `cd ${root} && rm -rf wt`,
+            `cd ${root}; rm -rf wt`,
+            `cd ${root} || rm -rf wt`,
+            `cd ${worktree} && rm -rf .`,
+            `pushd ${root} && rm -rf wt`,
+        ]) {
+            const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
+            expect(reason, command).toBeTruthy();
+            expect(reason, command).toContain(`pid ${child.pid}`);
+        }
+
+        // The same shape against a directory with no holder stays allowed.
+        expect(worktreeGuardDecision(bashPayload(`cd ${root} && rm -rf repo/nothing`, repo), { tmuxSockets: [] })).toBeNull();
+        // An unresolvable cd makes the relative target unresolvable: block, and say why.
+        const unresolvedCd = worktreeGuardDecision(bashPayload('cd $SOMEWHERE && rm -rf wt', repo), { tmuxSockets: [] });
+        expect(unresolvedCd).toBeTruthy();
+        expect(unresolvedCd).toContain('use a literal path');
+        await stop(child);
+    });
+
+    // Audit F3: the remaining bypasses, one command each.
+    it('blocks find -exec, local scripts, source, bash < file, backticks, setsid, flock, parallel and $(which rm)', async () => {
+        const { repo, worktree } = fixture();
+        const child = spawnSleeping(worktree);
+        await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+        const kill = join(repo, 'kill.sh');
+        writeFileSync(kill, `#!/bin/bash\nrm -rf ${worktree}\n`);
+        const feed = join(repo, 'feed.sh');
+        writeFileSync(feed, `rm -rf ${worktree}\n`);
+
+        const blocked = [
+            `find ${worktree} -exec rm -rf {} +`,
+            `find ${worktree} -execdir rm -rf {} \\;`,
+            `./kill.sh`,
+            `source ./kill.sh`,
+            `. ./kill.sh`,
+            `bash < ${feed}`,
+            `sh < ${feed}`,
+            `echo \`rm -rf ${worktree}\``,
+            `setsid git worktree remove --force ${worktree}`,
+            `flock /tmp/xtrm.lock git worktree remove --force ${worktree}`,
+            `parallel rm -rf {} ::: ${worktree}`,
+            `$(which rm) -rf ${worktree}`,
+        ];
+        for (const command of blocked) {
+            const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
+            expect(reason, command).toBeTruthy();
+            expect(reason, command).toContain(`pid ${child.pid}`);
+        }
+        await stop(child);
+    });
+
+    // Audit F4: standing in a tree exempts your own ancestry, nothing else.
+    it('blocks a second holder in the caller own worktree', async () => {
+        const { repo } = fixture();
+        const ours = spawnSleeping(process.cwd());
+        const other = spawnSleeping(repo);
+        await waitFor(() => readCwd(other.pid as number) === realpathSync(repo));
+
+        const reason = worktreeGuardDecision(bashPayload(`rm -rf ${repo}`, process.cwd()), { tmuxSockets: [] });
+        expect(reason).toBeTruthy();
+        expect(reason).toContain(`pid ${other.pid}`);
+        await stop(other);
+        await stop(ours);
+    });
+
     it('expands a git alias defined in the same command and keeps wrapper flags per wrapper', async () => {
         const { repo, worktree } = fixture();
         const child = spawnSleeping(worktree);
