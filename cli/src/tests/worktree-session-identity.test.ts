@@ -209,6 +209,7 @@ describe('xt/tmux launcher session-identity propagation', () => {
     fs.writeFileSync(path.join(configDir, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }));
     process.env.XTRM_SKIP_RUNTIME_COMPAT = '1';
     delete process.env.TMUX;
+    delete process.env.TMUX_PANE;
     process.chdir(repoRoot);
     mocked.spawnSync.mockReset();
     vi.resetModules();
@@ -390,6 +391,9 @@ describe('xt/tmux launcher session-identity propagation', () => {
 
   it('current-pane tmux launch puts both observed values in the runtime spawn env', async () => {
     process.env.TMUX = '/tmp/tmux-1000/default,9,0';
+    // CORE-2816: the current pane is $TMUX_PANE, never whichever pane the server
+    // considers default, so the fixture must publish the variable tmux publishes.
+    process.env.TMUX_PANE = '%3';
     installMock(h);
     const { launchWorktreeSession } = await import('../utils/worktree-session.js');
 

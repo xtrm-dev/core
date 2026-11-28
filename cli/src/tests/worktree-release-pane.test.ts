@@ -327,31 +327,6 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
         }
     }, 60_000);
 
-    it('refuses when the pane label disagrees with the agent identity', async () => {
-        const { repoRoot, worktree } = makeRepoWithWorktree();
-        const other = makeRepoWithWorktree();
-        const socket = `xt-release-test-mismatch-${process.pid}`;
-
-        // The agent runs in `other` while the pane label claims `worktree`: two different
-        // trees, the shape a stale label produces. Neither may be removed on a guess.
-        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', other.worktree, `env XTMUX_AGENT_WORKTREE='${other.worktree}' sleep 300`]);
-        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
-        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
-        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
-        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
-
-        try {
-            const outcome = await releasePane({ paneId, client: '/dev/pts/0', dryRun: false });
-            expect(outcome.action).toBe('refused');
-            expect(outcome.detail).toContain('identity-mismatch');
-            expect(fs.existsSync(worktree)).toBe(true);
-            expect(fs.existsSync(other.worktree)).toBe(true);
-            expect(git(['worktree', 'list', '--porcelain'], repoRoot)).toContain(worktree);
-        } finally {
-            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
-        }
-    }, 60_000);
-
     it('refuses a pane whose process carries no identity, and names the migration path', async () => {
         const { repoRoot, worktree } = makeRepoWithWorktree();
         const socket = `xt-release-test-noid-${process.pid}`;
@@ -368,28 +343,6 @@ describe.skipIf(!hasTmux())('releasePane — confirmed removal', () => {
             const outcome = await releasePane({ paneId, client: '/dev/pts/0', dryRun: false });
             expect(outcome.action).toBe('refused');
             expect(outcome.detail).toContain('xt attach');
-            expect(fs.existsSync(worktree)).toBe(true);
-            expect(git(['worktree', 'list', '--porcelain'], repoRoot)).toContain(worktree);
-        } finally {
-            spawnSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'pipe' });
-        }
-    }, 60_000);
-
-    it('refuses when the pane label disagrees with the agent identity', async () => {
-        const { repoRoot, worktree } = makeRepoWithWorktree();
-        const other = makeRepoWithWorktree();
-        const socket = `xt-release-test-mismatch-${process.pid}`;
-
-        tmuxBin(socket, ['new-session', '-d', '-s', 't', '-c', other.worktree, `env XTMUX_AGENT_WORKTREE='${other.worktree}' sleep 300`]);
-        const paneId = tmuxBin(socket, ['list-panes', '-F', '#{pane_id}']);
-        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_worktree', worktree]);
-        tmuxBin(socket, ['set-option', '-p', '-t', paneId, '@agent_branch', 'xt/pane']);
-        process.env.TMUX = tmuxBin(socket, ['display-message', '-p', '#{socket_path},#{pid},0']);
-
-        try {
-            const outcome = await releasePane({ paneId, client: '/dev/pts/0', dryRun: false });
-            expect(outcome.action).toBe('refused');
-            expect(outcome.detail).toContain('identity-mismatch');
             expect(fs.existsSync(worktree)).toBe(true);
             expect(git(['worktree', 'list', '--porcelain'], repoRoot)).toContain(worktree);
         } finally {

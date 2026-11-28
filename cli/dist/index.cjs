@@ -70504,7 +70504,10 @@ async function launchWorktreeSession(opts) {
   const directIdentity = resolveLaunchIdentity({ holder: slug, roleName, cwd: worktreePath, env: opts.identityEnv });
   const directPaneOptions = [
     { key: "@agent_worktree", value: worktreePath },
-    { key: "@agent_branch", value: branchName }
+    { key: "@agent_branch", value: branchName },
+    ...roleName ? [{ key: "@agent_role", value: roleName }] : [],
+    ...issue2 ? [{ key: "@agent_issue", value: issue2 }] : [],
+    { key: "@agent_holder", value: slug }
   ];
   const directAgentEnv = buildAgentEnv(directPaneOptions);
   const directPane = callerPaneId();

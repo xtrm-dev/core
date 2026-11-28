@@ -4033,9 +4033,14 @@ export async function launchWorktreeSession(opts: WorktreeSessionOptions): Promi
     // identity the tmux plan does. Without this a plain `xt pi` wrote no pane
     // option and exported no XTMUX_AGENT_*, and the pi extension labelled the
     // pane from the inherited PWD (the caller's directory) instead.
+    // A reused pane keeps the role it hosted; wiping those keys on a launch that never
+    // named them would silently drop the identity of the agent that is still running.
     const directPaneOptions = [
         { key: '@agent_worktree', value: worktreePath },
         { key: '@agent_branch', value: branchName },
+        ...(roleName ? [{ key: '@agent_role', value: roleName }] : []),
+        ...(issue ? [{ key: '@agent_issue', value: issue }] : []),
+        { key: '@agent_holder', value: slug },
     ];
     const directAgentEnv = buildAgentEnv(directPaneOptions);
     const directPane = callerPaneId();
