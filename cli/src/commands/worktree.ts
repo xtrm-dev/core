@@ -20,6 +20,16 @@ import {
     summarize,
 } from '../core/worktree-reap.js';
 import { gatherKeybindingProbes, installKeybinding, releasePane } from '../core/worktree-release-pane.js';
+import {
+    callerProcessIds,
+    callerWorktreeRoot,
+    createLivenessProbe,
+    formatWorktreeHolders,
+    isCallerWorktree,
+    livenessReport,
+    logLivenessOverride,
+    type WorktreeLiveness,
+} from '../core/worktree-liveness.js';
 
 export interface WorktreeInfo {
     path: string;
@@ -524,6 +534,8 @@ export interface CleanRemovalResult {
 export interface CleanRemovalOptions {
     readCwds?: () => Map<string, number[]>;
     remove?: (path: string) => { ok: boolean; message: string };
+    /** The caller already decided and logged an explicit live override. */
+    forceLive?: boolean;
 }
 
 /**
@@ -554,7 +566,7 @@ export function applyCleanRemoval(
             result.unreadable.push(target.path);
             continue;
         }
-        if (liveNow.length > 0) {
+        if (liveNow.length > 0 && !options.forceLive) {
             console.log(kleur.yellow(`  ⚠ Kept ${target.path}: became live during the scan (pids ${liveNow.join(',')})`));
             result.becameLive.push(target.path);
             continue;
@@ -1186,6 +1198,53 @@ export function refuseWithoutProcessTable(error: unknown): void {
 }
 
 /**
+ * Refuse every path a live process or tmux pane is using (CORE-2814), naming the
+ * holders. Returns the paths that may proceed. `--force-live` overrides and is
+ * logged; the caller's own worktree is exempt because `xt end` removes it while
+ * still standing in it.
+ */
+export function keepLivePaths(
+    paths: string[],
+    opts: { command: string; repoRoot: string; forceLive: boolean },
+    probe: (path: string) => WorktreeLiveness = createLivenessProbe(),
+): string[] {
+    const ownPids = callerProcessIds();
+    const callerRoot = callerWorktreeRoot();
+    const keep: string[] = [];
+
+    for (const path of paths) {
+        if (isCallerWorktree(path, callerRoot)) {
+            keep.push(path);
+            continue;
+        }
+        const liveness = probe(path);
+        const holders = liveness.holders.filter(holder => !ownPids.has(holder.pid));
+        if (holders.length === 0) {
+            keep.push(path);
+            continue;
+        }
+        const report = livenessReport({ ...liveness, holders });
+        if (opts.forceLive) {
+            const logPath = logLivenessOverride({
+                repoRoot: opts.repoRoot,
+                command: opts.command,
+                path,
+                holders,
+                warnings: liveness.warnings,
+            });
+            console.log(kleur.yellow(`  ⚠ Removing live worktree ${path} (${opts.command} --force-live)${logPath ? `; logged to ${logPath}` : ''}`));
+            for (const line of report) console.log(kleur.dim(`      ${line}`));
+            keep.push(path);
+            continue;
+        }
+        console.log(kleur.red(`  ✖ Refusing ${path}: ${holders.length} live holder(s) inside`));
+        for (const line of report) console.log(kleur.dim(`      ${line}`));
+    }
+
+    return keep;
+}
+
+/**
  * The one way to obtain the process table for a destructive action. It prints the shared
  * refusal and returns null when the table cannot be read, so a caller cannot forget the
  * check: `planReap` requires the map as an input, which means both `clean` and `reap` have
@@ -1208,6 +1267,11 @@ export interface ReapOptions {
     now?: number;
     /** Read through `readProcessTableOrRefuse`; required so no caller can plan blind. */
     cwds: Map<string, number[]>;
+    /** CORE-2814: pane/cwd holders the process table alone cannot see. */
+    liveness?: (path: string) => WorktreeLiveness;
+    ownPids?: Set<number>;
+    /** Report a live candidate as reapable anyway; the override is logged at apply time. */
+    forceLive?: boolean;
 }
 
 export function planReap(opts: ReapOptions): ReapPlan {
@@ -1228,7 +1292,7 @@ export function planReap(opts: ReapOptions): ReapPlan {
             if (seen.has(key)) continue;
             seen.add(key);
 
-            candidates.push(evaluateWorktree({
+            let candidate = evaluateWorktree({
                 repoRoot,
                 worktreePath: wt.path,
                 branch: wt.branch,
@@ -1238,7 +1302,25 @@ export function planReap(opts: ReapOptions): ReapPlan {
                 artifactThresholdDays: opts.artifactThresholdDays,
                 worktreeThresholdDays: opts.worktreeThresholdDays,
                 now: checkedAtMs,
-            }));
+            });
+
+            const holders = opts.liveness
+                ? opts.liveness(candidate.path).holders.filter(holder => !opts.ownPids?.has(holder.pid))
+                : [];
+            if (holders.length > 0) {
+                const detail = `${opts.forceLive ? '--force-live' : 'in use'}: ${formatWorktreeHolders(holders).join('; ')}`;
+                const live = Boolean(opts.forceLive);
+                candidate = {
+                    ...candidate,
+                    reapable: live && candidate.reapable,
+                    artifactsReclaimable: live && candidate.artifactsReclaimable,
+                    conditions: candidate.conditions.map(condition => condition.name === 'no-live-process'
+                        ? { name: 'no-live-process' as const, pass: live, detail }
+                        : condition),
+                };
+            }
+
+            candidates.push(candidate);
         }
     }
 
@@ -1268,7 +1350,17 @@ export interface ReapOutcome {
  * worktrees second. Root-owned trees are reported and escalated, never absorbed into
  * the reclaim total.
  */
-export function applyReap(plan: ReapPlan, options: { procRoot?: string } = {}): { plan: ReapPlan; outcomes: ReapOutcome[] } {
+export interface ApplyReapOptions {
+    procRoot?: string;
+    /** CORE-2814: pane/cwd liveness re-read for every candidate before removal. */
+    liveness?: (path: string) => WorktreeLiveness;
+    ownPids?: Set<number>;
+    forceLive?: boolean;
+    command?: string;
+    repoRoot?: string;
+}
+
+export function applyReap(plan: ReapPlan, options: ApplyReapOptions = {}): { plan: ReapPlan; outcomes: ReapOutcome[] } {
     const outcomes: ReapOutcome[] = [];
     const removed: string[] = [];
 
@@ -1290,6 +1382,30 @@ export function applyReap(plan: ReapPlan, options: { procRoot?: string } = {}): 
 
     for (const candidate of plan.candidates) {
         const livePids = livePidsFor(candidate.path, cwdsNow);
+        const holders = options.liveness
+            ? options.liveness(candidate.path).holders.filter(holder => !options.ownPids?.has(holder.pid))
+            : [];
+        if (holders.length > 0 && (candidate.reapable || candidate.artifactsReclaimable)) {
+            if (options.forceLive) {
+                const logPath = logLivenessOverride({
+                    repoRoot: options.repoRoot ?? plan.repos[0] ?? candidate.repo,
+                    command: options.command ?? 'xt worktree reap',
+                    path: candidate.path,
+                    holders,
+                });
+                console.log(kleur.yellow(`  ⚠ Removing live worktree ${candidate.path} (--force-live)${logPath ? `; logged to ${logPath}` : ''}`));
+            } else {
+                outcomes.push({
+                    component: 'xt.worktree_reap.outcome',
+                    path: candidate.path,
+                    action: 'held',
+                    freed_bytes: 0,
+                    blocked_bytes: 0,
+                    detail: `in use: ${formatWorktreeHolders(holders).join('; ')}`,
+                });
+                continue;
+            }
+        }
         if (livePids.length > 0 && (candidate.reapable || candidate.artifactsReclaimable)) {
             outcomes.push({
                 component: 'xt.worktree_reap.outcome',
@@ -1810,7 +1926,8 @@ export function createWorktreeCommand(): Command {
         .option('-y, --yes', 'Skip confirmation prompt', false)
         .option('--dry-run', 'Preview clean targets without removing anything', false)
         .option('--orphans', 'Also prune stale git worktree metadata and remove orphan .xtrm/worktrees dirs', false)
-        .action(async (opts: { yes: boolean; dryRun: boolean; orphans: boolean }) => {
+        .option('--force-live', 'Remove targets a live process or tmux pane is using (logged)', false)
+        .action(async (opts: { yes: boolean; dryRun: boolean; orphans: boolean; forceLive: boolean }) => {
             const repoRoot = getRepoRoot(process.cwd());
             const worktrees = listXtWorktrees(repoRoot);
 
@@ -1825,11 +1942,33 @@ export function createWorktreeCommand(): Command {
             });
             if (scan === null) return;
 
-            const merged = scan.plan.removable;
             const skippedLive = scan.plan.skippedLive;
             const unmerged = scan.plan.unmerged;
-            const orphanPlan = { removable: scan.orphans };
-            const orphanDirs = scan.orphans.map(orphan => orphan.path);
+
+            // CORE-2814: the process table cannot see a tmux pane parked in a worktree,
+            // and the pane is the case that lost work on 2026-11-28. Check both holder
+            // kinds before this plan is printed, so --dry-run and --yes agree.
+            const removalProbe = createLivenessProbe();
+            // --force-live also promotes the trees the process-table pre-pass kept,
+            // which is the only way an explicit override can reach them.
+            const candidates = opts.forceLive
+                ? [...scan.plan.removable, ...scan.plan.skippedLive, ...scan.orphans]
+                : [...scan.plan.removable, ...scan.orphans];
+            const requested = candidates.map(target => target.path);
+            const allowed = new Set(keepLivePaths(requested, {
+                command: 'xt worktree clean',
+                repoRoot,
+                forceLive: opts.forceLive,
+            }, removalProbe));
+            const merged = candidates
+                .filter(target => scan.plan.removable.includes(target) || scan.plan.skippedLive.includes(target))
+                .filter(target => allowed.has(target.path));
+            const orphanPlan = { removable: scan.orphans.filter(target => allowed.has(target.path)) };
+            const orphanDirs = orphanPlan.removable.map(orphan => orphan.path);
+            const refusedCount = requested.length - allowed.size;
+            if (refusedCount > 0) {
+                console.log(kleur.yellow(`\n  ${refusedCount} target(s) kept: in use by a live process or tmux pane\n`));
+            }
 
             if (cleanScanIsEmpty(scan)) {
                 if (!opts.orphans) {
@@ -1860,11 +1999,12 @@ export function createWorktreeCommand(): Command {
                 return;
             }
 
-            const removal = applyCleanRemoval(repoRoot, merged);
+            const removal = applyCleanRemoval(repoRoot, merged, { forceLive: opts.forceLive });
             let removedCount = removal.removed.length;
 
             if (opts.orphans) {
                 const orphanRemoval = applyCleanRemoval(repoRoot, orphanPlan.removable, {
+                    forceLive: opts.forceLive,
                     remove: (path) => {
                         if (!existsSync(path)) return { ok: true, message: `Removed orphan directory ${path}` };
                         try {
@@ -1905,6 +2045,7 @@ export function createWorktreeCommand(): Command {
         .option('-y, --yes', 'Skip confirmation with --apply', false)
         .option('--dry-run', 'Explicit dry run (default)', false)
         .option('--json', 'Print machine-readable reap plan', false)
+        .option('--force-live', 'Reap candidates a live process or tmux pane is using (logged)', false)
         .action(async (opts: {
             artifactsOlderThan: string;
             worktreesOlderThan: string;
@@ -1914,6 +2055,7 @@ export function createWorktreeCommand(): Command {
             yes: boolean;
             dryRun: boolean;
             json: boolean;
+            forceLive: boolean;
         }) => {
             const currentPath = process.cwd();
             const repos = opts.allRepos
@@ -1931,6 +2073,9 @@ export function createWorktreeCommand(): Command {
                     artifactThresholdDays: parseDurationDays(opts.artifactsOlderThan, 7),
                     worktreeThresholdDays: parseDurationDays(opts.worktreesOlderThan, 14),
                     cwds,
+                    liveness: createLivenessProbe(),
+                    ownPids: callerProcessIds(),
+                    forceLive: opts.forceLive,
                 });
             } catch (error) {
                 refuseWithoutProcessTable(error);
@@ -1950,7 +2095,13 @@ export function createWorktreeCommand(): Command {
                 if (proceed) {
                     let applied: { plan: ReapPlan; outcomes: ReapOutcome[] };
                     try {
-                        applied = applyReap(plan);
+                        applied = applyReap(plan, {
+                            liveness: createLivenessProbe(),
+                            ownPids: callerProcessIds(),
+                            forceLive: opts.forceLive,
+                            command: 'xt worktree reap',
+                            repoRoot: repos[0],
+                        });
                     } catch (error) {
                         refuseWithoutProcessTable(error);
                         return;
@@ -2061,7 +2212,8 @@ export function createWorktreeCommand(): Command {
     cmd.command('remove <name>')
         .description('Manually remove a specific xt worktree by branch name or path')
         .option('-y, --yes', 'Skip confirmation', false)
-        .action(async (name: string, opts: { yes: boolean }) => {
+        .option('--force-live', 'Remove a worktree a live process or tmux pane is using (logged)', false)
+        .action(async (name: string, opts: { yes: boolean; forceLive: boolean }) => {
             const repoRoot = getRepoRoot(process.cwd());
             const worktrees = listXtWorktrees(repoRoot);
             const target = worktrees.find(wt =>
@@ -2073,6 +2225,17 @@ export function createWorktreeCommand(): Command {
             if (!target) {
                 console.error(kleur.red(`\n  ✗ No xt worktree found matching "${name}"\n`));
                 console.log(kleur.dim('  Run: xt worktree list\n'));
+                process.exit(1);
+            }
+
+            const allowed = keepLivePaths([target.path], {
+                command: 'xt worktree remove',
+                repoRoot,
+                forceLive: opts.forceLive,
+            });
+            if (allowed.length === 0) {
+                console.error(kleur.red(`\n  ✗ Refused: ${target.path} is in use by a live process or tmux pane\n`));
+                console.error(kleur.dim('  Stop the holder, or add --force-live to remove it anyway.\n'));
                 process.exit(1);
             }
 

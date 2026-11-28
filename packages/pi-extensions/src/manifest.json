@@ -20,6 +20,13 @@
       "ownership": "xtrm"
     },
     {
+      "id": "worktree-guard",
+      "displayName": "worktree-guard",
+      "required": false,
+      "ownership": "xtrm",
+      "description": "Refuse to remove a worktree another live process is using: git worktree remove, rm -r/-rf and find -delete are blocked while a process cwd or tmux pane sits inside the target (CORE-2814)"
+    },
+    {
       "id": "python-kernel",
       "displayName": "python-kernel",
       "required": false,

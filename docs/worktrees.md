@@ -140,6 +140,8 @@ xt worktree remove ab3k
 xt worktree remove xt/ab3k
 ```
 
+`xt worktree remove`, `xt worktree clean` and `xt worktree reap` refuse a worktree that a live process or tmux pane is using, and name the holders (pid, command, pane). The same check guards `xt end` and the agent pre-tool guards: a Bash command that runs `git worktree remove`, `rm -r`/`rm -rf` or `find -delete` against a live worktree of another process is blocked in Claude Code and Pi. Check both kinds are consulted because a pane can sit in a worktree while its shell is the only process there. An explicit `--force-live` overrides the refusal and appends the path, the command and the holders to `.xtrm/logs/worktree-liveness-overrides.jsonl`. `git worktree prune` is never blocked: it removes metadata of missing directories only.
+
 `xt worktree list` shows each worktree's runtime badge `[claude]`/`[pi]`, last activity timestamp, last commit message, and a `xt attach <slug>` hint.
 
 ### Releasing the worktree behind a pane (prefix+X)

@@ -7,6 +7,12 @@ import { join, dirname, isAbsolute, resolve } from 'node:path';
 import { t } from '../utils/theme.js';
 import { unregisterPluginsForWorktree } from '../utils/worktree-session.js';
 import { confirmDestructiveAction } from '../utils/confirmation.js';
+import {
+    callerProcessIds,
+    formatWorktreeHolders,
+    logLivenessOverride,
+    worktreeInUse,
+} from '../core/worktree-liveness.js';
 import { readCodexWorktreeSession, removeCodexTrustProfile } from '../core/codex-session.js';
 import { dirtyPaths, unpushedCommits } from '../core/worktree-reap.js';
 import { canonicalWorktreePath, removeLaunchLedger } from '../core/session-launch.js';
@@ -39,6 +45,7 @@ interface EndOptions {
     keep: boolean;
     yes: boolean;
     dryRun: boolean;
+    forceLive: boolean;
 }
 
 interface EndIssue {
@@ -406,6 +413,7 @@ export function createEndCommand(): Command {
         .option('--keep', 'Keep worktree after PR creation (default: prompt)', false)
         .option('-y, --yes', 'Skip confirmation prompts', false)
         .option('--dry-run', 'Preview PR title, body, and linked issues without pushing or creating PR', false)
+        .option('--force-live', 'Remove the worktree although another live holder is inside (logged)', false)
         .action(async (opts: EndOptions) => {
             const cwd = process.cwd();
             const codexSession = readCodexWorktreeSession(cwd);
@@ -604,6 +612,24 @@ export function createEndCommand(): Command {
 
                 if (doRemove) {
                     const repoRoot = resolveMainRepoRoot(cwd);
+                    // CORE-2814: a pane or process parked in this worktree loses its
+                    // uncommitted work if `git worktree remove --force` runs. Only the
+                    // caller itself is exempt — its pids are this process's ancestry.
+                    const liveness = worktreeInUse(cwd);
+                    const ownPids = callerProcessIds();
+                    const holders = liveness.holders.filter(holder => !ownPids.has(holder.pid));
+                    if (holders.length > 0 && !opts.forceLive) {
+                        console.log(kleur.red(`  ✖ Refused to remove ${cwd}: ${holders.length} live holder(s) inside`));
+                        for (const line of [...formatWorktreeHolders(holders), ...liveness.warnings.map(warning => `warning: ${warning}`)]) {
+                            console.log(kleur.dim(`      ${line}`));
+                        }
+                        console.log(kleur.dim('  Stop the holder, or add --force-live to remove it anyway.'));
+                        return;
+                    }
+                    if (holders.length > 0) {
+                        const logPath = logLivenessOverride({ repoRoot, command: 'xt end', path: cwd, holders, warnings: liveness.warnings });
+                        console.log(kleur.yellow(`  ⚠ Removing live worktree ${cwd} (--force-live)${logPath ? `; logged to ${logPath}` : ''}`));
+                    }
                     const cleanup = cleanupWorktreePath(cwd, repoRoot);
 
                     if (cleanup.removed) {
