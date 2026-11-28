@@ -208,11 +208,13 @@ export default function registerXtprompt(pi: ExtensionAPI): void {
         // A "length" stop is a budget failure, not a compliance failure: the
         // identical retry below would be cut off at the same place for the same
         // reason, after another full timeout.
-        if (primary.stopReason === "length") throw truncatedBlockError();
+        if (primary.stopReason === "length") throw truncatedBlockError(answerBudget(model));
         const retried = await callModel(ctx, model, retryRequest(request), signal);
         if (retried === null) return null;
         const retriedParsed = parseSentinel(extractText(retried));
         if (retriedParsed !== undefined) return retriedParsed;
+        // The retry can also be cut off — a compliance nudge does not buy room.
+        if (retried.stopReason === "length") throw truncatedBlockError(answerBudget(model));
         throw missingBlockError(retried);
       },
     ).catch((error: unknown) => {
@@ -564,7 +566,7 @@ async function callModel(
       signal: mergedSignal,
       // Session-routed providers (e.g. opencode-go) reject calls without it.
       sessionId: ctx.sessionManager.getSessionId(),
-      maxTokens: Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS),
+      maxTokens: answerBudget(model),
       reasoning: "low",
     });
     return await Promise.race<AssistantMessage | null>([
@@ -613,9 +615,16 @@ export function parseSentinel(text: string): string | undefined {
   return inner || undefined;
 }
 
-function truncatedBlockError(): Error {
+// The budget a call actually gets: the constant is a ceiling, a small model
+// clamps it. Reporting the constant when the call was capped lower names a
+// limit that was never applied.
+function answerBudget(model: Model<Api>): number {
+  return Math.min(model.maxTokens, ENHANCER_MAX_OUTPUT_TOKENS);
+}
+
+function truncatedBlockError(budget: number): Error {
   return new Error(
-    `${EXTENSION}: model output hit the ${ENHANCER_MAX_OUTPUT_TOKENS}-token limit (stopReason: length) before the ${SENTINEL_OPEN} block closed. Leaving editor unchanged.`,
+    `${EXTENSION}: model output hit the ${budget}-token limit (stopReason: length) before the ${SENTINEL_OPEN} block closed. Leaving editor unchanged.`,
   );
 }
 

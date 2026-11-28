@@ -543,6 +543,102 @@ describe("xtprompt", () => {
     expect(error?.message).toContain("8192-token limit");
   });
 
+  test("reports a length stop on the retried call with the budget the call really got", async () => {
+    streamCalls.length = 0;
+    let call = 0;
+    streamImpl = async () => {
+      call += 1;
+      // First call: prose, no block, not truncated -> compliance retry.
+      // Second call: cut off at this model's own 4096 ceiling.
+      return call === 1
+        ? { content: [{ type: "text", text: "Sure, here is a rewrite:" }], stopReason: "stop" }
+        : { content: [{ type: "text", text: "<xtprompt>half a rewrite" }], stopReason: "length" };
+    };
+
+    const notices: Array<{ message: string; level: string }> = [];
+    const originalDraft = "Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts";
+    let editorText = originalDraft;
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!("", {
+      hasUI: true,
+      mode: "tui",
+      model: { maxTokens: 4096 },
+      ui: {
+        notify(message: string, level: string) {
+          notices.push({ message, level });
+        },
+        getEditorText: () => editorText,
+        setEditorText: (value: string) => {
+          editorText = value;
+        },
+        custom: async (render: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) =>
+          await new Promise<string | null>((resolve) => {
+            render({}, {}, {}, resolve);
+          }),
+      },
+      modelRegistry: {
+        streamSimple: registryStreamSimple,
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key-1" }),
+      },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+    });
+
+    expect(streamCalls.length).toBe(2);
+    expect(editorText).toBe(originalDraft);
+    const error = notices.at(-1);
+    expect(error?.level).toBe("error");
+    // 4096 is what this model gave, so 8192 would name a limit never applied.
+    expect(error?.message).toContain("4096-token limit");
+    expect(error?.message).not.toContain("8192");
+  });
+
+  test("retries once on a compliance failure and accepts the second block", async () => {
+    streamCalls.length = 0;
+    let call = 0;
+    streamImpl = async () => {
+      call += 1;
+      return call === 1
+        ? { content: [{ type: "text", text: "Here is the rewritten prompt, no tags:" }], stopReason: "stop" }
+        : { content: [{ type: "text", text: "<xtprompt>done</xtprompt>" }], stopReason: "stop" };
+    };
+
+    const notices: Array<{ message: string; level: string }> = [];
+    let editorText = "Rename command to /xtprompt in packages/pi-extensions/extensions/xtprompt/index.ts";
+    const { commandHandlers } = registerExtensionHandlers();
+
+    await commandHandlers.get("xtprompt")!("", {
+      hasUI: true,
+      mode: "tui",
+      model: { maxTokens: 100_000 },
+      ui: {
+        notify(message: string, level: string) {
+          notices.push({ message, level });
+        },
+        getEditorText: () => editorText,
+        setEditorText: (value: string) => {
+          editorText = value;
+        },
+        custom: async (render: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) =>
+          await new Promise<string | null>((resolve) => {
+            render({}, {}, {}, resolve);
+          }),
+      },
+      modelRegistry: {
+        streamSimple: registryStreamSimple,
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key-1" }),
+      },
+      sessionManager: { buildContextEntries: () => [], getSessionId: () => "session-1" },
+    });
+
+    expect(streamCalls.length).toBe(2);
+    expect(editorText).toBe("done");
+    // No error: a missing block is retried once before it becomes a failure.
+    expect(notices.some((notice) => notice.level === "error")).toBe(false);
+    const [, retryRequest] = streamCalls[1] as [unknown, { messages: Array<{ content: string }> }];
+    expect(retryRequest.messages.at(-1)?.content).toContain("reply with exactly one <xtprompt> block");
+  });
+
   test("auth rejection leaves editor unchanged and skips model call", async () => {
     streamCalls.length = 0;
     streamImpl = async () => {
