@@ -80228,7 +80228,8 @@ function checkRelease(opts) {
     });
   }
   if (cwds) {
-    facts.livePids = livePidsFor(worktree, cwds).filter((pid) => !allowed.has(pid));
+    const liveness = worktreeInUse(worktree, { procRoot: opts.procRoot, cwds, skipTmux: true });
+    facts.livePids = liveness.holders.filter((holder) => !allowed.has(holder.pid)).map((holder) => holder.pid);
     if (facts.livePids.length > 0) {
       blockers.push({
         kind: "held-by-process",
