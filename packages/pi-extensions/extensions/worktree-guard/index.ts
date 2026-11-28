@@ -15,16 +15,22 @@
  * global options and same-command aliases, `sh -c` / `eval` / script files,
  * `$(...)` and backtick substitution, `cd` / `pushd` through `&&`, `;` and `||`.
  * A literal target is checked directly. A target the shell resolves at run time
- * is bounded by its literal prefix: allowed when that prefix contains no live
- * worktree and lies inside none, blocked with "use a literal path" when it
- * cannot be bounded. An unparseable construct blocks only when its text names a
- * removal verb. Being inside your own worktree exempts only your own pid
- * ancestry, never another holder in the same tree.
+ * is bounded by the directory of its literal prefix, complete components only:
+ * `build/$CONFIG` bounds to `build`, and a bound that merely contains a nested
+ * live worktree is not at risk, so `rm -rf dist/*` is allowed in any tree. `$HOME`
+ * and `~` are expanded from the environment, so they are literal. A
+ * bare `$X` cannot be bounded and blocks while any live worktree exists.
+ * Removal is recognised at token level, never by raw text. `env -C` and
+ * `git -C` change the directory following targets are relative to. Being inside
+ * your own worktree exempts only your own pid ancestry, never another holder in
+ * the same tree.
  *
  * Known limits, by design: an interpreter the parser cannot read (`python -c
  * ...shutil.rmtree`, `perl -e unlink`, `node -e ...`, `rsync --delete`, a
- * compiled binary) is invisible unless its text names a removal verb. The guard
- * is defence in depth, not a sandbox.
+ * compiled binary) is invisible unless its text names a removal verb. An
+ * executable or script the guard cannot read is treated as unknown and allowed.
+ * Script fan-out keeps a visited set and a 40 ms parse budget. The guard is
+ * defence in depth, not a sandbox.
  *
  * `git worktree prune` is allowed by design: it removes metadata of missing
  * directories and never a live tree.
@@ -42,8 +48,8 @@ import { isAbsolute, resolve } from "node:path";
 import {
 	callerProcessIds,
 	canonicalPath,
+	expandHome,
 	formatWorktreeHolders,
-	hasRemovalVerb,
 	readProcessCwds,
 	readTmuxPanes,
 	removalOperations,
@@ -106,8 +112,51 @@ interface EvaluationContext {
 }
 
 function evaluateCommand(command: string, ctx: EvaluationContext): string | null {
-	const operations = removalOperations(command, 0, ctx.cwd);
+	const parsed = removalOperations(command, 0, ctx.cwd);
+	if (parsed.length === 0) return null;
+	ctx.warnings.push(...parsed.filter((operation) => operation.kind === "warning").map((operation) => operation.warning ?? "parse warning"));
+	const operations = parsed.filter((operation) => operation.kind !== "warning");
+	if (operations.length === 0) return null;
 	const liveHolders = (paths: readonly string[]) => paths.flatMap((path) => ctx.holdersOutside(path));
+
+	const check = (rawTarget: string, opCwd: string | null, kind: string): string | null => {
+		const target = expandHome(rawTarget) ?? rawTarget;
+		if (targetIsUnresolved(target)) {
+			const bound = targetBound(target, opCwd);
+			if (bound === null) {
+				if (ctx.livePaths.length === 0) return null;
+				const holders = liveHolders(ctx.livePaths);
+				return blockReason(
+					holders.length > 0 ? formatWorktreeHolders(holders) : [],
+					`The target ${JSON.stringify(target)} cannot be bounded statically: use a literal path, or stop the live holder first.`,
+					ctx.warnings,
+				);
+			}
+			// Equal to a live worktree, inside one, or an ancestor of one. A bound
+			// that merely contains a nested live worktree is not at risk (N1, N5).
+			const atRisk = ctx.livePaths.filter((path) => isInside(path, bound) || isInside(bound, path));
+			if (atRisk.length === 0) return null;
+			return blockReason(
+				formatWorktreeHolders(liveHolders(atRisk)),
+				`The target ${JSON.stringify(target)} resolves inside or around ${atRisk.join(", ")}.`,
+				ctx.warnings,
+			);
+		}
+		const resolved = isAbsolute(target) ? canonicalPath(target) : opCwd ? canonicalPath(resolve(opCwd, target)) : null;
+		if (!resolved) {
+			if (ctx.livePaths.length === 0) return null;
+			return blockReason(
+				[],
+				`The target ${JSON.stringify(target)} is relative to a directory the guard could not resolve: use a literal path.`,
+				ctx.warnings,
+			);
+		}
+		// A literal target blocks on any holder inside it, even one attributed to a
+		// nested worktree: removing the parent tree destroys that worktree too.
+		const holders = ctx.holdersOutside(resolved);
+		if (holders.length === 0) return null;
+		return blockReason(formatWorktreeHolders(holders), `${kind} would remove ${resolved}.`, ctx.warnings);
+	};
 
 	for (const operation of operations) {
 		const opCwd = operation.cwd === undefined ? ctx.cwd : operation.cwd;
@@ -120,51 +169,9 @@ function evaluateCommand(command: string, ctx: EvaluationContext): string | null
 			);
 		}
 		for (const target of operation.targets) {
-			if (targetIsUnresolved(target)) {
-				const bound = targetBound(target, opCwd);
-				if (bound === null) {
-					if (ctx.livePaths.length === 0) continue;
-					return blockReason(
-						formatWorktreeHolders(liveHolders(ctx.livePaths)),
-						`The target ${JSON.stringify(target)} cannot be bounded statically: use a literal path, or stop the live holder first.`,
-						ctx.warnings,
-					);
-				}
-				const atRisk = ctx.livePaths.filter((path) => isInside(path, bound) || isInside(bound, path));
-				if (atRisk.length === 0) continue;
-				return blockReason(
-					formatWorktreeHolders(liveHolders(atRisk)),
-					`The target ${JSON.stringify(target)} resolves inside or around ${atRisk.join(", ")}.`,
-					ctx.warnings,
-				);
-			}
-			const resolved = isAbsolute(target) ? canonicalPath(target) : opCwd ? canonicalPath(resolve(opCwd, target)) : null;
-			if (!resolved) {
-				if (ctx.livePaths.length === 0) continue;
-				return blockReason(
-					[],
-					`The target ${JSON.stringify(target)} is relative to a directory the guard could not resolve: use a literal path.`,
-					ctx.warnings,
-				);
-			}
-			const holders = ctx.holdersOutside(resolved);
-			if (holders.length === 0) continue;
-			return blockReason(
-				formatWorktreeHolders(holders),
-				`${operation.kind} would remove ${resolved}.`,
-				ctx.warnings,
-			);
+			const reason = check(target, opCwd, operation.kind);
+			if (reason) return reason;
 		}
-	}
-
-	if (operations.length === 0 && hasRemovalVerb(command)) {
-		// Unparseable text that names a removal verb: only a live worktree makes it block.
-		if (ctx.livePaths.length === 0) return null;
-		return blockReason(
-			formatWorktreeHolders(liveHolders(ctx.livePaths)),
-			"This command could not be parsed and names a removal: use a literal path.",
-			ctx.warnings,
-		);
 	}
 
 	return null;
@@ -180,7 +187,7 @@ export function worktreeGuardReason(
 	options: WorktreeGuardOptions = {},
 ): string | null {
 	if (!command || command.trim() === "") return null;
-	if (removalOperations(command, 0, cwd).length === 0 && !hasRemovalVerb(command)) return null;
+	if (removalOperations(command, 0, cwd).length === 0) return null;
 
 	const ownPids = callerProcessIds();
 	const cwds = readProcessCwds("/proc");
@@ -195,15 +202,17 @@ export function worktreeGuardReason(
 			...panes.map((pane) => pane.agentWorktree).filter(Boolean).map((path) => canonicalPath(path)),
 		]),
 	];
-	const ctx: EvaluationContext = {
-		cwd,
-		ownPids,
-		panes,
-		warnings,
-		probe,
-		holdersOutside,
-		livePaths: candidates.filter((path) => holdersOutside(path).length > 0),
-	};
+	// A holder inside a nested worktree belongs to that worktree, not to the tree
+	// that contains it: the main checkout is not live because a session runs in
+	// its .xtrm/worktrees/* (N1).
+	const ownerOf = (holderPath: string) =>
+		candidates
+			.filter((path) => isInside(holderPath, path))
+			.sort((a, b) => b.length - a.length)[0];
+	const livePaths = candidates.filter((path) =>
+		holdersOutside(path).some((holder) => ownerOf(holder.path) === path),
+	);
+	const ctx: EvaluationContext = { cwd, ownPids, panes, warnings, probe, holdersOutside, livePaths };
 
 	return evaluateCommand(command, ctx);
 }

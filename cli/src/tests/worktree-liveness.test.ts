@@ -242,7 +242,8 @@ describe('removal command parsing', () => {
         ['xargs -0 git worktree remove --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         [`bash -c 'rm -rf /tmp/wt'`, [{ kind: 'rm', targets: ['/tmp/wt'] }]],
         [`sh -lc "find /tmp/wt -delete"`, [{ kind: 'find-delete', targets: ['/tmp/wt'] }]],
-        ['bash scripts/reap.sh', [{ kind: 'script', targets: ['scripts/reap.sh'] }]],
+        // An unreadable script is allowed, never guessed at (N4).
+        ['bash scripts/reap.sh', []],
         ['git worktree remove 2>/dev/null --force /tmp/wt', [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],
         ['rm -rf /tmp/wt > /dev/null 2>&1', [{ kind: 'rm', targets: ['/tmp/wt'] }]],
         [`git -c alias.x='worktree remove --force' x /tmp/wt`, [{ kind: 'git-worktree-remove', targets: ['/tmp/wt'] }]],

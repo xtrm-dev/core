@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { worktreeGuardReason } from '../extensions/worktree-guard/index.ts';
+import { buildCorpus } from '../../../scripts/worktree-guard-corpus.mjs';
 import { removalOperations, worktreeInUse } from '../src/core/worktree-liveness.ts';
 
 // CORE-2814: the Pi guard blocks the exact loop that force-removed 16 worktrees
@@ -74,7 +75,66 @@ async function stop(child: ChildProcess): Promise<void> {
 	});
 }
 
+interface CorpusFixture {
+	repo: string;
+	live: string;
+	idle: string;
+	script: string;
+	missing: string;
+	outside: string;
+}
+
+/** The corpus shape: a repo whose own `.xtrm/worktrees/*` is live, one idle
+ * sibling, a readable script, a missing executable, and a symlink to the live
+ * tree. Every path is a realpath, as /proc reports it. */
+function corpusFixture(): CorpusFixture {
+	const root = tempDir('xtrm-pi-corpus-');
+	const repo = join(root, 'repo');
+	spawnSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' });
+	git(repo, ['config', 'user.email', 'corpus@example.invalid']);
+	git(repo, ['config', 'user.name', 'corpus test']);
+	spawnSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+	const live = join(repo, '.xtrm', 'worktrees', 'live');
+	const idle = join(repo, '.xtrm', 'worktrees', 'idle');
+	git(repo, ['worktree', 'add', '-q', '-b', 'live-branch', live]);
+	git(repo, ['worktree', 'add', '-q', '-b', 'idle-branch', idle]);
+	const script = join(root, 'reap.sh');
+	writeFileSync(script, `rm -rf ${live}\n`);
+	chmodSync(script, 0o755);
+	const outside = join(root, 'outside');
+	mkdirSync(outside);
+	symlinkSync(live, join(outside, 'link'));
+	return {
+		repo: realpathSync(repo),
+		live: realpathSync(live),
+		idle: realpathSync(idle),
+		script: realpathSync(script),
+		missing: join(root, 'missing.sh'),
+		outside: realpathSync(outside),
+	};
+}
+
+const CORPUS = buildCorpus({ repo: '/r', live: '/r/.xtrm/worktrees/w', idle: '/r/.xtrm/worktrees/i', script: '/r/s.sh', missing: '/r/m.sh', outside: '/o' });
+
 describe('Pi worktree guard', () => {
+	// One table, every case the four review rounds named, both directions: an
+	// ALLOW that turns into a block is a regression, and so is a bypass.
+	test(`answers the ${CORPUS.length}-case review corpus`, async () => {
+		const paths = corpusFixture();
+		const child = spawnSleeping(paths.live);
+		await waitFor(() => readCwd(child.pid as number) === paths.live);
+		const mismatches: string[] = [];
+		for (const testCase of buildCorpus(paths)) {
+			const reason = worktreeGuardReason(testCase.command, paths.repo, { tmuxSockets: [] });
+			const got = reason ? 'BLOCK' : 'ALLOW';
+			if (got !== testCase.expect) {
+				mismatches.push(`${testCase.id}: expected ${testCase.expect}, got ${got} — ${testCase.why}\n  ${testCase.command}`);
+			}
+		}
+		await stop(child);
+		expect(mismatches.join('\n')).toBe('');
+	}, 60000);
+
 	test('blocks the incident loop while another process lives in a worktree, then allows it', async () => {
 		const { repo, worktree } = fixture();
 		const child = spawnSleeping(worktree);
@@ -263,7 +323,7 @@ describe('Pi worktree guard audit shapes', () => {
 		expect(glob).toBeTruthy();
 		expect(glob).toContain(`pid ${child.pid}`);
 
-		for (const command of [`rm -rf "$UNKNOWN_TARGET"`, 'rm -rf ~', `find "$X" -delete`]) {
+		for (const command of [`rm -rf "$UNKNOWN_TARGET"`, `find "$X" -delete`]) {
 			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
 			expect(reason, command).toBeTruthy();
 			expect(reason, command).toContain('use a literal path');

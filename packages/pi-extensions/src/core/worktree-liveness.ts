@@ -452,6 +452,9 @@ export function livenessReport(liveness: WorktreeLiveness): string[] {
 
 const MAX_NESTING = 3;
 const MAX_SCRIPT_BYTES = 64 * 1024;
+/** Total time spent following script files in one command: a fan-out of scripts
+ * that each source the next must not turn the guard into a scanner (N7). */
+const PARSE_BUDGET_MS = 40;
 const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}', 'done', 'fi']);
 /** Wrappers that run another command; the real command follows them. */
 const WRAPPERS = new Set([
@@ -488,11 +491,11 @@ function wrapperSkipsOperand(wrapper: string, token: string): boolean {
 const REDIRECTION = /^(\d*|&)(>>?|<<?)(.*)$/;
 /** find actions that run a command; a `rm` inside one removes the searched tree. */
 const EXEC_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
-/** A removal verb in text the parser cannot turn into an operation. */
-const REMOVAL_VERB = /(?:^|[\s;&|(])(?:[^\s;&|()]*\/)?rm\s+(?:-[A-Za-z]*[rR]|--recursive)\b|worktree\s+remove\b|-delete\b|-exec(?:dir)?\s+(?:[^\s;&|()]*\/)?rm\b/;
-
+/** True when text names a removal, matched at token level: a raw-text scan
+ * blocks `git push --delete`, `git branch --delete` and a quoted argument that
+ * happens to say "worktree remove" (N3). */
 export function hasRemovalVerb(text: string): boolean {
-    return REMOVAL_VERB.test(text);
+    return removalOperations(String(text ?? ''), MAX_NESTING, null).some(op => op.kind !== 'warning');
 }
 
 function tokenize(command: string): string[][] {
@@ -622,22 +625,47 @@ export function targetIsUnresolved(target: string | undefined): boolean {
     return /[$`*?[\]{}~]/.test(target);
 }
 
-/** The literal directory prefix of a target the shell expands: `/tmp/x/$V`
- * bounds to `/tmp/x`, `../*` bounds to the parent. Null means unbounded: a bare
- * `$X`, `~`, or a relative target with no known cwd could be anything. */
+/** The bound of a target the shell expands: the directory of its complete
+ * literal components. `build/$CONFIG` bounds to `build`, `dist/*` to `dist`,
+ * `out/x$Y` to `out`, `.xtrm/worktrees/*` to `.xtrm/worktrees`. Null means
+ * unbounded: a bare `$X`, `~` or a path with no known cwd could be anything.
+ * A partial last component is dropped, never used as the bound (N5). */
 export function targetBound(target: string | undefined, cwd: string | null): string | null {
-    if (!target) return cwd;
+    if (!target) return cwd ?? null;
     const unresolvedAt = target.search(/[$`*?[\]{}~]/);
-    const literal = unresolvedAt < 0 ? target : target.slice(0, unresolvedAt);
     if (unresolvedAt === 0) return null; // `$X`, `~`, a leading glob
-    if (literal.startsWith('/')) return literal.replace(/\/+$/, '') || '/';
+    const literal = unresolvedAt < 0 ? target : target.slice(0, unresolvedAt);
+    const base = /\/$/.test(literal) ? literal : literal.slice(0, literal.lastIndexOf('/') + 1);
+    if (base === '') return cwd ?? null;
+    if (base.startsWith('/')) return canonicalPath(base.replace(/\/+$/, '') || '/');
     if (!cwd) return null;
-    const trimmed = literal.replace(/\/+$/, '');
-    return trimmed === '' ? cwd : resolve(cwd, trimmed);
+    return canonicalPath(resolve(cwd, base.replace(/\/+$/, '') || '.'));
+}
+
+/** The directory a `git -C` / `env -C` / `sudo -D` operand names; null when it
+ * cannot be known, so everything after it is unresolvable too (N2). */
+function changeDirectory(cwd: string | null, dir: string | undefined): string | null {
+    const expanded = expandHome(dir);
+    if (!expanded || targetIsUnresolved(expanded)) return null;
+    if (expanded.startsWith('/')) return canonicalPath(expanded);
+    return cwd ? canonicalPath(resolve(cwd, expanded)) : null;
+}
+
+/** `$HOME` and `~` come from the environment, so they resolve rather than
+ * leaving every target unbounded (N4). */
+export function expandHome(token: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const home = env.HOME;
+    if (!home || typeof token !== 'string') return token;
+    if (token === '~') return home;
+    if (token.startsWith('~/')) return `${home}/${token.slice(2)}`;
+    if (token === '$HOME' || token === '${HOME}') return home;
+    if (token.startsWith('$HOME/')) return `${home}/${token.slice(6)}`;
+    if (token.startsWith('${HOME}/')) return `${home}/${token.slice(8)}`;
+    return token;
 }
 
 export interface RemovalOperation {
-    kind: 'git-worktree-remove' | 'rm' | 'find-delete' | 'script';
+    kind: 'git-worktree-remove' | 'rm' | 'find-delete' | 'warning';
     targets: string[];
     raw: string;
     /** Working directory the targets are relative to; null when a `cd` made it
@@ -645,6 +673,8 @@ export interface RemovalOperation {
     cwd?: string | null;
     /** The nested program of a `sh -c` / `eval` / script file, when it was read. */
     program?: string;
+    /** Set on a `warning` operation: a parse budget that ran out. */
+    warning?: string;
 }
 
 /** Filesystem identity: a symlinked target and a trailing slash both resolve to
@@ -738,15 +768,23 @@ interface GitPrefix {
     subcommandAt: number;
     aliases: Map<string, string>;
     envAliases: Set<string>;
+    /** The `-C` operands, in order: each one changes the directory (N2). */
+    chdirs: string[];
 }
 
 /** Walk the git global options; return the subcommand position and alias table. */
 function parseGitPrefix(tokens: string[], from: number): GitPrefix {
     const aliases = new Map<string, string>();
     const envAliases = new Set<string>();
+    const chdirs: string[] = [];
     let i = from;
     while (i < tokens.length) {
         const token = tokens[i];
+        if (token === '-C') {
+            chdirs.push(tokens[i + 1] ?? '');
+            i += 2;
+            continue;
+        }
         if (token === '-c' || token === '--config') {
             addGitAlias(tokens[i + 1] ?? '', aliases, envAliases);
             i += 2;
@@ -770,7 +808,7 @@ function parseGitPrefix(tokens: string[], from: number): GitPrefix {
         if (!token.startsWith('-')) break;
         i += GIT_GLOBAL_OPERAND_FLAGS.has(token) ? 2 : 1;
     }
-    return { subcommandAt: i, aliases, envAliases };
+    return { subcommandAt: i, aliases, envAliases, chdirs };
 }
 
 /** `git -c alias.x='worktree remove --force' x <path>` removes <path>: expand the
@@ -779,12 +817,16 @@ function parseGitPrefix(tokens: string[], from: number): GitPrefix {
 function gitRemovalOperations(
     tokens: string[],
     start: number,
-    record: (kind: RemovalOperation['kind'], targets: string[], extra?: Partial<RemovalOperation>) => void,
+    record: (kind: RemovalOperation['kind'], targets: string[], extra?: Partial<RemovalOperation>, at?: string | null) => void,
     operations: RemovalOperation[],
     depth: number,
     cwd: string | null,
+    ctx: ParseContext,
 ): RemovalOperation[] {
-    const { subcommandAt, aliases, envAliases } = parseGitPrefix(tokens, start + 1);
+    const { subcommandAt, aliases, envAliases, chdirs } = parseGitPrefix(tokens, start + 1);
+    // `git -C <dir> worktree remove <relative>` removes a path relative to <dir>.
+    let gitCwd = cwd;
+    for (const dir of chdirs) gitCwd = changeDirectory(gitCwd, dir);
     const subcommand = tokens[subcommandAt] ?? '';
     const args = tokens.slice(subcommandAt + 1);
     const aliasValue = aliases.get(subcommand);
@@ -793,25 +835,35 @@ function gitRemovalOperations(
         const program = aliasValue.startsWith('!')
             ? `${aliasValue.slice(1)} ${args.join(' ')}`
             : `git ${aliasValue} ${args.join(' ')}`;
-        operations.push(...removalOperations(program, depth + 1, cwd));
+        operations.push(...removalOperations(program, depth + 1, gitCwd, ctx));
         return operations;
     }
     if (envAliases.has(subcommand)) {
-        record('git-worktree-remove', args.filter(token => !token.startsWith('-')));
+        record('git-worktree-remove', args.filter(token => !token.startsWith('-')), {}, gitCwd);
         return operations;
     }
     if (subcommand !== 'worktree' || args[0] !== 'remove') return operations;
     const target = args.slice(1).find(token => !token.startsWith('-'));
-    record('git-worktree-remove', target ? [target] : []);
+    record('git-worktree-remove', target ? [target] : [], {}, gitCwd);
     return operations;
+}
+
+interface ParseContext {
+    /** Script paths already read: a fan-out must not read one twice (N7). */
+    visited: Set<string>;
+    /** Wall-clock deadline for the whole parse, shared by nested programs. */
+    deadline: number;
+    expired: boolean;
 }
 
 interface ParseState {
     cwd: string | null;
+    ctx: ParseContext;
 }
 
 /** A script the parser can read is parsed as its own program; one it cannot read
- * (a missing file, a non-shell binary) is reported as a script operation. */
+ * (a missing file, a non-shell binary, an executable the guard cannot name) is
+ * allowed, never guessed at (N4). */
 function readScript(path: string | null): string | null {
     if (!path) return null;
     try {
@@ -821,6 +873,36 @@ function readScript(path: string | null): string | null {
     } catch {
         return null;
     }
+}
+
+/** Read a script once, inside the parse budget. A second read of the same path
+ * would only repeat its operations, and a fan-out past the deadline stops the
+ * walk with one warning (N7). */
+function readScriptProgram(
+    token: string | undefined,
+    cwd: string | null,
+    state: ParseState,
+    operations: RemovalOperation[],
+): string | null {
+    const path = localScript(expandHome(token), cwd);
+    if (!path) return null;
+    if (state.ctx.visited.has(path)) return null;
+    state.ctx.visited.add(path);
+    const program = readScript(path);
+    if (program === null) return null;
+    if (Date.now() > state.ctx.deadline) {
+        if (!state.ctx.expired) {
+            state.ctx.expired = true;
+            operations.push({
+                kind: 'warning',
+                targets: [],
+                raw: '',
+                warning: `script fan-out budget spent (${PARSE_BUDGET_MS} ms): unread scripts were not parsed`,
+            });
+        }
+        return null;
+    }
+    return program;
 }
 
 function localScript(token: string | undefined, cwd: string | null): string | null {
@@ -837,15 +919,16 @@ function trackDirectory(name: string, rest: string[], state: ParseState): void {
         state.cwd = null;
         return;
     }
-    if (targetIsUnresolved(target)) {
+    const expanded = expandHome(target) ?? target;
+    if (targetIsUnresolved(expanded)) {
         state.cwd = null;
         return;
     }
-    if (target.startsWith('/')) {
-        state.cwd = resolve(target);
+    if (expanded.startsWith('/')) {
+        state.cwd = resolve(expanded);
         return;
     }
-    state.cwd = state.cwd ? resolve(state.cwd, target) : null;
+    state.cwd = state.cwd ? resolve(state.cwd, expanded) : null;
 }
 
 function operationsFromSegment(raw: string[], depth: number, state: ParseState): RemovalOperation[] {
@@ -861,7 +944,7 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
             else groups[groups.length - 1].push(token);
         }
         for (const group of groups) {
-            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd));
+            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
         }
         return operations;
     }
@@ -871,8 +954,26 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
     if (!commandName) return operations;
     const name = commandName.split('/').pop() ?? commandName;
     const rest = unfiltered.slice(start + 1);
-    const record = (kind: RemovalOperation['kind'], targets: string[], extra: Partial<RemovalOperation> = {}): void => {
-        operations.push({ kind, targets, raw: raw.join(' '), cwd: state.cwd, ...extra });
+    // `env -C dir cmd` and `sudo -D dir cmd` change the directory the wrapped
+    // command runs in, so a relative target after them is relative to dir (N2).
+    let opCwd = state.cwd;
+    let wrapperName = '';
+    for (let i = 0; i < start; i += 1) {
+        const token = unfiltered[i];
+        const base = token.split('/').pop() ?? token;
+        if (WRAPPERS.has(base)) {
+            wrapperName = base;
+            continue;
+        }
+        if (token.startsWith('--chdir=')) {
+            opCwd = changeDirectory(opCwd, token.slice('--chdir='.length));
+            continue;
+        }
+        const flag = (wrapperName === 'env' && token === '-C') || token === '--chdir' || (wrapperName === 'sudo' && token === '-D');
+        if (flag) opCwd = changeDirectory(opCwd, unfiltered[i + 1]);
+    }
+    const record = (kind: RemovalOperation['kind'], targets: string[], extra: Partial<RemovalOperation> = {}, at: string | null = opCwd): void => {
+        operations.push({ kind, targets, raw: raw.join(' '), cwd: at, ...extra });
     };
 
     if (name === 'cd' || name === 'pushd') {
@@ -892,22 +993,19 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
         const cIndex = name === 'eval' ? -1 : rest.findIndex(token => /^-[A-Za-z]*c[A-Za-z]*$/.test(token));
         if (name === 'eval' || cIndex >= 0) {
             const program = name === 'eval' ? rest.join(' ') : rest[cIndex + 1];
-            if (program && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+            if (program && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
             return operations;
         }
         // `bash < script`, `bash script`: the program text comes from a file.
         const scriptToken = rest.find(token => !token.startsWith('-') && !token.startsWith('<'));
-        const program = readScript(localScript(inputRedirect(raw) ?? scriptToken, state.cwd));
-        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
-        else if (program === null && (scriptToken || inputRedirect(raw))) {
-            record('script', [scriptToken ?? inputRedirect(raw) ?? '']);
-        }
+        const program = readScriptProgram(inputRedirect(raw) ?? scriptToken, state.cwd, state, operations);
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
         return operations;
     }
 
     if (name === 'source' || name === '.') {
-        const program = readScript(localScript(rest.find(token => !token.startsWith('-')), state.cwd));
-        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+        const program = readScriptProgram(rest.find(token => !token.startsWith('-')), state.cwd, state, operations);
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
         return operations;
     }
 
@@ -919,13 +1017,13 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
             else groups[groups.length - 1].push(token);
         }
         for (const group of groups) {
-            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd));
+            if (group.length > 0 && depth < MAX_NESTING) operations.push(...removalOperations(group.join(' '), depth + 1, state.cwd, state.ctx));
         }
         return operations;
     }
 
     if (name === 'git') {
-        return gitRemovalOperations(unfiltered, start, record, operations, depth, state.cwd);
+        return gitRemovalOperations(unfiltered, start, record, operations, depth, state.cwd, state.ctx);
     }
 
     if (name === 'rm') {
@@ -951,10 +1049,10 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
     // An executable the parser cannot name, such as `./script.sh`: read it as a
     // script. This runs AFTER the known verbs, so `/usr/bin/git worktree remove`
     // and `/bin/rm -rf` are recognised by their basename, never read as a script.
+    // One it cannot read is allowed: an unknown executable is not a removal (N4).
     if (commandName.includes('/')) {
-        const program = readScript(localScript(commandName, state.cwd));
-        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
-        else record('script', [commandName]);
+        const program = readScriptProgram(commandName, state.cwd, state, operations);
+        if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, opCwd, state.ctx));
     }
     return operations;
 }
@@ -964,13 +1062,19 @@ function operationsFromSegment(raw: string[], depth: number, state: ParseState):
  * `targets` is always an array; an empty array or an unresolved entry means the
  * path is not statically known, and `cwd` says what a relative one is relative to.
  */
-export function removalOperations(command: string, depth = 0, cwd: string | null = null): RemovalOperation[] {
+export function removalOperations(
+    command: string,
+    depth = 0,
+    cwd: string | null = null,
+    ctx: ParseContext | null = null,
+): RemovalOperation[] {
+    const context: ParseContext = ctx ?? { visited: new Set(), deadline: Date.now() + PARSE_BUDGET_MS, expired: false };
     const operations: RemovalOperation[] = [];
-    const state: ParseState = { cwd };
+    const state: ParseState = { cwd, ctx: context };
     for (const raw of tokenize(command)) operations.push(...operationsFromSegment(raw, depth, state));
     if (depth < MAX_NESTING) {
         for (const program of substitutionPrograms(command)) {
-            operations.push(...removalOperations(program, depth + 1, cwd));
+            operations.push(...removalOperations(program, depth + 1, cwd, context));
         }
     }
     return operations;

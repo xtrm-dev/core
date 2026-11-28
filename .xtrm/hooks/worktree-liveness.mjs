@@ -62,13 +62,15 @@ export function canonicalPath(target) {
 export function readProcessCommand(pid, procRoot = '/proc') {
   try {
     const raw = readFileSync(join(procRoot, String(pid), 'cmdline'), 'utf8');
-    const command = raw.replace(/\0/g, ' ').trim();
+    // A command line is another process's data: control characters must not
+    // reach the agent's prompt (N8).
+    const command = sanitizeHolderText(raw.replace(/\0/g, ' ').trim());
     if (command) return command.slice(0, 160);
   } catch {
     // fall through
   }
   try {
-    return readFileSync(join(procRoot, String(pid), 'comm'), 'utf8').trim().slice(0, 160);
+    return sanitizeHolderText(readFileSync(join(procRoot, String(pid), 'comm'), 'utf8').trim()).slice(0, 160);
   } catch {
     return '(unknown)';
   }

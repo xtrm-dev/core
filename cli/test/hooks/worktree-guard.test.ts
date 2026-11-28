@@ -1,13 +1,14 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { removalOperations as hookRemovalOperations, worktreeGuardDecision } from '../../../.xtrm/hooks/worktree-guard.mjs';
+import { buildCorpus } from '../../../scripts/worktree-guard-corpus.mjs';
 import * as hookLiveness from '../../../.xtrm/hooks/worktree-liveness.mjs';
 import { PRE_TOOLS } from '../../../.xtrm/hooks/hook-routing.mjs';
-import { worktreeInUse } from '../../src/core/worktree-liveness.js';
+import { removalOperations as cliRemovalOperations, worktreeInUse } from '../../src/core/worktree-liveness.js';
 import {
     removalOperations as piRemovalOperations,
     worktreeInUse as piWorktreeInUse,
@@ -103,7 +104,82 @@ function bashPayload(command: string, cwd: string): Record<string, unknown> {
     return { tool_name: 'Bash', tool_input: { command }, cwd };
 }
 
+interface CorpusFixture {
+    repo: string;
+    live: string;
+    idle: string;
+    script: string;
+    missing: string;
+    outside: string;
+}
+
+/** The corpus shape: a repo whose own `.xtrm/worktrees/*` is live, one idle
+ * sibling, a readable script, a missing executable, and a symlink to the live
+ * tree. Every path is a realpath, as /proc reports it. */
+function corpusFixture(): CorpusFixture {
+    const root = tempDir('xtrm-corpus-');
+    const repo = join(root, 'repo');
+    spawnSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' });
+    git(repo, ['config', 'user.email', 'corpus@example.invalid']);
+    git(repo, ['config', 'user.name', 'corpus test']);
+    spawnSync('git', ['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+    const live = join(repo, '.xtrm', 'worktrees', 'live');
+    const idle = join(repo, '.xtrm', 'worktrees', 'idle');
+    git(repo, ['worktree', 'add', '-q', '-b', 'live-branch', live]);
+    git(repo, ['worktree', 'add', '-q', '-b', 'idle-branch', idle]);
+    const script = join(root, 'reap.sh');
+    writeFileSync(script, `rm -rf ${live}\n`);
+    chmodSync(script, 0o755);
+    const outside = join(root, 'outside');
+    mkdirSync(outside);
+    symlinkSync(live, join(outside, 'link'));
+    return {
+        repo: realpathSync(repo),
+        live: realpathSync(live),
+        idle: realpathSync(idle),
+        script: realpathSync(script),
+        missing: join(root, 'missing.sh'),
+        outside: realpathSync(outside),
+    };
+}
+
+const CORPUS = buildCorpus({ repo: '/r', live: '/r/.xtrm/worktrees/w', idle: '/r/.xtrm/worktrees/i', script: '/r/s.sh', missing: '/r/m.sh', outside: '/o' });
+
 describe('Claude PreToolUse worktree guard', () => {
+    // One table, every case the four review rounds named, both directions: an
+    // ALLOW that turns into a block is a regression, and so is a bypass.
+    it(`parses the ${CORPUS.length}-case corpus identically in the hook, the CLI and Pi`, () => {
+        const paths = corpusFixture();
+        const canonical = (ops: Array<{ kind: string; targets: string[] }>) =>
+            ops.filter(op => op.kind !== 'warning').map(op => `${op.kind} ${op.targets.join(' ')}`);
+        const mismatches: string[] = [];
+        for (const testCase of buildCorpus(paths)) {
+            const hook = JSON.stringify(canonical(hookRemovalOperations(testCase.command)));
+            const cli = JSON.stringify(canonical(cliRemovalOperations(testCase.command)));
+            const pi = JSON.stringify(canonical(piRemovalOperations(testCase.command)));
+            if (cli !== hook || pi !== hook) {
+                mismatches.push(`${testCase.id}: hook ${hook}, cli ${cli}, pi ${pi}\n  ${testCase.command}`);
+            }
+        }
+        expect(mismatches.join('\n')).toBe('');
+    });
+
+    it(`answers the ${CORPUS.length}-case review corpus`, async () => {
+        const paths = corpusFixture();
+        const child = spawnSleeping(paths.live);
+        await waitFor(() => readCwd(child.pid as number) === paths.live);
+        const mismatches: string[] = [];
+        for (const testCase of buildCorpus(paths)) {
+            const reason = worktreeGuardDecision(bashPayload(testCase.command, paths.repo), { tmuxSockets: [] });
+            const got = reason ? 'BLOCK' : 'ALLOW';
+            if (got !== testCase.expect) {
+                mismatches.push(`${testCase.id}: expected ${testCase.expect}, got ${got} — ${testCase.why}\n  ${testCase.command}`);
+            }
+        }
+        child.kill('SIGKILL');
+        expect(mismatches.join('\n')).toBe('');
+    });
+
     it('is routed for Bash tool calls', () => {
         expect(PRE_TOOLS).toContain('Bash');
     });
@@ -231,6 +307,9 @@ describe('Claude PreToolUse worktree guard', () => {
             `rm -rf /tmp/xtrm-nothing-here/$VAR`,
             `rm -rf /tmp/xtrm-nothing-here/*`,
             `find /tmp/xtrm-nothing-here -name x -delete`,
+            // ~ resolves from HOME, so it is a literal path, not an unbounded
+            // one; it blocks only when HOME itself holds a live worktree (N4).
+            `rm -rf ~/xtrm-guard-nothing-here`,
             `git worktree prune`,
         ]) {
             expect(worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] }), command).toBeNull();
@@ -242,7 +321,7 @@ describe('Claude PreToolUse worktree guard', () => {
         expect(glob).toContain(`pid ${child.pid}`);
 
         // Targets the guard cannot bound inside the tree block and say so.
-        for (const command of [`rm -rf "$UNKNOWN_TARGET"`, 'rm -rf ~', `find "$X" -delete`]) {
+        for (const command of [`rm -rf "$UNKNOWN_TARGET"`, `find "$X" -delete`]) {
             const reason = worktreeGuardDecision(bashPayload(command, repo), { tmuxSockets: [] });
             expect(reason, command).toBeTruthy();
             expect(reason, command).toContain('use a literal path');

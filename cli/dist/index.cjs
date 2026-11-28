@@ -79181,6 +79181,7 @@ function readProcessCommand(pid, procRoot = "/proc") {
 }
 var TMUX_QUERY_BUDGET_MS = 55;
 var TMUX_SOCKET_SLICE_MS = 20;
+var TMUX_QUERY_BUDGET_CLI_MS = 2e3;
 function trustedSocket(socket, uid) {
   try {
     const stat3 = (0, import_node_fs22.lstatSync)(socket);
@@ -79360,7 +79361,7 @@ function logLivenessOverride(input2) {
 }
 function createLivenessProbe(options = {}) {
   const cwds = options.cwds ?? readProcessCwds(options.procRoot ?? "/proc");
-  const { panes, warnings } = readTmuxPanes(options);
+  const { panes, warnings } = readTmuxPanes({ tmuxBudgetMs: TMUX_QUERY_BUDGET_CLI_MS, ...options });
   return (path101) => {
     const answer = worktreeInUse(path101, { ...options, cwds, panes, skipTmux: true });
     return warnings.length > 0 ? { ...answer, warnings: [...warnings, ...answer.warnings] } : answer;
