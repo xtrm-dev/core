@@ -327,6 +327,28 @@ describe('Pi worktree guard audit shapes', () => {
 		await stop(child);
 	});
 
+	test('recognises a verb by its basename when the executable is a path', async () => {
+		const { repo, worktree } = fixture();
+		const child = spawnSleeping(worktree);
+		await waitFor(() => readCwd(child.pid as number) === realpathSync(worktree));
+
+		const blocked = [
+			`/usr/bin/git worktree remove --force ${worktree}`,
+			`/bin/rm -rf ${worktree}`,
+			`/usr/bin/find ${worktree} -delete`,
+			`./git worktree remove --force ${worktree}`,
+			`sudo /usr/bin/git worktree remove --force ${worktree}`,
+			`env /bin/rm -rf ${worktree}`,
+			`env /usr/bin/find ${worktree} -delete`,
+		];
+		for (const command of blocked) {
+			const reason = worktreeGuardReason(command, repo, { tmuxSockets: [] });
+			expect(reason, command).toBeTruthy();
+			expect(reason, command).toContain(`pid ${child.pid}`);
+		}
+		await stop(child);
+	});
+
 	test('blocks a second holder in the caller own worktree', async () => {
 		const { repo } = fixture();
 		const ours = spawnSleeping(process.cwd());

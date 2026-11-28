@@ -470,14 +470,6 @@ function operationsFromSegment(raw, depth, state) {
     return operations;
   }
 
-  // `./script.sh` and any other executable file the parser can read.
-  if (commandName.includes('/')) {
-    const program = readScript(localScript(commandName, state.cwd));
-    if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
-    else record('script', [commandName]);
-    return operations;
-  }
-
   if (name === 'parallel') {
     // `parallel rm -rf {} ::: a b`: each `:::`-separated group is a command.
     const groups = [[]];
@@ -511,6 +503,15 @@ function operationsFromSegment(raw, depth, state) {
         record('find-delete', [root]);
       }
     }
+  }
+
+  // An executable the parser cannot name, such as `./script.sh`: read it as a
+  // script. This runs AFTER the known verbs, so `/usr/bin/git worktree remove`
+  // and `/bin/rm -rf` are recognised by their basename, never read as a script.
+  if (commandName.includes('/')) {
+    const program = readScript(localScript(commandName, state.cwd));
+    if (program !== null && depth < MAX_NESTING) operations.push(...removalOperations(program, depth + 1, state.cwd));
+    else record('script', [commandName]);
   }
   return operations;
 }
