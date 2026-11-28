@@ -209,7 +209,7 @@ Each finding names the repository and the action that resolves it; none of them 
 | `pi-entry-conflict` | Pi settings load the xtmux checkout directly | remove the duplicate Pi entry before re-running the installer |
 | `link-missing` / `link-mismatch` | a binary is not linked, or resolves to another checkout | re-run `xt update --from-checkouts` |
 | `installer-missing` / `installer-version` | xtmux installer state is absent or stale | re-run the phase; it runs `install.sh` |
-| `not-a-git-checkout` | the directory exists but is not a checkout | move it aside and re-run |
+| `not-a-git-checkout` | the directory is not a checkout, or its `.git` cannot be resolved (an interrupted clone leaves a git directory with no HEAD) | move it aside and re-run; a broken checkout is never reported as `ok` |
 
 ## Why not `xt bootstrap` or `xt install`
 

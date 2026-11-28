@@ -42657,8 +42657,18 @@ function tail(text, lines = 12) {
   if (!text) return "";
   return text.split("\n").slice(-lines).join("\n");
 }
+function isSecretName(name) {
+  const parts = name.toLowerCase().split(/[-_.]/);
+  if (parts.some((part) => SECRET_NAME_PARTS.has(part))) return true;
+  if (parts.some((part) => part === "key")) return true;
+  return SECRET_NAME_NAMES.has(name.toLowerCase());
+}
+function redactQueryPairs(text) {
+  return text.replace(QUERY_PAIR, (match, lead, name, value) => isSecretName(name) ? `${lead}${name}=[redacted]` : match);
+}
 function scrub(text) {
-  let out = text.replace(CREDENTIAL_IN_URL_WITH_COLON, "$1").replace(CREDENTIAL_IN_URL, "$1").replace(QUERY_SECRET, "$1[redacted]");
+  let out = text.replace(CREDENTIAL_IN_URL_WITH_COLON, "$1").replace(CREDENTIAL_IN_URL, "$1");
+  out = redactQueryPairs(out);
   for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, "[redacted]");
   out = out.replace(
     AUTH_HEADER,
@@ -42704,8 +42714,8 @@ function shortError(result) {
   const detail = result.error ?? tail(result.stderr || result.stdout, 6);
   return detail ? ` (${detail.split("\n")[0]})` : "";
 }
-function git2(cwd, args, ctx) {
-  return runCommand("git", args, { cwd, env: { ...ctx.env, HOME: import_node_os23.default.homedir() }, timeoutMs: GIT_TIMEOUT_MS });
+function git2(cwd, args, ctx, timeoutMs = GIT_TIMEOUT_MS) {
+  return runCommand("git", args, { cwd, env: { ...ctx.env, HOME: import_node_os23.default.homedir() }, timeoutMs });
 }
 function resolveNpm(ctx) {
   if (ctx.env.XTRM_BOOTSTRAP_NPM) return ctx.env.XTRM_BOOTSTRAP_NPM;
@@ -42779,11 +42789,17 @@ function inspectCheckoutRepo(repo, ctx, options = {}) {
   };
   if (!state.exists) return state;
   if (git2(repo.dir, ["rev-parse", "--git-dir"], ctx).status !== 0) {
+    const gitDir = import_node_path44.default.join(repo.dir, ".git");
     state.status = "not-a-git-checkout";
-    state.detail = "directory exists but is not a git checkout";
+    state.detail = import_node_fs20.default.existsSync(gitDir) ? `${repo.dir} has a .git that git cannot resolve (an interrupted clone or a damaged checkout); remove the directory and re-run to clone it again` : "directory exists but is not a git checkout";
     return state;
   }
   state.isRepo = true;
+  if (git2(repo.dir, ["rev-parse", "--verify", "--quiet", "HEAD"], ctx).status !== 0) {
+    state.status = "not-a-git-checkout";
+    state.detail = `${repo.dir} has a git directory but no resolvable HEAD (an interrupted clone?); remove the directory and re-run to clone it again`;
+    return state;
+  }
   const hooksPath = git2(repo.dir, ["config", "--get", "core.hooksPath"], ctx);
   if (hooksPath.status === 0 && hooksPath.stdout) {
     state.hooksPath = hooksPath.stdout;
@@ -42793,7 +42809,7 @@ function inspectCheckoutRepo(repo, ctx, options = {}) {
   state.version = typeof pkg?.version === "string" ? pkg.version : null;
   const shouldFetch = options.fetch !== false;
   state.fetched = shouldFetch;
-  const fetch2 = shouldFetch ? git2(repo.dir, ["fetch", "--prune", "origin"], ctx) : null;
+  const fetch2 = shouldFetch ? git2(repo.dir, ["fetch", "--prune", "origin"], ctx, GIT_TRANSFER_TIMEOUT_MS) : null;
   const branchResult = git2(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"], ctx);
   state.branch = branchResult.status === 0 ? branchResult.stdout : null;
   state.defaultBranch = detectDefaultBranch(repo.dir, ctx);
@@ -42852,12 +42868,12 @@ function inspectCheckoutRepo(repo, ctx, options = {}) {
 function cloneRepo(repo, ctx, log) {
   import_node_fs20.default.mkdirSync(import_node_path44.default.dirname(repo.dir), { recursive: true });
   log?.(`clone   ${repo.name} \u2190 ${repo.remote}`);
-  const clone2 = git2(import_node_path44.default.dirname(repo.dir), ["clone", "--quiet", repo.remote, repo.dir], ctx);
+  const clone2 = git2(import_node_path44.default.dirname(repo.dir), ["clone", "--quiet", repo.remote, repo.dir], ctx, GIT_TRANSFER_TIMEOUT_MS);
   if (clone2.status !== 0) throw new Error(`git clone failed${shortError(clone2)}`);
 }
 function fastForward(repo, state, ctx, log) {
   log?.(`pull    ${repo.name} \u2192 origin/${state.defaultBranch} (fast-forward, ${state.behind} commit(s))`);
-  const merge2 = git2(repo.dir, ["merge", "--ff-only", `origin/${state.defaultBranch}`], ctx);
+  const merge2 = git2(repo.dir, ["merge", "--ff-only", `origin/${state.defaultBranch}`], ctx, GIT_TRANSFER_TIMEOUT_MS);
   if (merge2.status !== 0) throw new Error(`git merge --ff-only failed${shortError(merge2)}`);
 }
 function chooseInstall(pkgDir, npm2, ctx) {
@@ -43222,7 +43238,7 @@ function renderCheckoutReport(report, options = {}) {
   } else lines.push(`incomplete: ${report.problems.length} problem(s); resolve the checkouts above and re-run`);
   return lines;
 }
-var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL, GIT_TIMEOUT_MS, COMMAND_TIMEOUT_MS, CREDENTIAL_IN_URL_WITH_COLON, CREDENTIAL_IN_URL, QUERY_SECRET, TOKEN_PATTERNS, AUTH_HEADER, SECRET_ASSIGNMENT;
+var import_node_child_process21, import_node_fs20, import_node_os23, import_node_path44, CHECKOUT_REPO_TABLE, BLOCKING, LOCKFILES, REFUSAL, GIT_TIMEOUT_MS, COMMAND_TIMEOUT_MS, CREDENTIAL_IN_URL_WITH_COLON, CREDENTIAL_IN_URL, QUERY_PAIR, SECRET_NAME_PARTS, SECRET_NAME_NAMES, TOKEN_PATTERNS, AUTH_HEADER, SECRET_ASSIGNMENT, GIT_TRANSFER_TIMEOUT_MS;
 var init_checkout_bootstrap = __esm({
   "src/core/checkout-bootstrap.ts"() {
     "use strict";
@@ -43263,7 +43279,9 @@ var init_checkout_bootstrap = __esm({
     COMMAND_TIMEOUT_MS = 10 * 6e4;
     CREDENTIAL_IN_URL_WITH_COLON = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"]*?:[^\s'"]*?@/gi;
     CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
-    QUERY_SECRET = /([?&;][a-z0-9_.-]*(?:token|secret|password|passwd|key|auth)[a-z0-9_.-]*=)[^&\s'"#]+/gi;
+    QUERY_PAIR = /([?&;#>]?)([A-Za-z0-9_.-]+)=([^&\s'"#>]+)/g;
+    SECRET_NAME_PARTS = /* @__PURE__ */ new Set(["token", "secret", "password", "passwd", "auth", "authorization", "credential", "credentials"]);
+    SECRET_NAME_NAMES = /* @__PURE__ */ new Set(["key", "apikey", "api_key", "api-key", "accesstoken", "access_token"]);
     TOKEN_PATTERNS = [
       /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
       /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
@@ -43275,6 +43293,7 @@ var init_checkout_bootstrap = __esm({
     ];
     AUTH_HEADER = /\b((?:proxy-)?authorization)\b(\s*[:=]\s*)([a-z][a-z0-9._-]*\s+)?(\r?\n\s*)?([^\s'"]+)/gi;
     SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|auth)\b(\s*[:=]\s*)(\r?\n\s*)?([^\s'"]+)/gi;
+    GIT_TRANSFER_TIMEOUT_MS = COMMAND_TIMEOUT_MS;
   }
 });
 

@@ -303,8 +303,24 @@ function tail(text: string, lines = 12): string {
 const CREDENTIAL_IN_URL_WITH_COLON = /([a-z][a-z0-9+.-]*:\/\/)[^\s'"]*?:[^\s'"]*?@/gi;
 const CREDENTIAL_IN_URL = /([a-z][a-z0-9+.-]*:\/\/)[^/\s@]*@/gi;
 // Query and form parameters whose name says secret: `?private_token=`,
-// `&access_token=`, `client_secret=`.
-const QUERY_SECRET = /([?&;][a-z0-9_.-]*(?:token|secret|password|passwd|key|auth)[a-z0-9_.-]*=)[^&\s'"#]+/gi;
+// `access_token=`, `#api_key=`, `client_secret=`. The name is split on its
+// separators so `monkey` is not a `key`, while `api_key` still is.
+const QUERY_PAIR = /([?&;#>]?)([A-Za-z0-9_.-]+)=([^&\s'"#>]+)/g;
+const SECRET_NAME_PARTS = new Set(['token', 'secret', 'password', 'passwd', 'auth', 'authorization', 'credential', 'credentials']);
+const SECRET_NAME_NAMES = new Set(['key', 'apikey', 'api_key', 'api-key', 'accesstoken', 'access_token']);
+
+function isSecretName(name: string): boolean {
+    const parts = name.toLowerCase().split(/[-_.]/);
+    if (parts.some((part) => SECRET_NAME_PARTS.has(part))) return true;
+    if (parts.some((part) => part === 'key')) return true;
+    return SECRET_NAME_NAMES.has(name.toLowerCase());
+}
+
+function redactQueryPairs(text: string): string {
+    return text.replace(QUERY_PAIR, (match, lead: string, name: string, value: string) => (
+        isSecretName(name) ? `${lead}${name}=[redacted]` : match
+    ));
+}
 const TOKEN_PATTERNS: RegExp[] = [
     /\b(gh[pousr]_[A-Za-z0-9]{16,})\b/g,
     /\b(github_pat_[A-Za-z0-9_]{20,})\b/g,
@@ -322,8 +338,8 @@ const SECRET_ASSIGNMENT = /\b(password|passwd|token|secret|api[-_]?key|auth)\b(\
 function scrub(text: string): string {
     let out = text
         .replace(CREDENTIAL_IN_URL_WITH_COLON, '$1')
-        .replace(CREDENTIAL_IN_URL, '$1')
-        .replace(QUERY_SECRET, '$1[redacted]');
+        .replace(CREDENTIAL_IN_URL, '$1');
+    out = redactQueryPairs(out);
     for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, '[redacted]');
     out = out.replace(
         AUTH_HEADER,
@@ -387,11 +403,19 @@ interface Context {
     env: NodeJS.ProcessEnv;
 }
 
-function git(cwd: string, args: string[], ctx: Context): CommandResult {
+function git(cwd: string, args: string[], ctx: Context, timeoutMs: number = GIT_TIMEOUT_MS): CommandResult {
     // Git reads machine identity and global config from the real HOME even when
     // the install itself is rehearsed against another home.
-    return runCommand('git', args, { cwd, env: { ...ctx.env, HOME: os.homedir() }, timeoutMs: GIT_TIMEOUT_MS });
+    return runCommand('git', args, { cwd, env: { ...ctx.env, HOME: os.homedir() }, timeoutMs });
 }
+
+/**
+ * A first clone of a large checkout over a slow link legitimately takes
+ * minutes: the transfer commands get the long deadline, not the short one that
+ * guards a status probe. Killing a clone mid-transfer leaves a `.git` without a
+ * HEAD, which is reported as a broken checkout and never as `ok`.
+ */
+const GIT_TRANSFER_TIMEOUT_MS = COMMAND_TIMEOUT_MS;
 
 function resolveNpm(ctx: Context): string {
     if (ctx.env.XTRM_BOOTSTRAP_NPM) return ctx.env.XTRM_BOOTSTRAP_NPM;
@@ -487,11 +511,24 @@ export function inspectCheckoutRepo(
     };
     if (!state.exists) return state;
     if (git(repo.dir, ['rev-parse', '--git-dir'], ctx).status !== 0) {
+        // A `.git` that git itself cannot resolve is the shape a clone killed
+        // mid-transfer leaves behind: it is not an ordinary non-git directory,
+        // and only a fresh clone fixes it.
+        const gitDir = path.join(repo.dir, '.git');
         state.status = 'not-a-git-checkout';
-        state.detail = 'directory exists but is not a git checkout';
+        state.detail = fs.existsSync(gitDir)
+            ? `${repo.dir} has a .git that git cannot resolve (an interrupted clone or a damaged checkout); remove the directory and re-run to clone it again`
+            : 'directory exists but is not a git checkout';
         return state;
     }
     state.isRepo = true;
+    // A clone killed mid-transfer leaves a git directory with no HEAD. It has
+    // no branch and no commit, so it must never read as a clean checkout.
+    if (git(repo.dir, ['rev-parse', '--verify', '--quiet', 'HEAD'], ctx).status !== 0) {
+        state.status = 'not-a-git-checkout';
+        state.detail = `${repo.dir} has a git directory but no resolvable HEAD (an interrupted clone?); remove the directory and re-run to clone it again`;
+        return state;
+    }
 
     // A checkout wired to the retired Beads hooks fails inside post-merge on
     // every pull. Report it; never rewrite the machine's git config.
@@ -509,7 +546,7 @@ export function inspectCheckoutRepo(
     // network.
     const shouldFetch = options.fetch !== false;
     state.fetched = shouldFetch;
-    const fetch = shouldFetch ? git(repo.dir, ['fetch', '--prune', 'origin'], ctx) : null;
+    const fetch = shouldFetch ? git(repo.dir, ['fetch', '--prune', 'origin'], ctx, GIT_TRANSFER_TIMEOUT_MS) : null;
     const branchResult = git(repo.dir, ['rev-parse', '--abbrev-ref', 'HEAD'], ctx);
     state.branch = branchResult.status === 0 ? branchResult.stdout : null;
     state.defaultBranch = detectDefaultBranch(repo.dir, ctx);
@@ -571,13 +608,13 @@ export function inspectCheckoutRepo(
 function cloneRepo(repo: CheckoutRepo, ctx: Context, log?: (line: string) => void): void {
     fs.mkdirSync(path.dirname(repo.dir), { recursive: true });
     log?.(`clone   ${repo.name} ← ${repo.remote}`);
-    const clone = git(path.dirname(repo.dir), ['clone', '--quiet', repo.remote, repo.dir], ctx);
+    const clone = git(path.dirname(repo.dir), ['clone', '--quiet', repo.remote, repo.dir], ctx, GIT_TRANSFER_TIMEOUT_MS);
     if (clone.status !== 0) throw new Error(`git clone failed${shortError(clone)}`);
 }
 
 function fastForward(repo: CheckoutRepo, state: CheckoutState, ctx: Context, log?: (line: string) => void): void {
     log?.(`pull    ${repo.name} → origin/${state.defaultBranch} (fast-forward, ${state.behind} commit(s))`);
-    const merge = git(repo.dir, ['merge', '--ff-only', `origin/${state.defaultBranch}`], ctx);
+    const merge = git(repo.dir, ['merge', '--ff-only', `origin/${state.defaultBranch}`], ctx, GIT_TRANSFER_TIMEOUT_MS);
     if (merge.status !== 0) throw new Error(`git merge --ff-only failed${shortError(merge)}`);
 }
 

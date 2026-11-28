@@ -402,6 +402,36 @@ describe('install, link and installer behaviour', () => {
     });
 });
 
+describe('broken checkouts', () => {
+    it('never reports a git directory without HEAD as a clean checkout', () => {
+        // The shape a clone killed mid-transfer leaves behind: a .git with no
+        // HEAD, so no branch and no commit, and nothing to fast-forward.
+        const base = tmp('xt-checkouts-halfclone-');
+        const dir = path.join(base, 'xtmux');
+        fs.mkdirSync(dir, { recursive: true });
+        git(dir, 'init', '--initial-branch=main');
+        fs.rmSync(path.join(dir, '.git', 'HEAD'));
+
+        const home = path.join(base, 'home');
+        fs.mkdirSync(home, { recursive: true });
+        writeConfig(home, {
+            ...idleRepos(home, ['core', 'xtrm', 'specialists']),
+            xtmux: { dir, remote: 'https://example.invalid/xtmux.git', links: [] },
+        });
+
+        const report = phase(home, { check: true });
+        const state = report?.repos.find((repo) => repo.name === 'xtmux');
+        expect(state?.status).toBe('not-a-git-checkout');
+        expect(state?.detail).toMatch(/cannot resolve|no resolvable HEAD/);
+        expect(report?.drift.some((item) => item.repo === 'xtmux' && item.kind === 'not-a-git-checkout')).toBe(true);
+
+        // An apply run must not touch it and must report it as a problem.
+        const applied = phase(home);
+        expect(applied?.problems.some((problem) => problem.startsWith('xtmux:'))).toBe(true);
+        expect(fs.existsSync(path.join(dir, '.git', 'HEAD'))).toBe(false);
+    });
+});
+
 describe('bin inspection', () => {
     it('reports a missing link and a mismatch separately', () => {
         const home = tmp('xt-checkouts-bins-');
@@ -451,6 +481,15 @@ describe('report redaction', () => {
         expect(query).not.toContain('abc123');
         expect(query).not.toContain('def456');
         expect(query).toContain('page=2');
+
+        // A bare pair, a fragment, and a name boundary that keeps `monkey`
+        // while `api_key` is still a key.
+        const bare = redactText('access_token=abc999 uploaded; #private_token=def888; ?monkey=1&api_key=x7');
+        expect(bare).not.toContain('abc999');
+        expect(bare).not.toContain('def888');
+        expect(bare).not.toContain('x7');
+        expect(bare).toContain('monkey=1');
+        expect(redactText('?client_secret=zzz&version=1.2.3')).toBe('?client_secret=[redacted]&version=1.2.3');
 
         const wrapped = redactText(['GET /r.git', 'Authorization: Basic', 'dXNlcjpzM2NyZXQ='].join('\n'));
         expect(wrapped).not.toContain('dXNlcjpzM2NyZXQ=');
